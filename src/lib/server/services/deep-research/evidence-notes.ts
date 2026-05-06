@@ -22,6 +22,7 @@ type DeepResearchEvidenceNoteRow =
 
 const MAX_EVIDENCE_NOTES_PER_SAVE = 64;
 const MAX_EVIDENCE_NOTE_TEXT_LENGTH = 2_000;
+const SQLITE_SAFE_INSERT_CHUNK_SIZE = 40;
 
 export type SaveDeepResearchEvidenceNoteInput = {
 	findingText: string;
@@ -72,30 +73,37 @@ export async function saveDeepResearchEvidenceNotes(
 
 	const { db } = await import("$lib/server/db");
 	const now = input.now ?? new Date();
-	const rows = await db
-		.insert(deepResearchEvidenceNotes)
-		.values(
-			normalizedNotes.map((note) => ({
-				id: randomUUID(),
-				jobId: input.jobId,
-				conversationId: input.conversationId,
-				userId: input.userId,
-				passCheckpointId: input.passCheckpointId,
-				sourceId: input.sourceId ?? null,
-				taskId: input.taskId ?? null,
-				supportedKeyQuestion: note.supportedKeyQuestion,
-				comparedEntity: note.comparedEntity,
-				comparisonAxis: note.comparisonAxis,
-				findingText: note.findingText,
-				sourceSupportJson: JSON.stringify(note.sourceSupport),
-				sourceQualitySignalsJson: note.sourceQualitySignals
-					? JSON.stringify(note.sourceQualitySignals)
-					: null,
-				createdAt: now,
-				updatedAt: now,
-			})),
-		)
-		.returning();
+	const rows: DeepResearchEvidenceNoteRow[] = [];
+	for (const noteChunk of chunkArray(
+		normalizedNotes,
+		SQLITE_SAFE_INSERT_CHUNK_SIZE,
+	)) {
+		const insertedRows = await db
+			.insert(deepResearchEvidenceNotes)
+			.values(
+				noteChunk.map((note) => ({
+					id: randomUUID(),
+					jobId: input.jobId,
+					conversationId: input.conversationId,
+					userId: input.userId,
+					passCheckpointId: input.passCheckpointId,
+					sourceId: input.sourceId ?? null,
+					taskId: input.taskId ?? null,
+					supportedKeyQuestion: note.supportedKeyQuestion,
+					comparedEntity: note.comparedEntity,
+					comparisonAxis: note.comparisonAxis,
+					findingText: note.findingText,
+					sourceSupportJson: JSON.stringify(note.sourceSupport),
+					sourceQualitySignalsJson: note.sourceQualitySignals
+						? JSON.stringify(note.sourceQualitySignals)
+						: null,
+					createdAt: now,
+					updatedAt: now,
+				})),
+			)
+			.returning();
+		rows.push(...insertedRows);
+	}
 
 	return mapEvidenceNoteRowsWithPassNumbers(rows, new Map());
 }
@@ -163,7 +171,8 @@ export async function saveResearchTaskEvidenceNotes(input: {
 		taskId: task.id,
 		notes: uniqueFindings.map((findingText) => ({
 			findingText,
-			supportedKeyQuestion: input.output.supportedKeyQuestion ?? task.keyQuestion,
+			supportedKeyQuestion:
+				input.output.supportedKeyQuestion ?? task.keyQuestion,
 			comparedEntity: input.output.comparedEntity,
 			comparisonAxis: input.output.comparisonAxis,
 			sourceSupport: {
@@ -188,7 +197,10 @@ export async function listDeepResearchEvidenceNotes(
 		.from(deepResearchEvidenceNotes)
 		.innerJoin(
 			deepResearchPassCheckpoints,
-			eq(deepResearchEvidenceNotes.passCheckpointId, deepResearchPassCheckpoints.id),
+			eq(
+				deepResearchEvidenceNotes.passCheckpointId,
+				deepResearchPassCheckpoints.id,
+			),
 		)
 		.where(
 			and(
@@ -283,7 +295,9 @@ async function mapEvidenceNoteRowsWithPassNumbers(
 			}
 		}
 	}
-	return rows.map((row) => mapEvidenceNoteRow(row, passNumbers.get(row.id) ?? 0));
+	return rows.map((row) =>
+		mapEvidenceNoteRow(row, passNumbers.get(row.id) ?? 0),
+	);
 }
 
 function mapEvidenceNoteRow(
@@ -318,7 +332,17 @@ function normalizeText(value: string): string {
 	return value.replace(/\s+/g, " ").trim();
 }
 
-function normalizeOptionalText(value: string | null | undefined): string | null {
+function chunkArray<T>(items: T[], size: number): T[][] {
+	const chunks: T[][] = [];
+	for (let index = 0; index < items.length; index += size) {
+		chunks.push(items.slice(index, index + size));
+	}
+	return chunks;
+}
+
+function normalizeOptionalText(
+	value: string | null | undefined,
+): string | null {
 	const normalized = value?.replace(/\s+/g, " ").trim();
 	return normalized ? normalized : null;
 }

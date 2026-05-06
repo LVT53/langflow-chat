@@ -22,6 +22,12 @@ type DeepResearchClaimEvidenceLinkRow =
 type DeepResearchEvidenceNoteRow =
 	typeof deepResearchEvidenceNotes.$inferSelect;
 
+const MAX_SYNTHESIS_CLAIMS_PER_PASS = 80;
+const MAX_EVIDENCE_LINKS_PER_CLAIM = 12;
+const SQLITE_SAFE_SELECT_CHUNK_SIZE = 400;
+const SQLITE_SAFE_CLAIM_INSERT_CHUNK_SIZE = 40;
+const SQLITE_SAFE_LINK_INSERT_CHUNK_SIZE = 80;
+
 export type SaveDeepResearchClaimEvidenceLinkInput = {
 	evidenceNoteId: string;
 	relation: DeepResearchClaimEvidenceRelation;
@@ -110,19 +116,23 @@ export async function saveDeepResearchSynthesisClaims(
 			),
 		),
 	];
-	const evidenceRows =
-		noteIds.length > 0
-			? await db
-					.select()
-					.from(deepResearchEvidenceNotes)
-					.where(
-						and(
-							eq(deepResearchEvidenceNotes.userId, input.userId),
-							eq(deepResearchEvidenceNotes.jobId, input.jobId),
-							inArray(deepResearchEvidenceNotes.id, noteIds),
-						),
-					)
-			: [];
+	const evidenceRows: DeepResearchEvidenceNoteRow[] = [];
+	for (const noteIdChunk of chunkArray(
+		noteIds,
+		SQLITE_SAFE_SELECT_CHUNK_SIZE,
+	)) {
+		const rows = await db
+			.select()
+			.from(deepResearchEvidenceNotes)
+			.where(
+				and(
+					eq(deepResearchEvidenceNotes.userId, input.userId),
+					eq(deepResearchEvidenceNotes.jobId, input.jobId),
+					inArray(deepResearchEvidenceNotes.id, noteIdChunk),
+				),
+			);
+		evidenceRows.push(...rows);
+	}
 	const evidenceById = new Map(evidenceRows.map((row) => [row.id, row]));
 	const claimsToInsert = expandMaterialContradictions(
 		normalizedClaims,
@@ -155,10 +165,17 @@ export async function saveDeepResearchSynthesisClaims(
 			updatedAt: now,
 		};
 	});
-	const insertedClaims = await db
-		.insert(deepResearchSynthesisClaims)
-		.values(claimRows)
-		.returning();
+	const insertedClaims: DeepResearchSynthesisClaimRow[] = [];
+	for (const claimChunk of chunkArray(
+		claimRows,
+		SQLITE_SAFE_CLAIM_INSERT_CHUNK_SIZE,
+	)) {
+		const rows = await db
+			.insert(deepResearchSynthesisClaims)
+			.values(claimChunk)
+			.returning();
+		insertedClaims.push(...rows);
+	}
 	const linkRows = claimsToInsert.flatMap((claim) =>
 		claim.evidenceLinks
 			.filter((link) => evidenceById.has(link.evidenceNoteId))
@@ -175,13 +192,17 @@ export async function saveDeepResearchSynthesisClaims(
 				createdAt: now,
 			})),
 	);
-	const insertedLinks =
-		linkRows.length > 0
-			? await db
-					.insert(deepResearchClaimEvidenceLinks)
-					.values(linkRows)
-					.returning()
-			: [];
+	const insertedLinks: DeepResearchClaimEvidenceLinkRow[] = [];
+	for (const linkChunk of chunkArray(
+		linkRows,
+		SQLITE_SAFE_LINK_INSERT_CHUNK_SIZE,
+	)) {
+		const rows = await db
+			.insert(deepResearchClaimEvidenceLinks)
+			.values(linkChunk)
+			.returning();
+		insertedLinks.push(...rows);
+	}
 
 	return mapSynthesisClaims(insertedClaims, groupLinksByClaimId(insertedLinks));
 }
@@ -261,24 +282,28 @@ export async function listDeepResearchSynthesisClaims(
 		);
 	if (claims.length === 0) return [];
 
-	const links = await db
-		.select()
-		.from(deepResearchClaimEvidenceLinks)
-		.where(
-			and(
-				eq(deepResearchClaimEvidenceLinks.userId, input.userId),
-				eq(deepResearchClaimEvidenceLinks.jobId, input.jobId),
-				inArray(
-					deepResearchClaimEvidenceLinks.claimId,
-					claims.map((claim) => claim.id),
+	const links: DeepResearchClaimEvidenceLinkRow[] = [];
+	for (const claimIdChunk of chunkArray(
+		claims.map((claim) => claim.id),
+		SQLITE_SAFE_SELECT_CHUNK_SIZE,
+	)) {
+		const rows = await db
+			.select()
+			.from(deepResearchClaimEvidenceLinks)
+			.where(
+				and(
+					eq(deepResearchClaimEvidenceLinks.userId, input.userId),
+					eq(deepResearchClaimEvidenceLinks.jobId, input.jobId),
+					inArray(deepResearchClaimEvidenceLinks.claimId, claimIdChunk),
 				),
-			),
-		)
-		.orderBy(
-			asc(deepResearchClaimEvidenceLinks.claimId),
-			asc(deepResearchClaimEvidenceLinks.createdAt),
-			asc(deepResearchClaimEvidenceLinks.id),
-		);
+			)
+			.orderBy(
+				asc(deepResearchClaimEvidenceLinks.claimId),
+				asc(deepResearchClaimEvidenceLinks.createdAt),
+				asc(deepResearchClaimEvidenceLinks.id),
+			);
+		links.push(...rows);
+	}
 	return mapSynthesisClaims(claims, groupLinksByClaimId(links));
 }
 
@@ -301,9 +326,11 @@ export async function saveDeepResearchSynthesisClaimsFromNotes(
 		...input.synthesisNotes.conflicts.flatMap((finding) =>
 			claimInputsFromConflictFinding(finding, input.evidenceNotes),
 		),
-	].filter((claim): claim is SaveDeepResearchSynthesisClaimInput =>
-		Boolean(claim),
-	);
+	]
+		.filter((claim): claim is SaveDeepResearchSynthesisClaimInput =>
+			Boolean(claim),
+		)
+		.slice(0, MAX_SYNTHESIS_CLAIMS_PER_PASS);
 	if (claims.length === 0) return [];
 
 	return saveDeepResearchSynthesisClaims({
@@ -404,10 +431,12 @@ function claimInputFromSupportedFinding(
 		claimType: finding.claimType ?? null,
 		central: finding.central ?? true,
 		status: "accepted",
-		evidenceLinks: supportingNotes.map((note) => ({
-			evidenceNoteId: note.id,
-			relation: "support",
-		})),
+		evidenceLinks: supportingNotes
+			.slice(0, MAX_EVIDENCE_LINKS_PER_CLAIM)
+			.map((note) => ({
+				evidenceNoteId: note.id,
+				relation: "support",
+			})),
 	};
 }
 
@@ -590,6 +619,14 @@ function groupLinksByClaimId(
 
 function normalizeText(value: string): string {
 	return value.replace(/\s+/g, " ").trim();
+}
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+	const chunks: T[][] = [];
+	for (let index = 0; index < items.length; index += size) {
+		chunks.push(items.slice(index, index + size));
+	}
+	return chunks;
 }
 
 function normalizeOptionalText(

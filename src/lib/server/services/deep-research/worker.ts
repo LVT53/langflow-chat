@@ -471,12 +471,25 @@ async function runRealWorkflowWorkerStep(
 	now: Date,
 	workflowStep: DeepResearchWorkflowStepRunner,
 ): Promise<RunNextDeepResearchWorkflowWorkerStepResult> {
+	console.info("[DEEP_RESEARCH] Worker step start", {
+		jobId: job.id,
+		status: job.status,
+		stage: job.stage,
+		updatedAt: job.updatedAt.toISOString(),
+	});
 	const result = await workflowStep({
 		userId: job.userId,
 		jobId: job.id,
 		now,
 	});
 	if (!result) return null;
+	console.info("[DEEP_RESEARCH] Worker step completed", {
+		jobId: result.job.id,
+		advanced: result.advanced,
+		outcome: result.outcome,
+		status: result.job.status,
+		stage: result.job.stage,
+	});
 	return {
 		job: result.job,
 		advanced: result.advanced,

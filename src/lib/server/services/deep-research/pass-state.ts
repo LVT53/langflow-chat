@@ -16,9 +16,13 @@ type DeepResearchPassCheckpointRow =
 	typeof deepResearchPassCheckpoints.$inferSelect;
 type DeepResearchCoverageGapRow = typeof deepResearchCoverageGaps.$inferSelect;
 
+const SQLITE_SAFE_INSERT_CHUNK_SIZE = 40;
+
 export class ResearchPassCheckpointImmutableError extends Error {
 	constructor(checkpointId: string) {
-		super(`Research Pass Checkpoint is immutable after terminal decision: ${checkpointId}`);
+		super(
+			`Research Pass Checkpoint is immutable after terminal decision: ${checkpointId}`,
+		);
 		this.name = "ResearchPassCheckpointImmutableError";
 	}
 }
@@ -230,11 +234,16 @@ export async function saveCoverageGapsForPass(
 		});
 	}
 	if (rowsToInsert.length > 0) {
-		const insertedRows = await db
-			.insert(deepResearchCoverageGaps)
-			.values(rowsToInsert)
-			.returning();
-		rows.push(...insertedRows);
+		for (const rowChunk of chunkArray(
+			rowsToInsert,
+			SQLITE_SAFE_INSERT_CHUNK_SIZE,
+		)) {
+			const insertedRows = await db
+				.insert(deepResearchCoverageGaps)
+				.values(rowChunk)
+				.returning();
+			rows.push(...insertedRows);
+		}
 	}
 
 	return rows.map(mapResearchCoverageGapRow);
@@ -323,7 +332,8 @@ function mapResearchPassCheckpointRow(
 		conversationId: row.conversationId,
 		userId: row.userId,
 		passNumber: row.passNumber,
-		lifecycleState: row.lifecycleState as DeepResearchPassCheckpoint["lifecycleState"],
+		lifecycleState:
+			row.lifecycleState as DeepResearchPassCheckpoint["lifecycleState"],
 		searchIntent: row.searchIntent,
 		reviewedSourceIds: parseJson<string[]>(row.reviewedSourceIdsJson),
 		coverageResult: parseOptionalJson<Record<string, unknown>>(
@@ -352,8 +362,7 @@ function mapResearchCoverageGapRow(
 		conversationId: row.conversationId,
 		userId: row.userId,
 		passCheckpointId: row.passCheckpointId,
-		lifecycleState:
-			row.lifecycleState as DeepResearchCoverageGapLifecycleState,
+		lifecycleState: row.lifecycleState as DeepResearchCoverageGapLifecycleState,
 		severity: row.severity as DeepResearchCoverageGapSeverity,
 		reason: row.reason,
 		keyQuestion: row.keyQuestion,
@@ -422,7 +431,9 @@ function coverageGapInputIdempotencyKey(
 	return coverageGapIdempotencyKey(gap);
 }
 
-function stringifyOptionalJson(value: Record<string, unknown> | null | undefined) {
+function stringifyOptionalJson(
+	value: Record<string, unknown> | null | undefined,
+) {
 	return value ? JSON.stringify(value) : null;
 }
 
@@ -433,4 +444,12 @@ function parseJson<T>(value: string): T {
 function parseOptionalJson<T>(value: string | null): T | null {
 	if (!value) return null;
 	return JSON.parse(value) as T;
+}
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+	const chunks: T[][] = [];
+	for (let index = 0; index < items.length; index += size) {
+		chunks.push(items.slice(index, index + size));
+	}
+	return chunks;
 }

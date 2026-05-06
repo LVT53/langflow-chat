@@ -140,6 +140,8 @@ export type DeepResearchClaimGraphAuditResult = {
 type DeepResearchCitationAuditVerdictRow =
 	typeof deepResearchCitationAuditVerdicts.$inferSelect;
 
+const SQLITE_SAFE_VERDICT_INSERT_CHUNK_SIZE = 80;
+
 export type AuditAndPersistDeepResearchClaimGraphInput = {
 	userId: string;
 	jobId: string;
@@ -166,12 +168,11 @@ export async function auditDeepResearchClaimGraph(
 	const repairNeeded = verdicts.some((verdict) =>
 		["needs_repair", "contradicted"].includes(verdict.verdict),
 	);
-	const status =
-		repairNeeded
-			? "needs_repair"
-			: supportedCount === 0
-				? "failed"
-				: "passed";
+	const status = repairNeeded
+		? "needs_repair"
+		: supportedCount === 0
+			? "failed"
+			: "passed";
 
 	return {
 		jobId: input.jobId,
@@ -211,23 +212,27 @@ export async function auditAndPersistDeepResearchClaimGraph(
 				eq(deepResearchCitationAuditVerdicts.jobId, input.jobId),
 			),
 		);
-	await db.insert(deepResearchCitationAuditVerdicts).values(
-		result.verdicts.map((verdict) => {
-			const claim = claims.find((item) => item.id === verdict.claimId);
-			return {
-				id: randomUUID(),
-				jobId: input.jobId,
-				conversationId: claim?.conversationId ?? "",
-				userId: input.userId,
-				claimId: verdict.claimId,
-				verdict: verdict.verdict,
-				evidenceNoteIdsJson: JSON.stringify(verdict.evidenceNoteIds),
-				reason: verdict.reason,
-				createdAt: now,
-				updatedAt: now,
-			};
-		}),
-	);
+	const verdictRows = result.verdicts.map((verdict) => {
+		const claim = claims.find((item) => item.id === verdict.claimId);
+		return {
+			id: randomUUID(),
+			jobId: input.jobId,
+			conversationId: claim?.conversationId ?? "",
+			userId: input.userId,
+			claimId: verdict.claimId,
+			verdict: verdict.verdict,
+			evidenceNoteIdsJson: JSON.stringify(verdict.evidenceNoteIds),
+			reason: verdict.reason,
+			createdAt: now,
+			updatedAt: now,
+		};
+	});
+	for (const rowChunk of chunkArray(
+		verdictRows,
+		SQLITE_SAFE_VERDICT_INSERT_CHUNK_SIZE,
+	)) {
+		await db.insert(deepResearchCitationAuditVerdicts).values(rowChunk);
+	}
 
 	return result;
 }
@@ -433,7 +438,8 @@ function mapCitationAuditVerdictRow(
 		conversationId: row.conversationId,
 		userId: row.userId,
 		claimId: row.claimId,
-		verdict: row.verdict as PersistedDeepResearchCitationAuditVerdict["verdict"],
+		verdict:
+			row.verdict as PersistedDeepResearchCitationAuditVerdict["verdict"],
 		evidenceNoteIds: parseStringArray(row.evidenceNoteIdsJson),
 		reason: row.reason,
 		createdAt: row.createdAt.toISOString(),
@@ -451,7 +457,9 @@ function auditSynthesisClaim(input: {
 			evidence: input.evidenceById.get(link.evidenceNoteId),
 		}))
 		.filter(
-			(item): item is {
+			(
+				item,
+			): item is {
 				link: DeepResearchSynthesisClaim["evidenceLinks"][number];
 				evidence: DeepResearchEvidenceNote;
 			} => Boolean(item.evidence),
@@ -631,18 +639,19 @@ function sourceSupportsClaim(
 		source.snippet,
 		source.sourceText,
 		source.title,
-	]
-		.filter((segment): segment is string => Boolean(segment?.trim()));
+	].filter((segment): segment is string => Boolean(segment?.trim()));
 
 	if (evidenceSegments.length === 0) return false;
 	if (
-		evidenceSegments.some(
-			(segment) => normalizeForComparison(segment).includes(claimText),
+		evidenceSegments.some((segment) =>
+			normalizeForComparison(segment).includes(claimText),
 		)
 	) {
 		return true;
 	}
-	if (evidenceSegments.some((segment) => contradictsClaim(segment, claim.text))) {
+	if (
+		evidenceSegments.some((segment) => contradictsClaim(segment, claim.text))
+	) {
 		return false;
 	}
 
@@ -798,16 +807,23 @@ async function reviewClaimSupport(input: {
 	});
 	if (!review) return null;
 
-	const allowedSourceIds = new Set(input.reviewedCitedSources.map((source) => source.id));
-	const supportedSourceIds = (review.citationSourceIds ?? input.claim.citationSourceIds).filter(
-		(sourceId) => allowedSourceIds.has(sourceId),
+	const allowedSourceIds = new Set(
+		input.reviewedCitedSources.map((source) => source.id),
 	);
-	const reason = review.reason.trim() || "Citation audit model reviewed the claim.";
+	const supportedSourceIds = (
+		review.citationSourceIds ?? input.claim.citationSourceIds
+	).filter((sourceId) => allowedSourceIds.has(sourceId));
+	const reason =
+		review.reason.trim() || "Citation audit model reviewed the claim.";
 
 	if (review.status === "supported" && supportedSourceIds.length > 0) {
 		return { status: "supported", supportedSourceIds, reason };
 	}
-	if (review.status === "repaired" && review.text?.trim() && supportedSourceIds.length > 0) {
+	if (
+		review.status === "repaired" &&
+		review.text?.trim() &&
+		supportedSourceIds.length > 0
+	) {
 		return {
 			status: "repaired",
 			claim: {
@@ -928,4 +944,12 @@ function parseStringArray(value: string): string[] {
 	} catch {
 		return [];
 	}
+}
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+	const chunks: T[][] = [];
+	for (let index = 0; index < items.length; index += size) {
+		chunks.push(items.slice(index, index + size));
+	}
+	return chunks;
 }

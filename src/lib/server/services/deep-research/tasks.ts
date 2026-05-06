@@ -12,6 +12,8 @@ import { saveResearchTaskEvidenceNotes } from "./evidence-notes";
 
 type DeepResearchTaskRow = typeof deepResearchTasks.$inferSelect;
 
+const SQLITE_SAFE_INSERT_CHUNK_SIZE = 40;
+
 export type CoverageGapSeverity = "critical" | "important" | "minor";
 
 export type CoverageGapForResearchTask = {
@@ -149,24 +151,29 @@ export async function createResearchTasksFromCoverageGaps(
 			return;
 		}
 		rowsToInsert.push({
-				id: randomUUID(),
-				jobId: input.jobId,
-				conversationId: input.conversationId,
-				userId: input.userId,
-				passNumber,
-				passOrder: index,
-				status: "pending",
-				...normalized,
-				createdAt: now,
-				updatedAt: now,
+			id: randomUUID(),
+			jobId: input.jobId,
+			conversationId: input.conversationId,
+			userId: input.userId,
+			passNumber,
+			passOrder: index,
+			status: "pending",
+			...normalized,
+			createdAt: now,
+			updatedAt: now,
 		});
 	});
 	if (rowsToInsert.length > 0) {
-		const insertedRows = await db
-			.insert(deepResearchTasks)
-			.values(rowsToInsert)
-			.returning();
-		rows.push(...insertedRows);
+		for (const rowChunk of chunkArray(
+			rowsToInsert,
+			SQLITE_SAFE_INSERT_CHUNK_SIZE,
+		)) {
+			const insertedRows = await db
+				.insert(deepResearchTasks)
+				.values(rowChunk)
+				.returning();
+			rows.push(...insertedRows);
+		}
 	}
 
 	return rows.map(mapResearchTaskRow);
@@ -368,7 +375,9 @@ export async function recoverExpiredResearchTasks(
 		eq(deepResearchTasks.passNumber, normalizePassNumber(input.passNumber)),
 		eq(deepResearchTasks.status, "running"),
 		lte(deepResearchTasks.claimedAt, input.expiredBefore),
-		input.claimToken ? eq(deepResearchTasks.claimToken, input.claimToken) : undefined,
+		input.claimToken
+			? eq(deepResearchTasks.claimToken, input.claimToken)
+			: undefined,
 	].filter((filter) => filter !== undefined);
 	const runningRows = await db
 		.select()
@@ -535,4 +544,12 @@ function researchTaskInputIdempotencyKey(
 function parseOptionalJson<T>(value: string | null): T | null {
 	if (!value) return null;
 	return JSON.parse(value) as T;
+}
+
+function chunkArray<T>(items: T[], size: number): T[][] {
+	const chunks: T[][] = [];
+	for (let index = 0; index < items.length; index += size) {
+		chunks.push(items.slice(index, index + size));
+	}
+	return chunks;
 }

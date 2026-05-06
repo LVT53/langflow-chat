@@ -203,8 +203,7 @@ async function runResearchTasksStep(
 		return job ? { job, advanced: false, outcome: "not_eligible" } : null;
 	}
 
-	const listTasks =
-		dependencies.tasks?.listResearchTasks ?? listResearchTasks;
+	const listTasks = dependencies.tasks?.listResearchTasks ?? listResearchTasks;
 	let allTasks = await listTasks({
 		userId: jobRow.userId,
 		jobId: jobRow.id,
@@ -248,7 +247,8 @@ async function runResearchTasksStep(
 	const reviewedSources = sources.filter((source) => source.reviewedAt);
 
 	const workflowRunningTasks = passTasks.filter(
-		(task) => task.status === "running" && task.claimToken === workflowClaimToken,
+		(task) =>
+			task.status === "running" && task.claimToken === workflowClaimToken,
 	);
 	const claimLimit = Math.max(
 		0,
@@ -278,6 +278,15 @@ async function runResearchTasksStep(
 		...workflowRunningTasks,
 		...claimedTasks,
 	]);
+	console.info("[DEEP_RESEARCH] Research tasks pass claimed work", {
+		jobId: jobRow.id,
+		passNumber,
+		pendingRequiredTasks: pendingRequiredTasks.length,
+		workflowRunningTasks: workflowRunningTasks.length,
+		claimedTasks: claimedTasks.length,
+		tasksToExecute: tasksToExecute.length,
+		claimLimit,
+	});
 
 	for (const task of tasksToExecute) {
 		const taskResumeKey = `task:${task.id}`;
@@ -305,9 +314,7 @@ async function runResearchTasksStep(
 				allSources: sources,
 				now,
 			});
-			await (
-				dependencies.tasks?.completeResearchTask ?? completeResearchTask
-			)({
+			await (dependencies.tasks?.completeResearchTask ?? completeResearchTask)({
 				userId: jobRow.userId,
 				taskId: task.id,
 				output,
@@ -353,6 +360,18 @@ async function runResearchTasksStep(
 		userId: jobRow.userId,
 		jobId: jobRow.id,
 		passNumber,
+	});
+	console.info("[DEEP_RESEARCH] Research tasks pass barrier", {
+		jobId: jobRow.id,
+		passNumber,
+		open: barrier.open,
+		requiredTaskCount: barrier.requiredTaskCount,
+		pendingTasks: barrier.pendingTaskIds.length,
+		runningTasks: barrier.runningTaskIds.length,
+		completedTasks: barrier.completedTaskIds.length,
+		skippedTasks: barrier.skippedTaskIds.length,
+		nonCriticalFailedTasks: barrier.nonCriticalFailedTaskIds.length,
+		criticalFailedTasks: barrier.criticalFailedTaskIds.length,
 	});
 
 	if (!barrier.open) {
@@ -515,7 +534,9 @@ async function runSynthesisResumeStep(
 		return job ? { job, advanced: false, outcome: "not_eligible" } : null;
 	}
 
-	const allTasks = await (dependencies.tasks?.listResearchTasks ?? listResearchTasks)({
+	const allTasks = await (
+		dependencies.tasks?.listResearchTasks ?? listResearchTasks
+	)({
 		userId: jobRow.userId,
 		jobId: jobRow.id,
 	});
@@ -570,7 +591,8 @@ async function runSynthesisResumeStep(
 		),
 	};
 	const synthesisNotes =
-		existingSynthesis?.status === "completed" && existingSynthesis.result?.synthesisNotes
+		existingSynthesis?.status === "completed" &&
+		existingSynthesis.result?.synthesisNotes
 			? (existingSynthesis.result.synthesisNotes as Awaited<
 					ReturnType<typeof buildSynthesisNotes>
 				>)
@@ -889,7 +911,9 @@ async function buildSynthesisNotesWithResumePoint(input: {
 		return synthesisNotes;
 	}
 	const synthesisNotes = input.dependencies.synthesis?.buildSynthesisNotes
-		? await input.dependencies.synthesis.buildSynthesisNotes(input.synthesisInput)
+		? await input.dependencies.synthesis.buildSynthesisNotes(
+				input.synthesisInput,
+			)
 		: await buildSynthesisNotesWithLlm({
 				context: {
 					jobId: input.jobRow.id,
@@ -1046,9 +1070,8 @@ async function runSourceReviewStep(
 							intendedComparisonAxis: source.intendedComparisonAxis,
 						})),
 					reviewLimit,
-					sourceProcessingConcurrency:
-						(approvedPlan as ResearchPlan).researchBudget
-							.sourceProcessingConcurrency,
+					sourceProcessingConcurrency: (approvedPlan as ResearchPlan)
+						.researchBudget.sourceProcessingConcurrency,
 					planGoal: (approvedPlan as ResearchPlan).goal,
 					keyQuestions: (approvedPlan as ResearchPlan).keyQuestions,
 				},
@@ -1083,7 +1106,9 @@ async function runSourceReviewStep(
 										sourceId: notes.discoveredSourceId,
 										reviewedAt: now,
 										reviewedNote:
-											notes.keyFindings[0] ?? notes.summary ?? notes.extractedText,
+											notes.keyFindings[0] ??
+											notes.summary ??
+											notes.extractedText,
 										relevanceScore: notes.relevanceScore,
 										topicRelevant: notes.topicRelevant,
 										topicRelevanceReason: notes.topicRelevanceReason,
@@ -1320,11 +1345,15 @@ async function runSourceReviewStep(
 				dependencies,
 			});
 		}
-		const completedMeaningfulPasses = await countCompletedMeaningfulResearchPasses({
-			userId: jobRow.userId,
-			jobId: jobRow.id,
-		});
-		if (completedMeaningfulPasses < meaningfulPassFloor(approvedPlan as ResearchPlan)) {
+		const completedMeaningfulPasses =
+			await countCompletedMeaningfulResearchPasses({
+				userId: jobRow.userId,
+				jobId: jobRow.id,
+			});
+		if (
+			completedMeaningfulPasses <
+			meaningfulPassFloor(approvedPlan as ResearchPlan)
+		) {
 			return completeCoverageExhaustedWithEvidenceLimitationMemo({
 				jobRow,
 				now,
@@ -1382,10 +1411,11 @@ async function createMinimumPassExpectationContinuationIfNeeded(input: {
 	now: Date;
 	dependencies: DeepResearchWorkflowDependencies;
 }): Promise<RunDeepResearchWorkflowStepResult | null> {
-	const completedMeaningfulPasses = await countCompletedMeaningfulResearchPasses({
-		userId: input.jobRow.userId,
-		jobId: input.jobRow.id,
-	});
+	const completedMeaningfulPasses =
+		await countCompletedMeaningfulResearchPasses({
+			userId: input.jobRow.userId,
+			jobId: input.jobRow.id,
+		});
 	const passFloor = meaningfulPassFloor(input.approvedPlan);
 	if (completedMeaningfulPasses >= passFloor) return null;
 	if (completedMeaningfulPasses >= meaningfulPassCeiling(input.approvedPlan)) {
@@ -1626,7 +1656,9 @@ async function resumeFromTerminalSourceReviewPass(input: {
 	return completeCoverageExhaustedWithEvidenceLimitationMemo({
 		jobRow: input.jobRow,
 		now: input.now,
-		limitations: [input.checkpoint.decisionSummary ?? "Research evidence was insufficient."],
+		limitations: [
+			input.checkpoint.decisionSummary ?? "Research evidence was insufficient.",
+		],
 		sourceCounts: {
 			discovered: 0,
 			reviewed: input.checkpoint.reviewedSourceIds.length,
@@ -1799,7 +1831,9 @@ async function persistResearchTaskPassDecision(input: {
 				taskIds: input.completedTasks.map((task) => task.id),
 				sourceIds: [
 					...new Set(
-						input.completedTasks.flatMap((task) => task.output?.sourceIds ?? []),
+						input.completedTasks.flatMap(
+							(task) => task.output?.sourceIds ?? [],
+						),
 					),
 				],
 			},
@@ -2001,7 +2035,7 @@ function buildDefaultSourceReviewer(input: {
 			});
 			if (llmReview) return llmReview;
 
-		const summary = source.snippet?.trim() || source.title.trim();
+			const summary = source.snippet?.trim() || source.title.trim();
 			return {
 				summary,
 				keyFindings: [summary],
@@ -2032,26 +2066,26 @@ const defaultResearchTaskExecutor =
 		});
 		if (llmOutput) return llmOutput;
 
-	const assignment = task.assignment.trim();
-	const focus = task.keyQuestion?.trim();
-	const sourceIds = reviewedSources.map((source) => source.id);
-	const findings =
-		reviewedSources.length > 0
-			? reviewedSources.map(
-					(source) =>
-						source.reviewedNote ??
-						source.snippet ??
-						source.title ??
-						source.url,
-				)
-			: [assignment];
+		const assignment = task.assignment.trim();
+		const focus = task.keyQuestion?.trim();
+		const sourceIds = reviewedSources.map((source) => source.id);
+		const findings =
+			reviewedSources.length > 0
+				? reviewedSources.map(
+						(source) =>
+							source.reviewedNote ??
+							source.snippet ??
+							source.title ??
+							source.url,
+					)
+				: [assignment];
 
-	return {
-		summary: focus ? `${focus}: ${assignment}` : assignment,
-		findings,
-		sourceIds,
+		return {
+			summary: focus ? `${focus}: ${assignment}` : assignment,
+			findings,
+			sourceIds,
+		};
 	};
-};
 
 function currentResearchPassNumber(tasks: DeepResearchTask[]): number {
 	if (tasks.length === 0) return 1;
@@ -2108,10 +2142,7 @@ function mapCompletedResearchTaskForSynthesis(
 		.filter((sourceRef) => sourceRef !== undefined);
 	const findings = output?.findings?.filter(Boolean) ?? [];
 	const taskOutput =
-		output?.summary ??
-		findings[0] ??
-		task.keyQuestion ??
-		task.assignment;
+		output?.summary ?? findings[0] ?? task.keyQuestion ?? task.assignment;
 
 	return {
 		id: task.id,
@@ -2236,9 +2267,9 @@ function mapReviewedSourceForCoverage(
 				? source.supportedKeyQuestions
 				: source.reviewedNote && source.relevanceScore == null
 					? plan.keyQuestions
-				: plan.keyQuestions.filter((question) =>
-						sourceSupportsQuestion(source, question),
-					),
+					: plan.keyQuestions.filter((question) =>
+							sourceSupportsQuestion(source, question),
+						),
 		keyFindings:
 			source.extractedClaims && source.extractedClaims.length > 0
 				? source.extractedClaims
@@ -2289,12 +2320,7 @@ function mapReviewedSourceForSynthesis(
 		keyFindings:
 			source.extractedClaims && source.extractedClaims.length > 0
 				? source.extractedClaims
-				: [
-						source.reviewedNote ??
-							source.snippet ??
-							source.title ??
-							source.url,
-					],
+				: [source.reviewedNote ?? source.snippet ?? source.title ?? source.url],
 		extractedText: source.reviewedNote ?? null,
 		relevanceScore: source.relevanceScore ?? 80,
 		topicRelevant: source.topicRelevant ?? true,
@@ -2324,7 +2350,10 @@ function mapReviewedSourceForSynthesis(
 	};
 }
 
-function sourceSupportsQuestion(source: DeepResearchSource, question: string): boolean {
+function sourceSupportsQuestion(
+	source: DeepResearchSource,
+	question: string,
+): boolean {
 	const text = [
 		source.title,
 		source.snippet,
@@ -2365,6 +2394,9 @@ function hasDeepResearchRuntimeExpired(
 	jobRow: typeof deepResearchJobs.$inferSelect,
 	now: Date,
 ): boolean {
-	const runtimeLimitMs = Math.max(60_000, getConfig().deepResearchJobRuntimeLimitMs);
+	const runtimeLimitMs = Math.max(
+		60_000,
+		getConfig().deepResearchJobRuntimeLimitMs,
+	);
 	return now.getTime() - jobRow.createdAt.getTime() >= runtimeLimitMs;
 }
