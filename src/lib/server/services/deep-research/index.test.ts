@@ -285,6 +285,26 @@ describe('deep research job shell service', () => {
 		});
 	});
 
+	it('starts a job without a foreign-key failure when the optional trigger message is stale', async () => {
+		const { startDeepResearchJobShell } = await import('./index');
+
+		const created = await startDeepResearchJobShell({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			triggerMessageId: 'missing-user-msg',
+			userRequest: 'Compare EU and US AI copyright training data rules',
+			depth: 'focused',
+			now: new Date('2026-05-05T10:01:00.000Z'),
+		});
+
+		expect(created).toMatchObject({
+			conversationId: 'conv-1',
+			triggerMessageId: null,
+			status: 'awaiting_approval',
+			stage: 'plan_drafted',
+		});
+	});
+
 	it('writes a plan-drafted Activity Timeline event when the first Research Plan is created', async () => {
 		const { listConversationDeepResearchJobs, startDeepResearchJobShell } = await import('./index');
 		const { listResearchTimelineEvents } = await import('./timeline');

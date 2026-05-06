@@ -644,6 +644,24 @@ function inferComparisonMetadata(value: string): {
 	axes: string[];
 } {
 	const normalized = value.replace(/\s+/g, " ").trim();
+	const brandedProductMatch = normalized.match(
+		/\bcompare\s+(?:the\s+)?(.+?)\s+from\s+([A-Z][\p{L}\p{N}&.-]+)(?:[.!?]|$)/iu,
+	);
+	if (brandedProductMatch) {
+		const brand = brandedProductMatch[2];
+		const productEntities = splitComparisonList(
+			brandedProductMatch[1],
+		).map((entity) => prefixBrand(entity, brand));
+		const axisMatch = normalized.match(
+			/\b(?:for|on|across|by|regarding|in terms of)\s+(.+?)[.!?]?$/iu,
+		);
+		return {
+			entities: productEntities,
+			axes: axisMatch
+				? splitComparisonList(axisMatch[1]).map(lowercaseFirst)
+				: [],
+		};
+	}
 	const entityMatch = normalized.match(
 		/\b(?:compare|comparison of|versus|vs\.?)\s+(.+?)(?:\s+(?:for|on|across|by|regarding|in terms of)\s+|[.!?]?$)/iu,
 	);
@@ -666,9 +684,26 @@ function splitComparisonList(value: string): string[] {
 			.map((part) =>
 				part
 					.replace(/^(?:the|a|an|current)\s+/iu, "")
-					.replace(/\s+(?:approaches?|models?|platforms?|tools?)$/iu, ""),
+					.replace(
+						/\s+(?:approaches?|models?|platforms?|tools?|bikes?|bicycles?|products?|editions?|versions?|variants?)$/iu,
+						"",
+					),
 			),
 	);
+}
+
+function prefixBrand(entity: string, brand: string): string {
+	const normalizedEntity = normalizeKnownProductSpelling(entity);
+	const entityKey = normalizedEntity.toLocaleLowerCase();
+	const brandKey = brand.toLocaleLowerCase();
+	if (entityKey === brandKey || entityKey.startsWith(`${brandKey} `)) {
+		return normalizedEntity;
+	}
+	return `${brand} ${normalizedEntity}`;
+}
+
+function normalizeKnownProductSpelling(value: string): string {
+	return value.replace(/\bKathmando\b/giu, "Kathmandu");
 }
 
 function lowercaseFirst(value: string): string {
@@ -718,7 +753,7 @@ function inferReportIntent(value: string): ReportIntent {
 	) {
 		return "product_scan";
 	}
-	if (/\b(limitation|constraint|risk|korlát|kockázat)\b/u.test(text)) {
+	if (/\b(limitations?|constraints?|risks?|korlát|kockázat)\b/u.test(text)) {
 		return "limitation_focused";
 	}
 	return "investigation";
@@ -732,19 +767,214 @@ function buildDefaultKeyQuestions(
 		.trim()
 		.replace(/\s+/g, " ")
 		.replace(/[.!?]+$/u, "");
+	const reportIntent = inferReportIntent(userRequest);
+	if (reportIntent === "comparison") {
+		const comparison = inferComparisonMetadata(userRequest);
+		if (comparison.entities.length >= 2) {
+			return buildComparisonKeyQuestions({
+				topic,
+				researchLanguage,
+				entities: comparison.entities,
+				axes: comparison.axes,
+			});
+		}
+	}
+	return buildIntentKeyQuestions({
+		topic,
+		researchLanguage,
+		reportIntent,
+	});
+}
+
+function buildIntentKeyQuestions(input: {
+	topic: string;
+	researchLanguage: ResearchLanguage;
+	reportIntent: ReportIntent;
+}): string[] {
+	if (input.reportIntent === "recommendation") {
+		return buildRecommendationKeyQuestions(input.topic, input.researchLanguage);
+	}
+	if (input.reportIntent === "market_scan") {
+		return buildMarketScanKeyQuestions(input.topic, input.researchLanguage);
+	}
+	if (input.reportIntent === "product_scan") {
+		return buildProductScanKeyQuestions(input.topic, input.researchLanguage);
+	}
+	if (input.reportIntent === "limitation_focused") {
+		return buildLimitationKeyQuestions(input.topic, input.researchLanguage);
+	}
+	return buildInvestigationKeyQuestions(input.topic, input.researchLanguage);
+}
+
+function buildRecommendationKeyQuestions(
+	topic: string,
+	researchLanguage: ResearchLanguage,
+): string[] {
 	if (researchLanguage === "hu") {
 		return [
-			`Mi a legfontosabb jelenlegi háttér ehhez a témához: ${topic}?`,
-			"Mely hiteles források támasztják alá vagy árnyalják a fő állításokat?",
-			"Milyen gyakorlati következtetéseket és korlátokat kell kiemelnie a jelentésnek?",
+			`Milyen döntést kell támogatnia a jelentésnek a témában, és mik a kötelező kritériumok, kizáró okok, költség- vagy időkorlátok: ${topic}?`,
+			"Mely opciók kerülhetnek hiteles rövidlistára, és mi az aktuális áruk, elérhetőségük, bevezetési igényük vagy támogatási állapotuk?",
+			"Hogyan teljesítenek a rövidlistás opciók a döntési kritériumok szerint, és mely állításokat támasztják alá elsődleges vagy független források?",
+			"Milyen kompromisszumokat, kockázatokat, váltási költségeket és kizáró feltételeket kell figyelembe venni?",
+			"Mely ajánlás adható, milyen feltételek mellett változna meg, és milyen bizonytalanságokat kell kimondani?",
 		];
 	}
 
 	return [
-		`What is the current evidence and context for this topic: ${topic}?`,
-		"Where do credible sources agree, disagree, or leave important gaps?",
-		"What practical implications, risks, and limitations should the report call out?",
+		`What decision should the report support for ${topic}, and what must-have criteria, disqualifiers, budget limits, timing constraints, or user needs define a good recommendation?`,
+		"Which credible options belong on the shortlist, and what current pricing, availability, setup requirements, and support status can be verified?",
+		"How does each shortlisted option perform against the decision criteria, and which claims are backed by primary or independent sources?",
+		"What tradeoffs, risks, switching costs, lock-in, or failure conditions could change the recommendation?",
+		"What recommendation follows, under which conditions would it change, and what uncertainties must be stated plainly?",
 	];
+}
+
+function buildMarketScanKeyQuestions(
+	topic: string,
+	researchLanguage: ResearchLanguage,
+): string[] {
+	if (researchLanguage === "hu") {
+		return [
+			`Milyen piacot, földrajzi területet, időtávot, ügyfélszegmenst és kategóriahatárt kell lefednie a kutatásnak: ${topic}?`,
+			"Kik a vezető szereplők és feltörekvő belépők, és milyen források igazolják a részesedést, növekedést, árazást, finanszírozást vagy ügyfélvonzást?",
+			"Mely technológiai, szabályozási, keresleti vagy ellátási trendek változtatják a piacot most?",
+			"Hol gyenge, hiányos vagy ellentmondásos a piaci adat, és mely források módszertana érdemel óvatosságot?",
+			"Milyen gyakorlati lehetőségeket, fenyegetéseket, belépési korlátokat és figyelendő jeleket kell kiemelni?",
+		];
+	}
+
+	return [
+		`What market boundaries, geography, timeframe, customer segments, and category definitions should frame ${topic}?`,
+		"Who are the leading players and emerging entrants, and what evidence verifies share, growth, pricing, funding, distribution, or customer traction?",
+		"What technology, regulatory, demand, supply, or pricing trends are changing the market now?",
+		"Where are market data, rankings, forecasts, or analyst claims weak, stale, disputed, or methodologically limited?",
+		"What practical opportunities, threats, entry barriers, buying signals, and watchpoints should the report call out?",
+	];
+}
+
+function buildProductScanKeyQuestions(
+	topic: string,
+	researchLanguage: ResearchLanguage,
+): string[] {
+	if (researchLanguage === "hu") {
+		return [
+			`Mely termékek, verziók, csomagok, szállítók vagy integrációk tartoznak pontosan a kutatásba: ${topic}?`,
+			"Milyen hivatalos képességek, árak, korlátok, régiós eltérések, biztonsági állítások és támogatási feltételek ellenőrizhetők?",
+			"Mely független tesztek, benchmarkok, felhasználói beszámolók vagy dokumentációk erősítik meg vagy cáfolják a termékállításokat?",
+			"Milyen használati esetekben működik jól vagy rosszul a termék, és milyen üzemeltetési, megfelelőségi, lock-in vagy minőségi kockázatok vannak?",
+			"Mely felhasználóknak vagy munkafolyamatoknak illik a termék, és milyen információ hiányzik még a magabiztos döntéshez?",
+		];
+	}
+
+	return [
+		`Which exact products, versions, tiers, vendors, or integrations are in scope for ${topic}?`,
+		"What official capabilities, pricing, limits, regional differences, security claims, and support terms can be verified?",
+		"Which independent tests, benchmarks, user reports, documentation, or incident records corroborate or contradict product claims?",
+		"Where does the product perform well or poorly by use case, and what operational, compliance, lock-in, quality, or reliability risks matter?",
+		"Which users or workflows fit the product best, and what missing information prevents a confident conclusion?",
+	];
+}
+
+function buildLimitationKeyQuestions(
+	topic: string,
+	researchLanguage: ResearchLanguage,
+): string[] {
+	if (researchLanguage === "hu") {
+		return [
+			`Mely állításokat, hatóköröket, feltételezéseket vagy döntéseket kell kockázati és korlát szempontból ellenőrizni: ${topic}?`,
+			"Milyen fő kockázatok, hibamódok, jogi vagy technikai korlátok, függőségek és edge case-ek jelennek meg hiteles forrásokban?",
+			"Mely bizonyítékok számszerűsítik a valószínűséget, hatást, gyakoriságot, incidenseket vagy szakértői konszenzust?",
+			"Milyen mitigációk, kontrollok, alternatívák, monitoring jelek vagy döntési küszöbök csökkentik a kockázatot?",
+			"Mely bizonytalanságokat nem lehet feloldani, és hogyan kell ezeket korlátként vagy feltételes következtetésként megfogalmazni?",
+		];
+	}
+
+	return [
+		`Which claims, scope boundaries, assumptions, or decisions need risk and limitation checking for ${topic}?`,
+		"What major risks, failure modes, legal or technical constraints, dependencies, and edge cases are documented by credible sources?",
+		"What evidence quantifies likelihood, severity, frequency, incidents, expert consensus, or uncertainty?",
+		"What mitigations, controls, alternatives, monitoring signals, or decision thresholds reduce the risk?",
+		"What uncertainty cannot be resolved, and how should it be framed as a limitation or conditional conclusion?",
+	];
+}
+
+function buildInvestigationKeyQuestions(
+	topic: string,
+	researchLanguage: ResearchLanguage,
+): string[] {
+	if (researchLanguage === "hu") {
+		return [
+			`Mely pontos állítást, eseményt, problémát vagy döntési kérdést kell feltárni, és mi a releváns idővonal: ${topic}?`,
+			"Kik a fő szereplők, intézmények, termékek vagy érintettek, és milyen elsődleges források rögzítik az alapvető tényeket?",
+			"Mely okok, mechanizmusok, ösztönzők vagy külső tényezők magyarázzák a helyzetet, és mennyire erős a bizonyíték?",
+			"Hol térnek el egymástól a hiteles források, és mely állítások igényelnek további ellenőrzést vagy óvatos megfogalmazást?",
+			"Milyen következtetéseket, gyakorlati következményeket, nyitott kérdéseket és korlátokat kell a jelentésben elkülöníteni?",
+		];
+	}
+
+	return [
+		`What exact claim, event, problem, or decision question should be investigated for ${topic}, and what timeline matters?`,
+		"Who are the key actors, institutions, products, or stakeholders, and which primary sources establish the core facts?",
+		"What causes, mechanisms, incentives, or external factors explain the situation, and how strong is the evidence?",
+		"Where do credible sources disagree, leave gaps, or require careful qualification?",
+		"What conclusions, practical implications, open questions, and limitations should the report separate clearly?",
+	];
+}
+
+function buildComparisonKeyQuestions(input: {
+	topic: string;
+	researchLanguage: ResearchLanguage;
+	entities: string[];
+	axes: string[];
+}): string[] {
+	const entityText = formatList(input.entities);
+	const axisText = input.axes.length
+		? formatList(input.axes)
+		: inferDefaultComparisonAxes(input.topic);
+	const yearText = extractRequestedYearScope(input.topic);
+	const yearPhrase = yearText ? `${yearText} ` : "";
+	if (input.researchLanguage === "hu") {
+		return [
+			`Pontosan mely ${yearPhrase}${entityText} változatok tartoznak a kérdésbe, és mely hivatalos specifikációk, árak, elérhetőségi adatok vagy régiós eltérések ellenőrizhetők?`,
+			`Miben különbözik a ${entityText} a következő szempontok szerint: ${axisText}?`,
+			`Mi változott a kért kiadások vagy modellévek között, és mely felszereltségi szintek módosíthatják az összehasonlítást?`,
+			"Mely gyártói oldalak, kézikönyvek, kereskedői listák és független tesztek erősítik meg vagy cáfolják a fő állításokat?",
+			"Mely felhasználási esetekhez melyik opció tűnik jobb választásnak, és milyen bizonytalanságokat kell kimondania a jelentésnek?",
+		];
+	}
+
+	return [
+		`Which exact ${yearPhrase}${entityText} variants are in scope, and what official specs, prices, availability, regional names, and trim differences can be verified?`,
+		`How do ${entityText} differ on ${axisText}?`,
+		"What changed between the requested editions or model years, and which trim-level differences could materially change the comparison?",
+		"Which manufacturer pages, manuals, dealer listings, and independent reviews corroborate or conflict with the main claims?",
+		"Which rider or buyer use cases favor each option, and what evidence gaps, risks, or limitations should the report state plainly?",
+	];
+}
+
+function inferDefaultComparisonAxes(topic: string): string {
+	if (/\b(?:bike|bikes|bicycle|bicycles|cube|nulane|kathmandu|kathmando)\b/iu.test(topic)) {
+		return "intended use, frame and geometry, drivetrain, motor and battery if electric, brakes, wheels and tires, racks/fenders/lights, comfort, weight, price, and availability";
+	}
+	if (/\b(?:law|rules?|regulation|policy|copyright|compliance)\b/iu.test(topic)) {
+		return "legal scope, enforcement authority, affected actors, compliance duties, unresolved disputes, timelines, and practical risk";
+	}
+	return "features, evidence quality, costs, constraints, risks, tradeoffs, and practical fit";
+}
+
+function extractRequestedYearScope(topic: string): string | null {
+	const compactRange = topic.match(/\b(20\d{2})\s*[-–]\s*(\d{2})\b/u);
+	if (compactRange) {
+		return `${compactRange[1]}-${compactRange[1].slice(0, 2)}${compactRange[2]}`;
+	}
+	const years = Array.from(new Set(topic.match(/\b20\d{2}\b/gu) ?? []));
+	if (years.length === 0) return null;
+	return years.length === 1 ? years[0] : years.slice(0, 3).join("/");
+}
+
+function formatList(values: string[]): string {
+	if (values.length <= 2) return values.join(" and ");
+	return `${values.slice(0, -1).join(", ")}, and ${values[values.length - 1]}`;
 }
 
 function isInternalApprovalConstraint(value: string): boolean {

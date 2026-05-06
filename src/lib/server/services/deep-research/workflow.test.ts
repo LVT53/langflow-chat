@@ -300,10 +300,13 @@ describe("real Deep Research workflow stepper", () => {
 			saveDiscoveredResearchSource,
 			markResearchSourceReviewed,
 		} = await import("./sources");
-		const { upsertResearchPassCheckpoint, listResearchCoverageGaps } =
-			await import("./pass-state");
+		const {
+			upsertResearchPassCheckpoint,
+			listResearchCoverageGaps,
+			listResearchPassCheckpoints,
+		} = await import("./pass-state");
 		const { saveDeepResearchEvidenceNotes } = await import("./evidence-notes");
-		const { listResearchTasks } = await import("./tasks");
+		const { completeResearchTask, listResearchTasks } = await import("./tasks");
 		const { runDeepResearchWorkflowStep } = await import("./workflow");
 		const completeDeepResearchJobWithAuditedReport = vi.fn(async () => ({
 			...approved,
@@ -413,6 +416,10 @@ describe("real Deep Research workflow stepper", () => {
 			jobId: approved.id,
 			passNumber: 2,
 		});
+		const checkpoints = await listResearchPassCheckpoints({
+			userId: "user-1",
+			jobId: approved.id,
+		});
 
 		expect(result).toMatchObject({
 			advanced: true,
@@ -442,6 +449,82 @@ describe("real Deep Research workflow stepper", () => {
 				}),
 			]),
 		);
+		expect(checkpoints).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					passNumber: 2,
+					searchIntent:
+						"Report eligibility repair for pass 1 Claim Readiness gaps",
+					terminalDecision: false,
+				}),
+			]),
+		);
+
+		for (const task of tasks) {
+			await completeResearchTask({
+				userId: "user-1",
+				taskId: task.id,
+				output: {
+					summary:
+						"EU and US AI copyright training data rules require provenance records and rights-risk review.",
+					findings: [
+						"EU and US AI copyright training data rules require provenance records and rights-risk review.",
+					],
+					sourceIds: [source.id],
+				},
+				now: new Date("2026-05-05T10:23:00.000Z"),
+			});
+		}
+		await db
+			.update(schema.deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "research_tasks",
+				updatedAt: new Date("2026-05-05T10:24:00.000Z"),
+			})
+			.where(eq(schema.deepResearchJobs.id, approved.id));
+		const repairResult = await runDeepResearchWorkflowStep(
+			{
+				userId: "user-1",
+				jobId: approved.id,
+				now: new Date("2026-05-05T10:25:00.000Z"),
+			},
+			{
+				synthesis: {
+					buildSynthesisNotes: async () => ({
+						jobId: approved.id,
+						findings: [],
+						supportedFindings: [
+							{
+								kind: "supported",
+								statement:
+									"EU and US AI copyright training data rules require provenance records and rights-risk review.",
+								sourceRefs: [
+									{
+										reviewedSourceId: source.id,
+										discoveredSourceId: source.id,
+										canonicalUrl: source.url,
+										title: source.title ?? source.url,
+									},
+								],
+								central: true,
+								claimType: "general",
+							},
+						],
+						conflicts: [],
+						assumptions: [],
+						reportLimitations: [],
+					}),
+				},
+				reportCompletion: {
+					completeDeepResearchJobWithAuditedReport,
+				},
+			},
+		);
+
+		expect(repairResult).toMatchObject({
+			advanced: true,
+		});
 	});
 
 	it("reviews discovered sources during the source review step and records timeline progress", async () => {
@@ -744,32 +827,17 @@ describe("real Deep Research workflow stepper", () => {
 				reportArtifactId: null,
 			},
 		});
-		expect(tasks).toEqual([
-			expect.objectContaining({
-				jobId: approved.id,
-				passNumber: 2,
-				status: "pending",
-				assignmentType: "coverage_gap",
-				keyQuestion:
-					"What is the current evidence and context for this topic: Compare EU and US AI copyright training data rules?",
-			}),
-			expect.objectContaining({
-				jobId: approved.id,
-				passNumber: 2,
-				status: "pending",
-				assignmentType: "coverage_gap",
-				keyQuestion:
-					"Where do credible sources agree, disagree, or leave important gaps?",
-			}),
-			expect.objectContaining({
-				jobId: approved.id,
-				passNumber: 2,
-				status: "pending",
-				assignmentType: "coverage_gap",
-				keyQuestion:
-					"What practical implications, risks, and limitations should the report call out?",
-			}),
-		]);
+		expect(tasks).toEqual(
+			approved.currentPlan?.rawPlan?.keyQuestions.map((keyQuestion) =>
+				expect.objectContaining({
+					jobId: approved.id,
+					passNumber: 2,
+					status: "pending",
+					assignmentType: "coverage_gap",
+					keyQuestion,
+				}),
+			),
+		);
 		expect(conversation).toEqual({
 				status: "open",
 				sealedAt: null,
@@ -890,9 +958,13 @@ describe("real Deep Research workflow stepper", () => {
 				stage: "research_tasks",
 			},
 		});
-		expect(tasks).toHaveLength(3);
-		expect(new Set(tasks.map((task) => task.coverageGapId)).size).toBe(3);
-		expect(gaps).toHaveLength(3);
+		const expectedGapCount =
+			approved.currentPlan?.rawPlan?.keyQuestions.length ?? 0;
+		expect(tasks).toHaveLength(expectedGapCount);
+		expect(new Set(tasks.map((task) => task.coverageGapId)).size).toBe(
+			expectedGapCount,
+		);
+		expect(gaps).toHaveLength(expectedGapCount);
 		expect(checkpoints).toHaveLength(2);
 		expect(
 			timeline.filter(

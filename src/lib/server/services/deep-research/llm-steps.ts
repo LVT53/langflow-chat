@@ -69,7 +69,7 @@ export async function draftResearchPlanWithLlm(input: {
 			{
 				role: "system",
 				content:
-					"Draft a Deep Research plan as strict JSON. Preserve exact user entities, model names, provider names, comparison terms, and requested language. Return only JSON.",
+					"Draft a Deep Research plan as strict JSON. Preserve exact user entities, model names, provider names, comparison terms, requested years, and requested language. Make keyQuestions concrete checks the researcher can execute, not generic research-method questions. Tailor them to reportIntent: comparisons need exact variants/editions, specs, price/availability, practical differences, requested-year changes, and source conflicts; recommendations need decision criteria, options, tradeoffs, disqualifiers, and final-choice conditions; market scans need boundaries, players, trends, data quality, and implications; product scans need versions, capabilities, pricing, limits, independent validation, and fit; limitation-focused reports need risks, failure modes, evidence strength, mitigations, and unresolved uncertainty; investigations need timeline, actors, established facts, causal explanations, disputes, and gaps. Return only JSON.",
 			},
 			{
 				role: "user",

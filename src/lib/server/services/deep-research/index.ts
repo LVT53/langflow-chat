@@ -7,6 +7,7 @@ import {
 	conversations,
 	deepResearchJobs,
 	deepResearchPlanVersions,
+	messages,
 } from '$lib/server/db/schema';
 import { createConversation, updateConversationTitle } from '$lib/server/services/conversations';
 import { createArtifact, createArtifactLink } from '$lib/server/services/knowledge/store';
@@ -245,13 +246,17 @@ export async function startDeepResearchJobShell(
 		userRequest: input.userRequest,
 		explicitOutputLanguage: input.researchLanguage,
 	});
+	const triggerMessageId = await resolveDeepResearchTriggerMessageId({
+		conversationId: input.conversationId,
+		triggerMessageId: input.triggerMessageId,
+	});
 	const [job] = await db
 		.insert(deepResearchJobs)
 		.values({
 			id: randomUUID(),
 			userId: input.userId,
 			conversationId: input.conversationId,
-			triggerMessageId: input.triggerMessageId,
+			triggerMessageId,
 			depth: input.depth,
 			status: 'awaiting_plan',
 			stage: 'job_shell_created',
@@ -347,6 +352,24 @@ export async function startDeepResearchJobShell(
 	return mapDeepResearchJob(titledJob, mapResearchPlanVersionRow(draft), [
 		mapTimelineEvent(timelineEvent),
 	]);
+}
+
+async function resolveDeepResearchTriggerMessageId(input: {
+	conversationId: string;
+	triggerMessageId: string | null | undefined;
+}): Promise<string | null> {
+	if (!input.triggerMessageId) return null;
+	const [message] = await db
+		.select({ id: messages.id })
+		.from(messages)
+		.where(
+			and(
+				eq(messages.id, input.triggerMessageId),
+				eq(messages.conversationId, input.conversationId),
+			),
+		)
+		.limit(1);
+	return message?.id ?? null;
 }
 
 export async function assertCanStartDeepResearchJob(

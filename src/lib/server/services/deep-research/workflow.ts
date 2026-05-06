@@ -664,6 +664,15 @@ async function assessReportEligibilityAfterSynthesis(input: {
 	]);
 	if (evidenceNotes.length === 0) return null;
 	if (!hasReportBlockingClaimReadinessIssue(synthesisClaims)) return null;
+	const completedRepairPasses = await countCompletedRepairResearchPasses({
+		userId: input.jobRow.userId,
+		jobId: input.jobRow.id,
+	});
+	const remainingRepairPasses = Math.max(
+		0,
+		Math.floor(input.approvedPlan.researchBudget.repairPassCeiling ?? 0) -
+			completedRepairPasses,
+	);
 	const coverageAssessment = (
 		input.dependencies.coverage?.assessResearchCoverage ??
 		assessResearchCoverage
@@ -687,11 +696,14 @@ async function assessReportEligibilityAfterSynthesis(input: {
 			),
 			synthesisPasses: Math.max(
 				0,
-				meaningfulPassCeiling(input.approvedPlan) -
-					(await countCompletedMeaningfulResearchPasses({
-						userId: input.jobRow.userId,
-						jobId: input.jobRow.id,
-					})),
+				Math.min(
+					meaningfulPassCeiling(input.approvedPlan) -
+						(await countCompletedMeaningfulResearchPasses({
+							userId: input.jobRow.userId,
+							jobId: input.jobRow.id,
+						})),
+					remainingRepairPasses,
+				),
 			),
 		},
 	});
@@ -706,7 +718,7 @@ async function assessReportEligibilityAfterSynthesis(input: {
 		occurredAt: input.now.toISOString(),
 	});
 
-	if (!coverageAssessment.canContinue) {
+	if (!coverageAssessment.canContinue || remainingRepairPasses <= 0) {
 		return completeCoverageExhaustedWithEvidenceLimitationMemo({
 			jobRow: input.jobRow,
 			now: input.now,
@@ -715,6 +727,11 @@ async function assessReportEligibilityAfterSynthesis(input: {
 				...coverageAssessment.reportLimitations.map(
 					(limitation) => limitation.limitation,
 				),
+				...(remainingRepairPasses <= 0
+					? [
+							`Claim readiness repair budget exhausted after ${completedRepairPasses} completed repair pass${completedRepairPasses === 1 ? "" : "es"}.`,
+						]
+					: []),
 			],
 			sourceCounts: sourceCountsFromResearchSources(input.allSources),
 			dependencies: input.dependencies,
@@ -757,18 +774,10 @@ async function assessReportEligibilityAfterSynthesis(input: {
 		gapCount: persistedGaps.length,
 		limitationCount: coverageAssessment.reportLimitations.length,
 	});
-	await completeResearchPassCheckpoint({
-		userId: input.jobRow.userId,
-		checkpointId: checkpoint.id,
-		coverageGapIds: persistedGaps.map((gap) => gap.id),
-		nextDecision: "continue_research",
-		decisionSummary,
-		now: input.now,
-	});
 	await saveResearchPassDecisionTimeline({
 		jobRow: input.jobRow,
 		stage: "coverage_assessment",
-		passNumber: repairPassNumber,
+		passNumber: input.passNumber,
 		nextDecision: "continue_research",
 		decisionSummary,
 		sourceCounts: sourceCountsFromResearchSources(input.allSources),
@@ -1753,6 +1762,13 @@ async function persistResearchTaskPassDecision(input: {
 	sources: DeepResearchSource[];
 	now: Date;
 }) {
+	const existingTerminalDecision = await getTerminalPassDecision({
+		userId: input.jobRow.userId,
+		jobId: input.jobRow.id,
+		passNumber: input.passNumber,
+	});
+	if (existingTerminalDecision) return;
+
 	const checkpoint = await upsertResearchPassCheckpoint({
 		userId: input.jobRow.userId,
 		jobId: input.jobRow.id,
@@ -1925,6 +1941,18 @@ async function countCompletedMeaningfulResearchPasses(input: {
 		(checkpoint) =>
 			checkpoint.terminalDecision &&
 			!isRepairPassCheckpoint(checkpoint.searchIntent),
+	).length;
+}
+
+async function countCompletedRepairResearchPasses(input: {
+	userId: string;
+	jobId: string;
+}): Promise<number> {
+	const checkpoints = await listResearchPassCheckpoints(input);
+	return checkpoints.filter(
+		(checkpoint) =>
+			checkpoint.terminalDecision &&
+			isRepairPassCheckpoint(checkpoint.searchIntent),
 	).length;
 }
 

@@ -101,6 +101,82 @@ describe("createFirstResearchPlanDraft", () => {
 		expect(result.renderedPlan).toContain("- code review workflows");
 	});
 
+	it("drafts concrete fallback questions for product model comparisons", async () => {
+		const result = await createFirstResearchPlanDraft({
+			jobId: "job-cube-bikes",
+			userRequest:
+				"Compare the Nulane and Kathmando bikes from Cube. Specifically their 2025-26 editions?",
+			selectedDepth: "standard",
+			researchLanguage: "en",
+		});
+
+		expect(result.plan.comparedEntities).toEqual([
+			"Cube Nulane",
+			"Cube Kathmandu",
+		]);
+		expect(result.plan.keyQuestions.join("\n")).toContain("2025-2026");
+		expect(result.plan.keyQuestions.join("\n")).toContain("official specs");
+		expect(result.plan.keyQuestions.join("\n")).toContain("prices");
+		expect(result.plan.keyQuestions.join("\n")).toContain("frame and geometry");
+		expect(result.plan.keyQuestions.join("\n")).toContain(
+			"manufacturer pages, manuals, dealer listings, and independent reviews",
+		);
+		expect(result.plan.keyQuestions.join("\n")).not.toContain(
+			"current evidence and context for this topic",
+		);
+	});
+
+	it("drafts concrete fallback questions for the main non-comparison report intents", async () => {
+		const cases = [
+			{
+				jobId: "job-recommendation",
+				userRequest: "Recommend the best private AI coding assistant for a small software team.",
+				reportIntent: "recommendation",
+				expectedFragments: ["decision should the report support", "shortlist", "disqualifiers"],
+			},
+			{
+				jobId: "job-market",
+				userRequest: "Map the 2026 market landscape for home battery storage.",
+				reportIntent: "market_scan",
+				expectedFragments: ["market boundaries", "leading players", "trends"],
+			},
+			{
+				jobId: "job-product",
+				userRequest: "Research private AI coding assistant products for enterprise use.",
+				reportIntent: "product_scan",
+				expectedFragments: ["products, versions, tiers", "official capabilities", "independent tests"],
+			},
+			{
+				jobId: "job-limitation",
+				userRequest: "Research the risks and limitations of geothermal drilling in dense cities.",
+				reportIntent: "limitation_focused",
+				expectedFragments: ["risk and limitation checking", "failure modes", "mitigations"],
+			},
+			{
+				jobId: "job-investigation",
+				userRequest: "Investigate why European heat pump adoption slowed in 2025.",
+				reportIntent: "investigation",
+				expectedFragments: ["exact claim, event, problem", "key actors", "credible sources disagree"],
+			},
+		] as const;
+
+		for (const item of cases) {
+			const result = await createFirstResearchPlanDraft({
+				jobId: item.jobId,
+				userRequest: item.userRequest,
+				selectedDepth: "standard",
+				researchLanguage: "en",
+			});
+			const questions = result.plan.keyQuestions.join("\n");
+
+			expect(result.plan.reportIntent).toBe(item.reportIntent);
+			for (const fragment of item.expectedFragments) {
+				expect(questions).toContain(fragment);
+			}
+			expect(questions).not.toContain("current evidence and context for this topic");
+		}
+	});
+
 	it("includes a coarse Research Effort Estimate for the selected depth", async () => {
 		const result = await createFirstResearchPlanDraft({
 			jobId: "job-3",
@@ -238,11 +314,15 @@ describe("createFirstResearchPlanDraft", () => {
 			],
 		});
 
-		expect(result.plan.keyQuestions).toEqual([
-			"Mi a legfontosabb jelenlegi háttér ehhez a témához: Kérlek foglald össze a privát AI kódoló asszisztensek beszerzési kockázatait?",
-			"Mely hiteles források támasztják alá vagy árnyalják a fő állításokat?",
-			"Milyen gyakorlati következtetéseket és korlátokat kell kiemelnie a jelentésnek?",
-		]);
+		expect(result.plan.keyQuestions.join("\n")).toContain(
+			"Mely termékek, verziók, csomagok, szállítók vagy integrációk tartoznak pontosan a kutatásba",
+		);
+		expect(result.plan.keyQuestions.join("\n")).toContain(
+			"Milyen hivatalos képességek, árak, korlátok",
+		);
+		expect(result.plan.keyQuestions.join("\n")).not.toContain(
+			"Mi a legfontosabb jelenlegi háttér",
+		);
 		expect(result.plan.reportShape).toEqual([
 			"Vezetői összefoglaló",
 			"Fő megállapítások",
