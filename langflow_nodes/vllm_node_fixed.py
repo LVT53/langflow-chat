@@ -189,6 +189,7 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
             if not isinstance(msg, dict):
                 continue
             role = msg.get("role")
+            has_tool_calls = bool(msg.get("tool_calls"))
             content = msg.get("content", "") or ""
             has_reasoning = "reasoning_content" in msg
             logger.debug(
@@ -211,16 +212,28 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
                 inner_end = content.find(close_tag)
                 reasoning_text = content[inner_start:inner_end]
                 clean_content = content[:start] + content[end:]
-                msg["content"] = clean_content
-                msg["reasoning_content"] = reasoning_text
+                if has_tool_calls and self.mistral_reasoning_compat:
+                    msg["content"] = None
+                    msg.pop("reasoning_content", None)
+                else:
+                    msg["content"] = clean_content if clean_content or not has_tool_calls else None
+                if not self.mistral_reasoning_compat and reasoning_text:
+                    msg["reasoning_content"] = reasoning_text
                 # Cache for fallback on later turns
-                self._last_reasoning_content = reasoning_text
+                if reasoning_text:
+                    self._last_reasoning_content = reasoning_text
                 logger.debug(
                     "[REASONING_RECOVER] msg[%d] extracted reasoning len=%d",
                     idx,
                     len(reasoning_text),
                 )
                 continue
+
+            if has_tool_calls and (self.mistral_reasoning_compat or not content):
+                msg["content"] = None
+                if self.mistral_reasoning_compat:
+                    msg.pop("reasoning_content", None)
+                    continue
 
             # Case 2: message already has reasoning_content in additional_kwargs
             # (langchain_openai's _convert_message_to_dict does NOT preserve it,
@@ -232,7 +245,7 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
             # Case 3: assistant message with tool_calls but no reasoning_content —
             # DeepSeek requires reasoning_content for any previous assistant turn
             # that had reasoning. Inject the cached last reasoning as a fallback.
-            if msg.get("tool_calls") and hasattr(self, "_last_reasoning_content"):
+            if has_tool_calls and self._last_reasoning_content:
                 msg["reasoning_content"] = self._last_reasoning_content
                 logger.debug(
                     "[REASONING_RECOVER] msg[%d] injected cached reasoning len=%d",
