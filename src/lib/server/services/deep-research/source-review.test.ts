@@ -76,6 +76,41 @@ describe("Deep Research source triage and review", () => {
 		expect(result.reviewedCount).toBe(0);
 	});
 
+	it("prioritizes official product specification pages for comparison research", async () => {
+		const result = await triageSourcesForReview({
+			jobId: "job-bike-comparison",
+			discoveredSources: [
+				{
+					id: "dealer-roundup",
+					url: "https://dealer.example.test/blog/best-trekking-ebikes",
+					title: "Best trekking e-bikes ranked",
+					snippet: "A dealer roundup with buying advice and discounts.",
+				},
+				{
+					id: "cube-official-specs",
+					url: "https://www.cube.eu/products/kathmandu-hybrid/specs",
+					title: "Cube Kathmandu Hybrid official specifications",
+					snippet:
+						"Technical specs, geometry, Bosch motor, battery, weight, frame, and warranty.",
+				},
+				{
+					id: "forum-thread",
+					url: "https://forum.example.test/cube-kathmandu-owner-thread",
+					title: "Owner thread: Cube Kathmandu impressions",
+					snippet: "Forum posts with owner impressions and conflicting details.",
+				},
+			],
+			reviewLimit: 1,
+		});
+
+		expect(result.selectedSources.map((source) => source.id)).toEqual([
+			"cube-official-specs",
+		]);
+		expect(result.selectedSources[0].reviewScore).toBeGreaterThan(
+			result.selectedSources[0].authorityScore,
+		);
+	});
+
 	it("persists Reviewed Source notes through an injected repository boundary", async () => {
 		const savedNotes: unknown[] = [];
 

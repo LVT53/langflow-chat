@@ -1176,14 +1176,16 @@ async function handleResearchFurtherFromDeepResearchReport(
 	}
 }
 
-async function handleAdvanceDeepResearchWorkflow(jobId: string) {
-	try {
-		const result = await advanceDeepResearchWorkflowRequest(jobId);
-		deepResearchJobs = mergeDeepResearchJob(deepResearchJobs, result.job);
-	} catch (err) {
-		sendError = err instanceof Error ? err.message : "Failed to advance Deep Research";
-		throw err;
-	}
+function handleAdvanceDeepResearchWorkflow(jobId: string) {
+	void advanceDeepResearchWorkflowRequest(jobId)
+		.then((result) => {
+			deepResearchJobs = mergeDeepResearchJob(deepResearchJobs, result.job);
+			void hydrateConversationDetail(data.conversation.id);
+		})
+		.catch((err) => {
+			sendError =
+				err instanceof Error ? err.message : "Failed to advance Deep Research";
+		});
 }
 
 async function startDeepResearchTurn(params: {

@@ -956,6 +956,136 @@ describe("Deep Research citation audit", () => {
 		]);
 	});
 
+	it("uses direct official specification evidence as the baseline over weaker contradictions", async () => {
+		const claim = buildSynthesisClaim({
+			id: "claim-official-spec-with-weak-conflict",
+			statement:
+				"Cube Kathmandu Hybrid Pro officially uses a Bosch Performance Line CX motor.",
+			claimType: "official_specification",
+			evidenceNoteId: "note-official-cube-spec",
+		});
+		claim.evidenceLinks.push({
+			id: "link-weak-conflict",
+			claimId: claim.id,
+			evidenceNoteId: "note-forum-conflict",
+			jobId: claim.jobId,
+			conversationId: claim.conversationId,
+			userId: claim.userId,
+			relation: "contradiction",
+			rationale: "Forum post lists a different motor.",
+			material: true,
+			createdAt: "2026-05-05T10:12:00.000Z",
+		});
+
+		const result = await auditDeepResearchClaimGraph({
+			jobId: "job-official-spec-baseline",
+			claims: [claim],
+			evidenceNotes: [
+				buildEvidenceNote({
+					id: "note-official-cube-spec",
+					findingText:
+						"Cube Kathmandu Hybrid Pro officially uses a Bosch Performance Line CX motor.",
+					sourceQualitySignals: {
+						sourceType: "official_vendor",
+						independence: "affiliated",
+						freshness: "current",
+						directness: "direct",
+						extractionConfidence: "high",
+						claimFit: "strong",
+					},
+				}),
+				buildEvidenceNote({
+					id: "note-forum-conflict",
+					findingText:
+						"A forum post says the Cube Kathmandu Hybrid Pro uses a different motor.",
+					sourceQualitySignals: {
+						sourceType: "forum",
+						independence: "community",
+						freshness: "undated",
+						directness: "anecdotal",
+						extractionConfidence: "low",
+						claimFit: "partial",
+					},
+				}),
+			],
+		});
+
+		expect(result.status).toBe("passed");
+		expect(result.canRenderMarkdown).toBe(true);
+		expect(result.verdicts).toEqual([
+			expect.objectContaining({
+				claimId: claim.id,
+				verdict: "partially_supported",
+				evidenceNoteIds: ["note-official-cube-spec", "note-forum-conflict"],
+				reason: expect.stringContaining(
+					"Direct official specification evidence",
+				),
+			}),
+		]);
+	});
+
+	it("still blocks when official specification evidence conflicts with comparable official evidence", async () => {
+		const claim = buildSynthesisClaim({
+			id: "claim-official-spec-official-conflict",
+			statement: "Model X officially includes a 750 Wh battery.",
+			claimType: "official_specification",
+			evidenceNoteId: "note-official-battery",
+		});
+		claim.evidenceLinks.push({
+			id: "link-official-conflict",
+			claimId: claim.id,
+			evidenceNoteId: "note-official-conflict",
+			jobId: claim.jobId,
+			conversationId: claim.conversationId,
+			userId: claim.userId,
+			relation: "contradiction",
+			rationale: "Another official support page lists a different battery.",
+			material: true,
+			createdAt: "2026-05-05T10:12:00.000Z",
+		});
+
+		const result = await auditDeepResearchClaimGraph({
+			jobId: "job-official-spec-official-conflict",
+			claims: [claim],
+			evidenceNotes: [
+				buildEvidenceNote({
+					id: "note-official-battery",
+					findingText: "Model X officially includes a 750 Wh battery.",
+					sourceQualitySignals: {
+						sourceType: "official_vendor",
+						independence: "affiliated",
+						freshness: "current",
+						directness: "direct",
+						extractionConfidence: "high",
+						claimFit: "strong",
+					},
+				}),
+				buildEvidenceNote({
+					id: "note-official-conflict",
+					findingText: "Model X official support page lists a 625 Wh battery.",
+					sourceQualitySignals: {
+						sourceType: "official_vendor",
+						independence: "affiliated",
+						freshness: "current",
+						directness: "direct",
+						extractionConfidence: "high",
+						claimFit: "strong",
+					},
+				}),
+			],
+		});
+
+		expect(result.status).toBe("needs_repair");
+		expect(result.canRenderMarkdown).toBe(false);
+		expect(result.verdicts).toEqual([
+			expect.objectContaining({
+				claimId: claim.id,
+				verdict: "contradicted",
+				evidenceNoteIds: ["note-official-conflict"],
+			}),
+		]);
+	});
+
 	it("rejects a Markdown-looking citation when linked Evidence Notes do not support the claim", async () => {
 		const result = await auditDeepResearchClaimGraph({
 			jobId: "job-markdown-citation",

@@ -298,6 +298,9 @@ function scoreSourceAuthority(canonicalUrl: string): number {
 
 	if (hostname.includes(".gov") || hostname.endsWith("gov")) return 80;
 	if (hostname.includes(".edu") || hostname.endsWith("edu")) return 60;
+	if (/\b(official|support|manual|spec|specs|product)\b/i.test(canonicalUrl)) {
+		return 48;
+	}
 	if (hostname.includes("research") || hostname.includes("journal")) return 45;
 	if (hostname.includes("blog")) return 10;
 	return 25;
@@ -310,6 +313,15 @@ function scoreSourceQuality(source: DiscoveredResearchSource): number {
 	if (isBlockedOrNoiseSource(source)) return -100;
 
 	for (const signal of [
+		"official",
+		"specification",
+		"specifications",
+		"technical specs",
+		"geometry",
+		"manual",
+		"warranty",
+		"battery",
+		"motor",
 		"methodology",
 		"data",
 		"peer reviewed",

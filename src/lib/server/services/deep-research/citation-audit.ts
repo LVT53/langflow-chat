@@ -9,8 +9,8 @@ import type {
 	DeepResearchSourceStatus,
 	DeepResearchSynthesisClaim,
 } from "$lib/types";
-import { classifyDeepResearchClaimType } from "./source-quality";
 import { listDeepResearchEvidenceNotes } from "./evidence-notes";
+import { classifyDeepResearchClaimType } from "./source-quality";
 import { listDeepResearchSynthesisClaims } from "./synthesis-claims";
 
 export type DeepResearchReportClaim = {
@@ -149,6 +149,10 @@ export type DeepResearchClaimGraphAuditResult = {
 
 type DeepResearchCitationAuditVerdictRow =
 	typeof deepResearchCitationAuditVerdicts.$inferSelect;
+type LinkedEvidenceItem = {
+	link: DeepResearchSynthesisClaim["evidenceLinks"][number];
+	evidence: DeepResearchEvidenceNote;
+};
 
 const SQLITE_SAFE_VERDICT_INSERT_CHUNK_SIZE = 80;
 const validClaimGraphVerdictStatuses =
@@ -514,18 +518,29 @@ function auditSynthesisClaim(input: {
 	const contradictionLinks = linkedEvidence.filter(
 		(item) => item.link.relation === "contradiction",
 	);
-	if (contradictionLinks.some((item) => item.link.material)) {
+	const supportLinks = linkedEvidence.filter(
+		(item) => item.link.relation === "support",
+	);
+	const materialContradictionLinks = contradictionLinks.filter(
+		(item) => item.link.material,
+	);
+	if (materialContradictionLinks.length > 0) {
+		const officialResolution = resolveOfficialSpecificationContradiction({
+			claim: input.claim,
+			supportLinks,
+			contradictionLinks: materialContradictionLinks,
+		});
+		if (officialResolution) return officialResolution;
 		return {
 			claimId: input.claim.id,
 			verdict: "contradicted",
-			evidenceNoteIds: contradictionLinks.map((item) => item.evidence.id),
+			evidenceNoteIds: materialContradictionLinks.map(
+				(item) => item.evidence.id,
+			),
 			reason: "Material contradictory Evidence Notes remain unresolved.",
 		};
 	}
 
-	const supportLinks = linkedEvidence.filter(
-		(item) => item.link.relation === "support",
-	);
 	if (supportLinks.length === 0) {
 		return unsupportedClaimGraphVerdict({
 			claim: input.claim,
@@ -606,12 +621,60 @@ function unsupportedClaimGraphVerdict(input: {
 	};
 }
 
+function resolveOfficialSpecificationContradiction(input: {
+	claim: DeepResearchSynthesisClaim;
+	supportLinks: LinkedEvidenceItem[];
+	contradictionLinks: LinkedEvidenceItem[];
+}): DeepResearchCitationAuditVerdict | null {
+	const claimType =
+		input.claim.claimType ??
+		classifyDeepResearchClaimType(input.claim.statement);
+	if (claimType !== "official_specification") return null;
+
+	const officialSupport = input.supportLinks.filter(
+		(item) =>
+			evidenceNoteSupportsSynthesisClaim(item.evidence, input.claim) &&
+			evidenceNoteHasAuthoritativeOfficialSpecificationSupport(item.evidence),
+	);
+	if (officialSupport.length === 0) return null;
+
+	const comparableOfficialContradiction = input.contradictionLinks.filter(
+		(item) =>
+			evidenceNoteHasAuthoritativeOfficialSpecificationSupport(item.evidence),
+	);
+	if (comparableOfficialContradiction.length > 0) return null;
+
+	return {
+		claimId: input.claim.id,
+		verdict: "partially_supported",
+		evidenceNoteIds: uniqueValues([
+			...officialSupport.map((item) => item.evidence.id),
+			...input.contradictionLinks.map((item) => item.evidence.id),
+		]),
+		reason:
+			"Direct official specification evidence supports the claim; weaker contradictory notes are retained as qualifications instead of blocking the report.",
+	};
+}
+
+function evidenceNoteHasAuthoritativeOfficialSpecificationSupport(
+	evidenceNote: DeepResearchEvidenceNote,
+): boolean {
+	const signals = evidenceNote.sourceQualitySignals;
+	if (!signals) return false;
+	return (
+		signals.sourceType === "official_government" ||
+		signals.sourceType === "official_vendor" ||
+		(signals.independence === "primary" &&
+			signals.directness === "direct" &&
+			signals.claimFit !== "weak" &&
+			signals.claimFit !== "mismatch") ||
+		hasStrongDirectNonCommunitySupport(signals)
+	);
+}
+
 function normalizeClaimGraphReviewerVerdict(input: {
 	claim: DeepResearchSynthesisClaim;
-	linkedEvidence: Array<{
-		link: DeepResearchSynthesisClaim["evidenceLinks"][number];
-		evidence: DeepResearchEvidenceNote;
-	}>;
+	linkedEvidence: LinkedEvidenceItem[];
 	verdict: DeepResearchCitationAuditVerdict | null;
 }): DeepResearchCitationAuditVerdict | null {
 	if (!input.verdict || input.verdict.claimId !== input.claim.id) return null;

@@ -208,6 +208,14 @@ function inferSourceType(url: string, text: string): DeepResearchSourceType {
 	if (/\b(official|specification|specifications|manual|warranty)\b/i.test(text)) {
 		return "official_vendor";
 	}
+	if (
+		/\b(technical specs?|geometry|datasheet|product specs?|motor|battery|range|weight|frame|drivetrain)\b/i.test(
+			text,
+		) &&
+		!/\b(review|forum|owner report|user review|commentary)\b/i.test(text)
+	) {
+		return "official_vendor";
+	}
 	if (/\b(best|leading|revolutionary|marketing|buy now)\b/i.test(text)) {
 		return "vendor_marketing";
 	}

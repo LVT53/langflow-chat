@@ -162,7 +162,7 @@ export async function reviewSourceWithLlm(input: {
 			{
 				role: "system",
 				content:
-					"Review one research source for relevance and evidence quality. Reject browser checks, captcha, blocked pages, noise, and unrelated high-authority pages. Return only JSON.",
+					"Review one research source for relevance and evidence quality. For product/model comparisons, treat the original vendor or manufacturer's technical specifications, manuals, geometry pages, and official support pages as baseline truth for official specs; use third-party contradictions as qualifications unless they are also direct official/primary evidence. Reject browser checks, captcha, blocked pages, noise, and unrelated high-authority pages. Return only JSON.",
 			},
 			{
 				role: "user",
@@ -480,7 +480,7 @@ export async function buildClaimGraphCitationReviewerWithLlm(input: {
 					{
 						role: "system",
 						content:
-							"Audit Synthesis Claims against their linked Evidence Notes. Use judgment for claim-type evidence requirements; do not rely on shallow source-quality labels alone. For evidenceNoteIds, use only IDs from evidenceNotes[].id; do not return source IDs, reviewedSourceIds, URLs, or titles. Return one verdict for each claim and return only JSON.",
+							"Audit Synthesis Claims against their linked Evidence Notes. Use judgment for claim-type evidence requirements; do not rely on shallow source-quality labels alone. For official product specifications, direct original-vendor/manufacturer specs, manuals, geometry pages, and official support pages are the baseline authority; weaker third-party contradictions should qualify wording, not force a limitation memo. For evidenceNoteIds, use only IDs from evidenceNotes[].id; do not return source IDs, reviewedSourceIds, URLs, or titles. Return one verdict for each claim and return only JSON.",
 					},
 					{
 						role: "user",
