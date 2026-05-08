@@ -643,10 +643,27 @@ function supportsTurnScopedThinking(
 			modelConfig.providerThinkingType ||
 			modelConfig.thinkingType ||
 			isMistralMedium35Model(modelConfig.modelName) ||
-			/\b(qwen3?|deepseek|nemotron|reasoning|r1)\b/i.test(
-				modelConfig.modelName,
-			),
+			isKnownThinkingTypeModel(modelConfig.modelName),
 	);
+}
+
+function isKnownThinkingTypeModel(modelName: string): boolean {
+	return /\b(qwen3?|deepseek|nemotron|reasoning|r1)\b/i.test(modelName);
+}
+
+function supportsThinkingTypeTweaks(
+	modelConfig: LangflowModelRunConfig,
+	configuredThinkingType: string | null | undefined,
+): boolean {
+	if (configuredThinkingType) {
+		return true;
+	}
+
+	if (modelConfig.providerId) {
+		return false;
+	}
+
+	return isKnownThinkingTypeModel(modelConfig.modelName);
 }
 
 export function shouldAutoEnableThinking(message: string): boolean {
@@ -704,9 +721,7 @@ function shouldSendVllmChatTemplateThinking(
 		return false;
 	}
 
-	return /\b(qwen3?|deepseek|nemotron|reasoning|r1)\b/i.test(
-		modelConfig.modelName,
-	);
+	return isKnownThinkingTypeModel(modelConfig.modelName);
 }
 
 function isMistralMedium35Model(modelName: string): boolean {
@@ -772,6 +787,11 @@ function buildLangflowTweaks(
 		((Boolean(configuredReasoningEffort) && !configuredThinkingType) ||
 			effectiveThinkingType !== "enabled" ||
 			isMistralMedium35Model(modelConfig.modelName));
+	const shouldSendThinkingType =
+		Boolean(effectiveThinkingType) &&
+		!isMistralMedium35Model(modelConfig.modelName) &&
+		!shouldSendReasoningEffort &&
+		supportsThinkingTypeTweaks(modelConfig, configuredThinkingType);
 	const componentTweaks = {
 		model_name: modelConfig.modelName,
 		api_base: modelConfig.baseUrl,
@@ -787,9 +807,7 @@ function buildLangflowTweaks(
 		...(shouldSendReasoningEffort
 			? { reasoning_effort: reasoningEffort }
 			: {}),
-		...(effectiveThinkingType &&
-		!isMistralMedium35Model(modelConfig.modelName) &&
-		!shouldSendReasoningEffort
+		...(shouldSendThinkingType
 			? { thinking_type: effectiveThinkingType }
 			: {}),
 		system_prompt: systemPrompt,

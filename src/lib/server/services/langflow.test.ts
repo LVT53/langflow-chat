@@ -685,6 +685,50 @@ describe("sendMessage provider routing", () => {
 		expect(body.tweaks["ModelNode-1"]).not.toHaveProperty("thinking_type");
 	});
 
+	it("does not send thinking_type when reasoning-effort-only providers auto-disable thinking", async () => {
+		const reasoningOnlyProvider = {
+			id: "provider-1",
+			name: "openai-compatible",
+			displayName: "Reasoning Effort Model",
+			baseUrl: "https://provider.example/v1",
+			apiKeyEncrypted: "encrypted",
+			apiKeyIv: "iv",
+			modelName: "provider/reasoning-effort-only",
+			reasoningEffort: "max",
+			thinkingType: null,
+			enabled: true,
+			sortOrder: 0,
+			maxModelContext: null,
+			compactionUiThreshold: null,
+			targetConstructedContext: null,
+			maxMessageLength: null,
+			maxTokens: null,
+			createdAt: new Date(),
+			updatedAt: new Date(),
+		};
+		mocks.getProviderWithSecrets
+			.mockResolvedValueOnce(reasoningOnlyProvider)
+			.mockResolvedValueOnce(reasoningOnlyProvider);
+
+		await sendMessage("Hello", "conv-1", "provider:provider-1");
+		await sendMessage("Hello", "conv-1", "provider:provider-1", undefined, {
+			thinkingMode: "off",
+		});
+
+		const firstBody = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
+		const secondBody = JSON.parse(String(vi.mocked(fetch).mock.calls[1]?.[1]?.body));
+		expect(firstBody.tweaks["ModelNode-1"]).toMatchObject({
+			enable_thinking: false,
+		});
+		expect(firstBody.tweaks["ModelNode-1"]).not.toHaveProperty("reasoning_effort");
+		expect(firstBody.tweaks["ModelNode-1"]).not.toHaveProperty("thinking_type");
+		expect(secondBody.tweaks["ModelNode-1"]).toMatchObject({
+			enable_thinking: false,
+		});
+		expect(secondBody.tweaks["ModelNode-1"]).not.toHaveProperty("reasoning_effort");
+		expect(secondBody.tweaks["ModelNode-1"]).not.toHaveProperty("thinking_type");
+	});
+
 	it("sends reasoning_effort for Mistral Medium 3.5 even when thinking.type is configured", async () => {
 		mocks.getProviderWithSecrets.mockResolvedValueOnce({
 			id: "provider-1",
