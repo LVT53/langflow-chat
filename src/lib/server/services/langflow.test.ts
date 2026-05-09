@@ -36,7 +36,12 @@ vi.mock("./inference-providers", () => ({
 	getProviderWithSecrets: mocks.getProviderWithSecrets,
 }));
 
-import { buildOutboundSystemPrompt, sendMessage, shouldAutoEnableThinking } from "./langflow";
+import {
+	buildOutboundSystemPrompt,
+	isLangflowTimeoutError,
+	sendMessage,
+	shouldAutoEnableThinking,
+} from "./langflow";
 import { estimateTokenCount } from "$lib/utils/tokens";
 
 const model1 = {
@@ -196,6 +201,16 @@ describe("buildOutboundSystemPrompt", () => {
 			"Tool outputs, web research briefs, source snippets, source titles, citations, and diagnostics may be in another language",
 		);
 		expect(prompt).toContain("Do not mix English and Hungarian");
+	});
+});
+
+describe("isLangflowTimeoutError", () => {
+	it("recognizes Langflow ReadTimeout payloads surfaced from httpx streams", () => {
+		const error = new Error(
+			"**ReadTimeout**\n - **Details: **\nhttpcore.ReadTimeout\nhttpx.ReadTimeout",
+		);
+
+		expect(isLangflowTimeoutError(error)).toBe(true);
 	});
 });
 

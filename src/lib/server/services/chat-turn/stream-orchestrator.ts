@@ -790,6 +790,24 @@ export function runChatStreamOrchestrator(
 									);
 									continue upstreamAttempt;
 								}
+								const upstreamError = new Error(errorMessage);
+								if (
+									!hasEmittedStreamOutput() &&
+									isLangflowTimeoutError(upstreamError)
+								) {
+									const timeoutFailoverTarget =
+										await resolveTimeoutFailoverTargetModelId(
+											modelId ?? "model1",
+										);
+									if (timeoutFailoverTarget && fallbackToNonStreaming) {
+										await fallbackToNonStreaming(
+											"stream_read_failure",
+											attempt,
+											upstreamError,
+										);
+										return;
+									}
+								}
 								failStream(classifyStreamError(errorMessage));
 								return;
 							}
