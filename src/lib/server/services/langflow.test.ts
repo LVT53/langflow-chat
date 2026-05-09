@@ -207,7 +207,7 @@ describe("buildOutboundSystemPrompt", () => {
 describe("isLangflowTimeoutError", () => {
 	it("recognizes Langflow ReadTimeout payloads surfaced from httpx streams", () => {
 		const error = new Error(
-			"**ReadTimeout**\n - **Details: **\nhttpcore.ReadTimeout\nhttpx.ReadTimeout",
+			"Code: None\n\n**APITimeoutError**\n - **Code: None**\nhttpcore.ReadTimeout\nhttpx.ReadTimeout",
 		);
 
 		expect(isLangflowTimeoutError(error)).toBe(true);

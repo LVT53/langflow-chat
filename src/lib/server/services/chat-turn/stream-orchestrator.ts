@@ -75,8 +75,27 @@ function getStreamTimeoutMs(): number {
 	return Math.max(60_000, getConfig().requestTimeoutMs);
 }
 
+function getFirstVisibleOutputTimeoutMs(modelId?: string | null): number | null {
+	const config = getConfig();
+	const sourceModelId = modelId ?? "model1";
+	const failoverTargetModelId = config.modelTimeoutFailoverTargetModel;
+	if (
+		config.modelTimeoutFailoverEnabled &&
+		failoverTargetModelId &&
+		failoverTargetModelId !== sourceModelId
+	) {
+		return Math.min(
+			config.requestTimeoutMs,
+			Math.max(1000, config.modelTimeoutFailoverTimeoutMs),
+		);
+	}
+
+	return null;
+}
+
 function getUpstreamIdleTimeoutMs(): number {
-	const requestTimeoutMs = getConfig().requestTimeoutMs;
+	const config = getConfig();
+	const requestTimeoutMs = config.requestTimeoutMs;
 	return Math.max(60_000, Math.min(150_000, Math.floor(requestTimeoutMs / 2)));
 }
 
@@ -316,10 +335,23 @@ export function runChatStreamOrchestrator(
 					candidates?: import("$lib/types").ToolEvidenceCandidate[];
 				},
 			) => {
+				clearFirstVisibleOutputTimeout();
 				chunkRuntime.emitToolCallEvent(name, input, status, details);
 			};
-			const emitChunkWithOutputHandling =
-				chunkRuntime.emitChunkWithOutputHandling;
+			let firstVisibleOutputTimeoutId: ReturnType<typeof setTimeout> | null =
+				null;
+			const clearFirstVisibleOutputTimeout = () => {
+				if (!firstVisibleOutputTimeoutId) return;
+				clearTimeout(firstVisibleOutputTimeoutId);
+				firstVisibleOutputTimeoutId = null;
+			};
+			const emitChunkWithOutputHandling = (chunk: string): boolean => {
+				const emitted = chunkRuntime.emitChunkWithOutputHandling(chunk);
+				if (emitted && chunk.trim()) {
+					clearFirstVisibleOutputTimeout();
+				}
+				return emitted;
+			};
 			const flushPendingThinking = chunkRuntime.flushPendingThinking;
 			const flushInlineThinkingBuffer = chunkRuntime.flushInlineThinkingBuffer;
 			const flushOutputBuffer = chunkRuntime.flushOutputBuffer;
@@ -482,6 +514,7 @@ export function runChatStreamOrchestrator(
 			const failStream = (code: StreamErrorCode) => {
 				if (ended) return;
 				ended = true;
+				clearFirstVisibleOutputTimeout();
 				if (streamId) {
 					clearStreamBuffer(streamId);
 				}
@@ -495,6 +528,8 @@ export function runChatStreamOrchestrator(
 			}, getStreamTimeoutMs());
 			unrefTimer(timeoutId);
 			const upstreamIdleTimeoutMs = getUpstreamIdleTimeoutMs();
+			const firstVisibleOutputTimeoutMs =
+				getFirstVisibleOutputTimeoutMs(modelId);
 			let upstreamIdleTimeoutId: ReturnType<typeof setTimeout> | null = null;
 			let lastUpstreamActivityAt = Date.now();
 			let upstreamIdleTimedOutBeforeOutput = false;
@@ -552,6 +587,43 @@ export function runChatStreamOrchestrator(
 			const markUpstreamActivity = (attempt: number) => {
 				lastUpstreamActivityAt = Date.now();
 				scheduleUpstreamIdleTimeout(attempt);
+			};
+			const scheduleFirstVisibleOutputTimeout = () => {
+				if (!firstVisibleOutputTimeoutMs) return;
+				clearFirstVisibleOutputTimeout();
+				firstVisibleOutputTimeoutId = setTimeout(() => {
+					console.warn("[STREAM] First visible output timeout", {
+						conversationId,
+						streamId,
+						modelId,
+						timeoutMs: firstVisibleOutputTimeoutMs,
+						responseLength: chunkRuntime.fullResponse.length,
+						thinkingLength: chunkRuntime.thinkingContent.length,
+						toolCallCount: chunkRuntime.toolCallRecords.length,
+					});
+					if (hasVisibleStreamOutput()) {
+						return;
+					}
+					upstreamIdleTimedOutBeforeOutput = true;
+					void (async () => {
+						const timeoutFailoverTarget =
+							await resolveTimeoutFailoverTargetModelId(modelId ?? "model1");
+						if (timeoutFailoverTarget && fallbackToNonStreaming && !ended) {
+							await fallbackToNonStreaming(
+								"stream_read_failure",
+								latestUpstreamAttempt,
+								new Error(
+									"Timed out waiting for first visible upstream stream output",
+								),
+							);
+							upstreamAbortController.abort();
+							return;
+						}
+						failStream("timeout");
+						upstreamAbortController.abort();
+					})();
+				}, firstVisibleOutputTimeoutMs);
+				unrefTimer(firstVisibleOutputTimeoutId);
 			};
 
 			let usedUrlListRecovery = false;
@@ -642,6 +714,7 @@ export function runChatStreamOrchestrator(
 
 				return null;
 			};
+			scheduleFirstVisibleOutputTimeout();
 
 			try {
 				if (personalityProfileId) {
@@ -962,6 +1035,7 @@ export function runChatStreamOrchestrator(
 				clearInterval(heartbeatIntervalId);
 				clearTimeout(timeoutId);
 				clearUpstreamIdleTimeout();
+				clearFirstVisibleOutputTimeout();
 				if (streamId) {
 					unregisterActiveChatStream(streamId, upstreamAbortController);
 				}

@@ -925,6 +925,7 @@ export function isLangflowTimeoutError(error: unknown): boolean {
 		code === "langflow_request_timeout" ||
 		code === "langflow_stream_connect_timeout" ||
 		message.includes("timed out") ||
+		message.includes("apitimeouterror") ||
 		message.includes("readtimeout") ||
 		message.includes("read timeout")
 	);
