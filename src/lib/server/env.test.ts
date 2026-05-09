@@ -107,6 +107,9 @@ describe("Environment Configuration", () => {
 		expect(config.braveSearchApiKey).toBe("");
 		expect(config.webhookPort).toBe(8090);
 		expect(config.requestTimeoutMs).toBe(300000);
+		expect(config.modelTimeoutFailoverEnabled).toBe(false);
+		expect(config.modelTimeoutFailoverTimeoutMs).toBe(60000);
+		expect(config.modelTimeoutFailoverTargetModel).toBe("model2");
 		expect(config.maxMessageLength).toBe(10000);
 		expect(config.sessionSecret).toBe(
 			"test-session-secret-12345678901234567890123456789012",
@@ -150,6 +153,9 @@ describe("Environment Configuration", () => {
 		process.env.BRAVE_SEARCH_API_KEY = "brave-key";
 		process.env.WEBHOOK_PORT = "3000";
 		process.env.REQUEST_TIMEOUT_MS = "5000";
+		process.env.MODEL_TIMEOUT_FAILOVER_ENABLED = "true";
+		process.env.MODEL_TIMEOUT_FAILOVER_TIMEOUT_MS = "2500";
+		process.env.MODEL_TIMEOUT_FAILOVER_TARGET_MODEL = "provider:backup";
 		process.env.MAX_MESSAGE_LENGTH = "5000";
 		process.env.SESSION_SECRET =
 			"test-session-secret-12345678901234567890123456789012";
@@ -193,6 +199,9 @@ describe("Environment Configuration", () => {
 		expect(config.braveSearchApiKey).toBe("brave-key");
 		expect(config.webhookPort).toBe(3000);
 		expect(config.requestTimeoutMs).toBe(5000);
+		expect(config.modelTimeoutFailoverEnabled).toBe(true);
+		expect(config.modelTimeoutFailoverTimeoutMs).toBe(2500);
+		expect(config.modelTimeoutFailoverTargetModel).toBe("provider:backup");
 		expect(config.maxMessageLength).toBe(5000);
 		expect(config.sessionSecret).toBe(
 			"test-session-secret-12345678901234567890123456789012",

@@ -67,6 +67,9 @@ interface Config {
 	teiTimeoutMs: number;
 	webhookPort: number;
 	requestTimeoutMs: number;
+	modelTimeoutFailoverEnabled: boolean;
+	modelTimeoutFailoverTimeoutMs: number;
+	modelTimeoutFailoverTargetModel: import("$lib/types").ModelId;
 	maxMessageLength: number;
 	maxModelContext: number;
 	compactionUiThreshold: number;
@@ -299,6 +302,20 @@ function readConfig(): Config {
 		),
 		webhookPort,
 		requestTimeoutMs: parseInt(process.env.REQUEST_TIMEOUT_MS || "300000", 10),
+		modelTimeoutFailoverEnabled:
+			process.env.MODEL_TIMEOUT_FAILOVER_ENABLED === "true",
+		modelTimeoutFailoverTimeoutMs: Math.max(
+			1000,
+			parseInt(
+				process.env.MODEL_TIMEOUT_FAILOVER_TIMEOUT_MS ||
+					process.env.REQUEST_TIMEOUT_MS ||
+					"60000",
+				10,
+			) || 60000,
+		),
+		modelTimeoutFailoverTargetModel: normalizeConfiguredModelId(
+			process.env.MODEL_TIMEOUT_FAILOVER_TARGET_MODEL || "model2",
+		),
 		maxMessageLength: parseInt(process.env.MAX_MESSAGE_LENGTH || "10000", 10),
 		maxModelContext: Math.max(
 			1000,

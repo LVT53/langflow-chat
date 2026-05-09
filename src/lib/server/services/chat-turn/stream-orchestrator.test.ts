@@ -12,6 +12,8 @@ vi.mock("$lib/server/services/conversations", () => ({
 }));
 
 vi.mock("$lib/server/services/langflow", () => ({
+	isLangflowTimeoutError: vi.fn(() => false),
+	resolveTimeoutFailoverTargetModelId: vi.fn(() => Promise.resolve(null)),
 	sendMessage: vi.fn(),
 	sendMessageStream: vi.fn(),
 }));
@@ -476,5 +478,74 @@ describe("stream-orchestrator SSE contract", () => {
 		const body = chunks.join("\n\n");
 		expect(body).toContain("event: error");
 		expect(body).toContain('"code":"timeout"');
+	});
+
+	it("routes idle streams with no output to the configured failover model", async () => {
+		vi.useFakeTimers();
+		const { getConfig } = await import("$lib/server/config-store");
+		(getConfig as ReturnType<typeof vi.fn>).mockReturnValue({
+			requestTimeoutMs: 120000,
+		});
+		const {
+			resolveTimeoutFailoverTargetModelId,
+			sendMessage,
+			sendMessageStream,
+		} = await import("$lib/server/services/langflow");
+		(
+			resolveTimeoutFailoverTargetModelId as ReturnType<typeof vi.fn>
+		).mockResolvedValue("model2");
+		(sendMessageStream as ReturnType<typeof vi.fn>).mockResolvedValue({
+			stream: createHangingStream(),
+			contextStatus: null,
+			taskState: null,
+			contextDebug: null,
+			honchoContext: null,
+			honchoSnapshot: null,
+			providerUsage: null,
+		});
+		(sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue({
+			text: "Backup answer",
+			contextStatus: null,
+			taskState: null,
+			contextDebug: null,
+			honchoContext: null,
+			honchoSnapshot: null,
+			providerUsage: null,
+			modelId: "model2",
+			modelDisplayName: "Model Two",
+		});
+
+		const response = runChatStreamOrchestrator({
+			user: {
+				id: "u1",
+				displayName: "User",
+				email: "u@test.com",
+			},
+			turn: createTurn({
+				conversationId: "failover-conv",
+				streamId: "failover-stream",
+				modelId: "model1",
+				modelDisplayName: "Model One",
+			}),
+			upstreamMessage: "Hello",
+			downstreamAbortSignal: new AbortController().signal,
+			requestStartTime: Date.now(),
+		});
+
+		const chunksPromise = readSseResponse(response);
+		await vi.advanceTimersByTimeAsync(60_000);
+
+		const chunks = await chunksPromise;
+		const body = chunks.join("\n\n");
+		expect(body).toContain('event: token\ndata: {"text":"Backup answer"}');
+		expect(body).toContain("event: end");
+		expect(body).not.toContain("event: error");
+		expect(sendMessage).toHaveBeenCalledWith(
+			"Hello",
+			"failover-conv",
+			"model2",
+			expect.any(Object),
+			expect.any(Object),
+		);
 	});
 });

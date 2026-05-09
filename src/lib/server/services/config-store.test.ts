@@ -37,6 +37,9 @@ vi.mock("../env", () => ({
 			citation_audit: "model1",
 			report_writing: "model1",
 		},
+		modelTimeoutFailoverEnabled: false,
+		modelTimeoutFailoverTimeoutMs: 60000,
+		modelTimeoutFailoverTargetModel: "model2",
 	},
 	envConfig: {
 		workingSetDocumentTokenBudget: 4000,
@@ -63,6 +66,9 @@ vi.mock("../env", () => ({
 			citation_audit: "model1",
 			report_writing: "model1",
 		},
+		modelTimeoutFailoverEnabled: false,
+		modelTimeoutFailoverTimeoutMs: 60000,
+		modelTimeoutFailoverTargetModel: "model2",
 	},
 }));
 
@@ -122,6 +128,32 @@ describe("Knowledge Store Config", () => {
 		it("getConfig() should keep Deep Research disabled by default", () => {
 			const config = getConfig();
 			expect(config.deepResearchEnabled).toBe(false);
+		});
+
+		it("getConfig() should expose model timeout failover defaults", () => {
+			const config = getConfig();
+
+			expect(config.modelTimeoutFailoverEnabled).toBe(false);
+			expect(config.modelTimeoutFailoverTimeoutMs).toBe(60000);
+			expect(config.modelTimeoutFailoverTargetModel).toBe("model2");
+		});
+
+		it("getConfig() should apply and clamp model timeout failover admin overrides", async () => {
+			adminConfigRows = [
+				{ key: "MODEL_TIMEOUT_FAILOVER_ENABLED", value: "true" },
+				{ key: "MODEL_TIMEOUT_FAILOVER_TIMEOUT_MS", value: "250" },
+				{
+					key: "MODEL_TIMEOUT_FAILOVER_TARGET_MODEL",
+					value: "provider:backup",
+				},
+			];
+
+			await refreshConfig();
+
+			const config = getConfig();
+			expect(config.modelTimeoutFailoverEnabled).toBe(true);
+			expect(config.modelTimeoutFailoverTimeoutMs).toBe(1000);
+			expect(config.modelTimeoutFailoverTargetModel).toBe("provider:backup");
 		});
 
 		it("getConfig() should allow admin config to enable Deep Research", async () => {

@@ -180,6 +180,9 @@ export const POST: RequestHandler = async (event) => {
 		const honchoContext = langflowResult.honchoContext;
 		const honchoSnapshot = langflowResult.honchoSnapshot;
 		const responseText = normalizeAssistantOutput(text);
+		const effectiveModelId = langflowResult.modelId ?? turn.modelId ?? "model1";
+		const effectiveModelDisplayName =
+			langflowResult.modelDisplayName ?? turn.modelDisplayName;
 
 		const userMessage = await createMessage(
 			turn.conversationId,
@@ -200,7 +203,7 @@ export const POST: RequestHandler = async (event) => {
 			responseText,
 			undefined,
 			undefined,
-			{ evidenceStatus: "pending", modelDisplayName: turn.modelDisplayName },
+			{ evidenceStatus: "pending", modelDisplayName: effectiveModelDisplayName },
 		);
 		const turnState = await persistAssistantTurnState({
 			userId: user.id,
@@ -215,8 +218,8 @@ export const POST: RequestHandler = async (event) => {
 			userMessageId: userMessage.id,
 			assistantMessageId: assistantMessage.id,
 			analytics: {
-				model: turn.modelId ?? "model1",
-				modelDisplayName: turn.modelDisplayName,
+				model: effectiveModelId,
+				modelDisplayName: effectiveModelDisplayName,
 				promptTokens: estimateTokenCount(upstreamMessage),
 				completionTokens: estimateTokenCount(responseText),
 				generationTimeMs: undefined,

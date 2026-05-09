@@ -56,7 +56,12 @@ import {
 	assignFileProductionJobsToAssistantMessage,
 	listConversationFileProductionJobs,
 } from "$lib/server/services/file-production";
-import { sendMessage, sendMessageStream } from "$lib/server/services/langflow";
+import {
+	isLangflowTimeoutError,
+	resolveTimeoutFailoverTargetModelId,
+	sendMessage,
+	sendMessageStream,
+} from "$lib/server/services/langflow";
 import { createMessage } from "$lib/server/services/messages";
 import { getPersonalityProfile } from "$lib/server/services/personality-profiles";
 import {
@@ -408,6 +413,8 @@ export function runChatStreamOrchestrator(
 				| null
 				| undefined;
 			let latestProviderUsage: ProviderUsageSnapshot | null = null;
+			let latestModelId = modelId ?? "model1";
+			let latestModelDisplayName = modelDisplayName;
 			let initialContextStatus:
 				| import("$lib/types").ConversationContextStatus
 				| undefined;
@@ -423,8 +430,8 @@ export function runChatStreamOrchestrator(
 					wasStopped,
 					conversationId,
 					streamId,
-					modelId,
-					modelDisplayName,
+					modelId: latestModelId,
+					modelDisplayName: latestModelDisplayName,
 					userId: user.id,
 					normalizedMessage,
 					upstreamMessage,
@@ -484,6 +491,14 @@ export function runChatStreamOrchestrator(
 			const upstreamIdleTimeoutMs = getUpstreamIdleTimeoutMs();
 			let upstreamIdleTimeoutId: ReturnType<typeof setTimeout> | null = null;
 			let lastUpstreamActivityAt = Date.now();
+			let upstreamIdleTimedOutBeforeOutput = false;
+			let fallbackToNonStreaming:
+				| ((
+						reason: "stream_connect_failure" | "stream_read_failure",
+						attempt: number,
+						error: unknown,
+				  ) => Promise<null>)
+				| null = null;
 			const clearUpstreamIdleTimeout = () => {
 				if (!upstreamIdleTimeoutId) return;
 				clearTimeout(upstreamIdleTimeoutId);
@@ -504,8 +519,27 @@ export function runChatStreamOrchestrator(
 						thinkingLength: chunkRuntime.thinkingContent.length,
 						toolCallCount: chunkRuntime.toolCallRecords.length,
 					});
-					failStream("timeout");
-					upstreamAbortController.abort();
+					if (!hasEmittedStreamOutput()) {
+						upstreamIdleTimedOutBeforeOutput = true;
+						void (async () => {
+							const timeoutFailoverTarget =
+								await resolveTimeoutFailoverTargetModelId(modelId ?? "model1");
+							if (timeoutFailoverTarget && fallbackToNonStreaming && !ended) {
+								await fallbackToNonStreaming(
+									"stream_read_failure",
+									attempt,
+									new Error("Timed out waiting for upstream stream activity"),
+								);
+								upstreamAbortController.abort();
+								return;
+							}
+							failStream("timeout");
+							upstreamAbortController.abort();
+						})();
+					} else {
+						failStream("timeout");
+						upstreamAbortController.abort();
+					}
 				}, upstreamIdleTimeoutMs);
 				unrefTimer(upstreamIdleTimeoutId);
 			};
@@ -521,12 +555,21 @@ export function runChatStreamOrchestrator(
 			const currentSystemPromptAppendix = () =>
 				retryAppendix ??
 				(usedUrlListRecovery ? URL_LIST_TOOL_RECOVERY_APPENDIX : undefined);
-			const fallbackToNonStreaming = async (
+			fallbackToNonStreaming = async (
 				reason: "stream_connect_failure" | "stream_read_failure",
 				attempt: number,
 				error: unknown,
 			): Promise<null> => {
 				attemptedNonStreamFallback = true;
+				const timeoutFailoverTarget =
+					isLangflowTimeoutError(error) || upstreamIdleTimedOutBeforeOutput
+					? await resolveTimeoutFailoverTargetModelId(modelId ?? "model1")
+					: null;
+				const fallbackModelId = timeoutFailoverTarget ?? modelId;
+				if (upstreamIdleTimedOutBeforeOutput && !timeoutFailoverTarget) {
+					failStream("timeout");
+					return null;
+				}
 				console.warn(
 					reason === "stream_connect_failure"
 						? "[STREAM] Falling back to non-stream Langflow run after stream connect failure"
@@ -534,6 +577,8 @@ export function runChatStreamOrchestrator(
 					{
 						conversationId,
 						attempt,
+						fromModelId: modelId ?? "model1",
+						toModelId: fallbackModelId ?? "model1",
 						errorName: error instanceof Error ? error.name : undefined,
 						errorMessage:
 							error instanceof Error ? error.message : String(error),
@@ -545,7 +590,7 @@ export function runChatStreamOrchestrator(
 					sendParams: {
 						upstreamMessage,
 						conversationId,
-						modelId,
+						modelId: fallbackModelId,
 						attachmentIds: safeAttachmentIds,
 						activeDocumentArtifactId,
 						attachmentTraceId,
@@ -582,6 +627,10 @@ export function runChatStreamOrchestrator(
 					},
 					onProviderUsage: (usage) => {
 						latestProviderUsage = usage;
+					},
+					onResolvedModel: (resolvedModelId, displayName) => {
+						latestModelId = resolvedModelId;
+						latestModelDisplayName = displayName;
 					},
 				});
 
@@ -635,6 +684,9 @@ export function runChatStreamOrchestrator(
 					if (!langflowResponse) {
 						return;
 					}
+					latestModelId = langflowResponse.modelId ?? latestModelId;
+					latestModelDisplayName =
+						langflowResponse.modelDisplayName ?? latestModelDisplayName;
 					if (!langflowResponse.stream) {
 						latestContextStatus = langflowResponse.contextStatus;
 						initialContextStatus = latestContextStatus;
@@ -828,7 +880,8 @@ export function runChatStreamOrchestrator(
 				if (
 					!attemptedNonStreamFallback &&
 					!wasActiveChatStreamStopRequested(streamId) &&
-					shouldFallbackToNonStreaming(error) &&
+					(shouldFallbackToNonStreaming(error) ||
+						upstreamIdleTimedOutBeforeOutput) &&
 					!hasEmittedStreamOutput()
 				) {
 					await fallbackToNonStreaming(

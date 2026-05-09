@@ -69,6 +69,42 @@ type LangflowModelRunConfig = ModelConfig & {
 };
 
 type EffectiveThinkingType = "enabled" | "disabled" | null;
+type TimeoutFailoverInfo = {
+	fromModelId: ModelId;
+	toModelId: ModelId;
+	reason: "timeout";
+};
+
+type LangflowRequestResult = {
+	text: string;
+	rawResponse: LangflowRunResponse;
+	contextStatus?: import("$lib/types").ConversationContextStatus;
+	taskState?: import("$lib/types").TaskState | null;
+	contextDebug?: import("$lib/types").ContextDebugState | null;
+	honchoContext?: import("$lib/types").HonchoContextInfo | null;
+	honchoSnapshot?: import("$lib/types").HonchoContextSnapshot | null;
+	providerUsage?: ProviderUsageSnapshot | null;
+	modelId: ModelId;
+	modelDisplayName: string;
+	timeoutFailover?: TimeoutFailoverInfo;
+};
+
+type LangflowStreamResult = {
+	stream?: ReadableStream<Uint8Array>;
+	text?: string;
+	rawResponse?: LangflowRunResponse;
+	contextStatus?: import("$lib/types").ConversationContextStatus;
+	taskState?: import("$lib/types").TaskState | null;
+	contextDebug?: import("$lib/types").ContextDebugState | null;
+	honchoContext?: import("$lib/types").HonchoContextInfo | null;
+	honchoSnapshot?: import("$lib/types").HonchoContextSnapshot | null;
+	providerUsage?: ProviderUsageSnapshot | null;
+	modelId: ModelId;
+	modelDisplayName: string;
+	timeoutFailover?: TimeoutFailoverInfo;
+};
+
+type LangflowTimeoutError = Error & { code?: string };
 
 const CURRENT_USER_MESSAGE_MARKER = "## Current User Message\n";
 const LANGFLOW_PROMPT_OVERHEAD_RESERVE_TOKENS = 512;
@@ -777,11 +813,12 @@ function buildLangflowTweaks(
 	message: string,
 	effectiveMaxTokens?: number | null,
 	thinkingMode?: ThinkingMode,
+	requestTimeoutMs: number = getConfig().requestTimeoutMs,
 ): Record<string, unknown> {
 	const componentId = modelConfig.componentId.trim();
 	const requestTimeoutSeconds = Math.max(
 		1,
-		Math.ceil(getConfig().requestTimeoutMs / 1000),
+		Math.ceil(requestTimeoutMs / 1000),
 	);
 	const effectiveThinkingType = resolveEffectiveThinkingType({
 		modelConfig,
@@ -869,6 +906,61 @@ function mergeAbortSignals(
 	}
 
 	return controller.signal;
+}
+
+function createLangflowTimeoutError(message: string): LangflowTimeoutError {
+	const error = new Error(message) as LangflowTimeoutError;
+	error.name = "LangflowRequestTimeoutError";
+	error.code = "langflow_request_timeout";
+	return error;
+}
+
+export function isLangflowTimeoutError(error: unknown): boolean {
+	if (!(error instanceof Error)) return false;
+	const code = (error as LangflowTimeoutError).code;
+	const message = error.message.toLowerCase();
+	return (
+		error.name === "LangflowRequestTimeoutError" ||
+		error.name === "LangflowStreamConnectTimeoutError" ||
+		code === "langflow_request_timeout" ||
+		code === "langflow_stream_connect_timeout" ||
+		message.includes("timed out")
+	);
+}
+
+function configuredAttemptTimeoutMs(
+	config: RuntimeConfig,
+	failoverCandidate: ModelId | null,
+): number {
+	if (!failoverCandidate) return config.requestTimeoutMs;
+	return Math.min(
+		config.requestTimeoutMs,
+		Math.max(1000, config.modelTimeoutFailoverTimeoutMs),
+	);
+}
+
+export async function resolveTimeoutFailoverTargetModelId(
+	modelId?: ModelId | null,
+	config: RuntimeConfig = getConfig(),
+): Promise<ModelId | null> {
+	if (!config.modelTimeoutFailoverEnabled) return null;
+
+	const sourceModelId = modelId ?? "model1";
+	const targetModelId = config.modelTimeoutFailoverTargetModel;
+	if (!targetModelId || targetModelId === sourceModelId) return null;
+
+	if (targetModelId === "model2" && config.model2Enabled === false) {
+		return null;
+	}
+
+	if (targetModelId.startsWith("provider:")) {
+		const provider = await getProviderWithSecrets(
+			targetModelId.slice("provider:".length),
+		).catch(() => null);
+		if (!provider?.enabled) return null;
+	}
+
+	return targetModelId;
 }
 
 export async function prepareOutboundChatContext(params: {
@@ -1002,7 +1094,7 @@ export function extractMessageText(response: LangflowRunResponse): string {
 	}
 }
 
-export async function sendMessage(
+async function sendMessageAttempt(
 	message: string,
 	sessionId: string,
 	modelId?: ModelId,
@@ -1017,22 +1109,16 @@ export async function sendMessage(
 		skipHonchoContext?: boolean;
 		thinkingMode?: ThinkingMode;
 	},
-): Promise<{
-	text: string;
-	rawResponse: LangflowRunResponse;
-	contextStatus?: import("$lib/types").ConversationContextStatus;
-	taskState?: import("$lib/types").TaskState | null;
-	contextDebug?: import("$lib/types").ContextDebugState | null;
-	honchoContext?: import("$lib/types").HonchoContextInfo | null;
-	honchoSnapshot?: import("$lib/types").HonchoContextSnapshot | null;
-	providerUsage?: ProviderUsageSnapshot | null;
-}> {
+	attemptTimeoutMs: number,
+	timeoutFailover?: TimeoutFailoverInfo,
+): Promise<LangflowRequestResult> {
 	const config = getConfig();
 	const controller = new AbortController();
-	const timeoutId = setTimeout(
-		() => controller.abort(),
-		config.requestTimeoutMs,
-	);
+	let timedOut = false;
+	const timeoutId = setTimeout(() => {
+		timedOut = true;
+		controller.abort();
+	}, attemptTimeoutMs);
 	const signal = mergeAbortSignals(options?.signal, controller.signal);
 
 	try {
@@ -1158,6 +1244,7 @@ export async function sendMessage(
 				message,
 				budgetedPrompt.outputTokenBudget.effectiveMaxTokens,
 				options?.thinkingMode,
+				attemptTimeoutMs,
 			),
 		};
 
@@ -1212,13 +1299,94 @@ export async function sendMessage(
 			honchoContext,
 			honchoSnapshot,
 			providerUsage,
+			modelId: modelId ?? "model1",
+			modelDisplayName: modelConfig.displayName,
+			timeoutFailover,
 		};
+	} catch (error) {
+		if (timedOut) {
+			throw createLangflowTimeoutError(
+				`Timed out waiting ${attemptTimeoutMs}ms for Langflow response`,
+			);
+		}
+		throw error;
 	} finally {
 		clearTimeout(timeoutId);
 	}
 }
 
-export async function sendMessageStream(
+export async function sendMessage(
+	message: string,
+	sessionId: string,
+	modelId?: ModelId,
+	user?: AuthenticatedPromptUser,
+	options?: {
+		signal?: AbortSignal;
+		attachmentIds?: string[];
+		activeDocumentArtifactId?: string;
+		attachmentTraceId?: string;
+		systemPromptAppendix?: string;
+		personalityPrompt?: string;
+		skipHonchoContext?: boolean;
+		thinkingMode?: ThinkingMode;
+	},
+): Promise<LangflowRequestResult> {
+	const config = getConfig();
+	const requestedModelId = modelId ?? "model1";
+	const failoverTargetModelId = await resolveTimeoutFailoverTargetModelId(
+		requestedModelId,
+		config,
+	);
+	const attemptTimeoutMs = configuredAttemptTimeoutMs(
+		config,
+		failoverTargetModelId,
+	);
+
+	try {
+		return await sendMessageAttempt(
+			message,
+			sessionId,
+			requestedModelId,
+			user,
+			options,
+			attemptTimeoutMs,
+		);
+	} catch (error) {
+		if (
+			!failoverTargetModelId ||
+			options?.signal?.aborted ||
+			!isLangflowTimeoutError(error)
+		) {
+			throw error;
+		}
+
+		console.warn(
+			"[LANGFLOW] Request timed out before response; retrying with failover model",
+			{
+				sessionId,
+				fromModelId: requestedModelId,
+				toModelId: failoverTargetModelId,
+				timeoutMs: attemptTimeoutMs,
+			},
+		);
+
+		return sendMessageAttempt(
+			message,
+			sessionId,
+			failoverTargetModelId,
+			user,
+			options,
+			attemptTimeoutMs,
+			{
+				fromModelId: requestedModelId,
+				toModelId: failoverTargetModelId,
+				reason: "timeout",
+			},
+		);
+	}
+}
+
+async function sendMessageStreamAttempt(
 	message: string,
 	sessionId: string,
 	modelId?: ModelId,
@@ -1234,26 +1402,19 @@ export async function sendMessageStream(
 		skipHonchoContext?: boolean;
 		thinkingMode?: ThinkingMode;
 	},
-): Promise<{
-	stream?: ReadableStream<Uint8Array>;
-	text?: string;
-	rawResponse?: LangflowRunResponse;
-	contextStatus?: import("$lib/types").ConversationContextStatus;
-	taskState?: import("$lib/types").TaskState | null;
-	contextDebug?: import("$lib/types").ContextDebugState | null;
-	honchoContext?: import("$lib/types").HonchoContextInfo | null;
-	honchoSnapshot?: import("$lib/types").HonchoContextSnapshot | null;
-	providerUsage?: ProviderUsageSnapshot | null;
-}> {
+	attemptTimeoutMs: number,
+	timeoutFailover?: TimeoutFailoverInfo,
+): Promise<LangflowStreamResult> {
 	const config = getConfig();
 	const timeoutController = new AbortController();
-	const timeoutId = setTimeout(
-		() => timeoutController.abort(),
-		config.requestTimeoutMs,
-	);
+	let timedOut = false;
+	const timeoutId = setTimeout(() => {
+		timedOut = true;
+		timeoutController.abort();
+	}, attemptTimeoutMs);
 	const connectTimeoutMs = Math.min(
-		config.requestTimeoutMs,
-		Math.max(1000, options?.connectTimeoutMs ?? config.requestTimeoutMs),
+		attemptTimeoutMs,
+		Math.max(1000, options?.connectTimeoutMs ?? attemptTimeoutMs),
 	);
 	const connectTimeoutController = new AbortController();
 	let connectTimedOut = false;
@@ -1390,6 +1551,7 @@ export async function sendMessageStream(
 				message,
 				budgetedPrompt.outputTokenBudget.effectiveMaxTokens,
 				options?.thinkingMode,
+				attemptTimeoutMs,
 			),
 		};
 
@@ -1457,6 +1619,9 @@ export async function sendMessageStream(
 				honchoContext,
 				honchoSnapshot,
 				providerUsage,
+				modelId: modelId ?? "model1",
+				modelDisplayName: modelConfig.displayName,
+				timeoutFailover,
 			};
 		}
 
@@ -1475,6 +1640,9 @@ export async function sendMessageStream(
 			contextDebug,
 			honchoContext,
 			honchoSnapshot,
+			modelId: modelId ?? "model1",
+			modelDisplayName: modelConfig.displayName,
+			timeoutFailover,
 		};
 	} catch (error) {
 		if (connectTimedOut) {
@@ -1485,9 +1653,84 @@ export async function sendMessageStream(
 			timeoutError.code = "langflow_stream_connect_timeout";
 			throw timeoutError;
 		}
+		if (timedOut) {
+			throw createLangflowTimeoutError(
+				`Timed out waiting ${attemptTimeoutMs}ms for Langflow streaming response`,
+			);
+		}
 		throw error;
 	} finally {
 		clearTimeout(timeoutId);
 		clearTimeout(connectTimeoutId);
+	}
+}
+
+export async function sendMessageStream(
+	message: string,
+	sessionId: string,
+	modelId?: ModelId,
+	options?: {
+		connectTimeoutMs?: number;
+		signal?: AbortSignal;
+		user?: AuthenticatedPromptUser;
+		attachmentIds?: string[];
+		activeDocumentArtifactId?: string;
+		attachmentTraceId?: string;
+		systemPromptAppendix?: string;
+		personalityPrompt?: string;
+		skipHonchoContext?: boolean;
+		thinkingMode?: ThinkingMode;
+	},
+): Promise<LangflowStreamResult> {
+	const config = getConfig();
+	const requestedModelId = modelId ?? "model1";
+	const failoverTargetModelId = await resolveTimeoutFailoverTargetModelId(
+		requestedModelId,
+		config,
+	);
+	const attemptTimeoutMs = configuredAttemptTimeoutMs(
+		config,
+		failoverTargetModelId,
+	);
+
+	try {
+		return await sendMessageStreamAttempt(
+			message,
+			sessionId,
+			requestedModelId,
+			options,
+			attemptTimeoutMs,
+		);
+	} catch (error) {
+		if (
+			!failoverTargetModelId ||
+			options?.signal?.aborted ||
+			!isLangflowTimeoutError(error)
+		) {
+			throw error;
+		}
+
+		console.warn(
+			"[LANGFLOW] Streaming request timed out before headers; retrying with failover model",
+			{
+				sessionId,
+				fromModelId: requestedModelId,
+				toModelId: failoverTargetModelId,
+				timeoutMs: attemptTimeoutMs,
+			},
+		);
+
+		return sendMessageStreamAttempt(
+			message,
+			sessionId,
+			failoverTargetModelId,
+			options,
+			attemptTimeoutMs,
+			{
+				fromModelId: requestedModelId,
+				toModelId: failoverTargetModelId,
+				reason: "timeout",
+			},
+		);
 	}
 }

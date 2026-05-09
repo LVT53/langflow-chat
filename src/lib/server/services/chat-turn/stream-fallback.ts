@@ -1,5 +1,10 @@
 import type { ProviderUsageSnapshot } from "$lib/server/services/analytics";
-import type { HonchoContextInfo, HonchoContextSnapshot, ThinkingMode } from "$lib/types";
+import type {
+	HonchoContextInfo,
+	HonchoContextSnapshot,
+	ModelId,
+	ThinkingMode,
+} from "$lib/types";
 
 export interface NonStreamFallbackSendParams {
 	upstreamMessage: string;
@@ -19,6 +24,8 @@ export interface NonStreamFallbackResponse {
 	honchoContext?: HonchoContextInfo | null;
 	honchoSnapshot?: HonchoContextSnapshot | null;
 	providerUsage?: ProviderUsageSnapshot | null;
+	modelId?: ModelId;
+	modelDisplayName?: string;
 }
 
 export interface NonStreamFallbackDeps {
@@ -59,6 +66,7 @@ export interface NonStreamFallbackDeps {
 	onHonchoContext: (ctx: HonchoContextInfo | null) => void;
 	onHonchoSnapshot: (snap: HonchoContextSnapshot | null) => void;
 	onProviderUsage: (usage: ProviderUsageSnapshot | null) => void;
+	onResolvedModel?: (modelId: ModelId, displayName: string) => void;
 }
 
 export async function runNonStreamFallback(
@@ -84,6 +92,7 @@ export async function runNonStreamFallback(
 		onHonchoContext,
 		onHonchoSnapshot,
 		onProviderUsage,
+		onResolvedModel,
 	} = deps;
 
 	const fallbackResponse = await sendMessage(
@@ -116,6 +125,9 @@ export async function runNonStreamFallback(
 	onHonchoContext(fallbackResponse.honchoContext ?? null);
 	onHonchoSnapshot(fallbackResponse.honchoSnapshot ?? null);
 	onProviderUsage(fallbackResponse.providerUsage ?? null);
+	if (fallbackResponse.modelId && fallbackResponse.modelDisplayName) {
+		onResolvedModel?.(fallbackResponse.modelId, fallbackResponse.modelDisplayName);
+	}
 
 	if (!(await emitResolvedAssistantText(fallbackResponse.text))) {
 		return false;

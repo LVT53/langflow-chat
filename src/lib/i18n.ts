@@ -349,6 +349,11 @@ const dictionary = {
 			"Maximum file upload size in bytes (default 104857600 = 100MB).",
 		"admin.requestTimeoutDescription":
 			"HTTP request and stream timeout in milliseconds (default 300000 = 5 minutes). Increase for multi-round search workloads.",
+		"admin.modelTimeoutFailoverEnabled": "Enable model timeout failover",
+		"admin.modelTimeoutFailoverDescription":
+			"If the selected model produces no response before the failover timeout, retry the turn once with the configured fallback model.",
+		"admin.modelTimeoutFailoverTimeoutMs": "Failover Timeout (ms)",
+		"admin.modelTimeoutFailoverTargetModel": "Failover Model",
 		// Admin - Config labels
 		"admin.model1BaseUrl": "Model 1 Base URL",
 		"admin.model1ApiKey": "Model 1 API Key",
@@ -1367,6 +1372,12 @@ const dictionary = {
 			"Maximális fájlfeltöltési méret bájtban (alapértelmezett 104857600 = 100 MB).",
 		"admin.requestTimeoutDescription":
 			"HTTP-kérés és stream időkorlátja milliszekundumban (alapértelmezett 300000 = 5 perc). Növeld meg többkörös keresési munkákhoz.",
+		"admin.modelTimeoutFailoverEnabled":
+			"Modell időkorlátos tartalék út engedélyezése",
+		"admin.modelTimeoutFailoverDescription":
+			"Ha a kiválasztott modell nem ad választ a tartalék időkorlát előtt, a rendszer egyszer újrapróbálja a kört a beállított tartalék modellel.",
+		"admin.modelTimeoutFailoverTimeoutMs": "Tartalék út időkorlátja (ms)",
+		"admin.modelTimeoutFailoverTargetModel": "Tartalék modell",
 		// Admin - Config labels
 		"admin.model1BaseUrl": "1. modell alap-URL-je",
 		"admin.model1ApiKey": "1. modell API-kulcsa",

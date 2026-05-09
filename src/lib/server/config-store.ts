@@ -107,6 +107,9 @@ export const ADMIN_CONFIG_KEYS = [
 	"SYSTEM_PROMPT",
 	"MAX_FILE_UPLOAD_SIZE",
 	"REQUEST_TIMEOUT_MS",
+	"MODEL_TIMEOUT_FAILOVER_ENABLED",
+	"MODEL_TIMEOUT_FAILOVER_TIMEOUT_MS",
+	"MODEL_TIMEOUT_FAILOVER_TARGET_MODEL",
 	"FILE_PRODUCTION_MAX_OUTPUTS",
 	"FILE_PRODUCTION_MAX_SOURCE_JSON_BYTES",
 	"FILE_PRODUCTION_MAX_PROJECTION_BYTES",
@@ -169,6 +172,9 @@ export interface RuntimeConfig {
 	teiTimeoutMs: number;
 	webhookPort: number;
 	requestTimeoutMs: number;
+	modelTimeoutFailoverEnabled: boolean;
+	modelTimeoutFailoverTimeoutMs: number;
+	modelTimeoutFailoverTargetModel: ModelId;
 	maxMessageLength: number;
 	maxModelContext: number;
 	compactionUiThreshold: number;
@@ -622,6 +628,18 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 		const parsed = parseIntOverride(value);
 		if (parsed !== undefined) config.requestTimeoutMs = Math.max(1000, parsed);
 	},
+	MODEL_TIMEOUT_FAILOVER_ENABLED: (config, value) => {
+		config.modelTimeoutFailoverEnabled = value === "true";
+	},
+	MODEL_TIMEOUT_FAILOVER_TIMEOUT_MS: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined) {
+			config.modelTimeoutFailoverTimeoutMs = Math.max(1000, parsed);
+		}
+	},
+	MODEL_TIMEOUT_FAILOVER_TARGET_MODEL: (config, value) => {
+		config.modelTimeoutFailoverTargetModel = normalizeConfiguredModelId(value);
+	},
 	FILE_PRODUCTION_MAX_OUTPUTS: (config, value) => {
 		const parsed = parseIntOverride(value);
 		if (parsed !== undefined) config.fileProductionMaxOutputs = Math.max(1, parsed);
@@ -977,6 +995,12 @@ export function getResolvedAdminConfigValues(
 		SYSTEM_PROMPT: getSystemPrompt(config.systemPrompt),
 		MAX_FILE_UPLOAD_SIZE: String(config.maxFileUploadSize),
 		REQUEST_TIMEOUT_MS: String(config.requestTimeoutMs),
+		MODEL_TIMEOUT_FAILOVER_ENABLED: String(config.modelTimeoutFailoverEnabled),
+		MODEL_TIMEOUT_FAILOVER_TIMEOUT_MS: String(
+			config.modelTimeoutFailoverTimeoutMs,
+		),
+		MODEL_TIMEOUT_FAILOVER_TARGET_MODEL:
+			config.modelTimeoutFailoverTargetModel,
 		FILE_PRODUCTION_MAX_OUTPUTS: String(config.fileProductionMaxOutputs),
 		FILE_PRODUCTION_MAX_SOURCE_JSON_BYTES: String(config.fileProductionMaxSourceJsonBytes),
 		FILE_PRODUCTION_MAX_PROJECTION_BYTES: String(config.fileProductionMaxProjectionBytes),

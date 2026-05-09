@@ -61,6 +61,9 @@ function mockConfig(
 		langflowApiKey: "langflow-key",
 		langflowFlowId: "fallback-flow",
 		requestTimeoutMs: 300000,
+		modelTimeoutFailoverEnabled: false,
+		modelTimeoutFailoverTimeoutMs: 60000,
+		modelTimeoutFailoverTargetModel: "model2",
 		maxModelContext: 262144,
 		compactionUiThreshold: 209715,
 		targetConstructedContext: 157286,
@@ -987,6 +990,91 @@ describe("sendMessage provider routing", () => {
 			},
 		});
 		expect(body.tweaks["ModelNode-1"]).not.toHaveProperty("thinking_type");
+	});
+
+	it("retries a timed-out request with the configured failover model before returning", async () => {
+		vi.useFakeTimers();
+		try {
+			mockConfig(
+				{},
+				{
+					model2: {
+						baseUrl: "http://backup-model/v1",
+						apiKey: "backup-key",
+						modelName: "backup-model",
+						displayName: "Backup Model",
+						systemPrompt: "",
+						flowId: "shared-flow",
+						componentId: "ModelNode-1",
+						maxTokens: null,
+						reasoningEffort: null,
+						thinkingType: null,
+					},
+					model2Enabled: true,
+					modelTimeoutFailoverEnabled: true,
+					modelTimeoutFailoverTimeoutMs: 1000,
+					modelTimeoutFailoverTargetModel: "model2",
+				},
+			);
+			vi.stubGlobal(
+				"fetch",
+				vi.fn((_url: string | URL | Request, init?: RequestInit) => {
+					const body = JSON.parse(String(init?.body ?? "{}"));
+					if (body.tweaks?.["ModelNode-1"]?.model_name === "local-model") {
+						return new Promise<Response>((_resolve, reject) => {
+							init?.signal?.addEventListener("abort", () => {
+								const error = new Error("The operation was aborted");
+								error.name = "AbortError";
+								reject(error);
+							});
+						});
+					}
+					return Promise.resolve(
+						new Response(
+							JSON.stringify({
+								outputs: [
+									{
+										outputs: [
+											{
+												results: {
+													message: { text: "Backup answer" },
+												},
+											},
+										],
+									},
+								],
+							}),
+							{
+								status: 200,
+								headers: { "Content-Type": "application/json" },
+							},
+						),
+					);
+				}),
+			);
+
+			const pending = sendMessage("Hello", "conv-1", "model1");
+			await vi.advanceTimersByTimeAsync(1000);
+			const result = await pending;
+
+			expect(fetch).toHaveBeenCalledTimes(2);
+			expect(result.text).toBe("Backup answer");
+			expect(result.modelId).toBe("model2");
+			expect(result.modelDisplayName).toBe("Backup Model");
+			expect(result.timeoutFailover).toEqual({
+				fromModelId: "model1",
+				toModelId: "model2",
+				reason: "timeout",
+			});
+			const backupBody = JSON.parse(
+				String(vi.mocked(fetch).mock.calls[1]?.[1]?.body),
+			);
+			expect(backupBody.tweaks["ModelNode-1"].model_name).toBe(
+				"backup-model",
+			);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it("fails clearly when provider routing has no shared Langflow component ID", async () => {
