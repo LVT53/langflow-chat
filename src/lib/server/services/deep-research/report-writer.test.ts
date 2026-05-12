@@ -1279,6 +1279,151 @@ describe("Deep Research report writer", () => {
 		expect(sectionMarkdown).not.toContain("[1]");
 	});
 
+	it("does not pass through unaudited fallback section markdown without claim ids", () => {
+		const report = writeResearchReport({
+			jobId: "job-empty-claim-id-fallback",
+			plan: {
+				...basePlan,
+				reportIntent: "investigation",
+				reportShape: ["Analysis"],
+			},
+			synthesisNotes: baseSynthesisNotes,
+			synthesisClaims: [acceptedClaim],
+			evidenceNotes,
+			sources: [
+				{
+					id: "source-1",
+					reviewedSourceId: "reviewed-1",
+					status: "cited",
+					title: "AI coding security documentation",
+					url: "https://docs.example.com/ai-coding/security",
+				},
+			],
+		});
+		const fallbackReport = {
+			...report,
+			reportBlocks: report.reportBlocks.map((block) =>
+				block.kind === "section"
+					? {
+							...block,
+							claimIds: [],
+							evidenceLinkIds: [],
+							sourceIds: [],
+							markdown: `- ${acceptedClaim.statement} [1]`,
+						}
+					: block,
+			),
+		};
+
+		const auditedMarkdown = renderAuditedResearchReportMarkdown({
+			reportDraft: fallbackReport,
+			auditedReport: {
+				title: report.title,
+				sections: [{ heading: "Analysis", claims: [] }],
+				limitations: [
+					`Removed unsupported core claim after citation audit: ${acceptedClaim.statement}`,
+				],
+			},
+			sources: report.sources,
+			researchLanguage: "en",
+		});
+
+		const fallbackSection = fallbackReport.reportBlocks.find(
+			(block) => block.kind === "section",
+		);
+		expect(fallbackSection).toBeDefined();
+		const sectionStart = auditedMarkdown.indexOf(
+			`## ${fallbackSection?.heading}`,
+		);
+		const nextSectionStart = auditedMarkdown.indexOf("\n## ", sectionStart + 1);
+		const sectionMarkdown = auditedMarkdown.slice(
+			sectionStart,
+			nextSectionStart === -1 ? undefined : nextSectionStart,
+		);
+		expect(sectionMarkdown).toContain("- None.");
+		expect(sectionMarkdown).not.toContain(acceptedClaim.statement);
+		expect(sectionMarkdown).not.toContain("[1]");
+	});
+
+	it("includes sources for audited matrix claims beyond the summary cap", () => {
+		const entities = Array.from({ length: 8 }, (_, index) => `Product ${index + 1}`);
+		const evidence = entities.map<DeepResearchEvidenceNote>((entity, index) => ({
+			...evidenceNotes[0],
+			id: `evidence-product-${index + 1}`,
+			sourceId: `source-product-${index + 1}`,
+			comparedEntity: entity,
+			comparisonAxis: "Battery",
+			findingText: `${entity} has verified battery evidence.`,
+			sourceSupport: {
+				sourceId: `source-product-${index + 1}`,
+				reviewedSourceId: `reviewed-product-${index + 1}`,
+			},
+		}));
+		const claims = evidence.map<DeepResearchSynthesisClaim>((note, index) => ({
+			...acceptedClaim,
+			id: `claim-product-${index + 1}`,
+			statement: note.findingText,
+			reportSection: "Battery",
+			evidenceLinks: [
+				{
+					...acceptedClaim.evidenceLinks[0],
+					id: `link-product-${index + 1}`,
+					claimId: `claim-product-${index + 1}`,
+					evidenceNoteId: note.id,
+				},
+			],
+		}));
+		const sources = entities.map((entity, index) => ({
+			id: `source-product-${index + 1}`,
+			reviewedSourceId: `reviewed-product-${index + 1}`,
+			status: "cited" as const,
+			title: `${entity} documentation`,
+			url: `https://products.example.test/${index + 1}`,
+		}));
+		const report = writeResearchReport({
+			jobId: "job-large-matrix-source-appendix",
+			plan: {
+				...basePlan,
+				reportIntent: "comparison",
+				comparedEntities: entities,
+				comparisonAxes: ["Battery"],
+				reportShape: ["Comparison Matrix", "Decision Implications"],
+			},
+			synthesisNotes: baseSynthesisNotes,
+			synthesisClaims: claims,
+			evidenceNotes: evidence,
+			sources,
+		});
+
+		const auditedMarkdown = renderAuditedResearchReportMarkdown({
+			reportDraft: report,
+			auditedReport: {
+				title: report.title,
+				sections: [
+					{
+						heading: "Comparison Matrix",
+						claims: claims.map((claim, index) => ({
+							id: claim.id,
+							text: claim.statement,
+							core: true,
+							citationSourceIds: [`source-product-${index + 1}`],
+						})),
+					},
+				],
+				limitations: [],
+			},
+			sources: report.sources,
+			researchLanguage: "en",
+		});
+
+		expect(auditedMarkdown).toContain(
+			"Product 8 has verified battery evidence. [8]",
+		);
+		expect(auditedMarkdown).toContain(
+			"[8] Product 8 documentation - https://products.example.test/8",
+		);
+	});
+
 	it("renders recommendation reports with ranked options, rubric, fit/risk table, next actions, and compact appendix", () => {
 		const recommendationEvidence: DeepResearchEvidenceNote[] = [
 			{

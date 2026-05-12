@@ -697,11 +697,15 @@ export function renderAuditedResearchReportMarkdown(input: {
 			section.claims.map((claim) => [claim.id, claim] as const),
 		),
 	);
-	const retainedClaims = input.auditedReport.sections
-		.flatMap((section) => section.claims)
-		.slice(0, MAX_REPORT_KEY_FINDINGS);
+	const allAuditedClaims = input.auditedReport.sections.flatMap(
+		(section) => section.claims,
+	);
+	const retainedClaims = allAuditedClaims.slice(0, MAX_REPORT_KEY_FINDINGS);
 	const sourceById = buildSourceLookup(input.sources);
-	const citedSources = selectAuditedCitedSources(retainedClaims, input.sources);
+	const citedSources = selectAuditedCitedSources(
+		allAuditedClaims,
+		input.sources,
+	);
 	const lines = [`# ${input.reportDraft.title}`, ""];
 
 	for (const block of input.reportDraft.reportBlocks) {
@@ -800,41 +804,26 @@ export function renderAuditedResearchReportMarkdown(input: {
 		const retainedBlockClaims = block.claimIds
 			.map((claimId) => auditedClaimById.get(claimId))
 			.filter((claim): claim is AuditedResearchReportClaim => Boolean(claim));
-		if (block.kind === "section" && retainedBlockClaims.length > 0) {
-			if (
-				isAuditedComparisonSectionHeading(
-					block.heading,
-					input.researchLanguage,
-				)
-			) {
-				lines.push(
-					`## ${block.heading}`,
-					`| # | ${labels.evidenceBackedPoint} |`,
-					"| --- | --- |",
-					...retainedBlockClaims.map(
-						(claim, index) =>
-							`| ${index + 1} | ${escapeMarkdownTableCell(
-								formatAuditedClaim(claim, sourceById),
-							)} |`,
-					),
-					"",
-				);
-				continue;
-			}
+		if (block.kind === "section") {
+			const fallbackClaims =
+				retainedBlockClaims.length > 0
+					? retainedBlockClaims
+					: block.claimIds.length > 0
+						? []
+						: auditedClaimsForSectionHeading({
+								heading: block.heading,
+								auditedReport: input.auditedReport,
+								retainedClaims,
+								researchLanguage: input.researchLanguage,
+							});
 			lines.push(
 				`## ${block.heading}`,
-				...retainedBlockClaims.map(
-					(claim) => `- ${formatAuditedClaim(claim, sourceById)}`,
-				),
-				"",
-			);
-			continue;
-		}
-
-		if (block.kind === "section" && block.claimIds.length > 0) {
-			lines.push(
-				`## ${block.heading}`,
-				`- ${reportLabels[input.researchLanguage].emptyBullet}`,
+				...renderAuditedSectionClaimLines({
+					heading: block.heading,
+					claims: fallbackClaims,
+					sourceById,
+					researchLanguage: input.researchLanguage,
+				}),
 				"",
 			);
 			continue;
@@ -860,14 +849,59 @@ export function renderAuditedResearchReportMarkdown(input: {
 	return lines.join("\n").trimEnd();
 }
 
+function auditedClaimsForSectionHeading(input: {
+	heading: string;
+	auditedReport: AuditedResearchReportDraft;
+	retainedClaims: AuditedResearchReportClaim[];
+	researchLanguage: ResearchLanguage;
+}): AuditedResearchReportClaim[] {
+	const normalizedHeading = normalizeLabel(input.heading);
+	const exactSection = input.auditedReport.sections.find(
+		(section) => normalizeLabel(section.heading) === normalizedHeading,
+	);
+	if (exactSection) return exactSection.claims;
+	if (isAuditedComparisonSectionHeading(input.heading, input.researchLanguage)) {
+		const comparisonSection = input.auditedReport.sections.find((section) =>
+			isAuditedComparisonSectionHeading(section.heading, input.researchLanguage),
+		);
+		if (comparisonSection) return comparisonSection.claims;
+	}
+	return input.retainedClaims;
+}
+
+function renderAuditedSectionClaimLines(input: {
+	heading: string;
+	claims: AuditedResearchReportClaim[];
+	sourceById: Map<string, CitedResearchReportSource>;
+	researchLanguage: ResearchLanguage;
+}): string[] {
+	const labels = reportLabels[input.researchLanguage];
+	if (input.claims.length === 0) return [`- ${labels.emptyBullet}`];
+	if (isAuditedComparisonSectionHeading(input.heading, input.researchLanguage)) {
+		return [
+			`| # | ${labels.evidenceBackedPoint} |`,
+			"| --- | --- |",
+			...input.claims.map(
+				(claim, index) =>
+					`| ${index + 1} | ${escapeMarkdownTableCell(
+						formatAuditedClaim(claim, input.sourceById),
+					)} |`,
+			),
+		];
+	}
+	return input.claims.map(
+		(claim) => `- ${formatAuditedClaim(claim, input.sourceById)}`,
+	);
+}
+
 function selectAuditedCitedSources(
-	retainedClaims: AuditedResearchReportClaim[],
+	auditedClaims: AuditedResearchReportClaim[],
 	sources: CitedResearchReportSource[],
 ): CitedResearchReportSource[] {
 	const sourceById = buildSourceLookup(sources);
 	const seen = new Set<string>();
 	const citedSources: CitedResearchReportSource[] = [];
-	for (const sourceId of retainedClaims.flatMap(
+	for (const sourceId of auditedClaims.flatMap(
 		(claim) => claim.citationSourceIds,
 	)) {
 		const source = sourceById.get(sourceId);
