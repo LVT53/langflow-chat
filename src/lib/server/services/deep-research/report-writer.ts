@@ -45,6 +45,26 @@ export type StructuredResearchReportTextBlock =
 		text: string;
 	};
 
+export type StructuredResearchComparisonMatrixAxis = {
+	label: string;
+	decisionMeaning: string;
+};
+
+export type StructuredResearchComparisonMatrixCell =
+	StructuredResearchReportReference & {
+		entity: string;
+		axis: string;
+		text: string;
+		confidenceCue: EvidenceConfidenceCueKind | null;
+		decisionMeaning: string;
+	};
+
+export type StructuredResearchComparisonMatrix = {
+	entities: string[];
+	axes: StructuredResearchComparisonMatrixAxis[];
+	cells: StructuredResearchComparisonMatrixCell[];
+};
+
 export type StructuredResearchReportCore = {
 	title: string;
 	scope: string;
@@ -60,6 +80,7 @@ export type StructuredResearchReportSection =
 		heading: string;
 		body: string;
 		citationBlocks?: StructuredResearchReportTextBlock[];
+		comparisonMatrix?: StructuredResearchComparisonMatrix;
 	};
 
 export type StructuredResearchReportBlockKind =
@@ -74,6 +95,7 @@ export type StructuredResearchReportBlock =
 		kind: StructuredResearchReportBlockKind;
 		heading: string;
 		markdown: string;
+		comparisonMatrix?: StructuredResearchComparisonMatrix;
 	};
 
 export type StructuredResearchReport = {
@@ -94,6 +116,25 @@ export type ResearchReportDraft = {
 	reportBlocks: StructuredResearchReportBlock[];
 	sourceLedgerSnapshotSources: ResearchReportSource[];
 	markdown: string;
+};
+
+export type AuditedResearchReportClaim = {
+	id: string;
+	text: string;
+	core?: boolean;
+	claimType?: DeepResearchSynthesisClaim["claimType"];
+	citationSourceIds: string[];
+};
+
+export type AuditedResearchReportSection = {
+	heading: string;
+	claims: AuditedResearchReportClaim[];
+};
+
+export type AuditedResearchReportDraft = {
+	title: string;
+	sections: AuditedResearchReportSection[];
+	limitations: string[];
 };
 
 export type EvidenceLimitationMemoRecoveryActionKind =
@@ -147,7 +188,7 @@ export type WriteEvidenceLimitationMemoInput = {
 };
 
 type ReportSectionKind = "methodology" | "comparison" | "recommendations";
-type EvidenceConfidenceCueKind =
+export type EvidenceConfidenceCueKind =
 	| "official_spec"
 	| "vendor_claim"
 	| "dated_price"
@@ -561,7 +602,11 @@ export function writeResearchReport(
 			)
 		: buildExecutiveSummary(input.plan, keyFindings, researchLanguage);
 	const sections = useVerifiedClaims
-		? buildStructuredReportSectionsForMarkdown(structuredReport, citedSources)
+		? buildStructuredReportSectionsForMarkdown(
+				structuredReport,
+				citedSources,
+				researchLanguage,
+			)
 		: buildReportSections(input.plan, keyFindings, researchLanguage);
 	const renderedLimitations = useVerifiedClaims
 		? structuredReport.core.limitations.map((limitation) =>
@@ -638,6 +683,306 @@ export function writeEvidenceLimitationMemo(
 		sourceLedgerSnapshotSources,
 		markdown,
 	};
+}
+
+export function renderAuditedResearchReportMarkdown(input: {
+	reportDraft: ResearchReportDraft;
+	auditedReport: AuditedResearchReportDraft;
+	sources: CitedResearchReportSource[];
+	researchLanguage: ResearchLanguage;
+}): string {
+	const labels = reportLabels[input.researchLanguage];
+	const auditedClaimById = new Map(
+		input.auditedReport.sections.flatMap((section) =>
+			section.claims.map((claim) => [claim.id, claim] as const),
+		),
+	);
+	const retainedClaims = input.auditedReport.sections
+		.flatMap((section) => section.claims)
+		.slice(0, MAX_REPORT_KEY_FINDINGS);
+	const sourceById = buildSourceLookup(input.sources);
+	const citedSources = selectAuditedCitedSources(retainedClaims, input.sources);
+	const lines = [`# ${input.reportDraft.title}`, ""];
+
+	for (const block of input.reportDraft.reportBlocks) {
+		if (block.kind === "appendix") {
+			if (normalizeLabel(block.heading) === normalizeLabel(labels.sources)) {
+				lines.push(
+					`## ${block.heading}`,
+					...renderAuditedSourceLines(citedSources, input.researchLanguage),
+					"",
+				);
+				continue;
+			}
+			if (
+				normalizeLabel(block.heading) ===
+				normalizeLabel(labels.appendix(labels.sources))
+			) {
+				lines.push(
+					`## ${block.heading}`,
+					...renderAuditedSourceLines(citedSources, input.researchLanguage),
+					"",
+				);
+				continue;
+			}
+			if (
+				normalizeLabel(block.heading) ===
+					normalizeLabel(labels.sourceLedgerSnapshot) ||
+				normalizeLabel(block.heading) ===
+					normalizeLabel(labels.appendix(labels.sourceLedgerSnapshot))
+			) {
+				lines.push(
+					`## ${block.heading}`,
+					buildSourceLedgerSnapshot(citedSources, input.researchLanguage),
+					"",
+				);
+				continue;
+			}
+		}
+
+		if (block.kind === "summary") {
+			lines.push(
+				`## ${block.heading}`,
+				...renderAuditedExecutiveSummary(
+					retainedClaims,
+					sourceById,
+					input.researchLanguage,
+				),
+				"",
+			);
+			continue;
+		}
+
+		if (block.kind === "findings") {
+			lines.push(
+				`## ${block.heading}`,
+				...renderAuditedFindingLines(
+					retainedClaims,
+					sourceById,
+					input.researchLanguage,
+				),
+				"",
+			);
+			continue;
+		}
+
+		if (block.kind === "limitations") {
+			if (input.auditedReport.limitations.length > 0) {
+				lines.push(
+					`## ${block.heading}`,
+					...input.auditedReport.limitations.map(
+						(limitation) =>
+							`- ${localizeAuditedLimitation(
+								limitation,
+								input.researchLanguage,
+							)}`,
+					),
+					"",
+				);
+			}
+			continue;
+		}
+
+		if (block.comparisonMatrix) {
+			lines.push(
+				`## ${block.heading}`,
+				renderComparisonMatrix(
+					block.comparisonMatrix,
+					input.researchLanguage,
+					input.sources,
+					auditedClaimById,
+				),
+				"",
+			);
+			continue;
+		}
+
+		const retainedBlockClaims = block.claimIds
+			.map((claimId) => auditedClaimById.get(claimId))
+			.filter((claim): claim is AuditedResearchReportClaim => Boolean(claim));
+		if (block.kind === "section" && retainedBlockClaims.length > 0) {
+			if (
+				isAuditedComparisonSectionHeading(
+					block.heading,
+					input.researchLanguage,
+				)
+			) {
+				lines.push(
+					`## ${block.heading}`,
+					`| # | ${labels.evidenceBackedPoint} |`,
+					"| --- | --- |",
+					...retainedBlockClaims.map(
+						(claim, index) =>
+							`| ${index + 1} | ${escapeMarkdownTableCell(
+								formatAuditedClaim(claim, sourceById),
+							)} |`,
+					),
+					"",
+				);
+				continue;
+			}
+			lines.push(
+				`## ${block.heading}`,
+				...retainedBlockClaims.map(
+					(claim) => `- ${formatAuditedClaim(claim, sourceById)}`,
+				),
+				"",
+			);
+			continue;
+		}
+
+		if (block.kind === "section" && block.claimIds.length > 0) {
+			lines.push(
+				`## ${block.heading}`,
+				`- ${reportLabels[input.researchLanguage].emptyBullet}`,
+				"",
+			);
+			continue;
+		}
+
+		lines.push(`## ${block.heading}`, block.markdown, "");
+	}
+
+	if (
+		input.auditedReport.limitations.length > 0 &&
+		!input.reportDraft.reportBlocks.some((block) => block.kind === "limitations")
+	) {
+		lines.push(
+			`## ${labels.reportLimitations}`,
+			...input.auditedReport.limitations.map(
+				(limitation) =>
+					`- ${localizeAuditedLimitation(limitation, input.researchLanguage)}`,
+			),
+			"",
+		);
+	}
+
+	return lines.join("\n").trimEnd();
+}
+
+function selectAuditedCitedSources(
+	retainedClaims: AuditedResearchReportClaim[],
+	sources: CitedResearchReportSource[],
+): CitedResearchReportSource[] {
+	const sourceById = buildSourceLookup(sources);
+	const seen = new Set<string>();
+	const citedSources: CitedResearchReportSource[] = [];
+	for (const sourceId of retainedClaims.flatMap(
+		(claim) => claim.citationSourceIds,
+	)) {
+		const source = sourceById.get(sourceId);
+		if (!source || seen.has(source.id)) continue;
+		seen.add(source.id);
+		citedSources.push(source);
+	}
+	return citedSources;
+}
+
+function renderAuditedSourceLines(
+	citedSources: CitedResearchReportSource[],
+	researchLanguage: ResearchLanguage,
+): string[] {
+	if (citedSources.length === 0) {
+		return [`- ${reportLabels[researchLanguage].emptyBullet}`];
+	}
+	return citedSources.map(
+		(source) => `[${source.citationNumber}] ${source.title} - ${source.url}`,
+	);
+}
+
+function renderAuditedExecutiveSummary(
+	retainedClaims: AuditedResearchReportClaim[],
+	sourceById: Map<string, CitedResearchReportSource>,
+	researchLanguage: ResearchLanguage,
+): string[] {
+	const labels = reportLabels[researchLanguage];
+	if (retainedClaims.length === 0) {
+		return [labels.noFindingSummary];
+	}
+
+	const [firstClaim, ...supportingClaims] = retainedClaims;
+	const lines = [
+		`${labels.bottomLine}: ${formatAuditedClaim(firstClaim, sourceById)}`,
+	];
+	const supporting = supportingClaims.slice(0, 2);
+	if (supporting.length > 0) {
+		lines.push(
+			`${labels.supportingEvidence}: ${supporting
+				.map((claim) => formatAuditedClaim(claim, sourceById))
+				.join(" ")}`,
+		);
+	}
+	return lines;
+}
+
+function renderAuditedFindingLines(
+	retainedClaims: AuditedResearchReportClaim[],
+	sourceById: Map<string, CitedResearchReportSource>,
+	researchLanguage: ResearchLanguage,
+): string[] {
+	if (retainedClaims.length === 0) {
+		return [`- ${reportLabels[researchLanguage].emptyBullet}`];
+	}
+	return retainedClaims.map(
+		(claim) => `- ${formatAuditedClaim(claim, sourceById)}`,
+	);
+}
+
+function localizeAuditedLimitation(
+	limitation: string,
+	researchLanguage: ResearchLanguage,
+): string {
+	if (researchLanguage !== "hu") return limitation;
+	const removedUnsupported = limitation.match(
+		/^Removed unsupported core claim after citation audit:\s*(.+)$/i,
+	);
+	if (removedUnsupported) {
+		return `A hivatkozás-ellenőrzés eltávolított egy nem alátámasztott alapállítást: ${removedUnsupported[1]}`;
+	}
+	const removedSource = limitation.match(
+		/^Removed claim because it cited sources that were not both reviewed and cited:\s*(.+)$/i,
+	);
+	if (removedSource) {
+		return `A hivatkozás-ellenőrzés eltávolított egy állítást, mert nem áttekintett és idézett forrásra hivatkozott: ${removedSource[1]}`;
+	}
+	const repaired = limitation.match(
+		/^Repaired unsupported core claim during citation audit:\s*(.+)$/i,
+	);
+	if (repaired) {
+		return `A hivatkozás-ellenőrzés javított egy nem alátámasztott alapállítást: ${repaired[1]}`;
+	}
+	return limitation;
+}
+
+function formatAuditedClaim(
+	claim: AuditedResearchReportClaim,
+	sourceById: Map<string, CitedResearchReportSource>,
+): string {
+	return `${claim.text}${formatCitationSuffixFromSourceIds(
+		claim.citationSourceIds,
+		sourceById,
+	)}`;
+}
+
+function normalizeLabel(value: string): string {
+	return value
+		.toLowerCase()
+		.normalize("NFD")
+		.replace(/\p{Diacritic}/gu, "")
+		.replace(/[^\p{L}]+/gu, " ")
+		.trim();
+}
+
+function isAuditedComparisonSectionHeading(
+	heading: string,
+	researchLanguage: ResearchLanguage,
+): boolean {
+	const normalized = normalizeLabel(heading);
+	const comparisonHeadings = [
+		reportLabels[researchLanguage].comparison,
+		...sectionHeadingsForIntent("comparison", researchLanguage),
+	].map(normalizeLabel);
+	return comparisonHeadings.includes(normalized);
 }
 
 export function selectResearchReportFindings(
@@ -1048,13 +1393,16 @@ function buildStructuredSectionsFromClaims(
 		const buildSection = (
 			body: string,
 			fallbackReferences: StructuredResearchReportReference = keyFindingReferences,
+			comparisonMatrix?: StructuredResearchComparisonMatrix,
 		): StructuredResearchReportSection => {
 			const citationBlocks = findCitationBlocksRenderedInBody(
 				body,
 				citationCandidates,
 			);
 			const references =
-				citationBlocks.length > 0
+				comparisonMatrix
+					? referencesFromComparisonMatrix(comparisonMatrix)
+					: citationBlocks.length > 0
 					? referencesFromStructuredTextBlocks(citationBlocks)
 					: fallbackReferences;
 			return {
@@ -1062,11 +1410,20 @@ function buildStructuredSectionsFromClaims(
 				body,
 				...references,
 				citationBlocks,
+				...(comparisonMatrix ? { comparisonMatrix } : {}),
 			};
 		};
 		if (input && isMatrixComparisonSection(plan, index)) {
+			const comparisonMatrix = buildStructuredComparisonMatrix(
+				input,
+				researchLanguage,
+			);
 			return buildSection(
-				buildDecisionBriefComparisonMatrix(input, researchLanguage),
+				comparisonMatrix
+					? renderComparisonMatrix(comparisonMatrix, researchLanguage)
+					: buildDecisionBriefComparisonMatrix(input, researchLanguage),
+				keyFindingReferences,
+				comparisonMatrix ?? undefined,
 			);
 		}
 		if (input && plan.reportIntent === "comparison" && index > 0) {
@@ -1598,6 +1955,20 @@ function buildDecisionBriefComparisonMatrix(
 	input: WriteResearchReportInput,
 	researchLanguage: ResearchLanguage,
 ): string {
+	const matrix = buildStructuredComparisonMatrix(input, researchLanguage);
+	if (matrix) return renderComparisonMatrix(matrix, researchLanguage);
+
+	return (input.synthesisClaims ?? [])
+		.filter((claim) => claim.status === "accepted" || claim.status === "limited")
+		.map((claim) => `- ${normalizeText(claim.statement)}`)
+		.filter((line) => line !== "-")
+		.join("\n");
+}
+
+function buildStructuredComparisonMatrix(
+	input: WriteResearchReportInput,
+	researchLanguage: ResearchLanguage,
+): StructuredResearchComparisonMatrix | null {
 	const labels = reportLabels[researchLanguage];
 	const evidenceById = new Map(
 		(input.evidenceNotes ?? []).map((note) => [note.id, note]),
@@ -1630,18 +2001,12 @@ function buildDecisionBriefComparisonMatrix(
 			.filter(Boolean),
 	);
 	if (entities.length === 0 || axes.length === 0) {
-		return (input.synthesisClaims ?? [])
-			.filter(
-				(claim) => claim.status === "accepted" || claim.status === "limited",
-			)
-			.map((claim) => `- ${normalizeText(claim.statement)}`)
-			.filter((line) => line !== "-")
-			.join("\n");
+		return null;
 	}
 
-	const usedCues = new Set<EvidenceConfidenceCueKind>();
-	const rows = axes.map((axis) => {
-		const cells = entities.map((entity) => {
+	const matrixAxes: StructuredResearchComparisonMatrixAxis[] = axes.map(
+		(axis) => {
+			const filledCellCount = entities.filter((entity) => {
 			const note = findComparisonEvidenceNote(
 				evidenceById,
 				entity,
@@ -1649,31 +2014,97 @@ function buildDecisionBriefComparisonMatrix(
 				claimByEvidenceId,
 			);
 			const claim = note ? claimByEvidenceId.get(note.id) : undefined;
-			const cell = formatComparisonEvidenceCell(
+				return Boolean(claim && normalizeText(claim.statement));
+			}).length;
+			return {
+				label: axis,
+				decisionMeaning: labels.decisionMeaningBody(axis, filledCellCount),
+			};
+		},
+	);
+	const cells = matrixAxes.flatMap((axis) =>
+		entities.map((entity) => {
+			const note = findComparisonEvidenceNote(
+				evidenceById,
+				entity,
+				axis.label,
+				claimByEvidenceId,
+			);
+			const claim = note ? claimByEvidenceId.get(note.id) : undefined;
+			return buildComparisonEvidenceCell(
+				entity,
+				axis.label,
 				claim ? note : null,
 				claim,
 				labels.notEstablished,
+				axis.decisionMeaning,
 			);
-			if (cell.cue) usedCues.add(cell.cue);
-			return cell.text;
-		});
-		const filledCellCount = cells.filter(
-			(cell) => cell !== labels.notEstablished,
-		).length;
-		return `| ${escapeMarkdownTableCell(axis)} | ${cells
-			.map(escapeMarkdownTableCell)
-			.join(" | ")} | ${escapeMarkdownTableCell(
-			labels.decisionMeaningBody(axis, filledCellCount),
-		)} |`;
-	});
+		}),
+	);
 
+	return { entities, axes: matrixAxes, cells };
+}
+
+function renderComparisonMatrix(
+	matrix: StructuredResearchComparisonMatrix,
+	researchLanguage: ResearchLanguage,
+	citedSources: CitedResearchReportSource[] = [],
+	auditedClaimById?: Map<string, AuditedResearchReportClaim>,
+): string {
+	const labels = reportLabels[researchLanguage];
+	const sourceById = buildSourceLookup(citedSources);
+	const usedCues = new Set<EvidenceConfidenceCueKind>();
+	const rows = matrix.axes.map((axis) => {
+		const cells = matrix.entities.map((entity) => {
+			const cell = findComparisonMatrixCell(matrix, entity, axis.label);
+			const renderedCell = renderComparisonMatrixCell({
+				cell,
+				notEstablishedLabel: labels.notEstablished,
+				sourceById,
+				auditedClaimById,
+			});
+			if (renderedCell.cue) usedCues.add(renderedCell.cue);
+			return renderedCell.text;
+		});
+		return `| ${escapeMarkdownTableCell(axis.label)} | ${cells
+			.map(escapeMarkdownTableCell)
+			.join(" | ")} | ${escapeMarkdownTableCell(axis.decisionMeaning)} |`;
+	});
 	const legend = renderConfidenceCueLegend(usedCues, researchLanguage);
 	return [
-		`| Axis | ${entities.map(escapeMarkdownTableCell).join(" | ")} | ${labels.decisionMeaning} |`,
-		`| --- | ${entities.map(() => "---").join(" | ")} | --- |`,
+		`| Axis | ${matrix.entities.map(escapeMarkdownTableCell).join(" | ")} | ${labels.decisionMeaning} |`,
+		`| --- | ${matrix.entities.map(() => "---").join(" | ")} | --- |`,
 		...rows,
 		...(legend ? ["", legend] : []),
 	].join("\n");
+}
+
+function findComparisonMatrixCell(
+	matrix: StructuredResearchComparisonMatrix,
+	entity: string,
+	axis: string,
+): StructuredResearchComparisonMatrixCell | null {
+	const normalizedEntity = normalizeComparisonKey(entity);
+	const normalizedAxis = normalizeComparisonKey(axis);
+	return (
+		matrix.cells.find(
+			(cell) =>
+				normalizeComparisonKey(cell.entity) === normalizedEntity &&
+				normalizeComparisonKey(cell.axis) === normalizedAxis,
+		) ?? null
+	);
+}
+
+function referencesFromComparisonMatrix(
+	matrix: StructuredResearchComparisonMatrix,
+): StructuredResearchReportReference {
+	return {
+		claimIds: uniqueValues(matrix.cells.flatMap((cell) => cell.claimIds)),
+		evidenceLinkIds: uniqueValues(
+			matrix.cells.flatMap((cell) => cell.evidenceLinkIds),
+		),
+		sourceIds: uniqueValues(matrix.cells.flatMap((cell) => cell.sourceIds)),
+	};
 }
 
 function findComparisonEvidenceNote(
@@ -1700,24 +2131,112 @@ function findComparisonEvidenceNote(
 	);
 }
 
-function formatComparisonEvidenceCell(
+function buildComparisonEvidenceCell(
+	entity: string,
+	axis: string,
 	note: DeepResearchEvidenceNote | null,
 	claim: DeepResearchSynthesisClaim | undefined,
 	notEstablishedLabel: string,
-): ComparisonEvidenceCell {
+	decisionMeaning = "",
+): StructuredResearchComparisonMatrixCell {
 	if (!note) {
-		return { text: notEstablishedLabel, cue: null };
+		return {
+			entity,
+			axis,
+			text: notEstablishedLabel,
+			confidenceCue: null,
+			decisionMeaning,
+			claimIds: [],
+			evidenceLinkIds: [],
+			sourceIds: [],
+		};
 	}
 	const text = normalizeText(claim?.statement ?? note.findingText);
 	if (!text) {
-		return { text: notEstablishedLabel, cue: null };
+		return {
+			entity,
+			axis,
+			text: notEstablishedLabel,
+			confidenceCue: null,
+			decisionMeaning,
+			claimIds: [],
+			evidenceLinkIds: [],
+			sourceIds: [],
+		};
 	}
+	const usefulLinks =
+		claim?.evidenceLinks.filter(
+			(link) =>
+				link.evidenceNoteId === note.id &&
+				["support", "qualification"].includes(link.relation),
+		) ?? [];
 	const cue = selectEvidenceConfidenceCue(note, claim);
-	const cueLabel = cue ? confidenceCueLabel(cue) : "";
 	return {
-		text: cueLabel ? `${cueLabel} ${text}` : text,
-		cue,
+		entity,
+		axis,
+		text,
+		confidenceCue: cue,
+		decisionMeaning,
+		claimIds: claim ? [claim.id] : [],
+		evidenceLinkIds: usefulLinks.map((link) => link.id),
+		sourceIds: sourceIdsFromEvidenceNote(note),
 	};
+}
+
+function renderComparisonMatrixCell(input: {
+	cell: StructuredResearchComparisonMatrixCell | null;
+	notEstablishedLabel: string;
+	sourceById: Map<string, CitedResearchReportSource>;
+	auditedClaimById?: Map<string, AuditedResearchReportClaim>;
+}): ComparisonEvidenceCell {
+	const cell = input.cell;
+	if (!cell || !normalizeText(cell.text) || cell.claimIds.length === 0) {
+		return { text: input.notEstablishedLabel, cue: null };
+	}
+	const auditedClaim = input.auditedClaimById
+		? cell.claimIds.map((claimId) => input.auditedClaimById?.get(claimId)).find(Boolean)
+		: null;
+	if (input.auditedClaimById && !auditedClaim) {
+		return { text: input.notEstablishedLabel, cue: null };
+	}
+	const text = normalizeText(auditedClaim?.text ?? cell.text);
+	if (!text || text === input.notEstablishedLabel) {
+		return { text: input.notEstablishedLabel, cue: null };
+	}
+	const citationSourceIds = auditedClaim?.citationSourceIds ?? cell.sourceIds;
+	const citationSuffix = formatCitationSuffixFromSourceIds(
+		citationSourceIds,
+		input.sourceById,
+	);
+	const cueLabel = cell.confidenceCue ? confidenceCueLabel(cell.confidenceCue) : "";
+	return {
+		text: `${cueLabel ? `${cueLabel} ` : ""}${text}${citationSuffix}`,
+		cue: cell.confidenceCue,
+	};
+}
+
+function formatCitationSuffixFromSourceIds(
+	sourceIds: string[],
+	sourceById: Map<string, CitedResearchReportSource>,
+): string {
+	const citationNumbers = sourceIds
+		.map((sourceId) => sourceById.get(sourceId))
+		.filter((source): source is CitedResearchReportSource => Boolean(source))
+		.map((source) => `[${source.citationNumber}]`);
+	return citationNumbers.length > 0
+		? ` ${uniqueValues(citationNumbers).join(" ")}`
+		: "";
+}
+
+function buildSourceLookup(
+	sources: CitedResearchReportSource[],
+): Map<string, CitedResearchReportSource> {
+	const sourceById = new Map<string, CitedResearchReportSource>();
+	for (const source of sources) {
+		sourceById.set(source.id, source);
+		if (source.reviewedSourceId) sourceById.set(source.reviewedSourceId, source);
+	}
+	return sourceById;
 }
 
 function selectEvidenceConfidenceCue(
@@ -2334,27 +2853,30 @@ function formatStructuredTextBlockWithCitations(
 function buildStructuredReportSectionsForMarkdown(
 	report: StructuredResearchReport,
 	citedSources: CitedResearchReportSource[],
+	researchLanguage: ResearchLanguage,
 ): ResearchReportSection[] {
 	return report.sections.map((section) => ({
 		heading: section.heading,
-		body: section.body
-			.split("\n")
-			.map((line) => {
-				let renderedLine = line;
-				const citationBlocks = dedupeStructuredTextBlocks([
-					...(section.citationBlocks ?? []),
-					...report.core.keyFindings,
-				]).sort((left, right) => right.text.length - left.text.length);
-				for (const block of citationBlocks) {
-					if (!renderedLine.includes(block.text)) continue;
-					renderedLine = renderedLine.replace(
-						block.text,
-						formatStructuredTextBlockWithCitations(block, citedSources),
-					);
-				}
-				return renderedLine;
-			})
-			.join("\n"),
+		body: section.comparisonMatrix
+			? renderComparisonMatrix(section.comparisonMatrix, researchLanguage, citedSources)
+			: section.body
+					.split("\n")
+					.map((line) => {
+						let renderedLine = line;
+						const citationBlocks = dedupeStructuredTextBlocks([
+							...(section.citationBlocks ?? []),
+							...report.core.keyFindings,
+						]).sort((left, right) => right.text.length - left.text.length);
+						for (const block of citationBlocks) {
+							if (!renderedLine.includes(block.text)) continue;
+							renderedLine = renderedLine.replace(
+								block.text,
+								formatStructuredTextBlockWithCitations(block, citedSources),
+							);
+						}
+						return renderedLine;
+					})
+					.join("\n"),
 	}));
 }
 
@@ -2416,6 +2938,9 @@ function buildResearchReportBlocks(input: {
 				claimIds: structuredSection?.claimIds ?? [],
 				evidenceLinkIds: structuredSection?.evidenceLinkIds ?? [],
 				sourceIds: structuredSection?.sourceIds ?? [],
+				...(structuredSection?.comparisonMatrix
+					? { comparisonMatrix: structuredSection.comparisonMatrix }
+					: {}),
 			};
 		}),
 	];

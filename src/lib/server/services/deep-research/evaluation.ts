@@ -13,6 +13,8 @@ export type DeepResearchEvaluationDimension =
 	| "claimGrounding"
 	| "sourceRelevance"
 	| "citationSupport"
+	| "comparisonCoverage"
+	| "searchPolicyFit"
 	| "durableResume"
 	| "localization"
 	| "hardSearchBehavior";
@@ -31,18 +33,42 @@ export type DeepResearchEvaluationResult = {
 	>;
 };
 
-export type DeepResearchEvaluationFixture = {
+export type DeepResearchEvaluationReportArtifact = {
+	id: string;
+	contentText?: string | null;
+	metadata?: Record<string, unknown> | null;
+};
+
+export type DeepResearchEvaluationDiscoveryRequest = {
+	query: string;
+	sourcePolicy?: string | null;
+	comparedEntity?: string | null;
+	comparisonAxis?: string | null;
+};
+
+export type DeepResearchExpectedComparisonCell = {
+	comparedEntity: string;
+	comparisonAxis: string;
+	expectedText?: string | null;
+};
+
+export type DeepResearchEvaluationRun = {
 	id: string;
 	title: string;
 	plan: ResearchPlan;
 	reviewedSources: ReviewedCoverageSource[];
+	discoveryRequests?: DeepResearchEvaluationDiscoveryRequest[];
 	evidenceNotes: DeepResearchEvidenceNote[];
 	synthesisClaims: DeepResearchSynthesisClaim[];
+	reportArtifact?: DeepResearchEvaluationReportArtifact | null;
+	expectedComparisonGrid?: DeepResearchExpectedComparisonCell[];
 	reportMarkdown?: string;
 	resumeTrace?: DeepResearchEvaluationResumeTrace;
 	localizedOutputs?: string[];
 	hardSearchTrace?: DeepResearchHardSearchStep[];
 };
+
+export type DeepResearchEvaluationFixture = DeepResearchEvaluationRun;
 
 export type DeepResearchEvaluationResumeTrace = {
 	passNumbers: number[];
@@ -427,12 +453,18 @@ export async function evaluateGoldenDeepResearchFixtures(): Promise<
 export async function evaluateDeepResearchFixture(
 	fixture: DeepResearchEvaluationFixture,
 ): Promise<DeepResearchEvaluationResult> {
+	return evaluateDeepResearchRun(fixture);
+}
+
+export async function evaluateDeepResearchRun(
+	run: DeepResearchEvaluationRun,
+): Promise<DeepResearchEvaluationResult> {
 	const dimensions = buildPassingDimensions();
 	const coverage = assessResearchCoverage({
-		jobId: fixture.id,
+		jobId: run.id,
 		conversationId: "evaluation-conversation",
-		plan: fixture.plan,
-		reviewedSources: fixture.reviewedSources,
+		plan: run.plan,
+		reviewedSources: run.reviewedSources,
 		remainingBudget: {
 			sourceReviews: 0,
 			synthesisPasses: 0,
@@ -450,22 +482,23 @@ export async function evaluateDeepResearchFixture(
 		);
 	}
 
-	const acceptedSupportedCentralClaims = fixture.synthesisClaims.filter(
+	const acceptedSupportedCentralClaims = run.synthesisClaims.filter(
 		(claim) =>
 			claim.central &&
 			claim.status === "accepted" &&
 			claim.evidenceLinks.length > 0,
 	);
-	if (
-		acceptedSupportedCentralClaims.length < fixture.plan.keyQuestions.length
-	) {
+	const minimumAcceptedCentralClaims = run.expectedComparisonGrid?.length
+		? run.expectedComparisonGrid.length
+		: run.plan.keyQuestions.length;
+	if (acceptedSupportedCentralClaims.length < minimumAcceptedCentralClaims) {
 		failDimension(
 			dimensions.claimGrounding,
 			"Enough reviewed sources were present, but the fixture had too few accepted supported central claims.",
 		);
 	}
 	if (
-		fixture.synthesisClaims.some(
+		run.synthesisClaims.some(
 			(claim) =>
 				claim.central && ["needs-repair", "rejected"].includes(claim.status),
 		)
@@ -476,25 +509,27 @@ export async function evaluateDeepResearchFixture(
 		);
 	}
 	if (
-		fixture.reportMarkdown &&
-		isSourceNoteDumpReport(fixture.reportMarkdown)
+		reportTextForEvaluation(run) &&
+		isSourceNoteDumpReport(reportTextForEvaluation(run))
 	) {
 		failDimension(
 			dimensions.readableSynthesis,
 			"Report reads like repeated source notes instead of synthesized analysis.",
 		);
 	}
-	if (fixture.resumeTrace && !hasDurableCrashResumeTrace(fixture.resumeTrace)) {
+	evaluateComparisonCoverage(run, dimensions.comparisonCoverage);
+	evaluateSearchPolicyFit(run, dimensions.searchPolicyFit);
+	if (run.resumeTrace && !hasDurableCrashResumeTrace(run.resumeTrace)) {
 		failDimension(
 			dimensions.durableResume,
 			"Crash/resume fixtures must preserve unique resume points across multiple Iterative Research Passes.",
 		);
 	}
 	if (
-		fixture.plan.researchLanguage === "hu" &&
+		run.plan.researchLanguage === "hu" &&
 		!hasHungarianResearchOutput(
-			fixture.localizedOutputs ?? [],
-			fixture.reportMarkdown,
+			run.localizedOutputs ?? [],
+			reportTextForEvaluation(run),
 		)
 	) {
 		failDimension(
@@ -503,22 +538,22 @@ export async function evaluateDeepResearchFixture(
 		);
 	}
 	if (
-		fixture.hardSearchTrace &&
-		!hasKimiInspiredHardSearchTrace(fixture.hardSearchTrace)
+		run.hardSearchTrace &&
+		!hasKimiInspiredHardSearchTrace(run.hardSearchTrace)
 	) {
 		failDimension(
 			dimensions.hardSearchBehavior,
 			"Hard-search fixtures must search, cross-validate, correct conflicts, and verify cautiously before answering.",
 		);
 	}
-	if (hasUnresolvedMaterialClaimConflict(fixture.synthesisClaims)) {
+	if (hasUnresolvedMaterialClaimConflict(run.synthesisClaims)) {
 		failDimension(
 			dimensions.claimGrounding,
 			"Material Claim Conflicts must remain visible as competing claims until resolved.",
 		);
 	}
 	if (
-		fixture.synthesisClaims.some(
+		run.synthesisClaims.some(
 			(claim) =>
 				!claim.central && ["needs-repair", "rejected"].includes(claim.status),
 		)
@@ -530,7 +565,7 @@ export async function evaluateDeepResearchFixture(
 	}
 
 	return {
-		fixtureId: fixture.id,
+		fixtureId: run.id,
 		accepted: Object.values(dimensions).every((dimension) => dimension.passed),
 		dimensions,
 	};
@@ -545,6 +580,8 @@ function buildPassingDimensions(): Record<
 		claimGrounding: { passed: true, reasons: [] },
 		sourceRelevance: { passed: true, reasons: [] },
 		citationSupport: { passed: true, reasons: [] },
+		comparisonCoverage: { passed: true, reasons: [] },
+		searchPolicyFit: { passed: true, reasons: [] },
 		durableResume: { passed: true, reasons: [] },
 		localization: { passed: true, reasons: [] },
 		hardSearchBehavior: { passed: true, reasons: [] },
@@ -557,6 +594,154 @@ function failDimension(
 ) {
 	dimension.passed = false;
 	if (!dimension.reasons.includes(reason)) dimension.reasons.push(reason);
+}
+
+function reportTextForEvaluation(run: DeepResearchEvaluationRun): string {
+	return run.reportArtifact?.contentText ?? run.reportMarkdown ?? "";
+}
+
+function evaluateComparisonCoverage(
+	run: DeepResearchEvaluationRun,
+	dimension: DeepResearchEvaluationDimensionResult,
+) {
+	if (run.plan.reportIntent !== "comparison") return;
+	const expectedCells = expectedComparisonCells(run);
+	if (expectedCells.length === 0) return;
+	const reportText = normalizeComparableText(reportTextForEvaluation(run));
+	if (!reportText) {
+		failDimension(
+			dimension,
+			"Persisted report artifact text is required to evaluate comparison coverage.",
+		);
+	}
+	const acceptedClaimByEvidenceNoteId = new Set(
+		run.synthesisClaims
+			.filter((claim) => claim.status === "accepted" || claim.status === "limited")
+			.flatMap((claim) =>
+				claim.evidenceLinks
+					.filter(
+						(link) =>
+							link.relation === "support" ||
+							link.relation === "qualification",
+					)
+					.map((link) => link.evidenceNoteId),
+			),
+	);
+	const missingCells = expectedCells.filter((cell) => {
+		const evidence = run.evidenceNotes.find(
+			(note) =>
+				termsMatch(note.comparedEntity, cell.comparedEntity) &&
+				termsMatch(note.comparisonAxis, cell.comparisonAxis) &&
+				acceptedClaimByEvidenceNoteId.has(note.id),
+		);
+		if (!evidence) return true;
+		const expectedText = cell.expectedText ?? evidence.findingText;
+		return !reportText.includes(normalizeComparableText(expectedText));
+	});
+	if (missingCells.length > 0) {
+		failDimension(
+			dimension,
+			`Persisted report is missing expected comparison coverage for ${missingCells
+				.map((cell) => `${cell.comparedEntity} / ${cell.comparisonAxis}`)
+				.join(", ")}.`,
+		);
+	}
+}
+
+function expectedComparisonCells(
+	run: DeepResearchEvaluationRun,
+): DeepResearchExpectedComparisonCell[] {
+	if (run.expectedComparisonGrid?.length) return run.expectedComparisonGrid;
+	const entities = run.plan.comparedEntities ?? [];
+	const axes = run.plan.comparisonAxes ?? [];
+	if (entities.length === 0 || axes.length === 0) return [];
+	return entities.flatMap((comparedEntity) =>
+		axes.map((comparisonAxis) => ({
+			comparedEntity,
+			comparisonAxis,
+		})),
+	);
+}
+
+function evaluateSearchPolicyFit(
+	run: DeepResearchEvaluationRun,
+	dimension: DeepResearchEvaluationDimensionResult,
+) {
+	const requests = run.discoveryRequests ?? [];
+	if (requests.length === 0) return;
+	const missingPolicyRequests = requests.filter((request) => !request.sourcePolicy);
+	if (missingPolicyRequests.length > 0) {
+		failDimension(
+			dimension,
+			"Discovery requests must record the source policy used for search.",
+		);
+	}
+	const expectedCells = expectedComparisonCells(run);
+	const missingDiscoveryCells = expectedCells.filter(
+		(cell) =>
+			!requests.some(
+				(request) =>
+					termsMatch(request.comparedEntity, cell.comparedEntity) &&
+					termsMatch(request.comparisonAxis, cell.comparisonAxis),
+			),
+	);
+	if (missingDiscoveryCells.length > 0) {
+		failDimension(
+			dimension,
+			`Discovery requests did not cover expected comparison cells: ${missingDiscoveryCells
+				.map((cell) => `${cell.comparedEntity} / ${cell.comparisonAxis}`)
+				.join(", ")}.`,
+		);
+	}
+	const incompatibleRequests = requests.filter(
+		(request) => !isSearchPolicyCompatible(run.plan, request),
+	);
+	if (incompatibleRequests.length > 0) {
+		failDimension(
+			dimension,
+			"Discovery requests used a source policy that did not fit the approved research plan.",
+		);
+	}
+}
+
+function isSearchPolicyCompatible(
+	plan: ResearchPlan,
+	request: DeepResearchEvaluationDiscoveryRequest,
+): boolean {
+	const policy = request.sourcePolicy;
+	if (!policy) return false;
+	const context = normalizeComparableText(
+		[
+			plan.goal,
+			...plan.keyQuestions,
+			...plan.constraints,
+			request.query,
+			request.comparedEntity ?? "",
+			request.comparisonAxis ?? "",
+		].join(" "),
+	);
+	if (
+		/\b(medical|clinical|health|legal|law|regulation|financial|finance|tax|compliance|copyright)\b/u.test(
+			context,
+		)
+	) {
+		return policy === "medical_legal_financial";
+	}
+	if (
+		/\b(api|code|software|security|repository|technical|sdk|database|architecture)\b/u.test(
+			context,
+		)
+	) {
+		return policy === "technical";
+	}
+	if (
+		/\b(price|pricing|availability|buy|purchase|product|spec|specification|review)\b/u.test(
+			context,
+		)
+	) {
+		return policy === "commerce";
+	}
+	return policy === "general";
 }
 
 function hasUnresolvedMaterialClaimConflict(
@@ -580,12 +765,19 @@ function hasUnresolvedMaterialClaimConflict(
 function isSourceNoteDumpReport(markdown: string): boolean {
 	const keyFindings = extractMarkdownBullets(markdown, "Key Findings");
 	const analysis = extractMarkdownBullets(markdown, "Analysis");
-	if (keyFindings.length < 3 || analysis.length < 3) return false;
-	const normalizedAnalysis = new Set(analysis.map(normalizeComparableLine));
-	const repeatedBullets = keyFindings.filter((bullet) =>
-		normalizedAnalysis.has(normalizeComparableLine(bullet)),
+	if (keyFindings.length >= 3 && analysis.length >= 3) {
+		const normalizedAnalysis = new Set(analysis.map(normalizeComparableLine));
+		const repeatedBullets = keyFindings.filter((bullet) =>
+			normalizedAnalysis.has(normalizeComparableLine(bullet)),
+		);
+		if (repeatedBullets.length >= 3) return true;
+	}
+	const narrativeBullets = extractNarrativeMarkdownBullets(markdown);
+	const sourceNoteBullets = narrativeBullets.filter(isSourceNoteLikeBullet);
+	return (
+		sourceNoteBullets.length >= 3 &&
+		sourceNoteBullets.length / Math.max(1, narrativeBullets.length) >= 0.6
 	);
-	return repeatedBullets.length >= 3;
 }
 
 function extractMarkdownBullets(markdown: string, heading: string): string[] {
@@ -604,12 +796,61 @@ function extractMarkdownBullets(markdown: string, heading: string): string[] {
 	return bullets;
 }
 
+function extractNarrativeMarkdownBullets(markdown: string): string[] {
+	const lines = markdown.split(/\r?\n/);
+	const bullets: string[] = [];
+	let inSourceAppendix = false;
+	for (const line of lines) {
+		const heading = line.match(/^#{2,6}\s+(.+)$/);
+		if (heading) {
+			inSourceAppendix =
+				/\b(sources?|references?|bibliography|source ledger|appendix: sources)\b/iu.test(
+					heading[1] ?? "",
+				);
+			continue;
+		}
+		if (inSourceAppendix) continue;
+		const match = line.match(/^-\s+(.+)$/);
+		if (match) bullets.push(match[1].trim());
+	}
+	return bullets;
+}
+
+function isSourceNoteLikeBullet(value: string): boolean {
+	const normalized = normalizeComparableText(value);
+	if (
+		/^(source note|source|evidence note|reviewed source|reviewed note):/u.test(
+			normalized,
+		)
+	) {
+		return true;
+	}
+	return (
+		/https?:\/\//iu.test(value) &&
+		/\b(official|specs?|review|forum|briefing|documentation|docs|source)\b/u.test(
+			normalized,
+		)
+	);
+}
+
 function normalizeComparableLine(value: string): string {
 	return value
 		.replace(/\s+\[\d+\]$/u, "")
 		.replace(/\s+/g, " ")
 		.trim()
 		.toLowerCase();
+}
+
+function normalizeComparableText(value: string): string {
+	return value
+		.replace(/\s+\[\d+\]/gu, "")
+		.replace(/\s+/g, " ")
+		.trim()
+		.toLowerCase();
+}
+
+function termsMatch(left: string | null | undefined, right: string): boolean {
+	return normalizeComparableText(left ?? "") === normalizeComparableText(right);
 }
 
 function hasDurableCrashResumeTrace(

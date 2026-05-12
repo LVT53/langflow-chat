@@ -1,5 +1,21 @@
 import { describe, expect, it, vi } from "vitest";
+
+vi.mock("$lib/server/config-store", () => ({
+	getConfig: vi.fn(async () => ({
+		exaApiKey: "exa-key",
+		braveSearchApiKey: "brave-key",
+		webResearchExaSearchType: "auto",
+		webResearchExaNumResults: 12,
+		webResearchBraveNumResults: 10,
+		webResearchMaxSources: 6,
+		webResearchHighlightChars: 500,
+		webResearchContentChars: 2000,
+		webResearchFreshnessHours: 24,
+	})),
+}));
+
 import {
+	buildDiscoveryResearchRequest,
 	classifySourceAuthority,
 	planResearchQueries,
 	type ResearchEvidence,
@@ -99,6 +115,58 @@ describe("web research planning", () => {
 			classifySourceAuthority("https://reddit.com/r/example", "technical"),
 		).toMatchObject({
 			authorityClass: "low",
+		});
+	});
+
+	it("builds discovery requests with the normal web research inference semantics", () => {
+		expect(
+			buildDiscoveryResearchRequest({
+				query: " current Framework X Pro price ",
+				maxSources: 99,
+			}),
+		).toEqual({
+			query: "current Framework X Pro price",
+			mode: "exact",
+			freshness: "live",
+			sourcePolicy: "commerce",
+			maxSources: 12,
+			quoteRequired: true,
+		});
+	});
+
+	it("infers specialized discovery request policy for technical, news, and regulatory queries", () => {
+		expect(
+			buildDiscoveryResearchRequest({
+				query: "SvelteKit API documentation migration",
+				maxSources: 4,
+			}),
+		).toMatchObject({
+			mode: "quick",
+			freshness: "auto",
+			sourcePolicy: "technical",
+			quoteRequired: false,
+		});
+		expect(
+			buildDiscoveryResearchRequest({
+				query: "latest election news today",
+				maxSources: 4,
+			}),
+		).toMatchObject({
+			mode: "quick",
+			freshness: "live",
+			sourcePolicy: "news",
+			quoteRequired: false,
+		});
+		expect(
+			buildDiscoveryResearchRequest({
+				query: "current legal regulation for AI copyright compliance",
+				maxSources: 4,
+			}),
+		).toMatchObject({
+			mode: "exact",
+			freshness: "live",
+			sourcePolicy: "medical_legal_financial",
+			quoteRequired: true,
 		});
 	});
 });

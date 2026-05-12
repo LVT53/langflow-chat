@@ -3,7 +3,10 @@ import type {
 	ResearchResult,
 	ResearchSource,
 } from "$lib/server/services/web-research";
-import { researchWeb as defaultResearchWeb } from "$lib/server/services/web-research";
+import {
+	buildDiscoveryResearchRequest,
+	researchWeb as defaultResearchWeb,
+} from "$lib/server/services/web-research";
 import type { ResearchPlan } from "./planning";
 import { saveDiscoveredResearchSource } from "./sources";
 import {
@@ -89,12 +92,12 @@ export async function runPublicWebDiscoveryPass(
 	const warnings: string[] = [];
 	for (const discoveryQuery of discoveryQueries) {
 		try {
-			const result = await researchWeb({
-				query: discoveryQuery.query,
-				mode: "research",
-				sourcePolicy: "general",
-				maxSources,
-			});
+			const result = await researchWeb(
+				buildDiscoveryResearchRequest({
+					query: discoveryQuery.query,
+					maxSources,
+				}),
+			);
 			researchResults.push({ query: discoveryQuery, sources: result.sources });
 		} catch (error) {
 			warnings.push(`Public web discovery failed: ${errorMessage(error)}`);
@@ -296,8 +299,11 @@ type DiscoveryQuery = {
 };
 
 function buildDiscoveryQueries(plan: ResearchPlan): DiscoveryQuery[] {
-	const maxQueryCount = maxDiscoveryQueryCount(plan.depth);
 	const comparisonQueries = buildComparisonDiscoveryQueries(plan);
+	const maxQueryCount = maxDiscoveryQueryCount(
+		plan.depth,
+		comparisonQueries.length > 0,
+	);
 	const candidates = (
 		comparisonQueries.length > 0
 			? comparisonQueries
@@ -343,7 +349,15 @@ function buildComparisonDiscoveryQueries(plan: ResearchPlan): DiscoveryQuery[] {
 	);
 }
 
-function maxDiscoveryQueryCount(depth: ResearchPlan["depth"]): number {
+function maxDiscoveryQueryCount(
+	depth: ResearchPlan["depth"],
+	hasComparisonQueries: boolean,
+): number {
+	if (hasComparisonQueries) {
+		if (depth === "focused") return 6;
+		if (depth === "max") return 24;
+		return 12;
+	}
 	if (depth === "focused") return 2;
 	if (depth === "max") return 6;
 	return 4;

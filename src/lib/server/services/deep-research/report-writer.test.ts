@@ -6,6 +6,7 @@ import type {
 } from "$lib/types";
 import type { ResearchPlan } from "./planning";
 import {
+	renderAuditedResearchReportMarkdown,
 	writeEvidenceLimitationMemo,
 	writeResearchReport,
 } from "./report-writer";
@@ -816,6 +817,237 @@ describe("Deep Research report writer", () => {
 		);
 	});
 
+	it("renders audited comparison matrices with removed cells marked as not established", () => {
+		const comparisonPlan: ResearchPlan = {
+			...basePlan,
+			goal: "Compare two AI coding assistants for repository workflow.",
+			reportIntent: "comparison",
+			comparedEntities: ["Assistant A", "Assistant B"],
+			comparisonAxes: ["Repository workflow"],
+			reportShape: ["Comparison Matrix", "Decision Implications"],
+		};
+		const assistantAEvidence: DeepResearchEvidenceNote = {
+			...evidenceNotes[0],
+			id: "evidence-assistant-a-workflow",
+			sourceId: "source-assistant-a-workflow",
+			comparedEntity: "Assistant A",
+			comparisonAxis: "Repository workflow",
+			findingText:
+				"Assistant A supports repository-aware workflow with permission controls.",
+			sourceSupport: {
+				sourceId: "source-assistant-a-workflow",
+				reviewedSourceId: "reviewed-assistant-a-workflow",
+			},
+		};
+		const assistantBEvidence: DeepResearchEvidenceNote = {
+			...evidenceNotes[0],
+			id: "evidence-assistant-b-workflow",
+			sourceId: "source-assistant-b-workflow",
+			comparedEntity: "Assistant B",
+			comparisonAxis: "Repository workflow",
+			findingText:
+				"Assistant B claims real-time repository indexing across all plans.",
+			sourceSupport: {
+				sourceId: "source-assistant-b-workflow",
+				reviewedSourceId: "reviewed-assistant-b-workflow",
+			},
+		};
+		const assistantAClaim: DeepResearchSynthesisClaim = {
+			...acceptedClaim,
+			id: "claim-assistant-a-workflow",
+			statement: assistantAEvidence.findingText,
+			reportSection: assistantAEvidence.comparisonAxis,
+			evidenceLinks: [
+				{
+					...acceptedClaim.evidenceLinks[0],
+					id: "link-assistant-a-workflow",
+					claimId: "claim-assistant-a-workflow",
+					evidenceNoteId: assistantAEvidence.id,
+				},
+			],
+		};
+		const assistantBClaim: DeepResearchSynthesisClaim = {
+			...acceptedClaim,
+			id: "claim-assistant-b-workflow",
+			statement: assistantBEvidence.findingText,
+			reportSection: assistantBEvidence.comparisonAxis,
+			evidenceLinks: [
+				{
+					...acceptedClaim.evidenceLinks[0],
+					id: "link-assistant-b-workflow",
+					claimId: "claim-assistant-b-workflow",
+					evidenceNoteId: assistantBEvidence.id,
+				},
+			],
+		};
+		const report = writeResearchReport({
+			jobId: "job-audited-matrix-removal",
+			plan: comparisonPlan,
+			synthesisNotes: baseSynthesisNotes,
+			synthesisClaims: [assistantAClaim, assistantBClaim],
+			evidenceNotes: [assistantAEvidence, assistantBEvidence],
+			sources: [
+				{
+					id: "source-assistant-a-workflow",
+					reviewedSourceId: "reviewed-assistant-a-workflow",
+					status: "cited",
+					title: "Assistant A repository workflow documentation",
+					url: "https://assistant-a.example.test/workflow",
+				},
+				{
+					id: "source-assistant-b-workflow",
+					reviewedSourceId: "reviewed-assistant-b-workflow",
+					status: "cited",
+					title: "Assistant B indexing documentation",
+					url: "https://assistant-b.example.test/indexing",
+				},
+			],
+		});
+
+		const auditedMarkdown = renderAuditedResearchReportMarkdown({
+			reportDraft: report,
+			auditedReport: {
+				title: report.title,
+				sections: [
+					{
+						heading: "Comparison Matrix",
+						claims: [
+							{
+								id: "claim-assistant-a-workflow",
+								text: assistantAClaim.statement,
+								core: true,
+								citationSourceIds: ["source-assistant-a-workflow"],
+							},
+						],
+					},
+				],
+				limitations: [
+					`Removed unsupported core claim after citation audit: ${assistantBClaim.statement}`,
+				],
+			},
+			sources: report.sources,
+			researchLanguage: "en",
+		});
+
+		const matrixSection = auditedMarkdown.slice(
+			auditedMarkdown.indexOf("## Comparison Matrix"),
+			auditedMarkdown.indexOf("## Decision Implications"),
+		);
+		expect(matrixSection).toContain(
+			"| Axis | Assistant A | Assistant B | Decision Meaning |",
+		);
+		expect(matrixSection).toContain(
+			"| Repository workflow | Assistant A supports repository-aware workflow with permission controls. [1] | Not established |",
+		);
+		expect(matrixSection).not.toContain(assistantBClaim.statement);
+		expect(auditedMarkdown).not.toContain(
+			"Assistant B indexing documentation - https://assistant-b.example.test/indexing",
+		);
+	});
+
+	it("renders repaired audited matrix cells with narrowed citations", () => {
+		const comparisonPlan: ResearchPlan = {
+			...basePlan,
+			goal: "Compare AI research assistants for citation controls.",
+			reportIntent: "comparison",
+			comparedEntities: ["Assistant A"],
+			comparisonAxes: ["Citation controls"],
+			reportShape: ["Comparison Matrix", "Decision Implications"],
+		};
+		const evidence: DeepResearchEvidenceNote = {
+			...evidenceNotes[0],
+			id: "evidence-assistant-a-citations",
+			sourceId: "source-broad-citation-doc",
+			comparedEntity: "Assistant A",
+			comparisonAxis: "Citation controls",
+			findingText:
+				"Assistant A always verifies every citation before report export.",
+			sourceSupport: {
+				sourceId: "source-broad-citation-doc",
+				reviewedSourceId: "reviewed-broad-citation-doc",
+				sourceIds: ["source-broad-citation-doc", "source-narrow-citation-doc"],
+			},
+		};
+		const claim: DeepResearchSynthesisClaim = {
+			...acceptedClaim,
+			id: "claim-assistant-a-citations",
+			statement: evidence.findingText,
+			reportSection: evidence.comparisonAxis,
+			evidenceLinks: [
+				{
+					...acceptedClaim.evidenceLinks[0],
+					id: "link-assistant-a-citations",
+					claimId: "claim-assistant-a-citations",
+					evidenceNoteId: evidence.id,
+				},
+			],
+		};
+		const report = writeResearchReport({
+			jobId: "job-audited-matrix-repair",
+			plan: comparisonPlan,
+			synthesisNotes: baseSynthesisNotes,
+			synthesisClaims: [claim],
+			evidenceNotes: [evidence],
+			sources: [
+				{
+					id: "source-broad-citation-doc",
+					reviewedSourceId: "reviewed-broad-citation-doc",
+					status: "cited",
+					title: "Assistant A broad citation marketing page",
+					url: "https://assistant-a.example.test/marketing-citations",
+				},
+				{
+					id: "source-narrow-citation-doc",
+					reviewedSourceId: "reviewed-narrow-citation-doc",
+					status: "cited",
+					title: "Assistant A citation audit documentation",
+					url: "https://assistant-a.example.test/citation-audit",
+				},
+			],
+		});
+
+		const auditedMarkdown = renderAuditedResearchReportMarkdown({
+			reportDraft: report,
+			auditedReport: {
+				title: report.title,
+				sections: [
+					{
+						heading: "Comparison Matrix",
+						claims: [
+							{
+								id: claim.id,
+								text: "Assistant A can verify citations when citation audit is enabled.",
+								core: true,
+								citationSourceIds: ["source-narrow-citation-doc"],
+							},
+						],
+					},
+				],
+				limitations: [
+					`Repaired unsupported core claim during citation audit: ${claim.statement}`,
+				],
+			},
+			sources: report.sources,
+			researchLanguage: "en",
+		});
+
+		const matrixSection = auditedMarkdown.slice(
+			auditedMarkdown.indexOf("## Comparison Matrix"),
+			auditedMarkdown.indexOf("## Decision Implications"),
+		);
+		expect(matrixSection).toContain(
+			"| Citation controls | Assistant A can verify citations when citation audit is enabled. [2] |",
+		);
+		expect(matrixSection).not.toContain(claim.statement);
+		expect(matrixSection).not.toContain("[1]");
+		expect(auditedMarkdown).toContain(
+			"[2] Assistant A citation audit documentation - https://assistant-a.example.test/citation-audit",
+		);
+		expect(auditedMarkdown).not.toContain(
+			"[1] Assistant A broad citation marketing page - https://assistant-a.example.test/marketing-citations",
+		);
+	});
+
 	it("builds a comparison matrix from linked evidence metadata when the plan omits entities and axes", () => {
 		const productEvidence: DeepResearchEvidenceNote[] = [
 			{
@@ -897,6 +1129,154 @@ describe("Deep Research report writer", () => {
 		expect(report.markdown).not.toContain(
 			"## Comparison Matrix\n- Product A has a 400Wh battery",
 		);
+	});
+
+	it("classifies Comparison Matrix fallback sections as comparison tables during audited rendering", () => {
+		const comparisonPlan: ResearchPlan = {
+			...basePlan,
+			goal: "Compare two AI assistants for export quality.",
+			reportIntent: "comparison",
+			comparedEntities: ["Assistant A"],
+			comparisonAxes: ["Export quality"],
+			reportShape: ["Comparison Matrix", "Decision Implications"],
+		};
+		const evidence: DeepResearchEvidenceNote = {
+			...evidenceNotes[0],
+			id: "evidence-assistant-a-export",
+			sourceId: "source-assistant-a-export",
+			comparedEntity: "Assistant A",
+			comparisonAxis: "Export quality",
+			findingText: "Assistant A exports reports with source-linked footnotes.",
+			sourceSupport: {
+				sourceId: "source-assistant-a-export",
+				reviewedSourceId: "reviewed-assistant-a-export",
+			},
+		};
+		const claim: DeepResearchSynthesisClaim = {
+			...acceptedClaim,
+			id: "claim-assistant-a-export",
+			statement: evidence.findingText,
+			reportSection: evidence.comparisonAxis,
+			evidenceLinks: [
+				{
+					...acceptedClaim.evidenceLinks[0],
+					id: "link-assistant-a-export",
+					claimId: "claim-assistant-a-export",
+					evidenceNoteId: evidence.id,
+				},
+			],
+		};
+		const report = writeResearchReport({
+			jobId: "job-comparison-fallback-classification",
+			plan: comparisonPlan,
+			synthesisNotes: baseSynthesisNotes,
+			synthesisClaims: [claim],
+			evidenceNotes: [evidence],
+			sources: [
+				{
+					id: "source-assistant-a-export",
+					reviewedSourceId: "reviewed-assistant-a-export",
+					status: "cited",
+					title: "Assistant A export documentation",
+					url: "https://assistant-a.example.test/export",
+				},
+			],
+		});
+		const fallbackReport = {
+			...report,
+			reportBlocks: report.reportBlocks.map((block) =>
+				block.heading === "Comparison Matrix"
+					? { ...block, comparisonMatrix: undefined }
+					: block,
+			),
+		};
+
+		const auditedMarkdown = renderAuditedResearchReportMarkdown({
+			reportDraft: fallbackReport,
+			auditedReport: {
+				title: report.title,
+				sections: [
+					{
+						heading: "Comparison Matrix",
+						claims: [
+							{
+								id: claim.id,
+								text: claim.statement,
+								core: true,
+								citationSourceIds: ["source-assistant-a-export"],
+							},
+						],
+					},
+				],
+				limitations: [],
+			},
+			sources: report.sources,
+			researchLanguage: "en",
+		});
+
+		const matrixSection = auditedMarkdown.slice(
+			auditedMarkdown.indexOf("## Comparison Matrix"),
+			auditedMarkdown.indexOf("## Decision Implications"),
+		);
+		expect(matrixSection).toContain("| # | Evidence-backed point |");
+		expect(matrixSection).toContain(
+			"| 1 | Assistant A exports reports with source-linked footnotes. [1] |",
+		);
+		expect(matrixSection).not.toContain(
+			"- Assistant A exports reports with source-linked footnotes. [1]",
+		);
+	});
+
+	it("does not pass through stale section markdown when every section claim is removed", () => {
+		const report = writeResearchReport({
+			jobId: "job-removed-section-claim",
+			plan: {
+				...basePlan,
+				reportIntent: "investigation",
+				reportShape: ["Analysis"],
+			},
+			synthesisNotes: baseSynthesisNotes,
+			synthesisClaims: [acceptedClaim],
+			evidenceNotes,
+			sources: [
+				{
+					id: "source-1",
+					reviewedSourceId: "reviewed-1",
+					status: "cited",
+					title: "AI coding security documentation",
+					url: "https://docs.example.com/ai-coding/security",
+				},
+			],
+		});
+
+		const auditedMarkdown = renderAuditedResearchReportMarkdown({
+			reportDraft: report,
+			auditedReport: {
+				title: report.title,
+				sections: [{ heading: "Analysis", claims: [] }],
+				limitations: [
+					`Removed unsupported core claim after citation audit: ${acceptedClaim.statement}`,
+				],
+			},
+			sources: report.sources,
+			researchLanguage: "en",
+		});
+
+		const removedClaimSection = report.reportBlocks.find(
+			(block) =>
+				block.kind === "section" && block.claimIds.includes(acceptedClaim.id),
+		);
+		expect(removedClaimSection).toBeDefined();
+		const sectionStart = auditedMarkdown.indexOf(
+			`## ${removedClaimSection?.heading}`,
+		);
+		const nextSectionStart = auditedMarkdown.indexOf("\n## ", sectionStart + 1);
+		const sectionMarkdown = auditedMarkdown.slice(
+			sectionStart,
+			nextSectionStart === -1 ? undefined : nextSectionStart,
+		);
+		expect(sectionMarkdown).toContain("- None.");
+		expect(sectionMarkdown).not.toContain("[1]");
 	});
 
 	it("renders recommendation reports with ranked options, rubric, fit/risk table, next actions, and compact appendix", () => {

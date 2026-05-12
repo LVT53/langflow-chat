@@ -12,9 +12,28 @@ const {
 	mockSaveResearchTimelineEvent: vi.fn(),
 }));
 
-vi.mock("$lib/server/services/web-research", () => ({
-	researchWeb: mockResearchWeb,
+vi.mock("$lib/server/config-store", () => ({
+	getConfig: vi.fn(async () => ({
+		exaApiKey: "exa-key",
+		braveSearchApiKey: "brave-key",
+		webResearchExaSearchType: "auto",
+		webResearchExaNumResults: 12,
+		webResearchBraveNumResults: 10,
+		webResearchMaxSources: 6,
+		webResearchHighlightChars: 500,
+		webResearchContentChars: 2000,
+		webResearchFreshnessHours: 24,
+	})),
 }));
+
+vi.mock("$lib/server/services/web-research", async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import("$lib/server/services/web-research")>();
+	return {
+		...actual,
+		researchWeb: mockResearchWeb,
+	};
+});
 
 vi.mock("./sources", () => ({
 	saveDiscoveredResearchSource: mockSaveDiscoveredResearchSource,
@@ -211,6 +230,64 @@ describe("public web discovery", () => {
 		expect(result.savedSources).toHaveLength(1);
 	});
 
+	it("uses web research inference for discovery request controls", async () => {
+		const productScanPlan: ResearchPlan = {
+			...approvedPlan,
+			goal: "current Framework X Pro price",
+			depth: "focused",
+			reportIntent: "product_scan",
+			researchBudget: {
+				sourceReviewCeiling: 12,
+				synthesisPassCeiling: 1,
+			},
+			keyQuestions: ["latest SvelteKit migration documentation"],
+		};
+		const researchWeb = vi.fn().mockResolvedValue({
+			sources: [],
+			diagnostics: {
+				providerCalls: [],
+			},
+		});
+		const saveDiscoveredSources = vi.fn(async (sources) => sources);
+		const saveTimelineEvent = vi.fn(async (event) => ({
+			...event,
+			id: "event-1",
+			createdAt: event.occurredAt,
+		}));
+
+		await runPublicWebDiscoveryPass(
+			{
+				jobId: "job-product-scan-discovery",
+				conversationId: "conversation-1",
+				userId: "user-1",
+				approvedPlan: productScanPlan,
+				now: new Date("2026-05-05T12:00:00.000Z"),
+			},
+			{
+				researchWeb,
+				sourceRepository: { saveDiscoveredSources },
+				timelineRepository: { saveTimelineEvent },
+			},
+		);
+
+		expect(researchWeb).toHaveBeenNthCalledWith(1, {
+			query: "current Framework X Pro price",
+			mode: "exact",
+			freshness: "live",
+			sourcePolicy: "commerce",
+			maxSources: 6,
+			quoteRequired: true,
+		});
+		expect(researchWeb).toHaveBeenNthCalledWith(2, {
+			query: "latest SvelteKit migration documentation",
+			mode: "quick",
+			freshness: "live",
+			sourcePolicy: "technical",
+			maxSources: 6,
+			quoteRequired: false,
+		});
+	});
+
 	it("normalizes and deduplicates equivalent source URLs before saving", async () => {
 		const researchWeb = vi.fn().mockResolvedValue({
 			sources: [
@@ -391,6 +468,72 @@ describe("public web discovery", () => {
 			"Which primary law changed most recently?",
 		]);
 	});
+
+	it.each([
+		["focused", 6],
+		["standard", 12],
+		["max", 24],
+	] as const)(
+		"uses the %s comparison query cap for entity-axis discovery",
+		async (depth, expectedQueryCount) => {
+			const comparisonPlan: ResearchPlan = {
+				...approvedPlan,
+				depth,
+				comparedEntities: [
+					"Entity A",
+					"Entity B",
+					"Entity C",
+					"Entity D",
+					"Entity E",
+					"Entity F",
+				],
+				comparisonAxes: ["privacy", "pricing", "security", "roadmap"],
+				goal: "Compare six entities across four axes",
+				researchBudget: {
+					sourceReviewCeiling: 240,
+					synthesisPassCeiling: 2,
+				},
+			};
+			const researchWeb = vi.fn().mockResolvedValue({
+				sources: [],
+				diagnostics: {
+					providerCalls: [],
+				},
+			});
+			const saveDiscoveredSources = vi.fn(async (sources) => sources);
+			const saveTimelineEvent = vi.fn(async (event) => ({
+				...event,
+				id: "event-1",
+				createdAt: event.occurredAt,
+			}));
+
+			const result = await runPublicWebDiscoveryPass(
+				{
+					jobId: `job-comparison-${depth}`,
+					conversationId: "conversation-1",
+					userId: "user-1",
+					approvedPlan: comparisonPlan,
+					now: new Date("2026-05-05T12:00:00.000Z"),
+				},
+				{
+					researchWeb,
+					sourceRepository: { saveDiscoveredSources },
+					timelineRepository: { saveTimelineEvent },
+				},
+			);
+
+			expect(researchWeb).toHaveBeenCalledTimes(expectedQueryCount);
+			expect(result.queries).toHaveLength(expectedQueryCount);
+			expect(result.queries[0]).toBe("Entity A privacy");
+			expect(result.queries.at(-1)).toBe(
+				expectedQueryCount === 6
+					? "Entity F privacy"
+					: expectedQueryCount === 12
+						? "Entity F pricing"
+						: "Entity F roadmap",
+			);
+		},
+	);
 
 	it("creates targeted entity-axis queries for comparison plans", async () => {
 		const comparisonPlan: ResearchPlan = {

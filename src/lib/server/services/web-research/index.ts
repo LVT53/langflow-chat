@@ -211,6 +211,15 @@ interface NormalizedResearchRequest {
 	quoteRequired: boolean;
 }
 
+export interface DiscoveryResearchRequest extends ResearchRequest {
+	query: string;
+	mode: ResearchMode;
+	freshness: ResearchFreshness;
+	sourcePolicy: ResearchSourcePolicy;
+	maxSources: number;
+	quoteRequired: boolean;
+}
+
 const OFFICIAL_HOST_RE =
 	/(^|\.)((gov|edu)$|who\.int$|cdc\.gov$|fda\.gov$|nih\.gov$|europa\.eu$)/i;
 const TECHNICAL_HOST_RE =
@@ -239,6 +248,17 @@ const EXACT_CONTENT_CHARS_MIN = 12_000;
 const RESEARCH_CONTENT_CHARS_MIN = 8_000;
 const MAX_YOUTUBE_TRANSCRIPTS = 3;
 const YOUTUBE_TRANSCRIPT_TIMEOUT_MS = 12_000;
+const DEFAULT_WEB_RESEARCH_CONFIG: WebResearchConfig = {
+	exaApiKey: "",
+	braveSearchApiKey: "",
+	webResearchExaSearchType: "auto",
+	webResearchExaNumResults: 12,
+	webResearchBraveNumResults: 10,
+	webResearchMaxSources: 8,
+	webResearchHighlightChars: 4000,
+	webResearchContentChars: 12000,
+	webResearchFreshnessHours: 24,
+};
 const HTTP_URL_RE = /https?:\/\/[^\s<>)\]]+/gi;
 const TRAILING_URL_PUNCTUATION_RE = /[.,;:!?]+$/;
 const EXACT_VALUE_RE =
@@ -368,22 +388,17 @@ function normalizeRequest(
 	};
 }
 
+export function buildDiscoveryResearchRequest(
+	request: ResearchRequest,
+): DiscoveryResearchRequest {
+	return normalizeRequest(request, DEFAULT_WEB_RESEARCH_CONFIG);
+}
+
 export function planResearchQueries(
 	request: ResearchRequest,
 	now: Date = new Date(),
 ): PlannedResearchQuery[] {
-	const fallbackConfig: WebResearchConfig = {
-		exaApiKey: "",
-		braveSearchApiKey: "",
-		webResearchExaSearchType: "auto",
-		webResearchExaNumResults: 12,
-		webResearchBraveNumResults: 10,
-		webResearchMaxSources: 8,
-		webResearchHighlightChars: 4000,
-		webResearchContentChars: 12000,
-		webResearchFreshnessHours: 24,
-	};
-	const normalized = normalizeRequest(request, fallbackConfig);
+	const normalized = normalizeRequest(request, DEFAULT_WEB_RESEARCH_CONFIG);
 	const year = now.getUTCFullYear();
 	const queries: PlannedResearchQuery[] = [];
 	const addQuery = (
