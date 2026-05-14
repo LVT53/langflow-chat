@@ -126,6 +126,26 @@ _Avoid_: phase, batch refactor, cleanup later
 A slice that is complete enough to operate reliably in production rather than only demonstrate a prototype path.
 _Avoid_: demo slice, spike, partial path
 
+**Project Folder**:
+A user-managed grouping of conversations that names the project the user intends those conversations to belong to.
+_Avoid_: UI project, folder, memory project
+
+**Project Continuity**:
+AlfyAI's long-term memory about an ongoing project across related tasks and conversations.
+_Avoid_: memory project, project folder, task bucket
+
+**Project Folder Awareness**:
+Compact awareness of other conversations that belong to the same **Project Folder**.
+_Avoid_: folder dump, all project chats, sibling transcript context
+
+**Project Continuity Awareness**:
+Compact awareness of other conversations or tasks linked to the same inferred **Project Continuity**.
+_Avoid_: global chat search, folder awareness, all memory
+
+**Conversation Summary**:
+A compact durable description of what happened in one conversation.
+_Avoid_: task checkpoint, transcript, chat title
+
 ### Relationships
 
 - **Available Context** is broader than **Prompt Context**.
@@ -300,6 +320,48 @@ _Avoid_: demo slice, spike, partial path
 - Every v1 **Context Selection Slice** should be a **Production Slice**.
 - A **Production Slice** includes fallback behavior, observability, tests, and cleanup appropriate to its scope.
 - Replacing context-selection behavior should include removing **Context Selection Debt** once the replacement path owns the behavior.
+- A conversation may belong to zero or one **Project Folder**.
+- **Project Continuity** may exist with or without a **Project Folder**.
+- When a conversation belongs to a **Project Folder**, that **Project Folder** is the canonical project identity for **Project Continuity**.
+- A **Project Folder** and **Project Continuity** keep separate identities even when they are linked.
+- A **Project Folder** may be linked to at most one canonical **Project Continuity**.
+- A **Project Continuity** may be linked to at most one **Project Folder**.
+- Creating an empty **Project Folder** does not by itself create **Project Continuity**.
+- A **Project Folder** gets canonical **Project Continuity** only after it has a conversation with meaningful task continuity.
+- Conversations without a **Project Folder** may still create and use inferred **Project Continuity**.
+- **Project Folder** linking adds explicit user authority when present; it does not replace automatic **Project Continuity** for unorganized conversations.
+- Conversations without a **Project Folder** may receive bounded **Project Continuity Awareness**.
+- **Project Continuity Awareness** has lower authority than **Project Folder Awareness** because it comes from inferred continuity rather than explicit user organization.
+- When linked, the **Project Folder** name is the canonical display label for **Project Continuity**.
+- Renaming a **Project Folder** changes the current label used for linked **Project Continuity** without rewriting historical memory events.
+- An explicit **Project Folder** assignment overrides inferred **Project Continuity** routing for future turns in that conversation.
+- When a conversation with existing **Project Continuity** is assigned to a linked **Project Folder**, future turns should use the folder's canonical **Project Continuity** rather than the previously inferred one.
+- Assigning or moving a conversation into a **Project Folder** should immediately converge that conversation's **Project Continuity** to the folder's canonical **Project Continuity**.
+- A later chat turn may refresh **Project Continuity** details, but it should not be required before the **Project Folder** identity applies.
+- Removing a conversation from a **Project Folder** removes that folder as the canonical project identity for future turns in the conversation.
+- Deleting a **Project Folder** unassigns its conversations from that folder and unlinks its canonical **Project Continuity**, but it does not delete the conversations or by itself mean the user asked AlfyAI to forget project memory.
+- **Project Continuity** is forgotten only through an explicit memory-forgetting action or cleanup of conversation-scoped memory links.
+- A **Project Folder** assignment is a **Strong Context Signal** for project identity.
+- A **Project Folder** name may enter **Prompt Context** as a quoted label, not as user or system instructions.
+- Raw **Project Folder** names belong in **Prompt Context**, not in the system prompt.
+- A conversation inside a **Project Folder** should receive bounded **Project Folder Awareness** by default.
+- **Project Folder Awareness** is **Reference Context** by default.
+- **Project Folder Awareness** may summarize sibling conversations by title and compact summary.
+- **Project Folder Awareness** should prefer **Conversation Summaries** when available.
+- A **Conversation Summary** should describe the conversation, not only the current task objective.
+- **Project Folder Awareness** should stay bounded for large folders by selecting recent or relevant sibling summaries and disclosing omitted counts where useful.
+- **Project Folder Awareness** should appear in **Context Sources** as a compact conversation-level memory or project group when active.
+- **Project Folder Awareness** should not appear as a long flat list of every sibling conversation by default.
+- Backend **Context Selection** should promote strongly relevant sibling conversation context automatically.
+- A model-facing retrieval tool may let AlfyAI explicitly request sibling conversation context, but it should complement **Context Selection** rather than replace it.
+- Model-facing sibling conversation retrieval should be summary-first by default.
+- Model-facing sibling conversation retrieval may expose an explicit detail mode for one selected sibling conversation.
+- Model-facing sibling conversation retrieval should return bounded structured results rather than raw folder-wide transcripts.
+- Model-facing sibling conversation retrieval is scoped to the current **Project Folder** by default.
+- Full sibling conversation content should enter **Prompt Context** only when the current turn or retrieval gives a **Strong Context Signal** for that sibling conversation.
+- Sibling conversation material becomes **Message Evidence** only when a specific sibling summary or transcript materially supports the assistant's answer.
+- Excluding one sibling conversation from **Project Folder Awareness** while keeping it in the **Project Folder** is a future source-control behavior, not required for the first implementation.
+- A **Project Folder** alone should not promote unrelated documents or memories; **Context Selection** still decides **Prompt Context** within the **Context Budget**.
 
 ### Example dialogue
 
@@ -323,6 +385,9 @@ _Avoid_: demo slice, spike, partial path
 >
 > **Dev:** "Should each subsystem add its own prompt text?"
 > **Domain expert:** "No. Subsystems supply **Available Context** and **Context Signals**; **Context Selection** decides what becomes **Prompt Context**."
+>
+> **Dev:** "If a chat is inside the **Project Folder** named 'Acme RFP', should that name shape project memory?"
+> **Domain expert:** "Yes. The **Project Folder** is the canonical project identity for **Project Continuity**, but its name is a label, not an instruction."
 
 ## Knowledge Library Context
 
