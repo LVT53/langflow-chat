@@ -136,12 +136,10 @@ describe("deriveModelContextBudget", () => {
 				contextBudget,
 				minTotalBudget: 2_000,
 				minRecentTurnCount: 3,
-				minUnmatchedRecentTurnTokens: 480,
 			}),
 		).toEqual({
-			totalBudget: 103_275,
-			recentTurnCount: 25,
-			maxUnmatchedRecentTurnTokens: 2_065,
+			totalBudget: 585_000,
+			recentTurnCount: 32,
 		});
 	});
 });

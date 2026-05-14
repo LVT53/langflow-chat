@@ -81,6 +81,76 @@ export function serializeRoleMessages<T>(
 		.join('\n\n');
 }
 
+export type BudgetedRoleTurnContext = {
+	body: string;
+	includedTurnCount: number;
+	omittedTurnCount: number;
+	trimmed: boolean;
+	estimatedTokens: number;
+};
+
+export function serializeBudgetedRoleTurns<T>(params: {
+	turns: Array<{ messages: T[] }>;
+	resolveRole: (message: T) => 'user' | 'assistant';
+	resolveContent: (message: T) => string;
+	maxTokens: number;
+}): BudgetedRoleTurnContext {
+	const maxTokens = Math.max(0, Math.floor(params.maxTokens));
+	if (params.turns.length === 0 || maxTokens <= 0) {
+		return {
+			body: '',
+			includedTurnCount: 0,
+			omittedTurnCount: params.turns.length,
+			trimmed: params.turns.length > 0,
+			estimatedTokens: 0,
+		};
+	}
+
+	const serializedTurns = params.turns.map((turn) =>
+		serializeRoleMessages(
+			turn.messages,
+			params.resolveRole,
+			params.resolveContent,
+			turn.messages.length
+		)
+	);
+	const selectedTurns: string[] = [];
+	let omittedTurnCount = 0;
+
+	for (let index = serializedTurns.length - 1; index >= 0; index -= 1) {
+		const candidateTurns = [serializedTurns[index], ...selectedTurns];
+		const candidateBody = candidateTurns.join('\n\n');
+		if (estimateTokenCount(candidateBody) <= maxTokens) {
+			selectedTurns.unshift(serializedTurns[index]);
+			continue;
+		}
+
+		omittedTurnCount = index + 1;
+		break;
+	}
+
+	if (selectedTurns.length === 0) {
+		const latestTurn = serializedTurns[serializedTurns.length - 1] ?? '';
+		const body = truncateToTokenBudget(latestTurn, maxTokens);
+		return {
+			body,
+			includedTurnCount: body ? 1 : 0,
+			omittedTurnCount: Math.max(0, serializedTurns.length - (body ? 1 : 0)),
+			trimmed: true,
+			estimatedTokens: estimateTokenCount(body),
+		};
+	}
+
+	const body = selectedTurns.join('\n\n');
+	return {
+		body,
+		includedTurnCount: selectedTurns.length,
+		omittedTurnCount,
+		trimmed: omittedTurnCount > 0,
+		estimatedTokens: estimateTokenCount(body),
+	};
+}
+
 export function selectRecentRoleTurns<T>(
 	messages: T[],
 	resolveRole: (message: T) => 'user' | 'assistant',
@@ -119,20 +189,20 @@ export function selectPromptSessionTurns<T>(params: {
 	resolveContent: (turn: T) => string;
 	scoreTurn: (message: string, turnContent: string) => number;
 	recentTurnCount?: number;
-	maxUnmatchedRecentTurnTokens?: number;
 	matchThreshold?: number;
 }): T[] {
 	const recentTurnCount = params.recentTurnCount ?? 3;
-	const maxUnmatchedRecentTurnTokens = params.maxUnmatchedRecentTurnTokens ?? 480;
 	const matchThreshold = params.matchThreshold ?? 1;
 
 	return params.turns.filter((turn, index) => {
+		const isRecent = index >= params.turns.length - recentTurnCount;
+		if (isRecent) return true;
+
 		const turnContent = params.resolveContent(turn);
 		const score = params.scoreTurn(params.message, turnContent);
 		if (score >= matchThreshold) return true;
 
-		const isRecent = index >= params.turns.length - recentTurnCount;
-		return isRecent && estimateTokenCount(turnContent) <= maxUnmatchedRecentTurnTokens;
+		return false;
 	});
 }
 

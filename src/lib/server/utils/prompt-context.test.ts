@@ -3,6 +3,7 @@ import { estimateTokenCount } from "$lib/utils/tokens";
 import {
 	compactContextSections,
 	selectPromptSessionTurns,
+	serializeBudgetedRoleTurns,
 	serializeBudgetedAttachments,
 	serializeWorkingSetArtifacts,
 } from "./prompt-context";
@@ -185,7 +186,7 @@ describe("serializeBudgetedAttachments", () => {
 });
 
 describe("selectPromptSessionTurns", () => {
-	it("does not keep a large recent turn only because it is recent", () => {
+	it("keeps large recent turns so final context budgeting decides what fits", () => {
 		const turns = [
 			{
 				messages: [
@@ -205,10 +206,9 @@ describe("selectPromptSessionTurns", () => {
 				turn.messages.map((message) => message.content).join(" "),
 			scoreTurn: () => 0,
 			recentTurnCount: 3,
-			maxUnmatchedRecentTurnTokens: 200,
 		});
 
-		expect(selected).toEqual([]);
+		expect(selected).toEqual(turns);
 	});
 
 	it("keeps a large recent turn when it matches the current question", () => {
@@ -231,10 +231,84 @@ describe("selectPromptSessionTurns", () => {
 				turn.messages.map((message) => message.content).join(" "),
 			scoreTurn: () => 2,
 			recentTurnCount: 3,
-			maxUnmatchedRecentTurnTokens: 200,
 		});
 
 		expect(selected).toEqual(turns);
+	});
+});
+
+describe("serializeBudgetedRoleTurns", () => {
+	const role = (message: { role: "user" | "assistant" }) => message.role;
+	const content = (message: { content: string }) => message.content;
+
+	it("drops older turns before newer turns when history exceeds its budget", () => {
+		const turns = [
+			{
+				messages: [
+					{ role: "user" as const, content: "Old setup question." },
+					{ role: "assistant" as const, content: "Old setup answer." },
+				],
+			},
+			{
+				messages: [
+					{ role: "user" as const, content: "Middle design question." },
+					{ role: "assistant" as const, content: "Middle design answer." },
+				],
+			},
+			{
+				messages: [
+					{ role: "user" as const, content: "Latest implementation question." },
+					{ role: "assistant" as const, content: "Latest implementation answer." },
+				],
+			},
+		];
+		const middleAndLatestBudget = estimateTokenCount(
+			[
+				"USER: Middle design question.\n\nASSISTANT: Middle design answer.",
+				"USER: Latest implementation question.\n\nASSISTANT: Latest implementation answer.",
+			].join("\n\n"),
+		);
+
+		const serialized = serializeBudgetedRoleTurns({
+			turns,
+			resolveRole: role,
+			resolveContent: content,
+			maxTokens: middleAndLatestBudget,
+		});
+
+		expect(serialized.body).not.toContain("Old setup question");
+		expect(serialized.body).toContain("Middle design question");
+		expect(serialized.body).toContain("Latest implementation question");
+		expect(serialized.includedTurnCount).toBe(2);
+		expect(serialized.omittedTurnCount).toBe(1);
+		expect(serialized.trimmed).toBe(true);
+		expect(serialized.estimatedTokens).toBeLessThanOrEqual(middleAndLatestBudget);
+	});
+
+	it("keeps a truncated latest turn instead of dropping all session history", () => {
+		const serialized = serializeBudgetedRoleTurns({
+			turns: [
+				{
+					messages: [
+						{ role: "user" as const, content: "Latest web research request." },
+						{
+							role: "assistant" as const,
+							content: "Detailed search result. ".repeat(1_000),
+						},
+					],
+				},
+			],
+			resolveRole: role,
+			resolveContent: content,
+			maxTokens: 80,
+		});
+
+		expect(serialized.body).toContain("Latest web research request");
+		expect(serialized.body).toContain("[truncated]");
+		expect(serialized.includedTurnCount).toBe(1);
+		expect(serialized.omittedTurnCount).toBe(0);
+		expect(serialized.trimmed).toBe(true);
+		expect(serialized.estimatedTokens).toBeLessThanOrEqual(80);
 	});
 });
 

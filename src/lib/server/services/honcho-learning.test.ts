@@ -314,6 +314,13 @@ vi.mock('$lib/server/utils/prompt-context', () => ({
 	serializePeerContext: vi.fn((context: unknown) => 'serialized peer context'),
 	serializeArtifacts: vi.fn(() => []),
 	serializeBudgetedAttachments: mockSerializeBudgetedAttachments,
+	serializeBudgetedRoleTurns: vi.fn(() => ({
+		body: '',
+		includedTurnCount: 0,
+		omittedTurnCount: 0,
+		trimmed: false,
+		estimatedTokens: 0,
+	})),
 	serializeRoleMessages: vi.fn(() => []),
 	serializeWorkingSetArtifacts: vi.fn(() => []),
 	dedupeById: vi.fn((items: unknown[]) => items),

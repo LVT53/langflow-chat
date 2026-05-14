@@ -17,7 +17,7 @@ import {
 	extractSerializedAttachmentBody,
 	rerankHistoricalSections,
 	serializeBudgetedAttachments,
-	serializeRoleMessages,
+	serializeBudgetedRoleTurns,
 	serializeWorkingSetArtifacts,
 	selectPromptSessionTurns,
 	selectRecentRoleTurns,
@@ -102,7 +102,6 @@ const ATTACHMENT_PROMPT_TOKEN_BUDGET = 6_000;
 const ATTACHMENT_TASK_PER_ATTACHMENT_TOKEN_BUDGET = 2_400;
 const ATTACHMENT_EXCERPT_PER_ATTACHMENT_TOKEN_BUDGET = 600;
 const RECENT_TURN_COUNT = 3;
-const UNMATCHED_RECENT_TURN_TOKEN_LIMIT = 480;
 const MIN_RELEVANT_KNOWLEDGE_ARTIFACTS = 6;
 const MAX_RELEVANT_KNOWLEDGE_ARTIFACTS = 64;
 const RELEVANT_KNOWLEDGE_ARTIFACT_TARGET_TOKEN_STEP = 32_768;
@@ -1357,7 +1356,6 @@ export async function buildConstructedContext(params: {
 		contextBudget: modelContextBudget,
 		minTotalBudget: HONCHO_LIVE_CONTEXT_TOKENS,
 		minRecentTurnCount: RECENT_TURN_COUNT,
-		minUnmatchedRecentTurnTokens: UNMATCHED_RECENT_TURN_TOKEN_LIMIT,
 	});
 	const [
 		sessionContext,
@@ -1567,12 +1565,15 @@ export async function buildConstructedContext(params: {
 		resolveContent: (turn) => turn.messages.map((m) => m.content).join(' '),
 		scoreTurn: (message, turnContent) => scoreMatch(message, turnContent),
 		recentTurnCount: sessionHistoryBudget.recentTurnCount,
-		maxUnmatchedRecentTurnTokens:
-			sessionHistoryBudget.maxUnmatchedRecentTurnTokens,
 	});
 
-	const recentTurnCount = filteredTurns.length;
-	const sessionContextMessages = filteredTurns.flatMap((turn) => turn.messages);
+	const sessionTurnContext = serializeBudgetedRoleTurns({
+		turns: filteredTurns,
+		resolveRole: (message) => message.role,
+		resolveContent: (message) => message.content,
+		maxTokens: sessionHistoryBudget.totalBudget,
+	});
+	const recentTurnCount = sessionTurnContext.includedTurnCount;
 	const sections: PromptContextSection[] = [];
 	const projectFolderSection = buildProjectFolderPromptSection(projectFolderLabel);
 	const projectFolderAwarenessSection = buildProjectAwarenessPromptSection(
@@ -1732,18 +1733,10 @@ export async function buildConstructedContext(params: {
 		});
 	}
 
-	if (sessionContextMessages.length > 0) {
+	if (sessionTurnContext.body) {
 		sections.push({
 			title: 'Honcho Session Context',
-			body: truncateToTokenBudget(
-				serializeRoleMessages(
-					sessionContextMessages,
-					(message) => message.role,
-					(message) => message.content,
-					sessionContextMessages.length
-				),
-				sessionHistoryBudget.totalBudget
-			),
+			body: sessionTurnContext.body,
 			layer: 'session',
 			protected: true,
 			llmCompactible: true,
