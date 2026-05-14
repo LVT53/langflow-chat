@@ -66,6 +66,7 @@ function mergeChannels(
 function buildMemoryGroup(params: {
 	contextStatus: ConversationContextStatus | null | undefined;
 	contextTraceSections?: LegacyContextTraceSectionInput[];
+	toolCalls?: ToolCallEntry[];
 }): MessageEvidenceGroup | null {
 	const items: MessageEvidenceItem[] = [];
 	const contextStatus = params.contextStatus;
@@ -134,6 +135,24 @@ function buildMemoryGroup(params: {
 			channels: ['memory'],
 		});
 	}
+
+	const memoryToolCandidates = uniqueByCanonicalId(
+		(params.toolCalls ?? []).flatMap((tool) =>
+			(tool.candidates ?? [])
+				.filter((candidate) => candidate.sourceType === 'memory')
+				.map((candidate) => ({
+					id: candidate.id,
+					canonicalId: canonicalKeyForCandidate('memory', candidate),
+					title: candidate.title,
+					sourceType: 'memory' as const,
+					status: 'reference' as const,
+					description: candidate.snippet ? clipText(candidate.snippet, 180) : null,
+					url: sanitizeUrl(candidate.url),
+					channels: ['memory'] as EvidenceChannel[],
+				}))
+		)
+	);
+	items.push(...memoryToolCandidates);
 
 	if (items.length === 0) return null;
 
@@ -434,6 +453,7 @@ export async function buildAssistantEvidenceSummary(params: {
 		buildMemoryGroup({
 			contextStatus: params.contextStatus,
 			contextTraceSections: params.contextTraceSections,
+			toolCalls,
 		}),
 		await buildRerankedToolGroup({
 			sourceType: 'web',

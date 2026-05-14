@@ -1,9 +1,9 @@
 """
 Project Context Tool for Langflow Agents.
 
-This component exposes AlfyAI's `project_context` summary tool. It returns
-bounded Project Folder or lower-authority Project Continuity summaries for the
-current conversation without exposing raw transcripts.
+This component exposes AlfyAI's `project_context` tool. Summary mode returns
+bounded Project Folder or lower-authority Project Continuity summaries. Detail
+mode returns capped recent messages for one allowed sibling conversation.
 """
 
 from __future__ import annotations
@@ -53,8 +53,8 @@ class ProjectContextToolComponent(Component):
         DropdownInput(
             name="mode",
             display_name="Mode",
-            info="Only summary mode is currently supported.",
-            options=["summary"],
+            info="Use summary to discover scoped siblings, then detail for one allowed sibling.",
+            options=["summary", "detail"],
             value="summary",
             tool_mode=True,
         ),
@@ -70,6 +70,20 @@ class ProjectContextToolComponent(Component):
             display_name="Max Siblings",
             info="Maximum sibling conversation summaries to return. Capped by AlfyAI.",
             value=5,
+            tool_mode=True,
+        ),
+        StrInput(
+            name="siblingConversationId",
+            display_name="Sibling Conversation",
+            info="Required for detail mode. Use a conversationId returned by summary mode.",
+            value="",
+            tool_mode=True,
+        ),
+        IntInput(
+            name="maxMessages",
+            display_name="Max Messages",
+            info="Maximum recent user/assistant messages to return for detail mode. Capped by AlfyAI.",
+            value=6,
             tool_mode=True,
         ),
         BoolInput(
@@ -142,8 +156,8 @@ class ProjectContextToolComponent(Component):
 
     def _build_payload(self, conversation_id: str) -> dict[str, Any] | str:
         mode = str(getattr(self, "mode", "") or "summary").strip() or "summary"
-        if mode != "summary":
-            return "Only summary mode is supported for project_context."
+        if mode not in {"summary", "detail"}:
+            return "Unsupported project_context mode."
 
         payload: dict[str, Any] = {
             "conversationId": conversation_id,
@@ -157,10 +171,21 @@ class ProjectContextToolComponent(Component):
         if query:
             payload["query"] = query
 
+        sibling_conversation_id = str(getattr(self, "siblingConversationId", "") or "").strip()
+        if sibling_conversation_id:
+            payload["siblingConversationId"] = sibling_conversation_id
+
         try:
             max_siblings = int(str(getattr(self, "maxSiblings", "") or "").strip())
             if max_siblings > 0:
                 payload["maxSiblings"] = max_siblings
+        except ValueError:
+            pass
+
+        try:
+            max_messages = int(str(getattr(self, "maxMessages", "") or "").strip())
+            if max_messages > 0:
+                payload["maxMessages"] = max_messages
         except ValueError:
             pass
 
@@ -231,12 +256,15 @@ class ProjectContextToolComponent(Component):
         payload = payload_or_error
 
         max_siblings = int(payload.get("maxSiblings", 5) or 5)
+        max_messages = int(payload.get("maxMessages", 6) or 6)
         self._emit_tool_marker("TOOL_START", {
             "name": "project_context",
             "input": {
                 "mode": payload.get("mode", "summary"),
                 "query": payload.get("query", ""),
                 "maxSiblings": max_siblings,
+                "siblingConversationId": payload.get("siblingConversationId", ""),
+                "maxMessages": max_messages,
                 "includeEvidenceCandidates": payload.get("includeEvidenceCandidates", True),
             },
         })
@@ -252,7 +280,8 @@ class ProjectContextToolComponent(Component):
             evidence_candidates = result.get("evidenceCandidates", [])
             if not isinstance(evidence_candidates, list):
                 evidence_candidates = []
-            bounded_candidates = evidence_candidates[:max_siblings]
+            candidate_limit = max_messages if payload.get("mode") == "detail" else max_siblings
+            bounded_candidates = evidence_candidates[:candidate_limit]
             output_summary = None
             if result.get("hasProjectContext"):
                 project = result.get("project", {})
@@ -267,7 +296,7 @@ class ProjectContextToolComponent(Component):
                 "name": "project_context",
                 "sourceType": "memory",
                 "outputSummary": output_summary,
-                "candidates": evidence_candidates[:max_siblings],
+                "candidates": evidence_candidates[:candidate_limit],
             })
             return Data(data={
                 "success": True,
@@ -278,6 +307,7 @@ class ProjectContextToolComponent(Component):
                 "source": result.get("source", "none"),
                 "project": result.get("project"),
                 "siblings": result.get("siblings", []),
+                "selectedSibling": result.get("selectedSibling"),
                 "omittedSiblingCount": result.get("omittedSiblingCount", 0),
                 "evidenceCandidates": bounded_candidates,
                 "audit": result.get("audit", {}),

@@ -6,7 +6,7 @@ const nodeSource = () =>
 	readFileSync(resolve(process.cwd(), "langflow_nodes/project_context_tool.py"), "utf8");
 
 describe("Langflow Project Context tool node", () => {
-	it("exposes project_context summary mode as the model-facing tool contract", () => {
+	it("exposes project_context summary and detail fields as the model-facing tool contract", () => {
 		const source = nodeSource();
 
 		expect(source).toContain('display_name = "Project Context"');
@@ -19,6 +19,8 @@ describe("Langflow Project Context tool node", () => {
 			"mode",
 			"query",
 			"maxSiblings",
+			"siblingConversationId",
+			"maxMessages",
 			"includeEvidenceCandidates",
 		]) {
 			expect(source).toContain(`name="${field}"`);
@@ -48,6 +50,7 @@ describe("Langflow Project Context tool node", () => {
 		expect(source).toContain('"name": "project_context"');
 		expect(source).toContain('"sourceType": "memory"');
 		expect(source).toContain('"candidates": evidence_candidates');
-		expect(source).toContain("evidence_candidates[:max_siblings]");
+		expect(source).toContain("candidate_limit = max_messages if payload.get(\"mode\") == \"detail\" else max_siblings");
+		expect(source).toContain("evidence_candidates[:candidate_limit]");
 	});
 });

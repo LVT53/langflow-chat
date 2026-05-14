@@ -4,6 +4,130 @@ vi.mock("$lib/server/services/task-state", () => ({
 	getProjectReferenceContext: vi.fn(),
 }));
 
+const { messageRows, queryLimits } = vi.hoisted(() => ({
+	messageRows: [] as Array<Record<string, any>>,
+	queryLimits: [] as number[],
+}));
+
+type MockCondition =
+	| { operator: "eq" | "inArray"; field: string; value: unknown }
+	| MockCondition[]
+	| null
+	| undefined;
+
+type MockOrder = { direction: "asc" | "desc"; field: string };
+
+function matchesCondition(row: Record<string, any>, condition: MockCondition): boolean {
+	if (!condition) return true;
+	if (Array.isArray(condition)) {
+		return condition.every((nested) => matchesCondition(row, nested));
+	}
+	const actual = row[condition.field];
+	if (condition.operator === "eq") return actual === condition.value;
+	if (condition.operator === "inArray") {
+		return Array.isArray(condition.value) && condition.value.includes(actual);
+	}
+	return true;
+}
+
+function readComparable(value: unknown): string | number {
+	if (value instanceof Date) return value.getTime();
+	if (typeof value === "number") return value;
+	if (typeof value === "string") return value;
+	return String(value ?? "");
+}
+
+function mapSelectedRows(rows: Array<Record<string, any>>, shape?: Record<string, any>) {
+	if (!shape) return rows;
+	if (Object.values(shape).some((field) => field?.kind === "count")) {
+		return [
+			Object.fromEntries(
+				Object.entries(shape).map(([alias, field]) => [
+					alias,
+					field?.kind === "count" ? rows.length : rows[0]?.[field?.name],
+				]),
+			),
+		];
+	}
+	return rows.map((row) =>
+		Object.fromEntries(
+			Object.entries(shape).map(([alias, field]) => [
+				alias,
+				row[field?.name ?? alias],
+			]),
+		),
+	);
+}
+
+function createQuery(rows: Array<Record<string, any>>, shape?: Record<string, any>) {
+	let currentRows = [...rows];
+	const chain = {
+		from: () => chain,
+		where: (condition: MockCondition) => {
+			currentRows = currentRows.filter((row) => matchesCondition(row, condition));
+			return chain;
+		},
+		orderBy: (...orders: MockOrder[]) => {
+			currentRows = currentRows.slice().sort((left, right) => {
+				for (const order of orders) {
+					const leftValue = readComparable(left[order.field]);
+					const rightValue = readComparable(right[order.field]);
+					if (leftValue < rightValue) return order.direction === "asc" ? -1 : 1;
+					if (leftValue > rightValue) return order.direction === "asc" ? 1 : -1;
+				}
+				return 0;
+			});
+			return chain;
+		},
+		limit: async (limit: number) => {
+			queryLimits.push(limit);
+			return mapSelectedRows(currentRows.slice(0, limit), shape);
+		},
+		then: (onFulfilled: (value: unknown[]) => unknown, onRejected?: (reason: unknown) => unknown) =>
+			Promise.resolve(mapSelectedRows(currentRows, shape)).then(onFulfilled, onRejected),
+	};
+	return chain;
+}
+
+vi.mock("$lib/server/db", () => ({
+	db: {
+		select: (shape?: Record<string, any>) => ({
+			from: (table: { __name?: string }) => {
+				if (table?.__name === "messages") {
+					return createQuery(messageRows, shape);
+				}
+				return createQuery([], shape);
+			},
+		}),
+	},
+}));
+
+vi.mock("$lib/server/db/schema", () => ({
+	messages: {
+		__name: "messages",
+		conversationId: { name: "conversationId" },
+		role: { name: "role" },
+		content: { name: "content" },
+		createdAt: { name: "createdAt" },
+	},
+}));
+
+vi.mock("drizzle-orm", () => ({
+	and: vi.fn((...conditions: unknown[]) => conditions),
+	count: vi.fn(() => ({ kind: "count" })),
+	desc: vi.fn((field: { name: string }) => ({ direction: "desc", field: field.name })),
+	eq: vi.fn((field: { name: string }, value: unknown) => ({
+		operator: "eq",
+		field: field.name,
+		value,
+	})),
+	inArray: vi.fn((field: { name: string }, values: unknown[]) => ({
+		operator: "inArray",
+		field: field.name,
+		value: values,
+	})),
+}));
+
 import { getProjectReferenceContext } from "$lib/server/services/task-state";
 import { getProjectContext } from "./project-context";
 
@@ -13,6 +137,8 @@ const mockGetProjectReferenceContext =
 describe("getProjectContext", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		messageRows.splice(0, messageRows.length);
+		queryLimits.splice(0, queryLimits.length);
 	});
 
 	it("returns bounded project folder summary context without transcripts", async () => {
@@ -109,14 +235,239 @@ describe("getProjectContext", () => {
 		});
 	});
 
-	it("rejects detail mode clearly", async () => {
+	it("rejects unsupported modes clearly", async () => {
+		await expect(
+			getProjectContext({
+				userId: "user-1",
+				conversationId: "conv-1",
+				mode: "full",
+			}),
+		).rejects.toThrow(/Unsupported project_context mode/);
+		expect(mockGetProjectReferenceContext).not.toHaveBeenCalled();
+	});
+
+	it("returns capped detail for an allowed project sibling without folder-wide transcripts", async () => {
+		mockGetProjectReferenceContext.mockResolvedValue({
+			source: "project_folder",
+			projectId: "project-1",
+			projectName: "Launch Plan",
+			omittedSiblingCount: 0,
+			entries: [
+				{
+					conversationId: "conv-2",
+					title: "Pricing",
+					objective: "Compare pricing options",
+					summary: "Stable pricing brief.",
+				},
+			],
+		});
+		messageRows.push(
+			{
+				conversationId: "conv-2",
+				role: "system",
+				content: "hidden system prompt",
+				createdAt: new Date("2026-05-14T09:00:00.000Z"),
+			},
+			{
+				conversationId: "conv-2",
+				role: "user",
+				content: "Older user message",
+				createdAt: new Date("2026-05-14T09:01:00.000Z"),
+			},
+			{
+				conversationId: "conv-2",
+				role: "assistant",
+				content: "Older assistant message",
+				createdAt: new Date("2026-05-14T09:02:00.000Z"),
+			},
+			{
+				conversationId: "conv-2",
+				role: "user",
+				content: "Recent user message",
+				createdAt: new Date("2026-05-14T09:03:00.000Z"),
+			},
+			{
+				conversationId: "conv-2",
+				role: "assistant",
+				content: "Recent assistant message",
+				createdAt: new Date("2026-05-14T09:04:00.000Z"),
+			},
+		);
+
+		const result = await getProjectContext({
+			userId: "user-1",
+			conversationId: "conv-1",
+			mode: "detail",
+			siblingConversationId: "conv-2",
+			maxMessages: 2,
+		});
+
+		expect(result).toMatchObject({
+			success: true,
+			mode: "detail",
+			hasProjectContext: true,
+			source: "project_folder",
+			project: {
+				id: "project-1",
+				name: "Launch Plan",
+				authority: "project_folder",
+			},
+			selectedSibling: {
+				conversationId: "conv-2",
+				title: "Pricing",
+				objective: "Compare pricing options",
+				summary: "Stable pricing brief.",
+				omittedMessageCount: 2,
+				messages: [
+					{
+						role: "user",
+						content: "Recent user message",
+						createdAt: new Date("2026-05-14T09:03:00.000Z").getTime(),
+					},
+					{
+						role: "assistant",
+						content: "Recent assistant message",
+						createdAt: new Date("2026-05-14T09:04:00.000Z").getTime(),
+					},
+				],
+			},
+			evidenceCandidates: [
+				{
+					id: "project-context-detail:conv-2",
+					title: "Pricing",
+					sourceType: "memory",
+				},
+			],
+			audit: {
+				conversationId: "conv-1",
+				siblingConversationId: "conv-2",
+				requestedMaxMessages: 2,
+				appliedMaxMessages: 2,
+			},
+		});
+		expect(JSON.stringify(result)).not.toContain("hidden system prompt");
+		expect(result.siblings).toEqual([]);
+		expect(queryLimits).toEqual([2]);
+	});
+
+	it.each([
+		["current conversation", "conv-1", /Current conversation is not a valid/],
+		["other folder", "conv-other-folder", /outside project_context scope/],
+		["other user", "conv-other-user", /outside project_context scope/],
+	])("rejects out-of-scope detail for %s", async (_label, siblingConversationId, errorPattern) => {
+		mockGetProjectReferenceContext.mockResolvedValue({
+			source: "project_folder",
+			projectId: "project-1",
+			projectName: "Launch Plan",
+			omittedSiblingCount: 0,
+			entries: [
+				{
+					conversationId: "conv-2",
+					title: "Pricing",
+					objective: "Compare pricing options",
+					summary: "Stable pricing brief.",
+				},
+			],
+		});
+
 		await expect(
 			getProjectContext({
 				userId: "user-1",
 				conversationId: "conv-1",
 				mode: "detail",
+				siblingConversationId,
 			}),
-		).rejects.toThrow(/Only summary mode/);
-		expect(mockGetProjectReferenceContext).not.toHaveBeenCalled();
+		).rejects.toThrow(errorPattern);
+	});
+
+	it("rejects detail for a sibling outside the allowed project continuity scope", async () => {
+		mockGetProjectReferenceContext.mockResolvedValue({
+			source: "project_continuity",
+			projectId: "memory-project-1",
+			projectName: "Inferred launch work",
+			omittedSiblingCount: 0,
+			entries: [
+				{
+					conversationId: "conv-2",
+					title: "Pricing",
+					objective: "Compare pricing options",
+					summary: "Stable pricing brief.",
+				},
+			],
+		});
+
+		await expect(
+			getProjectContext({
+				userId: "user-1",
+				conversationId: "conv-1",
+				mode: "detail",
+				siblingConversationId: "conv-other-inferred-project",
+			}),
+		).rejects.toThrow(/outside project_context scope/);
+	});
+
+	it("clamps detail messages to the hard cap", async () => {
+		mockGetProjectReferenceContext.mockResolvedValue({
+			source: "project_folder",
+			projectId: "project-1",
+			projectName: "Launch Plan",
+			omittedSiblingCount: 0,
+			entries: [
+				{
+					conversationId: "conv-2",
+					title: "Pricing",
+					objective: "Compare pricing options",
+					summary: "Stable pricing brief.",
+				},
+			],
+		});
+		for (let index = 0; index < 12; index += 1) {
+			messageRows.push({
+				conversationId: "conv-2",
+				role: index % 2 === 0 ? "user" : "assistant",
+				content: `Message ${index}`,
+				createdAt: new Date(2026, 4, 14, 9, index),
+			});
+		}
+
+		const result = await getProjectContext({
+			userId: "user-1",
+			conversationId: "conv-1",
+			mode: "detail",
+			siblingConversationId: "conv-2",
+			maxMessages: 999,
+		});
+
+		expect(result.audit.appliedMaxMessages).toBe(10);
+		expect(result.selectedSibling?.messages).toHaveLength(10);
+		expect(result.selectedSibling?.omittedMessageCount).toBe(2);
+		expect(queryLimits).toEqual([10]);
+	});
+
+	it("returns an explicit detail no-context result when no project context exists", async () => {
+		mockGetProjectReferenceContext.mockResolvedValue(null);
+
+		const result = await getProjectContext({
+			userId: "user-1",
+			conversationId: "conv-empty",
+			mode: "detail",
+			siblingConversationId: "conv-2",
+		});
+
+		expect(result).toMatchObject({
+			success: true,
+			mode: "detail",
+			hasProjectContext: false,
+			source: "none",
+			project: null,
+			siblings: [],
+			selectedSibling: null,
+			evidenceCandidates: [],
+			audit: {
+				conversationId: "conv-empty",
+				siblingConversationId: "conv-2",
+				noProjectReason: "no_project_context",
+			},
+		});
 	});
 });

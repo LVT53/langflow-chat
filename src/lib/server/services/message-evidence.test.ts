@@ -71,4 +71,44 @@ describe('buildAssistantEvidenceSummary', () => {
 
 		expect(omitted).toBeNull();
 	});
+
+	it('includes project_context memory candidates from completed tool calls', async () => {
+		const summary = await buildAssistantEvidenceSummary({
+			userId: 'user-1',
+			message: 'use the pricing context from the project tool',
+			taskState: null,
+			toolCalls: [
+				{
+					name: 'project_context',
+					input: { mode: 'detail', siblingConversationId: 'conv-pricing' },
+					status: 'done',
+					sourceType: 'memory',
+					candidates: [
+						{
+							id: 'project-context-detail:conv-pricing',
+							title: 'Pricing',
+							snippet: 'Stable pricing brief. user: Recent user message assistant: Recent assistant message',
+							sourceType: 'memory',
+						},
+					],
+				},
+			],
+		});
+
+		expect(summary?.groups).toEqual([
+			expect.objectContaining({
+				sourceType: 'memory',
+				items: [
+					expect.objectContaining({
+						id: 'project-context-detail:conv-pricing',
+						title: 'Pricing',
+						sourceType: 'memory',
+						status: 'reference',
+						description: 'Stable pricing brief. user: Recent user message assistant: Recent assistant message',
+						channels: ['memory'],
+					}),
+				],
+			}),
+		]);
+	});
 });

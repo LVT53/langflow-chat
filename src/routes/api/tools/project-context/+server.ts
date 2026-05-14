@@ -12,10 +12,10 @@ function optionalString(value: unknown): string | undefined {
 	return trimmed ? trimmed : undefined;
 }
 
-function optionalPositiveInt(value: unknown): number | undefined {
+function optionalPositiveInt(value: unknown, fieldName: string): number | undefined {
 	if (value === undefined || value === null || value === "") return undefined;
 	if (typeof value !== "number" || !Number.isFinite(value)) {
-		throw new Error("maxSiblings is invalid");
+		throw new Error(`${fieldName} is invalid`);
 	}
 	return Math.max(1, Math.floor(value));
 }
@@ -69,9 +69,9 @@ export const POST: RequestHandler = async (event) => {
 
 	try {
 		const mode = optionalString(data.mode) ?? "summary";
-		if (mode !== "summary") {
+		if (mode !== "summary" && mode !== "detail") {
 			return json(
-				{ error: "Only summary mode is supported for project_context" },
+				{ error: "Unsupported project_context mode" },
 				{ status: 400 },
 			);
 		}
@@ -81,7 +81,9 @@ export const POST: RequestHandler = async (event) => {
 			conversationId,
 			mode,
 			query: optionalString(data.query) ?? null,
-			maxSiblings: optionalPositiveInt(data.maxSiblings),
+			maxSiblings: optionalPositiveInt(data.maxSiblings, "maxSiblings"),
+			siblingConversationId: optionalString(data.siblingConversationId) ?? null,
+			maxMessages: optionalPositiveInt(data.maxMessages, "maxMessages"),
 			includeEvidenceCandidates:
 				typeof data.includeEvidenceCandidates === "boolean"
 					? data.includeEvidenceCandidates
@@ -91,7 +93,12 @@ export const POST: RequestHandler = async (event) => {
 	} catch (error) {
 		const message =
 			error instanceof Error ? error.message : "Project context lookup failed";
-		const status = /invalid|required|supported/.test(message) ? 400 : 500;
+		const status =
+			/invalid|required|supported|outside project_context scope|not a valid project_context sibling/.test(
+				message,
+			)
+				? 400
+				: 500;
 		return json({ error: message }, { status });
 	}
 };

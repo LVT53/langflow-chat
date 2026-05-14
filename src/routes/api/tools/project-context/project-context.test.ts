@@ -111,6 +111,8 @@ describe("POST /api/tools/project-context", () => {
 			mode: "summary",
 			query: "pricing",
 			maxSiblings: 3,
+			siblingConversationId: null,
+			maxMessages: undefined,
 			includeEvidenceCandidates: false,
 		});
 	});
@@ -170,14 +172,90 @@ describe("POST /api/tools/project-context", () => {
 		expect(mockGetProjectContext).not.toHaveBeenCalled();
 	});
 
-	it("rejects unsupported detail mode without calling the service", async () => {
+	it("passes detail-mode sibling inputs to the project context service", async () => {
+		mockGetProjectContext.mockResolvedValueOnce({
+			success: true,
+			mode: "detail",
+			hasProjectContext: true,
+			source: "project_folder",
+			project: {
+				id: "project-1",
+				name: "Launch Plan",
+				authority: "project_folder",
+			},
+			siblings: [],
+			omittedSiblingCount: 0,
+			selectedSibling: {
+				conversationId: "conv-2",
+				title: "Pricing",
+				objective: "Compare pricing options",
+				summary: "Stable pricing brief.",
+				messages: [],
+				omittedMessageCount: 0,
+			},
+			evidenceCandidates: [],
+			audit: {
+				conversationId: "conv-1",
+				scope: "conversation",
+				requestedMaxSiblings: null,
+				appliedMaxSiblings: 5,
+				siblingConversationId: "conv-2",
+				requestedMaxMessages: 4,
+				appliedMaxMessages: 4,
+				includeEvidenceCandidates: true,
+			},
+		});
+
 		const response = await POST(
-			makeEvent({ conversationId: "conv-1", mode: "detail" }),
+			makeEvent({
+				conversationId: "conv-1",
+				mode: "detail",
+				siblingConversationId: "conv-2",
+				maxMessages: 4,
+			}),
+		);
+		const body = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(body.mode).toBe("detail");
+		expect(mockGetProjectContext).toHaveBeenCalledWith({
+			userId: "user-1",
+			conversationId: "conv-1",
+			mode: "detail",
+			query: null,
+			maxSiblings: undefined,
+			siblingConversationId: "conv-2",
+			maxMessages: 4,
+			includeEvidenceCandidates: undefined,
+		});
+	});
+
+	it("rejects unsupported modes without calling the service", async () => {
+		const response = await POST(
+			makeEvent({ conversationId: "conv-1", mode: "full" }),
 		);
 		const body = await response.json();
 
 		expect(response.status).toBe(400);
-		expect(body.error).toMatch(/Only summary mode/);
+		expect(body.error).toMatch(/Unsupported project_context mode/);
 		expect(mockGetProjectContext).not.toHaveBeenCalled();
+	});
+
+	it("returns a client error when detail scope validation rejects the sibling", async () => {
+		mockGetProjectContext.mockRejectedValueOnce(
+			new Error("siblingConversationId is outside project_context scope"),
+		);
+
+		const response = await POST(
+			makeEvent({
+				conversationId: "conv-1",
+				mode: "detail",
+				siblingConversationId: "conv-outside",
+			}),
+		);
+		const body = await response.json();
+
+		expect(response.status).toBe(400);
+		expect(body.error).toMatch(/outside project_context scope/);
 	});
 });
