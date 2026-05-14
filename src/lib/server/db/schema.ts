@@ -922,9 +922,17 @@ export const projects = sqliteTable('projects', {
   name: text('name').notNull(),
   color: text('color'),
   sortOrder: integer('sort_order').notNull().default(0),
+  canonicalMemoryProjectId: text('canonical_memory_project_id').references(
+    () => memoryProjects.projectId,
+    { onDelete: 'set null' }
+  ),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
-});
+}, (table) => ({
+  canonicalMemoryProjectUniqueIdx: uniqueIndex(
+    'projects_canonical_memory_project_id_unique_idx'
+  ).on(table.canonicalMemoryProjectId),
+}));
 
 export const messageAnalytics = sqliteTable('message_analytics', {
 	id: text('id').primaryKey(),

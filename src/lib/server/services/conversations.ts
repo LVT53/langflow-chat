@@ -1,10 +1,11 @@
 import { db } from '$lib/server/db';
-import { conversations, messages } from '$lib/server/db/schema';
+import { conversations, messages, projects } from '$lib/server/db/schema';
 import { eq, and, desc, inArray } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import type { Conversation } from '$lib/types';
 import { isHonchoEnabled, getOrCreateSession } from './honcho';
 import { recordConversationAnalytics } from './analytics';
+import { convergeProjectFolderContinuityForConversation } from './task-state/continuity';
 
 export async function createConversation(userId: string, title?: string): Promise<Conversation> {
 	const id = randomUUID();
@@ -145,12 +146,34 @@ export async function moveConversationToProject(
 	conversationId: string,
 	projectId: string | null
 ): Promise<Conversation | null> {
+	const [existingConversation] = await db
+		.select({ projectId: conversations.projectId })
+		.from(conversations)
+		.where(and(eq(conversations.id, conversationId), eq(conversations.userId, userId)))
+		.limit(1);
+	if (!existingConversation) return null;
+
+	if (projectId !== null) {
+		const [project] = await db
+			.select({ id: projects.id })
+			.from(projects)
+			.where(and(eq(projects.id, projectId), eq(projects.userId, userId)))
+			.limit(1);
+		if (!project) return null;
+	}
+
 	const [conversation] = await db
 		.update(conversations)
 		.set({ projectId, updatedAt: new Date() })
 		.where(and(eq(conversations.id, conversationId), eq(conversations.userId, userId)))
 		.returning();
 	if (!conversation) return null;
+	await convergeProjectFolderContinuityForConversation({
+		userId,
+		conversationId,
+		projectId,
+		previousProjectId: existingConversation.projectId ?? null,
+	});
 	return {
 		id: conversation.id,
 		title: conversation.title,

@@ -95,4 +95,79 @@ describe('schema core tables', () => {
       expect(columnNames).toContain('conversation_id');
     });
   });
+
+  describe('projects table', () => {
+    it('links at most one project folder to a canonical memory project', () => {
+      const columns = sqlite
+        .prepare("PRAGMA table_info(projects)")
+        .all() as { name: string }[];
+      const columnNames = columns.map((column) => column.name);
+      expect(columnNames).toContain('canonical_memory_project_id');
+
+      const indexes = sqlite
+        .prepare("PRAGMA index_list(projects)")
+        .all() as { name: string; unique: number }[];
+      expect(indexes).toContainEqual(
+        expect.objectContaining({
+          name: 'projects_canonical_memory_project_id_unique_idx',
+          unique: 1,
+        }),
+      );
+
+      const foreignKeys = sqlite
+        .prepare("PRAGMA foreign_key_list(projects)")
+        .all() as { from: string; table: string; to: string; on_delete: string }[];
+      expect(foreignKeys).toContainEqual(
+        expect.objectContaining({
+          from: 'canonical_memory_project_id',
+          table: 'memory_projects',
+          to: 'project_id',
+          on_delete: 'SET NULL',
+        }),
+      );
+
+      const userId = 'test-user-project-folder-link';
+      db.insert(schema.users).values({
+        id: userId,
+        email: 'project-folder@example.com',
+        passwordHash: 'hash789',
+        name: 'Project Folder Test User',
+      }).run();
+
+      db.insert(schema.memoryProjects).values({
+        projectId: 'memory-project-1',
+        userId,
+        name: 'Canonical continuity',
+      }).run();
+
+      db.insert(schema.projects).values({
+        id: 'folder-with-canonical',
+        userId,
+        name: 'Folder with canonical continuity',
+        canonicalMemoryProjectId: 'memory-project-1',
+      }).run();
+
+      db.insert(schema.projects).values([
+        {
+          id: 'folder-without-canonical-1',
+          userId,
+          name: 'Unlinked folder one',
+        },
+        {
+          id: 'folder-without-canonical-2',
+          userId,
+          name: 'Unlinked folder two',
+        },
+      ]).run();
+
+      expect(() =>
+        db.insert(schema.projects).values({
+          id: 'duplicate-folder-canonical',
+          userId,
+          name: 'Duplicate canonical continuity',
+          canonicalMemoryProjectId: 'memory-project-1',
+        }).run(),
+      ).toThrow();
+    });
+  });
 });

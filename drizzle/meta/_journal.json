@@ -288,6 +288,13 @@
       "when": 1777140000027,
       "tag": "1777140000027_deep_research_drop_active_conversation_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1777140000028,
+      "tag": "1777140000028_project_folder_canonical_memory",
+      "breakpoints": true
     }
 
   ]

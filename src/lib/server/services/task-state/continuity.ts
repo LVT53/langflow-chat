@@ -7,6 +7,7 @@ import {
   memoryEvents,
   memoryProjectTaskLinks,
   memoryProjects,
+  projects,
   taskCheckpoints,
 } from "$lib/server/db/schema";
 import type {
@@ -426,6 +427,26 @@ export async function syncTaskContinuityFromTaskState(params: {
 }): Promise<string | null> {
   if (isPlaceholderObjective(params.taskState.objective)) return null;
 
+  const [conversationRow] = await db
+    .select({ projectId: conversations.projectId })
+    .from(conversations)
+    .where(
+      and(
+        eq(conversations.userId, params.userId),
+        eq(conversations.id, params.taskState.conversationId),
+      ),
+    )
+    .limit(1);
+
+  if (conversationRow?.projectId) {
+    const folderContinuityId = await convergeProjectFolderContinuityForTaskState({
+      userId: params.userId,
+      projectId: conversationRow.projectId,
+      taskState: params.taskState,
+    });
+    if (folderContinuityId) return folderContinuityId;
+  }
+
   const [existingLink, checkpointContent, candidates] = await Promise.all([
     db
       .select({ projectId: memoryProjectTaskLinks.projectId })
@@ -565,6 +586,211 @@ export async function syncTaskContinuityFromTaskState(params: {
   }
 
   return projectId;
+}
+
+async function convergeProjectFolderContinuityForTaskState(params: {
+  userId: string;
+  projectId: string;
+  taskState: TaskState;
+}): Promise<string | null> {
+  if (isPlaceholderObjective(params.taskState.objective)) return null;
+
+  const [projectFolder] = await db
+    .select({
+      id: projects.id,
+      name: projects.name,
+      canonicalMemoryProjectId: projects.canonicalMemoryProjectId,
+    })
+    .from(projects)
+    .where(
+      and(
+        eq(projects.userId, params.userId),
+        eq(projects.id, params.projectId),
+      ),
+    )
+    .limit(1);
+  if (!projectFolder) return null;
+
+  const now = new Date();
+  const checkpointContent = await getLatestStableCheckpoint(params.taskState.taskId);
+  const summary =
+    clipNullable(checkpointContent, PROJECT_SUMMARY_MAX) ??
+    clipNullable(params.taskState.nextSteps.join(" "), PROJECT_SUMMARY_MAX) ??
+    clipNullable(params.taskState.objective, PROJECT_SUMMARY_MAX) ??
+    params.taskState.objective;
+  let reusableProjectId: string | null = null;
+  if (!projectFolder.canonicalMemoryProjectId) {
+    const [existingLink] = await db
+      .select({ projectId: memoryProjectTaskLinks.projectId })
+      .from(memoryProjectTaskLinks)
+      .where(
+        and(
+          eq(memoryProjectTaskLinks.userId, params.userId),
+          eq(memoryProjectTaskLinks.taskId, params.taskState.taskId),
+        ),
+      )
+      .limit(1);
+    reusableProjectId = existingLink?.projectId ?? null;
+
+    if (reusableProjectId) {
+      const [canonicalOwner] = await db
+        .select({ id: projects.id })
+        .from(projects)
+        .where(
+          and(
+            eq(projects.userId, params.userId),
+            eq(projects.canonicalMemoryProjectId, reusableProjectId),
+          ),
+        )
+        .limit(1);
+      if (canonicalOwner && canonicalOwner.id !== projectFolder.id) {
+        reusableProjectId = null;
+      }
+    }
+  }
+
+  const projectId =
+    projectFolder.canonicalMemoryProjectId ?? reusableProjectId ?? randomUUID();
+  const shouldCreateMemoryProject =
+    !projectFolder.canonicalMemoryProjectId && !reusableProjectId;
+
+  if (shouldCreateMemoryProject) {
+    await db.insert(memoryProjects).values({
+      projectId,
+      userId: params.userId,
+      name: clipRequired(projectFolder.name, PROJECT_NAME_MAX),
+      summary,
+      status: "active",
+      lastActiveAt: now,
+      updatedAt: now,
+    });
+  } else {
+    await db
+      .update(memoryProjects)
+      .set({
+        name: clipRequired(projectFolder.name, PROJECT_NAME_MAX),
+        summary,
+        status: "active",
+        lastActiveAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(memoryProjects.userId, params.userId),
+          eq(memoryProjects.projectId, projectId),
+        ),
+      );
+  }
+
+  if (!projectFolder.canonicalMemoryProjectId) {
+    await db
+      .update(projects)
+      .set({
+        canonicalMemoryProjectId: projectId,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(projects.userId, params.userId),
+          eq(projects.id, projectFolder.id),
+        ),
+      );
+  }
+
+  await db
+    .insert(memoryProjectTaskLinks)
+    .values({
+      id: randomUUID(),
+      projectId,
+      taskId: params.taskState.taskId,
+      userId: params.userId,
+      conversationId: params.taskState.conversationId,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: memoryProjectTaskLinks.taskId,
+      set: {
+        projectId,
+        conversationId: params.taskState.conversationId,
+        updatedAt: now,
+      },
+    });
+
+  return projectId;
+}
+
+export async function convergeProjectFolderContinuityForConversation(params: {
+  userId: string;
+  conversationId: string;
+  projectId: string | null;
+  previousProjectId?: string | null;
+}): Promise<string | null> {
+  if (params.previousProjectId && params.previousProjectId !== params.projectId) {
+    const [previousProjectFolder] = await db
+      .select({ canonicalMemoryProjectId: projects.canonicalMemoryProjectId })
+      .from(projects)
+      .where(
+        and(
+          eq(projects.userId, params.userId),
+          eq(projects.id, params.previousProjectId),
+        ),
+      )
+      .limit(1);
+
+    if (previousProjectFolder?.canonicalMemoryProjectId) {
+      await db
+        .delete(memoryProjectTaskLinks)
+        .where(
+          and(
+            eq(memoryProjectTaskLinks.userId, params.userId),
+            eq(memoryProjectTaskLinks.conversationId, params.conversationId),
+            eq(memoryProjectTaskLinks.projectId, previousProjectFolder.canonicalMemoryProjectId),
+          ),
+        );
+    }
+  }
+
+  if (!params.projectId) return null;
+
+  const [projectFolderRows, taskRows] = await Promise.all([
+    db
+      .select({
+        id: projects.id,
+        name: projects.name,
+        canonicalMemoryProjectId: projects.canonicalMemoryProjectId,
+      })
+      .from(projects)
+      .where(
+        and(
+          eq(projects.userId, params.userId),
+          eq(projects.id, params.projectId),
+        ),
+      )
+      .limit(1),
+    db
+      .select()
+      .from(conversationTaskStates)
+      .where(
+        and(
+          eq(conversationTaskStates.userId, params.userId),
+          eq(conversationTaskStates.conversationId, params.conversationId),
+        ),
+      )
+      .orderBy(desc(conversationTaskStates.updatedAt))
+      .limit(1),
+  ]);
+
+  const projectFolder = projectFolderRows[0] ?? null;
+  const taskRow = taskRows[0] ?? null;
+  const taskState = taskRow ? mapTaskState(taskRow) : null;
+  if (!projectFolder || !taskState || isPlaceholderObjective(taskState.objective)) {
+    return null;
+  }
+  return convergeProjectFolderContinuityForTaskState({
+    userId: params.userId,
+    projectId: projectFolder.id,
+    taskState,
+  });
 }
 
 export async function listFocusContinuityItems(

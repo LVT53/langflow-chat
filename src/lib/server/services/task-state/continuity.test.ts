@@ -79,7 +79,9 @@ vi.mock('$lib/server/db/schema', () => ({
 	conversations: {
 		__name: 'conversations',
 		id: { name: 'id' },
+		userId: { name: 'userId' },
 		title: { name: 'title' },
+		projectId: { name: 'projectId' },
 		updatedAt: { name: 'updatedAt' },
 	},
 	conversationTaskStates: {
@@ -105,6 +107,14 @@ vi.mock('$lib/server/db/schema', () => ({
 		taskId: { name: 'taskId' },
 		userId: { name: 'userId' },
 		conversationId: { name: 'conversationId' },
+		updatedAt: { name: 'updatedAt' },
+	},
+	projects: {
+		__name: 'projects',
+		id: { name: 'id' },
+		userId: { name: 'userId' },
+		name: { name: 'name' },
+		canonicalMemoryProjectId: { name: 'canonicalMemoryProjectId' },
 		updatedAt: { name: 'updatedAt' },
 	},
 	taskCheckpoints: {

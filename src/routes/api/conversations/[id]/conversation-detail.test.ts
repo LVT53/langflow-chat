@@ -46,9 +46,9 @@ vi.mock('$lib/server/services/deep-research', () => ({
 	listConversationDeepResearchJobs: vi.fn(),
 }));
 
-import { GET } from './+server';
+import { GET, PATCH } from './+server';
 import { requireAuth } from '$lib/server/auth/hooks';
-import { getConversation } from '$lib/server/services/conversations';
+import { getConversation, moveConversationToProject } from '$lib/server/services/conversations';
 import { listMessages } from '$lib/server/services/messages';
 import {
 	getConversationWorkingSet,
@@ -68,6 +68,7 @@ import { listConversationDeepResearchJobs } from '$lib/server/services/deep-rese
 
 const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
 const mockGetConversation = getConversation as ReturnType<typeof vi.fn>;
+const mockMoveConversationToProject = moveConversationToProject as ReturnType<typeof vi.fn>;
 const mockListMessages = listMessages as ReturnType<typeof vi.fn>;
 const mockListConversationArtifacts = listConversationArtifacts as ReturnType<typeof vi.fn>;
 const mockGetConversationWorkingSet = getConversationWorkingSet as ReturnType<typeof vi.fn>;
@@ -86,6 +87,20 @@ const mockListConversationDeepResearchJobs =
 function makeEvent(user = { id: 'user-1' }, id = 'conv-1') {
 	return {
 		request: new Request(`http://localhost/api/conversations/${id}`),
+		locals: { user },
+		params: { id },
+		url: new URL(`http://localhost/api/conversations/${id}`),
+		route: { id: '/api/conversations/[id]' },
+	} as any;
+}
+
+function makePatchEvent(body: unknown, user = { id: 'user-1' }, id = 'conv-1') {
+	return {
+		request: new Request(`http://localhost/api/conversations/${id}`, {
+			method: 'PATCH',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify(body),
+		}),
 		locals: { user },
 		params: { id },
 		url: new URL(`http://localhost/api/conversations/${id}`),
@@ -361,5 +376,31 @@ describe('GET /api/conversations/[id]', () => {
 				],
 			}),
 		]);
+	});
+});
+
+describe('PATCH /api/conversations/[id]', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockRequireAuth.mockReturnValue(undefined);
+		mockMoveConversationToProject.mockResolvedValue({
+			id: 'conv-1',
+			title: 'Quarterly report',
+			projectId: 'folder-1',
+			createdAt: 1_777_140_000,
+			updatedAt: 1_777_140_001,
+		});
+	});
+
+	it('moves project assignment through the conversation move operation', async () => {
+		const response = await PATCH(makePatchEvent({ projectId: 'folder-1' }));
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(mockMoveConversationToProject).toHaveBeenCalledWith('user-1', 'conv-1', 'folder-1');
+		expect(data).toMatchObject({
+			id: 'conv-1',
+			projectId: 'folder-1',
+		});
 	});
 });

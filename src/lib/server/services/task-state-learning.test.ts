@@ -89,6 +89,9 @@ vi.mock('$lib/server/db', () => ({
 				if (table?.__name === 'conversations') {
 					return createSelectChain(conversationRows);
 				}
+				if (table?.__name === 'projects') {
+					return createSelectChain([]);
+				}
 				return createSelectChain([]);
 			},
 		}),
@@ -123,7 +126,9 @@ vi.mock('$lib/server/db/schema', () => ({
 	conversations: {
 		__name: 'conversations',
 		id: { name: 'id' },
+		userId: { name: 'userId' },
 		title: { name: 'title' },
+		projectId: { name: 'projectId' },
 		updatedAt: { name: 'updatedAt' },
 	},
 	conversationTaskStates: {
@@ -162,6 +167,14 @@ vi.mock('$lib/server/db/schema', () => ({
 		conversationId: { name: 'conversationId' },
 		updatedAt: { name: 'updatedAt' },
 		id: { name: 'id' },
+	},
+	projects: {
+		__name: 'projects',
+		id: { name: 'id' },
+		userId: { name: 'userId' },
+		name: { name: 'name' },
+		canonicalMemoryProjectId: { name: 'canonicalMemoryProjectId' },
+		updatedAt: { name: 'updatedAt' },
 	},
 	taskCheckpoints: {
 		__name: 'task_checkpoints',

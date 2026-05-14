@@ -43,15 +43,21 @@ export async function updateProject(
 }
 
 export async function deleteProject(userId: string, projectId: string): Promise<boolean> {
-  // Unassign all conversations from this project first
-  await db
-    .update(conversations)
-    .set({ projectId: null })
-    .where(eq(conversations.projectId, projectId));
+  return db.transaction((tx) => {
+    const result = tx
+      .delete(projects)
+      .where(and(eq(projects.id, projectId), eq(projects.userId, userId)))
+      .run();
+    if (result.changes === 0) {
+      return false;
+    }
 
-  const result = await db
-    .delete(projects)
-    .where(and(eq(projects.id, projectId), eq(projects.userId, userId)))
-    .returning();
-  return result.length > 0;
+    tx
+      .update(conversations)
+      .set({ projectId: null })
+      .where(and(eq(conversations.projectId, projectId), eq(conversations.userId, userId)))
+      .run();
+
+    return true;
+  });
 }
