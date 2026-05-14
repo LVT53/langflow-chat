@@ -210,6 +210,29 @@ describe("stream-protocol", () => {
 		).toBe("The answer starts here.");
 	});
 
+	it("strips leaked Python REPL invocation and execution output", () => {
+		const cleaned = stripLeakedToolDiagnostics(
+			[
+				"run_python_repl: import subprocess",
+				"run_python_repl: print('disk check')",
+				"I'll inspect the server first.Successfully imported modules: ['math', 'pandas']Code execution completed successfully=== DISK OVERVIEW ===",
+				"Filesystem Size Used Avail Use% Mounted on",
+				"overlay 200G 131G 70G 66% /",
+				"stderr:",
+				"not found",
+				"MISSING: /run/containerd/containerd.sockI see the root filesystem is 66% used.",
+			].join("\n"),
+		);
+
+		expect(cleaned).not.toContain("run_python_repl");
+		expect(cleaned).not.toContain("Successfully imported modules");
+		expect(cleaned).not.toContain("Code execution completed");
+		expect(cleaned).not.toContain("Filesystem Size");
+		expect(cleaned).not.toContain("not found");
+		expect(cleaned).not.toContain("MISSING:");
+		expect(cleaned).toContain("I see the root filesystem is 66% used.");
+	});
+
 	it("detects partial leaked web research diagnostics for streaming buffers", () => {
 		expect(
 			getLeakedToolDiagnosticPrefixLength("Answer before Found 8 sour"),
@@ -219,6 +242,19 @@ describe("stream-protocol", () => {
 				"Answer before Found 8 source files were useful",
 			),
 		).toBe(0);
+	});
+
+	it("detects partial leaked Python REPL diagnostics for streaming buffers", () => {
+		expect(getLeakedToolDiagnosticPrefixLength("run_python_")).toBe(11);
+		expect(getLeakedToolDiagnosticPrefixLength("Recovered answer")).toBe(0);
+		expect(
+			getLeakedToolDiagnosticPrefixLength(
+				"Before text Successfully imported mod",
+			),
+		).toBe(25);
+		expect(
+			getLeakedToolDiagnosticPrefixLength("Before text Code execution complet"),
+		).toBe(22);
 	});
 
 	it("splits an untagged Qwen planning preamble from visible prose", () => {

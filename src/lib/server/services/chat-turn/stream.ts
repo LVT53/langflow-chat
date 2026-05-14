@@ -1,5 +1,6 @@
 import {
 	createInlineThinkingState,
+	createLeakedToolDiagnosticsState,
 	FRIENDLY_STREAM_ERRORS,
 	flushInlineThinkingState,
 	getLeakedToolDiagnosticPrefixLength,
@@ -124,6 +125,7 @@ export function createServerChunkRuntime({
 	let fullResponse = "";
 	let thinkingContent = "";
 	const inlineThinkingState = createInlineThinkingState();
+	const leakedToolDiagnosticsState = createLeakedToolDiagnosticsState();
 	const serverSegments: ServerStreamSegment[] = [];
 	const toolCallRecords: ToolCallEntry[] = [];
 	let pendingThinkingBuffer = "";
@@ -173,7 +175,10 @@ export function createServerChunkRuntime({
 			return true;
 		}
 
-		const sanitizedBuffer = stripLeakedToolDiagnostics(visibleTokenBuffer);
+		const sanitizedBuffer = stripLeakedToolDiagnostics(
+			visibleTokenBuffer,
+			leakedToolDiagnosticsState,
+		);
 		const holdLength = force
 			? 0
 			: getLeakedToolDiagnosticPrefixLength(sanitizedBuffer);

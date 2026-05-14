@@ -219,6 +219,50 @@ const WEB_RESEARCH_DIAGNOSTIC_PREFIX_WORDS = [
 	"snippet",
 	"snippets",
 ] as const;
+const PYTHON_TOOL_DIAGNOSTIC_PREFIX_SCAN_CHARS = 120;
+const PYTHON_TOOL_DIAGNOSTIC_PREFIXES = [
+	{ marker: "run_python_repl:", minPrefixLength: "run_".length },
+	{
+		marker: "successfully imported modules:",
+		minPrefixLength: "success".length,
+	},
+	{ marker: "code execution completed", minPrefixLength: "code ".length },
+	{ marker: "code execution failed", minPrefixLength: "code ".length },
+] as const;
+const PYTHON_TOOL_MARKER_PATTERNS = [
+	/run_python_repl\s*:/i,
+	/successfully imported modules\s*:/i,
+	/code execution (?:completed|failed)\b/i,
+] as const;
+const ASSISTANT_PROSE_BOUNDARY_PATTERNS = [
+	"i see",
+	"i found",
+	"i can",
+	"i will",
+	"i should",
+	"i'll",
+	"here's",
+	"here is",
+	"here are",
+	"based on",
+	"the ",
+	"this ",
+	"it ",
+	"you ",
+	"your ",
+	"there ",
+	"we ",
+	"yes,",
+	"yes.",
+	"yes ",
+	"no,",
+	"no.",
+	"no ",
+] as const;
+
+export interface LeakedToolDiagnosticsState {
+	suppressPythonToolOutput: boolean;
+}
 
 const THINKING_PREAMBLE_STARTS = [
 	"the user wants me",
@@ -253,10 +297,116 @@ function stripTentativeLeadingResponseMarker(value: string): string {
 	return value.replace(TENTATIVE_LEADING_RESPONSE_MARKER_RE, "");
 }
 
-export function stripLeakedToolDiagnostics(value: string): string {
-	return value
-		.replace(WEB_RESEARCH_DIAGNOSTIC_RE, "")
-		.replace(/[ \t]+\n/g, "\n");
+export function createLeakedToolDiagnosticsState(): LeakedToolDiagnosticsState {
+	return { suppressPythonToolOutput: false };
+}
+
+function findFirstPythonToolMarkerIndex(value: string): number {
+	let bestIndex = -1;
+	for (const pattern of PYTHON_TOOL_MARKER_PATTERNS) {
+		const match = pattern.exec(value);
+		if (match?.index !== undefined) {
+			bestIndex =
+				bestIndex === -1 ? match.index : Math.min(bestIndex, match.index);
+		}
+	}
+	return bestIndex;
+}
+
+function findAssistantProseBoundaryIndex(value: string): number {
+	const lowerValue = value.toLowerCase();
+	let bestIndex = -1;
+
+	for (const pattern of ASSISTANT_PROSE_BOUNDARY_PATTERNS) {
+		const index = lowerValue.indexOf(pattern);
+		if (index === -1) {
+			continue;
+		}
+		bestIndex = bestIndex === -1 ? index : Math.min(bestIndex, index);
+	}
+
+	return bestIndex;
+}
+
+function splitPreservingLineEndings(
+	value: string,
+): Array<{ line: string; lineEnding: string }> {
+	const matches = value.match(/[^\r\n]*(?:\r?\n|$)/g) ?? [];
+	const lines: Array<{ line: string; lineEnding: string }> = [];
+
+	for (const match of matches) {
+		if (!match) {
+			continue;
+		}
+		const lineEnding = match.endsWith("\r\n")
+			? "\r\n"
+			: match.endsWith("\n")
+				? "\n"
+				: "";
+		const line = lineEnding ? match.slice(0, -lineEnding.length) : match;
+		lines.push({ line, lineEnding });
+	}
+
+	return lines;
+}
+
+function stripLeakedPythonToolDiagnostics(
+	value: string,
+	state: LeakedToolDiagnosticsState,
+): string {
+	let output = "";
+
+	for (const { line, lineEnding } of splitPreservingLineEndings(value)) {
+		if (state.suppressPythonToolOutput) {
+			const boundaryIndex = findAssistantProseBoundaryIndex(line);
+			if (boundaryIndex >= 0) {
+				state.suppressPythonToolOutput = false;
+				const prose = line.slice(boundaryIndex);
+				const markerIndex = findFirstPythonToolMarkerIndex(prose);
+				if (markerIndex >= 0) {
+					const prefix = prose.slice(0, markerIndex);
+					if (prefix.trim()) {
+						output += prefix;
+						if (lineEnding) {
+							output += lineEnding;
+						}
+					}
+					state.suppressPythonToolOutput = true;
+					continue;
+				}
+				output += prose + lineEnding;
+			}
+			continue;
+		}
+
+		const markerIndex = findFirstPythonToolMarkerIndex(line);
+		if (markerIndex >= 0) {
+			const prefix = line.slice(0, markerIndex);
+			if (prefix.trim()) {
+				output += prefix;
+				if (lineEnding) {
+					output += lineEnding;
+				}
+			}
+			state.suppressPythonToolOutput = true;
+			continue;
+		}
+
+		output += line + lineEnding;
+	}
+
+	return output;
+}
+
+export function stripLeakedToolDiagnostics(
+	value: string,
+	state: LeakedToolDiagnosticsState = createLeakedToolDiagnosticsState(),
+): string {
+	const withoutWebDiagnostics = value.replace(WEB_RESEARCH_DIAGNOSTIC_RE, "");
+	return stripLeakedPythonToolDiagnostics(withoutWebDiagnostics, state).replace(
+		/[ \t]+\n/g,
+		"\n",
+	);
 }
 
 function isLeakedToolDiagnosticPrefix(value: string): boolean {
@@ -275,13 +425,34 @@ function isLeakedToolDiagnosticPrefix(value: string): boolean {
 	);
 }
 
+function isLeakedPythonToolDiagnosticPrefix(value: string): boolean {
+	if (/^\s/.test(value)) return false;
+	const candidate = value.toLowerCase();
+	if (!candidate) return false;
+
+	return PYTHON_TOOL_DIAGNOSTIC_PREFIXES.some(({ marker, minPrefixLength }) => {
+		if (candidate.startsWith(marker)) {
+			return true;
+		}
+		return candidate.length >= minPrefixLength && marker.startsWith(candidate);
+	});
+}
+
 export function getLeakedToolDiagnosticPrefixLength(value: string): number {
 	const scanStart = Math.max(
 		0,
-		value.length - WEB_RESEARCH_DIAGNOSTIC_PREFIX_SCAN_CHARS,
+		value.length -
+			Math.max(
+				WEB_RESEARCH_DIAGNOSTIC_PREFIX_SCAN_CHARS,
+				PYTHON_TOOL_DIAGNOSTIC_PREFIX_SCAN_CHARS,
+			),
 	);
 	for (let index = scanStart; index < value.length; index += 1) {
-		if (isLeakedToolDiagnosticPrefix(value.slice(index))) {
+		const suffix = value.slice(index);
+		if (
+			isLeakedToolDiagnosticPrefix(suffix) ||
+			isLeakedPythonToolDiagnosticPrefix(suffix)
+		) {
 			return value.length - index;
 		}
 	}

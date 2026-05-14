@@ -72,6 +72,23 @@ describe("normalizeAssistantOutput", () => {
 		expect(result).toBe("Qudelix alternatives\n\nThe answer starts here.");
 	});
 
+	it("strips leaked Python REPL transcripts from assistant output", () => {
+		const result = normalizeAssistantOutput(
+			[
+				"run_python_repl: import subprocess",
+				"run_python_repl: print('disk check')",
+				"Successfully imported modules: ['math', 'pandas']Code execution completed successfully=== DISK OVERVIEW ===",
+				"Filesystem Size Used Avail Use% Mounted on",
+				"overlay 200G 131G 70G 66% /",
+				"stderr:",
+				"not found",
+				"MISSING: /run/containerd/containerd.sockI see the root filesystem is 66% used.",
+			].join("\n"),
+		);
+
+		expect(result).toBe("I see the root filesystem is 66% used.");
+	});
+
 	it("strips thinking and tool markers combined", () => {
 		const result = normalizeAssistantOutput(
 			"<thinking>reason</thinking>" +

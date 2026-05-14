@@ -92,6 +92,33 @@ describe("createServerChunkRuntime", () => {
 		);
 	});
 
+	it("strips leaked Python REPL transcripts from visible tokens", () => {
+		const chunks: string[] = [];
+		const runtime = createServerChunkRuntime({
+			enqueueChunk(chunk) {
+				chunks.push(chunk);
+				return true;
+			},
+		});
+
+		runtime.emitChunkWithOutputHandling("run_python_");
+		runtime.emitChunkWithOutputHandling("repl: import subprocess\n");
+		runtime.emitChunkWithOutputHandling(
+			"Successfully imported modules: ['math', 'pandas']Code execution completed successfully=== DISK OVERVIEW ===\n",
+		);
+		runtime.emitChunkWithOutputHandling(
+			"Filesystem Size Used Avail Use% Mounted on\noverlay 200G 131G 70G 66% /\nnot found\n",
+		);
+		runtime.emitChunkWithOutputHandling(
+			"MISSING: /run/containerd/containerd.sockI see the root filesystem is 66% used.",
+		);
+		runtime.flushInlineThinkingBuffer();
+
+		expect(tokenTexts(chunks).join("")).toBe(
+			"I see the root filesystem is 66% used.",
+		);
+	});
+
 	it("keeps file-production tool calls out of persisted thinking segments", () => {
 		const chunks: string[] = [];
 		const runtime = createServerChunkRuntime({
