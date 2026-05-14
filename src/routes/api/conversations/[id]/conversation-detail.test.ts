@@ -24,6 +24,7 @@ vi.mock('$lib/server/services/task-state', () => ({
 	attachContinuityToTaskState: vi.fn(async (_userId: string, taskState: unknown) => taskState),
 	getContextDebugState: vi.fn(),
 	getConversationTaskState: vi.fn(),
+	getProjectFolderReferenceContext: vi.fn(),
 }));
 
 vi.mock('$lib/server/services/chat-files', () => ({
@@ -59,6 +60,7 @@ import {
 	attachContinuityToTaskState,
 	getContextDebugState,
 	getConversationTaskState,
+	getProjectFolderReferenceContext,
 } from '$lib/server/services/task-state';
 import { getChatFiles } from '$lib/server/services/chat-files';
 import { getConversationDraft } from '$lib/server/services/conversation-drafts';
@@ -76,6 +78,7 @@ const mockGetConversationContextStatus = getConversationContextStatus as ReturnT
 const mockGetConversationTaskState = getConversationTaskState as ReturnType<typeof vi.fn>;
 const mockGetContextDebugState = getContextDebugState as ReturnType<typeof vi.fn>;
 const mockAttachContinuityToTaskState = attachContinuityToTaskState as ReturnType<typeof vi.fn>;
+const mockGetProjectFolderReferenceContext = getProjectFolderReferenceContext as ReturnType<typeof vi.fn>;
 const mockGetChatFiles = getChatFiles as ReturnType<typeof vi.fn>;
 const mockGetConversationDraft = getConversationDraft as ReturnType<typeof vi.fn>;
 const mockGetConversationCostSummary = getConversationCostSummary as ReturnType<typeof vi.fn>;
@@ -125,6 +128,7 @@ describe('GET /api/conversations/[id]', () => {
 		mockGetConversationContextStatus.mockResolvedValue(null);
 		mockGetConversationTaskState.mockResolvedValue(null);
 		mockGetContextDebugState.mockResolvedValue(null);
+		mockGetProjectFolderReferenceContext.mockResolvedValue(null);
 		mockAttachContinuityToTaskState.mockImplementation(async (_userId: string, taskState: unknown) => taskState);
 		mockGetConversationDraft.mockResolvedValue(null);
 		mockGetChatFiles.mockResolvedValue([]);
@@ -376,6 +380,98 @@ describe('GET /api/conversations/[id]', () => {
 				],
 			}),
 		]);
+	});
+
+	it('returns compact project folder context sources without promoting siblings into message evidence', async () => {
+		const messageEvidenceSummary = {
+			status: 'completed',
+			items: [
+				{
+					artifactId: 'artifact-message-evidence',
+					title: 'Existing message evidence',
+					sourceType: 'document',
+				},
+			],
+		};
+		mockListMessages.mockResolvedValue([
+			{
+				id: 'assistant-1',
+				conversationId: 'conv-1',
+				role: 'assistant',
+				content: 'Here is the answer.',
+				createdAt: 1_777_140_000_000,
+				evidenceSummary: messageEvidenceSummary,
+			},
+		]);
+		mockGetProjectFolderReferenceContext.mockResolvedValue({
+			projectId: 'folder-1',
+			projectName: 'Launch folder',
+			entries: [
+				{
+					conversationId: 'conv-sibling-1',
+					title: 'Pricing notes',
+					objective: 'Compare pricing options',
+					summary: 'Stable pricing brief.',
+				},
+				{
+					conversationId: 'conv-sibling-2',
+					title: 'Rollout plan',
+					objective: null,
+					summary: null,
+				},
+			],
+			omittedSiblingCount: 1,
+		});
+
+		const response = await GET(makeEvent());
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(mockGetProjectFolderReferenceContext).toHaveBeenCalledWith({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+		});
+		expect(data.contextSources.groups).toEqual([
+			expect.objectContaining({
+				kind: 'project_folder',
+				state: 'inferred',
+				totalCount: 3,
+				items: [
+					expect.objectContaining({
+						title: 'Launch folder',
+						sourceType: 'conversation',
+						reason: '2 sibling conversations summarized, 1 more omitted',
+						metadata: expect.objectContaining({
+							siblingCount: 3,
+							includedSiblingCount: 2,
+							omittedSiblingCount: 1,
+						}),
+					}),
+				],
+			}),
+		]);
+		expect(data.messages[0].evidenceSummary).toEqual(messageEvidenceSummary);
+		expect(data.messages[0].evidenceSummary.items).not.toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					sourceType: 'conversation',
+				}),
+			])
+		);
+	});
+
+	it('keeps conversation detail available when project folder awareness lookup fails', async () => {
+		mockGetProjectFolderReferenceContext.mockRejectedValue(new Error('folder lookup failed'));
+
+		const response = await GET(makeEvent());
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(data.contextSources.groups).toEqual([]);
+		expect(mockGetProjectFolderReferenceContext).toHaveBeenCalledWith({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+		});
 	});
 });
 

@@ -1153,6 +1153,7 @@ export type ContextSourceGroupKind =
 	| "pinned"
 	| "excluded"
 	| "memory"
+	| "project_folder"
 	| "conversation";
 
 export type ContextSourceItemState =
@@ -1169,6 +1170,7 @@ export interface ContextSourceItem {
 	artifactId?: string | null;
 	artifactType?: ArtifactType | null;
 	reason?: string | null;
+	metadata?: Record<string, string | number | boolean | null>;
 	reduced?: boolean;
 	compacted?: boolean;
 }

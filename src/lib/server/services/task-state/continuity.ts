@@ -61,6 +61,7 @@ export type ProjectFolderReferenceEntry = {
 
 export type ProjectFolderReferenceContext = {
   projectId: string;
+  projectName: string;
   entries: ProjectFolderReferenceEntry[];
   omittedSiblingCount: number;
 };
@@ -335,6 +336,17 @@ export async function getProjectFolderReferenceContext(params: {
 
   if (!conversationRow?.projectId) return null;
 
+  const [projectRow] = await db
+    .select({ name: projects.name })
+    .from(projects)
+    .where(
+      and(
+        eq(projects.userId, params.userId),
+        eq(projects.id, conversationRow.projectId),
+      ),
+    )
+    .limit(1);
+
   const siblingWhere = and(
     eq(conversations.userId, params.userId),
     eq(conversations.projectId, conversationRow.projectId),
@@ -427,6 +439,7 @@ export async function getProjectFolderReferenceContext(params: {
 
   return {
     projectId: conversationRow.projectId,
+    projectName: projectRow?.name ?? "Project folder",
     entries: siblingRows.map((row) => {
       const task = taskByConversation.get(row.conversationId) ?? null;
       const summary =

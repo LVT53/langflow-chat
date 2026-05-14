@@ -7,6 +7,7 @@ const {
 	mockCanUseContextSummarizer,
 	insertedProjects,
 	projectRows,
+	projectFolderRows,
 	linkRows,
 	conversationRows,
 	taskStateRows,
@@ -18,6 +19,7 @@ const {
 	mockCanUseContextSummarizer: vi.fn(() => false),
 	insertedProjects: [] as Array<Record<string, unknown>>,
 	projectRows: [] as Array<Record<string, any>>,
+	projectFolderRows: [] as Array<Record<string, any>>,
 	linkRows: [] as Array<Record<string, unknown>>,
 	conversationRows: [] as Array<Record<string, any>>,
 	taskStateRows: [] as Array<Record<string, any>>,
@@ -112,6 +114,9 @@ vi.mock('$lib/server/db', () => ({
 				}
 				if (table?.__name === 'memory_projects') {
 					return createQuery(projectRows, shape);
+				}
+				if (table?.__name === 'projects') {
+					return createQuery(projectFolderRows, shape);
 				}
 				if (table?.__name === 'conversations') {
 					return createQuery(conversationRows, shape);
@@ -246,6 +251,7 @@ describe('task continuity memory events', () => {
 		mockListMemoryEvents.mockResolvedValue([]);
 		insertedProjects.splice(0, insertedProjects.length);
 		projectRows.splice(0, projectRows.length);
+		projectFolderRows.splice(0, projectFolderRows.length);
 		linkRows.splice(0, linkRows.length);
 		conversationRows.splice(0, conversationRows.length);
 		taskStateRows.splice(0, taskStateRows.length);
@@ -272,6 +278,12 @@ describe('task continuity memory events', () => {
 	});
 
 	it('includes only same-user same-folder siblings and excludes the current conversation', async () => {
+		projectFolderRows.push({
+			id: 'folder-1',
+			userId: 'user-1',
+			name: 'Launch folder',
+			updatedAt: new Date('2026-05-14T09:00:00.000Z'),
+		});
 		conversationRows.push(
 			{
 				id: 'conv-current',
@@ -312,6 +324,7 @@ describe('task continuity memory events', () => {
 
 		expect(context).toEqual({
 			projectId: 'folder-1',
+			projectName: 'Launch folder',
 			entries: [
 				{
 					conversationId: 'conv-sibling',

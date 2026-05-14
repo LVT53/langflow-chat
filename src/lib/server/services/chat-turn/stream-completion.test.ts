@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ArtifactSummary, ContextDebugState, TaskState } from "$lib/types";
+import { getProjectFolderReferenceContext } from "$lib/server/services/task-state";
 import { completeStreamTurn } from "./stream-completion";
+
+vi.mock("$lib/server/services/task-state", () => ({
+	getProjectFolderReferenceContext: vi.fn(async () => null),
+}));
 
 describe("completeStreamTurn", () => {
 	const mockCreateMessage = vi.fn();
@@ -18,6 +23,8 @@ describe("completeStreamTurn", () => {
 	const mockGetFileProductionJobs = vi.fn();
 	const mockAssignFileProductionJobs = vi.fn();
 	const mockEstimateTokenCount = vi.fn().mockReturnValue(100);
+	const mockGetProjectFolderReferenceContext =
+		getProjectFolderReferenceContext as ReturnType<typeof vi.fn>;
 
 	const defaultUserMsg = { id: "user-msg-1" };
 	const defaultAssistantMsg = { id: "asst-msg-1" };
@@ -44,6 +51,7 @@ describe("completeStreamTurn", () => {
 		mockAssignFileProductionJobs.mockResolvedValue(undefined);
 		mockEnqueueChunk.mockReturnValue(true);
 		mockEstimateTokenCount.mockReturnValue(100);
+		mockGetProjectFolderReferenceContext.mockResolvedValue(null);
 	});
 
 	const defaultParams = {
@@ -390,6 +398,75 @@ describe("completeStreamTurn", () => {
 			]),
 		);
 		expect(JSON.stringify(data.contextSources)).not.toContain("Stale");
+	});
+
+	it("includes project folder awareness in end metadata and degrades lookup failures", async () => {
+		mockGetProjectFolderReferenceContext.mockResolvedValueOnce({
+			projectId: "folder-1",
+			projectName: "Launch folder",
+			entries: [
+				{
+					conversationId: "conv-sibling-1",
+					title: "Pricing notes",
+					objective: null,
+					summary: "Stable pricing brief.",
+				},
+			],
+			omittedSiblingCount: 0,
+		});
+
+		await completeStreamTurn(defaultParams);
+
+		const endCall = mockEnqueueChunk.mock.calls.find((call: string[]) =>
+			call[0]?.startsWith("event: end"),
+		);
+		expect(endCall).toBeDefined();
+		const data = JSON.parse(endCall[0].replace("event: end\ndata: ", ""));
+
+		expect(mockGetProjectFolderReferenceContext).toHaveBeenCalledWith({
+			userId: "user-1",
+			conversationId: "conv-1",
+		});
+		expect(data.contextSources.groups).toEqual([
+			expect.objectContaining({
+				kind: "project_folder",
+				state: "inferred",
+				items: [
+					expect.objectContaining({
+						title: "Launch folder",
+						sourceType: "conversation",
+					}),
+				],
+			}),
+		]);
+
+		vi.clearAllMocks();
+		mockCreateMessage
+			.mockResolvedValueOnce(defaultUserMsg)
+			.mockResolvedValueOnce(defaultAssistantMsg);
+		mockPersistUserTurnAttachments.mockResolvedValue(undefined);
+		mockPersistAssistantTurnState.mockResolvedValue(defaultTurnState);
+		mockTouchConversation.mockResolvedValue(undefined);
+		mockGetStreamBuffer.mockReturnValue(null);
+		mockGetChatFilesForMsg.mockResolvedValue([]);
+		mockGetFileProductionJobs.mockResolvedValue([]);
+		mockAssignFileProductionJobs.mockResolvedValue(undefined);
+		mockEnqueueChunk.mockReturnValue(true);
+		mockEstimateTokenCount.mockReturnValue(100);
+		mockGetProjectFolderReferenceContext.mockRejectedValueOnce(
+			new Error("folder lookup failed"),
+		);
+
+		await completeStreamTurn(defaultParams);
+
+		const fallbackEndCall = mockEnqueueChunk.mock.calls.find((call: string[]) =>
+			call[0]?.startsWith("event: end"),
+		);
+		expect(fallbackEndCall).toBeDefined();
+		const fallbackData = JSON.parse(
+			fallbackEndCall[0].replace("event: end\ndata: ", ""),
+		);
+		expect(fallbackData.contextSources.groups).toEqual([]);
 	});
 
 	it("sets wasStopped to true in the end event when requested", async () => {

@@ -9,6 +9,7 @@ import type {
 	ConversationContextStatus,
 	EvidenceSourceType,
 } from "$lib/types";
+import type { ProjectFolderReferenceContext } from "$lib/server/services/task-state/continuity";
 
 export type BuildContextSourcesStateInput = {
 	userId: string;
@@ -17,6 +18,7 @@ export type BuildContextSourcesStateInput = {
 	contextDebug?: ContextDebugState | null;
 	attachedArtifacts?: ArtifactSummary[];
 	activeWorkingSet?: ArtifactSummary[];
+	projectFolderReference?: ProjectFolderReferenceContext | null;
 	now?: Date;
 };
 
@@ -52,6 +54,7 @@ export function buildContextSourcesState(
 			evidence: input.contextDebug?.excludedEvidence ?? [],
 		}),
 		buildMemoryGroup(input.contextDebug),
+		buildProjectFolderGroup(input.projectFolderReference),
 	].filter((group): group is ContextSourceGroup => Boolean(group));
 
 	const selectedCount =
@@ -156,6 +159,54 @@ function buildMemoryGroup(
 				state: "inferred",
 				sourceType: "memory",
 				reason: contextDebug.honcho.source,
+			},
+		],
+	};
+}
+
+function buildProjectFolderGroup(
+	projectFolderReference: ProjectFolderReferenceContext | null | undefined,
+): ContextSourceGroup | null {
+	if (!projectFolderReference || projectFolderReference.entries.length === 0) {
+		return null;
+	}
+
+	const includedSiblingCount = projectFolderReference.entries.length;
+	const siblingCount =
+		includedSiblingCount + projectFolderReference.omittedSiblingCount;
+	const siblingSummary = projectFolderReference.entries
+		.map((entry) =>
+			entry.summary
+				? `${entry.title}: ${entry.summary}`
+				: entry.objective
+					? `${entry.title}: ${entry.objective}`
+					: entry.title,
+		)
+		.join(" ");
+	const reason =
+		projectFolderReference.omittedSiblingCount > 0
+			? `${includedSiblingCount} sibling conversations summarized, ${projectFolderReference.omittedSiblingCount} more omitted`
+			: `${includedSiblingCount} sibling conversation${includedSiblingCount === 1 ? "" : "s"} summarized`;
+
+	return {
+		kind: "project_folder",
+		state: "inferred",
+		totalCount: siblingCount,
+		items: [
+			{
+				id: `project_folder:${projectFolderReference.projectId}`,
+				title: projectFolderReference.projectName,
+				state: "inferred",
+				sourceType: "conversation",
+				reason,
+				metadata: {
+					projectId: projectFolderReference.projectId,
+					projectName: projectFolderReference.projectName,
+					siblingCount,
+					includedSiblingCount,
+					omittedSiblingCount: projectFolderReference.omittedSiblingCount,
+					siblingSummary,
+				},
 			},
 		],
 	};

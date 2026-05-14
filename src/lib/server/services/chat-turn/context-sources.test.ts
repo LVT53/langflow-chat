@@ -245,6 +245,61 @@ describe("buildContextSourcesState", () => {
 			],
 		});
 	});
+
+	it("adds compact project folder awareness as one inferred conversation source", () => {
+		const state = buildContextSourcesState({
+			userId: "user-1",
+			conversationId: "conv-1",
+			projectFolderReference: {
+				projectId: "folder-1",
+				projectName: "Launch folder",
+				entries: [
+					{
+						conversationId: "conv-sibling-1",
+						title: "Pricing notes",
+						objective: "Compare pricing options",
+						summary: "Stable pricing brief.",
+					},
+					{
+						conversationId: "conv-sibling-2",
+						title: "Rollout plan",
+						objective: null,
+						summary: null,
+					},
+				],
+				omittedSiblingCount: 3,
+			},
+			now: new Date("2026-05-05T10:00:00.000Z"),
+		});
+
+		expect(state.activeCount).toBe(0);
+		expect(state.inferredCount).toBe(1);
+		expect(state.groups).toEqual([
+			expect.objectContaining({
+				kind: "project_folder",
+				state: "inferred",
+				totalCount: 5,
+				items: [
+					expect.objectContaining({
+						id: "project_folder:folder-1",
+						title: "Launch folder",
+						state: "inferred",
+						sourceType: "conversation",
+						reason: "2 sibling conversations summarized, 3 more omitted",
+						metadata: {
+							projectId: "folder-1",
+							projectName: "Launch folder",
+							siblingCount: 5,
+							includedSiblingCount: 2,
+							omittedSiblingCount: 3,
+							siblingSummary:
+								"Pricing notes: Stable pricing brief. Rollout plan",
+						},
+					}),
+				],
+			}),
+		]);
+	});
 });
 
 function artifact(id: string, name: string): ArtifactSummary {

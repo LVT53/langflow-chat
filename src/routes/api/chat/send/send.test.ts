@@ -61,6 +61,7 @@ vi.mock('$lib/server/services/task-state', () => ({
 	attachContinuityToTaskState: vi.fn(async (_userId: string, taskState: unknown) => taskState),
 	getContextDebugState: vi.fn(async () => null),
 	getConversationTaskState: vi.fn(async () => null),
+	getProjectFolderReferenceContext: vi.fn(async () => null),
 	syncTaskContinuityFromTaskState: vi.fn(async () => null),
 	updateTaskStateCheckpoint: vi.fn(async () => null),
 }));
@@ -112,6 +113,7 @@ import {
 import { buildDeepResearchPlanningContext } from '$lib/server/services/deep-research/planning-context';
 import { createMessage, updateMessageHonchoMetadata } from '$lib/server/services/messages';
 import { assertPromptReadyAttachments } from '$lib/server/services/knowledge';
+import { getProjectFolderReferenceContext } from '$lib/server/services/task-state';
 const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
 const mockGetConversation = getConversation as ReturnType<typeof vi.fn>;
 const mockTouchConversation = touchConversation as ReturnType<typeof vi.fn>;
@@ -122,6 +124,7 @@ const mockBuildDeepResearchPlanningContext = buildDeepResearchPlanningContext as
 const mockCreateMessage = createMessage as ReturnType<typeof vi.fn>;
 const mockUpdateMessageHonchoMetadata = updateMessageHonchoMetadata as ReturnType<typeof vi.fn>;
 const mockAssertPromptReadyAttachments = assertPromptReadyAttachments as ReturnType<typeof vi.fn>;
+const mockGetProjectFolderReferenceContext = getProjectFolderReferenceContext as ReturnType<typeof vi.fn>;
 
 function makeEvent(body: unknown, user = { id: 'user-1', email: 'test@example.com' }) {
 	return {
@@ -143,6 +146,7 @@ describe('POST /api/chat/send', () => {
 		configMockState.deepResearchEnabled = true;
 		mockRequireAuth.mockReturnValue(undefined);
 		mockTouchConversation.mockImplementation(async () => null);
+		mockGetProjectFolderReferenceContext.mockResolvedValue(null);
 		mockAssertCanStartDeepResearchJob.mockResolvedValue(undefined);
 		mockCreateMessage.mockImplementation(async () => ({
 			id: crypto.randomUUID(),
@@ -225,6 +229,76 @@ describe('POST /api/chat/send', () => {
 			honchoContext: expect.objectContaining({ source: 'live' }),
 			honchoSnapshot: expect.objectContaining({ summary: 'Latest Honcho summary' }),
 		});
+	});
+
+	it('returns project folder awareness in send metadata and degrades lookup failures', async () => {
+		const conversation = { id: 'conv-1', title: 'Test', createdAt: 0, updatedAt: 0 };
+		mockGetConversation.mockResolvedValue(conversation);
+		mockCreateMessage
+			.mockResolvedValueOnce({ id: 'user-msg', role: 'user', content: 'Hello', timestamp: Date.now() })
+			.mockResolvedValueOnce({
+				id: 'assistant-msg',
+				role: 'assistant',
+				content: 'Hello from AI!',
+				timestamp: Date.now(),
+			});
+		mockSendMessage.mockResolvedValue({
+			text: 'Hello from AI!',
+			rawResponse: {},
+			contextStatus: undefined,
+		});
+		mockGetProjectFolderReferenceContext.mockResolvedValueOnce({
+			projectId: 'folder-1',
+			projectName: 'Launch folder',
+			entries: [
+				{
+					conversationId: 'conv-sibling-1',
+					title: 'Pricing notes',
+					objective: null,
+					summary: 'Stable pricing brief.',
+				},
+			],
+			omittedSiblingCount: 0,
+		});
+
+		const response = await POST(makeEvent({ message: 'Hello', conversationId: 'conv-1' }));
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(data.contextSources.groups).toEqual([
+			expect.objectContaining({
+				kind: 'project_folder',
+				state: 'inferred',
+				items: [
+					expect.objectContaining({
+						title: 'Launch folder',
+						sourceType: 'conversation',
+					}),
+				],
+			}),
+		]);
+
+		mockCreateMessage.mockClear();
+		mockCreateMessage
+			.mockResolvedValueOnce({ id: 'user-msg-2', role: 'user', content: 'Hello again', timestamp: Date.now() })
+			.mockResolvedValueOnce({
+				id: 'assistant-msg-2',
+				role: 'assistant',
+				content: 'Still works',
+				timestamp: Date.now(),
+			});
+		mockSendMessage.mockResolvedValueOnce({
+			text: 'Still works',
+			rawResponse: {},
+			contextStatus: undefined,
+		});
+		mockGetProjectFolderReferenceContext.mockRejectedValueOnce(new Error('folder lookup failed'));
+
+		const fallbackResponse = await POST(makeEvent({ message: 'Hello again', conversationId: 'conv-1' }));
+		const fallbackData = await fallbackResponse.json();
+
+		expect(fallbackResponse.status).toBe(200);
+		expect(fallbackData.contextSources.groups).toEqual([]);
 	});
 
 	it('starts a Deep Research job shell instead of a normal assistant answer', async () => {

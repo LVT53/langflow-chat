@@ -127,6 +127,8 @@
 				return $t('contextSources.excluded');
 			case 'memory':
 				return $t('contextSources.group.memory');
+			case 'project_folder':
+				return $t('contextSources.group.projectFolder');
 			case 'conversation':
 				return $t('contextSources.group.conversation');
 		}

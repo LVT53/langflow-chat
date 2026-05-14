@@ -66,6 +66,18 @@ describe("EvidenceManager context source labels", () => {
 		expect(getByText("Inferred sources")).toBeInTheDocument();
 		expect(getByText("Draft reference")).toBeInTheDocument();
 	});
+
+	it("labels compact project folder awareness as project folder context", () => {
+		const { getByText } = render(EvidenceManager, {
+			open: true,
+			contextDebug: makeContextDebug(),
+			contextSources: makeProjectFolderContextSources(),
+		});
+
+		expect(getByText("Launch folder")).toBeInTheDocument();
+		expect(getByText("Project folder")).toBeInTheDocument();
+		expect(getByText("2 sibling conversations summarized")).toBeInTheDocument();
+	});
 });
 
 function makeContextDebug(): ContextDebugState {
@@ -189,6 +201,39 @@ function makeInferredOnlyContextSources(): ContextSourcesState {
 						sourceType: "document",
 						artifactType: "document",
 						reason: "Referenced in selected message evidence",
+						reduced: false,
+						compacted: false,
+					},
+				],
+			},
+		],
+	};
+}
+
+function makeProjectFolderContextSources(): ContextSourcesState {
+	return {
+		conversationId: "conversation-1",
+		userId: "user-1",
+		activeCount: 0,
+		inferredCount: 1,
+		selectedCount: 0,
+		pinnedCount: 0,
+		excludedCount: 0,
+		reduced: false,
+		compacted: false,
+		updatedAt: Date.now(),
+		groups: [
+			{
+				kind: "project_folder",
+				state: "inferred",
+				totalCount: 2,
+				items: [
+					{
+						id: "project_folder:folder-1",
+						title: "Launch folder",
+						state: "inferred",
+						sourceType: "conversation",
+						reason: "2 sibling conversations summarized",
 						reduced: false,
 						compacted: false,
 					},
