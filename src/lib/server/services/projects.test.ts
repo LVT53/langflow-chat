@@ -202,3 +202,39 @@ describe('deleteProject', () => {
 		);
 	});
 });
+
+describe('getConversationProjectLabel', () => {
+	beforeEach(() => {
+		dbPath = `/tmp/alfyai-project-label-${randomUUID()}.db`;
+		process.env.DATABASE_PATH = dbPath;
+		vi.resetModules();
+	});
+
+	afterEach(async () => {
+		try {
+			const { sqlite } = await import('$lib/server/db');
+			sqlite.close();
+		} catch {
+			// The DB module may not have been imported if a test failed early.
+		}
+		try {
+			unlinkSync(dbPath);
+		} catch {
+			// Temporary DB cleanup is best-effort.
+		}
+	});
+
+	it('resolves the current folder label for an owned conversation only', async () => {
+		seedProjectDeletionScenario();
+		const { getConversationProjectLabel, updateProject } = await import('./projects');
+
+		await expect(getConversationProjectLabel('owner-user', 'conv-1')).resolves.toBe('Launch folder');
+		await expect(getConversationProjectLabel('other-user', 'conv-1')).resolves.toBeNull();
+
+		await updateProject('owner-user', 'folder-1', { name: 'Renamed launch folder' });
+
+		await expect(getConversationProjectLabel('owner-user', 'conv-1')).resolves.toBe(
+			'Renamed launch folder'
+		);
+	});
+});

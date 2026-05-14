@@ -69,6 +69,7 @@ import {
 	getPromptArtifactSnippets,
 	prepareTaskContext,
 } from './task-state';
+import { getConversationProjectLabel } from './projects';
 import { canUseTeiReranker, rerankItems } from './tei-reranker';
 import { embedTexts } from './tei-embedder';
 import {
@@ -101,6 +102,7 @@ const UNMATCHED_RECENT_TURN_TOKEN_LIMIT = 480;
 const MIN_RELEVANT_KNOWLEDGE_ARTIFACTS = 6;
 const MAX_RELEVANT_KNOWLEDGE_ARTIFACTS = 64;
 const RELEVANT_KNOWLEDGE_ARTIFACT_TARGET_TOKEN_STEP = 32_768;
+const PROJECT_FOLDER_PROMPT_LABEL_MAX_CHARS = 160;
 
 // Authority note:
 // - Honcho is a semantic mirror/integration layer for sessions, peers, conclusions, and overview text
@@ -198,6 +200,23 @@ function buildCurrentAttachmentSnippetMap(params: {
 		}
 	}
 	return next;
+}
+
+function buildProjectFolderPromptSection(label: string | null): PromptContextSection | null {
+	const trimmed = label?.trim();
+	if (!trimmed) return null;
+
+	const boundedLabel =
+		trimmed.length > PROJECT_FOLDER_PROMPT_LABEL_MAX_CHARS
+			? `${trimmed.slice(0, PROJECT_FOLDER_PROMPT_LABEL_MAX_CHARS).trimEnd()}...`
+			: trimmed;
+
+	return {
+		title: 'Project Folder',
+		body: `Project Folder label: ${JSON.stringify(boundedLabel)}`,
+		layer: 'session',
+		protected: true,
+	};
 }
 
 function normalizePeerIdFragment(rawId: string): string {
@@ -1238,6 +1257,7 @@ export async function buildConstructedContext(params: {
 		resolvedAttachments,
 		conversationSourceArtifactIds,
 		workingSetArtifacts,
+		projectFolderLabel,
 	] =
 		await Promise.all([
 			loadSessionPromptContext({
@@ -1257,6 +1277,7 @@ export async function buildConstructedContext(params: {
 				attachmentIds,
 				params.activeDocumentArtifactId
 			).catch(() => []),
+			getConversationProjectLabel(params.userId, params.conversationId).catch(() => null),
 		]);
 	const {
 		sessionMessages,
@@ -1435,6 +1456,11 @@ export async function buildConstructedContext(params: {
 	const recentTurnCount = filteredTurns.length;
 	const sessionContextMessages = filteredTurns.flatMap((turn) => turn.messages);
 	const sections: PromptContextSection[] = [];
+	const projectFolderSection = buildProjectFolderPromptSection(projectFolderLabel);
+
+	if (projectFolderSection) {
+		sections.push(projectFolderSection);
+	}
 
 	if (taskState) {
 		sections.push({

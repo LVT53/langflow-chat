@@ -42,6 +42,26 @@ export async function updateProject(
   return row ? toProject(row) : null;
 }
 
+export async function getConversationProjectLabel(
+  userId: string,
+  conversationId: string
+): Promise<string | null> {
+  const [row] = await db
+    .select({ name: projects.name })
+    .from(conversations)
+    .innerJoin(projects, eq(conversations.projectId, projects.id))
+    .where(
+      and(
+        eq(conversations.id, conversationId),
+        eq(conversations.userId, userId),
+        eq(projects.userId, userId)
+      )
+    )
+    .limit(1);
+
+  return row?.name ?? null;
+}
+
 export async function deleteProject(userId: string, projectId: string): Promise<boolean> {
   return db.transaction((tx) => {
     const result = tx
