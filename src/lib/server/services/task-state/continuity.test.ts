@@ -8,6 +8,9 @@ const {
 	insertedProjects,
 	projectRows,
 	linkRows,
+	conversationRows,
+	taskStateRows,
+	checkpointRows,
 } = vi.hoisted(() => ({
 	mockRecordMemoryEvent: vi.fn(async () => undefined),
 	mockListLatestMemoryEventsBySubject: vi.fn(async () => new Map()),
@@ -16,39 +19,107 @@ const {
 	insertedProjects: [] as Array<Record<string, unknown>>,
 	projectRows: [] as Array<Record<string, any>>,
 	linkRows: [] as Array<Record<string, unknown>>,
+	conversationRows: [] as Array<Record<string, any>>,
+	taskStateRows: [] as Array<Record<string, any>>,
+	checkpointRows: [] as Array<Record<string, any>>,
 }));
 
-function createQuery(rows: unknown[]) {
+type MockCondition =
+	| { operator: 'eq' | 'ne' | 'inArray'; field: string; value: unknown }
+	| MockCondition[]
+	| null
+	| undefined;
+
+type MockOrder = { direction: 'asc' | 'desc'; field: string };
+
+function readComparable(value: unknown): string | number {
+	if (value instanceof Date) return value.getTime();
+	if (typeof value === 'number') return value;
+	if (typeof value === 'string') return value;
+	return String(value ?? '');
+}
+
+function matchesCondition(row: Record<string, any>, condition: MockCondition): boolean {
+	if (!condition) return true;
+	if (Array.isArray(condition)) {
+		return condition.every((nested) => matchesCondition(row, nested));
+	}
+	const actual = row[condition.field];
+	if (condition.operator === 'eq') return actual === condition.value;
+	if (condition.operator === 'ne') return actual !== condition.value;
+	if (condition.operator === 'inArray') {
+		return Array.isArray(condition.value) && condition.value.includes(actual);
+	}
+	return true;
+}
+
+function mapSelectedRows(rows: Array<Record<string, any>>, shape?: Record<string, any>) {
+	if (!shape) return rows;
+	const entries = Object.entries(shape);
+	if (entries.some(([, field]) => field?.kind === 'count')) {
+		return [
+			Object.fromEntries(
+				entries.map(([alias, field]) => [
+					alias,
+					field?.kind === 'count' ? rows.length : rows[0]?.[field?.name],
+				])
+			),
+		];
+	}
+	return rows.map((row) =>
+		Object.fromEntries(entries.map(([alias, field]) => [alias, row[field?.name ?? alias]]))
+	);
+}
+
+function createQuery(rows: Array<Record<string, any>>, shape?: Record<string, any>) {
+	let currentRows = [...rows];
 	const chain = {
 		from: () => chain,
 		leftJoin: () => chain,
 		innerJoin: () => chain,
-		where: () => chain,
-		orderBy: () => chain,
-		limit: async () => rows,
+		where: (condition: MockCondition) => {
+			currentRows = currentRows.filter((row) => matchesCondition(row, condition));
+			return chain;
+		},
+		orderBy: (...orders: MockOrder[]) => {
+			currentRows = currentRows.slice().sort((left, right) => {
+				for (const order of orders) {
+					const leftValue = readComparable(left[order.field]);
+					const rightValue = readComparable(right[order.field]);
+					if (leftValue < rightValue) return order.direction === 'asc' ? -1 : 1;
+					if (leftValue > rightValue) return order.direction === 'asc' ? 1 : -1;
+				}
+				return 0;
+			});
+			return chain;
+		},
+		limit: async (limit: number) => mapSelectedRows(currentRows.slice(0, limit), shape),
 		then: (onFulfilled: (value: unknown[]) => unknown, onRejected?: (reason: unknown) => unknown) =>
-			Promise.resolve(rows).then(onFulfilled, onRejected),
+			Promise.resolve(mapSelectedRows(currentRows, shape)).then(onFulfilled, onRejected),
 	};
 	return chain;
 }
 
 vi.mock('$lib/server/db', () => ({
 	db: {
-		select: (_shape?: unknown) => ({
+		select: (shape?: Record<string, any>) => ({
 			from: (table: { __name?: string }) => {
 				if (table?.__name === 'memory_project_task_links') {
-					return createQuery(linkRows);
+					return createQuery(linkRows as Array<Record<string, any>>, shape);
 				}
 				if (table?.__name === 'task_checkpoints') {
-					return createQuery([]);
+					return createQuery(checkpointRows, shape);
 				}
 				if (table?.__name === 'memory_projects') {
-					return createQuery(projectRows);
+					return createQuery(projectRows, shape);
 				}
 				if (table?.__name === 'conversations') {
-					return createQuery([]);
+					return createQuery(conversationRows, shape);
 				}
-				return createQuery([]);
+				if (table?.__name === 'conversation_task_states') {
+					return createQuery(taskStateRows, shape);
+				}
+				return createQuery([], shape);
 			},
 		}),
 		insert: (table: { __name?: string }) => ({
@@ -89,6 +160,7 @@ vi.mock('$lib/server/db/schema', () => ({
 		taskId: { name: 'taskId' },
 		userId: { name: 'userId' },
 		conversationId: { name: 'conversationId' },
+		objective: { name: 'objective' },
 		updatedAt: { name: 'updatedAt' },
 	},
 	memoryProjects: {
@@ -130,9 +202,12 @@ vi.mock('$lib/server/db/schema', () => ({
 
 vi.mock('drizzle-orm', () => ({
 	and: vi.fn((...conditions: unknown[]) => conditions),
-	desc: vi.fn(() => 'desc'),
-	eq: vi.fn((field: { name: string }, value: unknown) => ({ field: field.name, value })),
-	inArray: vi.fn((field: { name: string }, values: unknown[]) => ({ field: field.name, value: values })),
+	asc: vi.fn((field: { name: string }) => ({ direction: 'asc', field: field.name })),
+	count: vi.fn(() => ({ kind: 'count' })),
+	desc: vi.fn((field: { name: string }) => ({ direction: 'desc', field: field.name })),
+	eq: vi.fn((field: { name: string }, value: unknown) => ({ operator: 'eq', field: field.name, value })),
+	ne: vi.fn((field: { name: string }, value: unknown) => ({ operator: 'ne', field: field.name, value })),
+	inArray: vi.fn((field: { name: string }, values: unknown[]) => ({ operator: 'inArray', field: field.name, value: values })),
 }));
 
 vi.mock('$lib/server/services/memory-events', () => ({
@@ -172,6 +247,211 @@ describe('task continuity memory events', () => {
 		insertedProjects.splice(0, insertedProjects.length);
 		projectRows.splice(0, projectRows.length);
 		linkRows.splice(0, linkRows.length);
+		conversationRows.splice(0, conversationRows.length);
+		taskStateRows.splice(0, taskStateRows.length);
+		checkpointRows.splice(0, checkpointRows.length);
+	});
+
+	it('returns no Project Folder Awareness when the conversation is not in a folder', async () => {
+		conversationRows.push({
+			id: 'conv-current',
+			userId: 'user-1',
+			title: 'Current conversation',
+			projectId: null,
+			updatedAt: new Date('2026-05-14T09:00:00.000Z'),
+		});
+
+		const { getProjectFolderReferenceContext } = await import('./continuity');
+
+		await expect(
+			getProjectFolderReferenceContext({
+				userId: 'user-1',
+				conversationId: 'conv-current',
+			})
+		).resolves.toBeNull();
+	});
+
+	it('includes only same-user same-folder siblings and excludes the current conversation', async () => {
+		conversationRows.push(
+			{
+				id: 'conv-current',
+				userId: 'user-1',
+				title: 'Current conversation',
+				projectId: 'folder-1',
+				updatedAt: new Date('2026-05-14T09:00:00.000Z'),
+			},
+			{
+				id: 'conv-sibling',
+				userId: 'user-1',
+				title: 'Sibling brief',
+				projectId: 'folder-1',
+				updatedAt: new Date('2026-05-14T09:05:00.000Z'),
+			},
+			{
+				id: 'conv-other-folder',
+				userId: 'user-1',
+				title: 'Other folder',
+				projectId: 'folder-2',
+				updatedAt: new Date('2026-05-14T09:06:00.000Z'),
+			},
+			{
+				id: 'conv-other-user',
+				userId: 'user-2',
+				title: 'Other user sibling',
+				projectId: 'folder-1',
+				updatedAt: new Date('2026-05-14T09:07:00.000Z'),
+			}
+		);
+
+		const { getProjectFolderReferenceContext } = await import('./continuity');
+
+		const context = await getProjectFolderReferenceContext({
+			userId: 'user-1',
+			conversationId: 'conv-current',
+		});
+
+		expect(context).toEqual({
+			projectId: 'folder-1',
+			entries: [
+				{
+					conversationId: 'conv-sibling',
+					title: 'Sibling brief',
+					objective: null,
+					summary: null,
+				},
+			],
+			omittedSiblingCount: 0,
+		});
+	});
+
+	it('prefers stable checkpoints and falls back to the latest meaningful objective', async () => {
+		conversationRows.push(
+			{
+				id: 'conv-current',
+				userId: 'user-1',
+				title: 'Current conversation',
+				projectId: 'folder-1',
+				updatedAt: new Date('2026-05-14T09:00:00.000Z'),
+			},
+			{
+				id: 'conv-stable',
+				userId: 'user-1',
+				title: 'Stable sibling',
+				projectId: 'folder-1',
+				updatedAt: new Date('2026-05-14T09:06:00.000Z'),
+			},
+			{
+				id: 'conv-objective',
+				userId: 'user-1',
+				title: 'Objective sibling',
+				projectId: 'folder-1',
+				updatedAt: new Date('2026-05-14T09:05:00.000Z'),
+			}
+		);
+		taskStateRows.push(
+			{
+				taskId: 'task-stable-old-placeholder',
+				userId: 'user-1',
+				conversationId: 'conv-stable',
+				objective: 'New task',
+				updatedAt: new Date('2026-05-14T09:04:00.000Z'),
+			},
+			{
+				taskId: 'task-stable',
+				userId: 'user-1',
+				conversationId: 'conv-stable',
+				objective: 'Prepare the stable folder brief',
+				updatedAt: new Date('2026-05-14T09:03:00.000Z'),
+			},
+			{
+				taskId: 'task-objective',
+				userId: 'user-1',
+				conversationId: 'conv-objective',
+				objective: 'Define the launch metrics',
+				updatedAt: new Date('2026-05-14T09:02:00.000Z'),
+			}
+		);
+		checkpointRows.push(
+			{
+				taskId: 'task-stable',
+				userId: 'user-1',
+				content: 'Latest volatile checkpoint should not win.',
+				checkpointType: 'transient',
+				updatedAt: new Date('2026-05-14T09:08:00.000Z'),
+			},
+			{
+				taskId: 'task-stable',
+				userId: 'user-1',
+				content: 'Stable checkpoint summary wins.',
+				checkpointType: 'stable',
+				updatedAt: new Date('2026-05-14T09:07:00.000Z'),
+			}
+		);
+
+		const { getProjectFolderReferenceContext } = await import('./continuity');
+
+		const context = await getProjectFolderReferenceContext({
+			userId: 'user-1',
+			conversationId: 'conv-current',
+		});
+
+		expect(context?.entries).toEqual([
+			{
+				conversationId: 'conv-stable',
+				title: 'Stable sibling',
+				objective: 'Prepare the stable folder brief',
+				summary: 'Stable checkpoint summary wins.',
+			},
+			{
+				conversationId: 'conv-objective',
+				title: 'Objective sibling',
+				objective: 'Define the launch metrics',
+				summary: 'Define the launch metrics',
+			},
+		]);
+	});
+
+	it('caps folder awareness deterministically and reports omitted siblings', async () => {
+		conversationRows.push({
+			id: 'conv-current',
+			userId: 'user-1',
+			title: 'Current conversation',
+			projectId: 'folder-1',
+			updatedAt: new Date('2026-05-14T09:10:00.000Z'),
+		});
+		for (const [id, minute] of [
+			['conv-1', '01'],
+			['conv-2', '02'],
+			['conv-3', '03'],
+			['conv-4', '04'],
+			['conv-b', '05'],
+			['conv-a', '05'],
+			['conv-0', '00'],
+		]) {
+			conversationRows.push({
+				id,
+				userId: 'user-1',
+				title: `Sibling ${id}`,
+				projectId: 'folder-1',
+				updatedAt: new Date(`2026-05-14T09:${minute}:00.000Z`),
+			});
+		}
+
+		const { getProjectFolderReferenceContext } = await import('./continuity');
+
+		const context = await getProjectFolderReferenceContext({
+			userId: 'user-1',
+			conversationId: 'conv-current',
+		});
+
+		expect(context?.entries.map((entry) => entry.conversationId)).toEqual([
+			'conv-a',
+			'conv-b',
+			'conv-4',
+			'conv-3',
+			'conv-2',
+		]);
+		expect(context?.omittedSiblingCount).toBe(2);
 	});
 
 	it('resolves paused project events as dormant even when the stored row still says active', async () => {
@@ -247,6 +527,8 @@ describe('task continuity memory events', () => {
 	it('records an explicit pause signal from the user message and updates continuity state', async () => {
 		linkRows.push({
 			projectId: 'project-2',
+			userId: 'user-1',
+			taskId: 'task-2',
 			status: 'active',
 			lastActiveAt: new Date(),
 		});

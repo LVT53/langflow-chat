@@ -66,8 +66,10 @@ import type {
 import {
 	formatTaskStateForPrompt,
 	getContextDebugState,
+	getProjectFolderReferenceContext,
 	getPromptArtifactSnippets,
 	prepareTaskContext,
+	type ProjectFolderReferenceContext,
 } from './task-state';
 import { getConversationProjectLabel } from './projects';
 import { canUseTeiReranker, rerankItems } from './tei-reranker';
@@ -216,6 +218,44 @@ function buildProjectFolderPromptSection(label: string | null): PromptContextSec
 		body: `Project Folder label: ${JSON.stringify(boundedLabel)}`,
 		layer: 'session',
 		protected: true,
+	};
+}
+
+function buildProjectFolderAwarenessPromptSection(
+	context: ProjectFolderReferenceContext | null
+): PromptContextSection | null {
+	if (!context || context.entries.length === 0) return null;
+
+	const entryBlocks = context.entries.map((entry) =>
+		[
+			`- Title: ${JSON.stringify(entry.title)}`,
+			entry.objective
+				? `  Objective: ${JSON.stringify(entry.objective)}`
+				: '  Objective: unavailable from existing task summaries.',
+			entry.summary
+				? `  Summary/Checkpoint: ${JSON.stringify(entry.summary)}`
+				: '  Summary/Checkpoint: unavailable from existing task summaries.',
+		].join('\n')
+	);
+	const omittedLine =
+		context.omittedSiblingCount > 0
+			? `Omitted: ${context.omittedSiblingCount} more sibling conversation${
+					context.omittedSiblingCount === 1 ? '' : 's'
+				} due to the folder awareness cap.`
+			: null;
+
+	return {
+		title: 'Project Folder Awareness',
+		body: [
+			'Other conversations in this Project Folder, excluding the current conversation. Use as lightweight orientation, not source evidence.',
+			...entryBlocks,
+			omittedLine,
+		]
+			.filter((value): value is string => Boolean(value))
+			.join('\n\n'),
+		layer: 'task_state',
+		protected: false,
+		llmCompactible: true,
 	};
 }
 
@@ -1258,6 +1298,7 @@ export async function buildConstructedContext(params: {
 		conversationSourceArtifactIds,
 		workingSetArtifacts,
 		projectFolderLabel,
+		projectFolderReferenceContext,
 	] =
 		await Promise.all([
 			loadSessionPromptContext({
@@ -1278,6 +1319,10 @@ export async function buildConstructedContext(params: {
 				params.activeDocumentArtifactId
 			).catch(() => []),
 			getConversationProjectLabel(params.userId, params.conversationId).catch(() => null),
+			getProjectFolderReferenceContext({
+				userId: params.userId,
+				conversationId: params.conversationId,
+			}).catch(() => null),
 		]);
 	const {
 		sessionMessages,
@@ -1457,9 +1502,15 @@ export async function buildConstructedContext(params: {
 	const sessionContextMessages = filteredTurns.flatMap((turn) => turn.messages);
 	const sections: PromptContextSection[] = [];
 	const projectFolderSection = buildProjectFolderPromptSection(projectFolderLabel);
+	const projectFolderAwarenessSection = buildProjectFolderAwarenessPromptSection(
+		projectFolderReferenceContext
+	);
 
 	if (projectFolderSection) {
 		sections.push(projectFolderSection);
+	}
+	if (projectFolderAwarenessSection) {
+		sections.push(projectFolderAwarenessSection);
 	}
 
 	if (taskState) {

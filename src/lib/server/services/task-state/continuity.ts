@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "crypto";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, ne } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import {
   conversations,
@@ -38,6 +38,10 @@ const PROJECT_MATCH_MIN_SCORE = 16;
 const PROJECT_AMBIGUITY_GAP = 6;
 const PROJECT_NAME_MAX = 120;
 const PROJECT_SUMMARY_MAX = 360;
+const PROJECT_FOLDER_AWARENESS_LIMIT = 5;
+const PROJECT_FOLDER_AWARENESS_TITLE_MAX = 120;
+const PROJECT_FOLDER_AWARENESS_OBJECTIVE_MAX = 240;
+const PROJECT_FOLDER_AWARENESS_SUMMARY_MAX = 360;
 const PROJECT_PAUSE_SIGNAL_PATTERN =
   /\b(pause|put (?:it|this|that)? ?on hold|hold off on|park|set aside|deprioriti[sz]e|stop working on|not working on)\b/i;
 const PROJECT_RESUME_SIGNAL_PATTERN =
@@ -47,6 +51,19 @@ const PROJECT_STATE_EVENT_TYPES: Array<
 > = ["project_started", "project_paused", "project_resumed"];
 
 export type ProjectStateEventType = (typeof PROJECT_STATE_EVENT_TYPES)[number];
+
+export type ProjectFolderReferenceEntry = {
+  conversationId: string;
+  title: string;
+  objective: string | null;
+  summary: string | null;
+};
+
+export type ProjectFolderReferenceContext = {
+  projectId: string;
+  entries: ProjectFolderReferenceEntry[];
+  omittedSiblingCount: number;
+};
 
 function clipNullable(
   value: string | null | undefined,
@@ -299,6 +316,137 @@ async function getLatestStableCheckpoint(
     .limit(1);
 
   return row?.content ?? null;
+}
+
+export async function getProjectFolderReferenceContext(params: {
+  userId: string;
+  conversationId: string;
+}): Promise<ProjectFolderReferenceContext | null> {
+  const [conversationRow] = await db
+    .select({ projectId: conversations.projectId })
+    .from(conversations)
+    .where(
+      and(
+        eq(conversations.userId, params.userId),
+        eq(conversations.id, params.conversationId),
+      ),
+    )
+    .limit(1);
+
+  if (!conversationRow?.projectId) return null;
+
+  const siblingWhere = and(
+    eq(conversations.userId, params.userId),
+    eq(conversations.projectId, conversationRow.projectId),
+    ne(conversations.id, params.conversationId),
+  );
+  const [siblingCountRows, siblingRows] = await Promise.all([
+    db.select({ siblingCount: count() }).from(conversations).where(siblingWhere),
+    db
+      .select({
+        conversationId: conversations.id,
+        title: conversations.title,
+        updatedAt: conversations.updatedAt,
+      })
+      .from(conversations)
+      .where(siblingWhere)
+      .orderBy(desc(conversations.updatedAt), asc(conversations.id))
+      .limit(PROJECT_FOLDER_AWARENESS_LIMIT),
+  ]);
+
+  if (siblingRows.length === 0) return null;
+  const siblingCount = siblingCountRows[0]?.siblingCount ?? siblingRows.length;
+
+  const siblingConversationIds = siblingRows.map((row) => row.conversationId);
+  const taskRows = await db
+    .select({
+      taskId: conversationTaskStates.taskId,
+      conversationId: conversationTaskStates.conversationId,
+      objective: conversationTaskStates.objective,
+      updatedAt: conversationTaskStates.updatedAt,
+    })
+    .from(conversationTaskStates)
+    .where(
+      and(
+        eq(conversationTaskStates.userId, params.userId),
+        inArray(conversationTaskStates.conversationId, siblingConversationIds),
+      ),
+    )
+    .orderBy(desc(conversationTaskStates.updatedAt), asc(conversationTaskStates.taskId));
+
+  const taskByConversation = new Map<
+    string,
+    { taskId: string; objective: string }
+  >();
+  for (const row of taskRows) {
+    if (taskByConversation.has(row.conversationId)) continue;
+    if (isPlaceholderObjective(row.objective)) continue;
+    taskByConversation.set(row.conversationId, {
+      taskId: row.taskId,
+      objective: clipRequired(
+        row.objective,
+        PROJECT_FOLDER_AWARENESS_OBJECTIVE_MAX,
+      ),
+    });
+  }
+
+  const selectedTaskIds = Array.from(
+    new Set(Array.from(taskByConversation.values()).map((task) => task.taskId)),
+  );
+  const checkpointRows =
+    selectedTaskIds.length > 0
+      ? await db
+          .select({
+            taskId: taskCheckpoints.taskId,
+            content: taskCheckpoints.content,
+            checkpointType: taskCheckpoints.checkpointType,
+            updatedAt: taskCheckpoints.updatedAt,
+          })
+          .from(taskCheckpoints)
+          .where(
+            and(
+              eq(taskCheckpoints.userId, params.userId),
+              inArray(taskCheckpoints.taskId, selectedTaskIds),
+            ),
+          )
+          .orderBy(desc(taskCheckpoints.updatedAt))
+      : [];
+  const latestCheckpointByTask = new Map<string, string>();
+  const latestStableCheckpointByTask = new Map<string, string>();
+  for (const row of checkpointRows) {
+    if (!latestCheckpointByTask.has(row.taskId)) {
+      latestCheckpointByTask.set(row.taskId, row.content);
+    }
+    if (
+      row.checkpointType === "stable" &&
+      !latestStableCheckpointByTask.has(row.taskId)
+    ) {
+      latestStableCheckpointByTask.set(row.taskId, row.content);
+    }
+  }
+
+  return {
+    projectId: conversationRow.projectId,
+    entries: siblingRows.map((row) => {
+      const task = taskByConversation.get(row.conversationId) ?? null;
+      const summary =
+        task
+          ? latestStableCheckpointByTask.get(task.taskId) ??
+            latestCheckpointByTask.get(task.taskId) ??
+            task.objective
+          : null;
+      return {
+        conversationId: row.conversationId,
+        title: clipRequired(row.title, PROJECT_FOLDER_AWARENESS_TITLE_MAX),
+        objective: task?.objective ?? null,
+        summary: clipNullable(
+          summary,
+          PROJECT_FOLDER_AWARENESS_SUMMARY_MAX,
+        ),
+      };
+    }),
+    omittedSiblingCount: Math.max(0, siblingCount - siblingRows.length),
+  };
 }
 
 function buildProjectEventKey(parts: Array<string | number>): string {

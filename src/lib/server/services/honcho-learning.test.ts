@@ -44,6 +44,9 @@ const mockFindRelevantKnowledgeArtifacts = vi.hoisted(() =>
 const mockGetConversationProjectLabel = vi.hoisted(() =>
 	vi.fn(async () => null as string | null)
 );
+const mockGetProjectFolderReferenceContext = vi.hoisted(() =>
+	vi.fn(async () => null)
+);
 const now = Date.now();
 
 const userRows = [
@@ -347,6 +350,7 @@ vi.mock('$lib/server/services/knowledge', () => ({
 vi.mock('$lib/server/services/task-state', () => ({
 	formatTaskStateForPrompt: vi.fn((taskState: { objective: string }) => `Objective: ${taskState.objective}`),
 	getContextDebugState: vi.fn(async () => null),
+	getProjectFolderReferenceContext: mockGetProjectFolderReferenceContext,
 	getPromptArtifactSnippets: vi.fn(async () => new Map()),
 	prepareTaskContext: mockPrepareTaskContext,
 }));
@@ -566,6 +570,7 @@ describe('honcho learning - buildConstructedContext', () => {
 		}));
 		mockFindRelevantKnowledgeArtifacts.mockResolvedValue([]);
 		mockGetConversationProjectLabel.mockResolvedValue(null);
+		mockGetProjectFolderReferenceContext.mockResolvedValue(null);
 	});
 
 	it('adds the current Project Folder label to prompt context as quoted metadata', async () => {
@@ -599,6 +604,104 @@ describe('honcho learning - buildConstructedContext', () => {
 		expect(mockGetConversationProjectLabel).toHaveBeenCalledWith('user-1', 'conv-without-folder');
 		expect(result.inputValue).not.toContain('## Project Folder');
 		expect(result.inputValue).not.toContain('Project Folder label:');
+	});
+
+	it('adds Project Folder Awareness as lightweight reference context when sibling summaries exist', async () => {
+		mockGetProjectFolderReferenceContext.mockResolvedValueOnce({
+			projectId: 'folder-1',
+			entries: [
+				{
+					conversationId: 'conv-sibling',
+					title: 'Sibling brief',
+					objective: 'Prepare the sibling launch brief',
+					summary: 'Stable checkpoint from the sibling conversation.',
+				},
+			],
+			omittedSiblingCount: 2,
+		});
+		renderSectionsInCompactionMock();
+		const { buildConstructedContext } = await import('./honcho');
+
+		const result = await buildConstructedContext({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			message: 'Continue the folder work.',
+		});
+
+		expect(mockGetProjectFolderReferenceContext).toHaveBeenCalledWith({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+		});
+		expect(result.inputValue).toContain('## Project Folder Awareness');
+		expect(result.inputValue).toContain(
+			'Other conversations in this Project Folder, excluding the current conversation. Use as lightweight orientation, not source evidence.'
+		);
+		expect(result.inputValue).toContain('Title: "Sibling brief"');
+		expect(result.inputValue).toContain('Objective: "Prepare the sibling launch brief"');
+		expect(result.inputValue).toContain(
+			'Summary/Checkpoint: "Stable checkpoint from the sibling conversation."'
+		);
+		expect(result.inputValue).toContain(
+			'Omitted: 2 more sibling conversations due to the folder awareness cap.'
+		);
+	});
+
+	it('omits Project Folder Awareness when the helper returns no context or fails', async () => {
+		mockGetProjectFolderReferenceContext.mockResolvedValueOnce(null);
+		renderSectionsInCompactionMock();
+		const { buildConstructedContext } = await import('./honcho');
+
+		const withoutAwareness = await buildConstructedContext({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			message: 'Continue without sibling awareness.',
+		});
+
+		expect(withoutAwareness.inputValue).not.toContain('## Project Folder Awareness');
+
+		mockGetProjectFolderReferenceContext.mockRejectedValueOnce(new Error('folder unavailable'));
+		renderSectionsInCompactionMock();
+		const afterFailure = await buildConstructedContext({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			message: 'Continue after helper failure.',
+		});
+
+		expect(afterFailure.inputValue).toContain('## Current User Message');
+		expect(afterFailure.inputValue).not.toContain('## Project Folder Awareness');
+	});
+
+	it('keeps relevant knowledge artifact retrieval scoped to the current query when folder awareness exists', async () => {
+		mockGetProjectFolderReferenceContext.mockResolvedValueOnce({
+			projectId: 'folder-1',
+			entries: [
+				{
+					conversationId: 'conv-sibling',
+					title: 'Sibling brief',
+					objective: 'Prepare the sibling launch brief',
+					summary: 'Stable checkpoint from the sibling conversation.',
+				},
+			],
+			omittedSiblingCount: 0,
+		});
+		const { buildConstructedContext } = await import('./honcho');
+
+		await buildConstructedContext({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			message: 'Use the current query only.',
+		});
+
+		expect(mockFindRelevantKnowledgeArtifacts.mock.calls[0]?.[0]).toEqual({
+			userId: 'user-1',
+			query: 'Use the current query only.',
+			excludeConversationId: 'conv-1',
+			currentConversationId: 'conv-1',
+			limit: 6,
+			preferredArtifactId: undefined,
+			preferredGeneratedFamilyId: null,
+			suppressGeneratedCarryover: false,
+		});
 	});
 
 	it('passes the active context target budget into task evidence selection', async () => {
