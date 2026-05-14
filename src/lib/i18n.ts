@@ -381,7 +381,8 @@ const dictionary = {
 		"admin.deepResearchActiveConversationLimit": "Active Jobs per Conversation",
 		"admin.deepResearchActiveUserLimit": "Active Jobs per User",
 		"admin.deepResearchActiveGlobalLimit": "Global Active Jobs",
-		"admin.deepResearchGlobalReasoningConcurrency": "Global Reasoning Concurrency",
+		"admin.deepResearchGlobalReasoningConcurrency":
+			"Global Reasoning Concurrency",
 		"admin.deepResearchUserReasoningConcurrency": "User Reasoning Concurrency",
 		"admin.deepResearchDepthBudgetsJson": "Depth Budget Policy JSON",
 		"admin.model1MaxModelContext": "Model 1 Max Context",
@@ -501,7 +502,8 @@ const dictionary = {
 		"admin.disabled": "Disabled",
 		"admin.contextLimits": "Context Limits",
 		"admin.contextLimitsDescription": "Leave empty to use global defaults.",
-		"admin.contextLimitsDescriptionBuiltIn": "Leave empty to use global defaults.",
+		"admin.contextLimitsDescriptionBuiltIn":
+			"Leave empty to use global defaults.",
 		"admin.contextLimitsDescriptionProvider":
 			"Max Model Context is required for third-party providers. Leave target and threshold empty to derive them from that context window.",
 		"admin.maxModelContextLabel": "Max Model Context (tokens)",
@@ -565,25 +567,42 @@ const dictionary = {
 		"fileProduction.previewLabel": "Preview {filename}",
 		"fileProduction.downloadLabel": "Download {filename}",
 		"fileProduction.error.too_many_outputs": "Too many outputs were requested.",
-		"fileProduction.error.source_too_large": "The file production source is too large.",
-		"fileProduction.error.projection_too_large": "The document text projection is too large.",
-		"fileProduction.error.page_limit_exceeded": "The document would exceed the page limit.",
-		"fileProduction.error.table_limit_exceeded": "A table exceeds the configured limit.",
-		"fileProduction.error.chart_limit_exceeded": "A chart exceeds the configured limit.",
-		"fileProduction.error.image_limit_exceeded": "Images exceed the configured limit.",
+		"fileProduction.error.source_too_large":
+			"The file production source is too large.",
+		"fileProduction.error.projection_too_large":
+			"The document text projection is too large.",
+		"fileProduction.error.page_limit_exceeded":
+			"The document would exceed the page limit.",
+		"fileProduction.error.table_limit_exceeded":
+			"A table exceeds the configured limit.",
+		"fileProduction.error.chart_limit_exceeded":
+			"A chart exceeds the configured limit.",
+		"fileProduction.error.image_limit_exceeded":
+			"Images exceed the configured limit.",
 		"fileProduction.error.renderer_timeout": "Document rendering timed out.",
 		"fileProduction.error.sandbox_timeout": "Program execution timed out.",
-		"fileProduction.error.invalid_document_source": "The generated document source is invalid.",
-		"fileProduction.error.unsupported_document_block": "The document contains an unsupported block.",
-		"fileProduction.error.unsupported_table_structure": "The document contains an unsupported table structure.",
-		"fileProduction.error.unsupported_chart_type": "The document contains an unsupported chart type.",
-		"fileProduction.error.unsupported_chart_data": "The chart data is not supported.",
-		"fileProduction.error.unsupported_pdf_block": "This PDF renderer does not support that block yet.",
-		"fileProduction.error.unsupported_output_type": "That output type is not supported for this document yet.",
-		"fileProduction.error.pdf_font_missing": "The PDF renderer is missing its Unicode font.",
-		"fileProduction.error.document_render_failed": "The document could not be rendered.",
-		"fileProduction.error.output_file_too_large": "A produced file is too large.",
-		"fileProduction.error.job_outputs_too_large": "The produced files are too large.",
+		"fileProduction.error.invalid_document_source":
+			"The generated document source is invalid.",
+		"fileProduction.error.unsupported_document_block":
+			"The document contains an unsupported block.",
+		"fileProduction.error.unsupported_table_structure":
+			"The document contains an unsupported table structure.",
+		"fileProduction.error.unsupported_chart_type":
+			"The document contains an unsupported chart type.",
+		"fileProduction.error.unsupported_chart_data":
+			"The chart data is not supported.",
+		"fileProduction.error.unsupported_pdf_block":
+			"This PDF renderer does not support that block yet.",
+		"fileProduction.error.unsupported_output_type":
+			"That output type is not supported for this document yet.",
+		"fileProduction.error.pdf_font_missing":
+			"The PDF renderer is missing its Unicode font.",
+		"fileProduction.error.document_render_failed":
+			"The document could not be rendered.",
+		"fileProduction.error.output_file_too_large":
+			"A produced file is too large.",
+		"fileProduction.error.job_outputs_too_large":
+			"The produced files are too large.",
 		"documentWorkspace.workingDocument": "Active document",
 		"documentWorkspace.expandWorkspace": "Expand document workspace",
 		"documentWorkspace.collapseWorkspace": "Return to docked workspace",
@@ -617,8 +636,10 @@ const dictionary = {
 		"documentWorkspace.fit": "Fit",
 		"documentWorkspace.fitImage": "Fit image",
 		"documentWorkspace.pageOf": "of {total}",
-		"documentWorkspace.expandWorkspaceLabel": "Expand document workspace for {title}",
-		"documentWorkspace.collapseWorkspaceLabel": "Return {title} to the docked workspace",
+		"documentWorkspace.expandWorkspaceLabel":
+			"Expand document workspace for {title}",
+		"documentWorkspace.collapseWorkspaceLabel":
+			"Return {title} to the docked workspace",
 		"documentWorkspace.closeDocumentLabel": "Close {title}",
 		"documentWorkspace.documentWorkspace": "Document workspace",
 		"documentWorkspace.resizePanel": "Resize workspace panel",
@@ -719,20 +740,25 @@ const dictionary = {
 		"deepResearch.progress.detailsLabel": "Research progress details",
 		"deepResearch.progress.stagePrefix": "Stage: ",
 		"deepResearch.progress.currentStage": "Current stage: {stage}",
-		"deepResearch.progress.noDetailsYet": "More stage detail will appear as research state is saved.",
+		"deepResearch.progress.noDetailsYet":
+			"More stage detail will appear as research state is saved.",
 		"deepResearch.progress.meaningfulPassesCompletedAndRunning":
 			"{completed} meaningful pass completed, {running} in progress",
 		"deepResearch.progress.meaningfulPassesCompletedAndRunningPlural":
 			"{completed} meaningful passes completed, {running} in progress",
-		"deepResearch.progress.meaningfulPassesCompleted": "{count} meaningful pass completed",
+		"deepResearch.progress.meaningfulPassesCompleted":
+			"{count} meaningful pass completed",
 		"deepResearch.progress.meaningfulPassesCompletedPlural":
 			"{count} meaningful passes completed",
-		"deepResearch.progress.meaningfulPassesRunning": "{count} meaningful pass in progress",
+		"deepResearch.progress.meaningfulPassesRunning":
+			"{count} meaningful pass in progress",
 		"deepResearch.progress.meaningfulPassesRunningPlural":
 			"{count} meaningful passes in progress",
 		"deepResearch.progress.openCoverageGaps": "{count} open coverage gap",
-		"deepResearch.progress.openCoverageGapsPlural": "{count} open coverage gaps",
-		"deepResearch.progress.resolvedClaimConflicts": "{count} claim conflict resolved",
+		"deepResearch.progress.openCoverageGapsPlural":
+			"{count} open coverage gaps",
+		"deepResearch.progress.resolvedClaimConflicts":
+			"{count} claim conflict resolved",
 		"deepResearch.progress.resolvedClaimConflictsPlural":
 			"{count} claim conflicts resolved",
 		"deepResearch.progress.auditRepairRunning": "Audit repair in progress",
@@ -758,6 +784,8 @@ const dictionary = {
 		"deepResearch.memo.limitations": "Grounded limitation reasons",
 		"deepResearch.memo.nextDirection": "Next research direction",
 		"deepResearch.memo.recoveryActions": "Memo Recovery Actions",
+		"deepResearch.memo.actionPending": "Opening...",
+		"deepResearch.memo.actionFailed": "Failed to open memo recovery action",
 		"deepResearch.sourcesHeading": "Sources",
 		"deepResearch.sourceCountsLabel": "Source counts",
 		"deepResearch.reviewedSourcesHeading": "Reviewed sources",
@@ -783,7 +811,8 @@ const dictionary = {
 		"deepResearch.timeline.auditingCitations": "Auditing citations",
 		"deepResearch.timeline.writingReport": "Writing report",
 		"deepResearch.timeline.completed": "Completed",
-		"deepResearch.timeline.summary.planGenerated": "Research Plan drafted for approval.",
+		"deepResearch.timeline.summary.planGenerated":
+			"Research Plan drafted for approval.",
 		"deepResearch.timeline.summary.sourceDiscoveryCompleted":
 			"Discovered {count} public web source candidates.",
 		"deepResearch.timeline.summary.sourceReviewCompleted":
@@ -864,8 +893,10 @@ const dictionary = {
 		"contextSources.pinned": "Pinned",
 		"contextSources.excluded": "Excluded",
 		"contextSources.pinnedByYou": "Pinned by you",
-		"contextSources.excludedFromAutoSelection": "Excluded from automatic selection",
-		"contextSources.noActiveSources": "No active context sources are selected right now.",
+		"contextSources.excludedFromAutoSelection":
+			"Excluded from automatic selection",
+		"contextSources.noActiveSources":
+			"No active context sources are selected right now.",
 		"contextSources.noPinnedSources": "No pinned context sources.",
 		"contextSources.noExcludedSources": "No excluded context sources.",
 		"contextSources.sourcePreference": "Context source preference",
@@ -1405,13 +1436,18 @@ const dictionary = {
 		"admin.deepResearchWorkerIntervalMs": "Worker időköz (ms)",
 		"admin.deepResearchWorkerStaleTimeoutMs": "Worker elavulási időkorlát (ms)",
 		"admin.deepResearchJobRuntimeLimitMs": "Feladat futási időkorlátja (ms)",
-		"admin.deepResearchWorkerGlobalConcurrency": "Worker globális párhuzamosság",
-		"admin.deepResearchWorkerUserConcurrency": "Worker felhasználói párhuzamosság",
-		"admin.deepResearchActiveConversationLimit": "Aktív feladatok beszélgetésenként",
+		"admin.deepResearchWorkerGlobalConcurrency":
+			"Worker globális párhuzamosság",
+		"admin.deepResearchWorkerUserConcurrency":
+			"Worker felhasználói párhuzamosság",
+		"admin.deepResearchActiveConversationLimit":
+			"Aktív feladatok beszélgetésenként",
 		"admin.deepResearchActiveUserLimit": "Aktív feladatok felhasználónként",
 		"admin.deepResearchActiveGlobalLimit": "Globális aktív feladatok",
-		"admin.deepResearchGlobalReasoningConcurrency": "Globális érvelési párhuzamosság",
-		"admin.deepResearchUserReasoningConcurrency": "Felhasználói érvelési párhuzamosság",
+		"admin.deepResearchGlobalReasoningConcurrency":
+			"Globális érvelési párhuzamosság",
+		"admin.deepResearchUserReasoningConcurrency":
+			"Felhasználói érvelési párhuzamosság",
 		"admin.deepResearchDepthBudgetsJson": "Mélységi keretpolitika JSON",
 		"admin.model1MaxModelContext": "1. modell maximális kontextusa",
 		"admin.model1CompactionThreshold": "1. modell tömörítési küszöb",
@@ -1670,8 +1706,10 @@ const dictionary = {
 		"deepResearch.contextConsidered": "Figyelembe vett kontextus",
 		"deepResearch.estimatedCost": "Becs. {cost}",
 		"deepResearch.finalResearchTime": "Kutatási idő {time}",
-		"deepResearch.progress.showDetails": "Kutatási előrehaladás részleteinek megjelenítése",
-		"deepResearch.progress.dismissDetails": "Kutatási előrehaladás részleteinek bezárása",
+		"deepResearch.progress.showDetails":
+			"Kutatási előrehaladás részleteinek megjelenítése",
+		"deepResearch.progress.dismissDetails":
+			"Kutatási előrehaladás részleteinek bezárása",
 		"deepResearch.progress.detailsLabel": "Kutatási előrehaladás részletei",
 		"deepResearch.progress.stagePrefix": "Szakasz: ",
 		"deepResearch.progress.currentStage": "Aktuális szakasz: {stage}",
@@ -1681,15 +1719,22 @@ const dictionary = {
 			"{completed} érdemi menet befejezve, {running} folyamatban",
 		"deepResearch.progress.meaningfulPassesCompletedAndRunningPlural":
 			"{completed} érdemi menet befejezve, {running} folyamatban",
-		"deepResearch.progress.meaningfulPassesCompleted": "{count} érdemi menet befejezve",
+		"deepResearch.progress.meaningfulPassesCompleted":
+			"{count} érdemi menet befejezve",
 		"deepResearch.progress.meaningfulPassesCompletedPlural":
 			"{count} érdemi menet befejezve",
-		"deepResearch.progress.meaningfulPassesRunning": "{count} érdemi menet folyamatban",
-		"deepResearch.progress.meaningfulPassesRunningPlural": "{count} érdemi menet folyamatban",
-		"deepResearch.progress.openCoverageGaps": "{count} nyitott lefedettségi hiány",
-		"deepResearch.progress.openCoverageGapsPlural": "{count} nyitott lefedettségi hiány",
-		"deepResearch.progress.resolvedClaimConflicts": "{count} állításütközés feloldva",
-		"deepResearch.progress.resolvedClaimConflictsPlural": "{count} állításütközés feloldva",
+		"deepResearch.progress.meaningfulPassesRunning":
+			"{count} érdemi menet folyamatban",
+		"deepResearch.progress.meaningfulPassesRunningPlural":
+			"{count} érdemi menet folyamatban",
+		"deepResearch.progress.openCoverageGaps":
+			"{count} nyitott lefedettségi hiány",
+		"deepResearch.progress.openCoverageGapsPlural":
+			"{count} nyitott lefedettségi hiány",
+		"deepResearch.progress.resolvedClaimConflicts":
+			"{count} állításütközés feloldva",
+		"deepResearch.progress.resolvedClaimConflictsPlural":
+			"{count} állításütközés feloldva",
 		"deepResearch.progress.auditRepairRunning": "Auditjavítás folyamatban",
 		"deepResearch.progress.auditRepairNeeded": "Auditjavítás szükséges",
 		"deepResearch.approvePlanLabel": "Kutatási terv jóváhagyása",
@@ -1702,7 +1747,8 @@ const dictionary = {
 		"deepResearch.submitPlanEdit": "Tervmódosítás beküldése",
 		"deepResearch.submittingPlanEdit": "Beküldés...",
 		"deepResearch.editPlanFailed": "Nem sikerült módosítani a kutatási tervet",
-		"deepResearch.approvePlanFailed": "Nem sikerült jóváhagyni a kutatási tervet",
+		"deepResearch.approvePlanFailed":
+			"Nem sikerült jóváhagyni a kutatási tervet",
 		"deepResearch.openReportLabel": "Jelentés megnyitása",
 		"deepResearch.discussReportLabel": "Jelentés megbeszélése",
 		"deepResearch.researchFurtherLabel": "További kutatás",
@@ -1713,6 +1759,9 @@ const dictionary = {
 		"deepResearch.memo.limitations": "Megalapozott korlátozási okok",
 		"deepResearch.memo.nextDirection": "Következő kutatási irány",
 		"deepResearch.memo.recoveryActions": "Memó helyreállítási műveletek",
+		"deepResearch.memo.actionPending": "Megnyitás...",
+		"deepResearch.memo.actionFailed":
+			"Nem sikerült megnyitni a memó helyreállítási műveletét",
 		"deepResearch.sourcesHeading": "Források",
 		"deepResearch.sourceCountsLabel": "Forrásszámok",
 		"deepResearch.reviewedSourcesHeading": "Áttekintett források",
@@ -1820,8 +1869,10 @@ const dictionary = {
 		"contextSources.pinned": "Rögzített",
 		"contextSources.excluded": "Kizárt",
 		"contextSources.pinnedByYou": "Általad rögzítve",
-		"contextSources.excludedFromAutoSelection": "Kizárva az automatikus kijelölésből",
-		"contextSources.noActiveSources": "Jelenleg nincs aktív kontextusforrás kijelölve.",
+		"contextSources.excludedFromAutoSelection":
+			"Kizárva az automatikus kijelölésből",
+		"contextSources.noActiveSources":
+			"Jelenleg nincs aktív kontextusforrás kijelölve.",
 		"contextSources.noPinnedSources": "Nincs rögzített kontextusforrás.",
 		"contextSources.noExcludedSources": "Nincs kizárt kontextusforrás.",
 		"contextSources.sourcePreference": "Kontextusforrás-preferencia",
@@ -1868,24 +1919,42 @@ const dictionary = {
 		"fileProduction.downloadLabel": "{filename} letöltése",
 		"fileProduction.error.too_many_outputs": "Túl sok kimenet lett kérve.",
 		"fileProduction.error.source_too_large": "A fájlkészítés forrása túl nagy.",
-		"fileProduction.error.projection_too_large": "A dokumentum szöveges vetülete túl nagy.",
-		"fileProduction.error.page_limit_exceeded": "A dokumentum túllépné az oldalkorlátot.",
-		"fileProduction.error.table_limit_exceeded": "Egy tábla túllépi a beállított korlátot.",
-		"fileProduction.error.chart_limit_exceeded": "Egy diagram túllépi a beállított korlátot.",
-		"fileProduction.error.image_limit_exceeded": "A képek túllépik a beállított korlátot.",
-		"fileProduction.error.renderer_timeout": "A dokumentum renderelése időtúllépés miatt leállt.",
-		"fileProduction.error.sandbox_timeout": "A program futása időtúllépés miatt leállt.",
-		"fileProduction.error.invalid_document_source": "A generált dokumentum forrása érvénytelen.",
-		"fileProduction.error.unsupported_document_block": "A dokumentum nem támogatott blokkot tartalmaz.",
-		"fileProduction.error.unsupported_table_structure": "A dokumentum nem támogatott táblaszerkezetet tartalmaz.",
-		"fileProduction.error.unsupported_chart_type": "A dokumentum nem támogatott diagramtípust tartalmaz.",
-		"fileProduction.error.unsupported_chart_data": "A diagram adatai nem támogatottak.",
-		"fileProduction.error.unsupported_pdf_block": "Ez a PDF-renderelő még nem támogatja ezt a blokkot.",
-		"fileProduction.error.unsupported_output_type": "Ez a kimeneti típus még nem támogatott ennél a dokumentumnál.",
-		"fileProduction.error.pdf_font_missing": "A PDF-renderelőből hiányzik a Unicode betűkészlet.",
-		"fileProduction.error.document_render_failed": "A dokumentumot nem sikerült renderelni.",
-		"fileProduction.error.output_file_too_large": "Egy előállított fájl túl nagy.",
-		"fileProduction.error.job_outputs_too_large": "Az előállított fájlok túl nagyok.",
+		"fileProduction.error.projection_too_large":
+			"A dokumentum szöveges vetülete túl nagy.",
+		"fileProduction.error.page_limit_exceeded":
+			"A dokumentum túllépné az oldalkorlátot.",
+		"fileProduction.error.table_limit_exceeded":
+			"Egy tábla túllépi a beállított korlátot.",
+		"fileProduction.error.chart_limit_exceeded":
+			"Egy diagram túllépi a beállított korlátot.",
+		"fileProduction.error.image_limit_exceeded":
+			"A képek túllépik a beállított korlátot.",
+		"fileProduction.error.renderer_timeout":
+			"A dokumentum renderelése időtúllépés miatt leállt.",
+		"fileProduction.error.sandbox_timeout":
+			"A program futása időtúllépés miatt leállt.",
+		"fileProduction.error.invalid_document_source":
+			"A generált dokumentum forrása érvénytelen.",
+		"fileProduction.error.unsupported_document_block":
+			"A dokumentum nem támogatott blokkot tartalmaz.",
+		"fileProduction.error.unsupported_table_structure":
+			"A dokumentum nem támogatott táblaszerkezetet tartalmaz.",
+		"fileProduction.error.unsupported_chart_type":
+			"A dokumentum nem támogatott diagramtípust tartalmaz.",
+		"fileProduction.error.unsupported_chart_data":
+			"A diagram adatai nem támogatottak.",
+		"fileProduction.error.unsupported_pdf_block":
+			"Ez a PDF-renderelő még nem támogatja ezt a blokkot.",
+		"fileProduction.error.unsupported_output_type":
+			"Ez a kimeneti típus még nem támogatott ennél a dokumentumnál.",
+		"fileProduction.error.pdf_font_missing":
+			"A PDF-renderelőből hiányzik a Unicode betűkészlet.",
+		"fileProduction.error.document_render_failed":
+			"A dokumentumot nem sikerült renderelni.",
+		"fileProduction.error.output_file_too_large":
+			"Egy előállított fájl túl nagy.",
+		"fileProduction.error.job_outputs_too_large":
+			"Az előállított fájlok túl nagyok.",
 		"documentWorkspace.workingDocument": "Aktív dokumentum",
 		"documentWorkspace.expandWorkspace": "Dokumentum-munkaterület kibontása",
 		"documentWorkspace.collapseWorkspace": "Vissza a dokkolt munkaterületre",
@@ -1948,7 +2017,8 @@ const dictionary = {
 			"Tölts fel vagy generálj dokumentumokat, hogy itt lásd őket",
 		"knowledge.noDocumentsMatch": "Nincs a keresésnek megfelelő dokumentum",
 		"knowledge.noDocumentsAvailable": "Nincsenek elérhető dokumentumok",
-		"knowledge.dropFiles": "Húzd ide a fájlokat feltöltéshez (max. 100 MB/fájl)",
+		"knowledge.dropFiles":
+			"Húzd ide a fájlokat feltöltéshez (max. 100 MB/fájl)",
 		"knowledge.name": "Név",
 		"knowledge.type": "Típus",
 		"knowledge.size": "Méret",
@@ -1974,8 +2044,7 @@ const dictionary = {
 		"knowledge.deleteConfirm": "Biztosan törlöd a dokumentumot?",
 		"knowledge.documentType": "Dokumentum típus",
 		"knowledge.fileSize": "Fájlméret",
-		"knowledge.failedRemoveArtifact":
-			"Nem sikerült eltávolítani az elemet.",
+		"knowledge.failedRemoveArtifact": "Nem sikerült eltávolítani az elemet.",
 		"knowledge.failedUpdateKnowledgeBase":
 			"Nem sikerült frissíteni a tudásbázist.",
 		"knowledge.failedUpdateMemory": "Nem sikerült frissíteni a memóriaprofilt.",

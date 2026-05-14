@@ -315,6 +315,112 @@ describe("createFirstResearchPlanDraft", () => {
 		);
 	});
 
+	it("recovers product entities from long polluted comparison metadata without product-domain assumptions", async () => {
+		const result = await createFirstResearchPlanDraft(
+			{
+				jobId: "job-saas-long-structured-cleanup",
+				userRequest:
+					"Compare Acme Analytics Pro and Acme Analytics Enterprise for European customers. Pay attention to pricing, SOC 2, data residency, SSO, audit logs, retention, and API limits.",
+				selectedDepth: "standard",
+				researchLanguage: "en",
+			},
+			{
+				structuredPlanner: {
+					draftPlan: vi.fn(async (_, context) => ({
+						goal: "Compare Acme Analytics Pro and Acme Analytics Enterprise for European customers. Pay attention to pricing, SOC 2, data residency, SSO, audit logs, retention, and API limits.",
+						depth: "standard",
+						researchLanguage: "en",
+						reportIntent: "comparison",
+						comparedEntities: [
+							"Acme Analytics Pro",
+							"Acme Analytics Enterprise for European customers. Pay attention to pricing",
+							"SOC 2 and data residency",
+							"SSO",
+							"audit logs",
+						],
+						comparisonAxes: ["pricing"],
+						researchBudget: context.selectedBudget,
+						keyQuestions: ["How do the Acme Analytics tiers compare?"],
+						sourceScope: {
+							includePublicWeb: true,
+							planningContextDisclosure: null,
+						},
+						reportShape: ["Executive summary"],
+						constraints: [],
+						deliverables: ["Cited Research Report"],
+					})),
+				},
+			},
+		);
+
+		expect(result.plan.comparedEntities).toEqual([
+			"Acme Analytics Pro",
+			"Acme Analytics Enterprise",
+		]);
+		expect(result.plan.comparedEntities?.join("\n").toLowerCase()).not.toMatch(
+			/pricing|soc 2|data residency|sso|audit logs|customers/,
+		);
+		expect(result.plan.comparisonAxes).toEqual(
+			expect.arrayContaining([
+				"pricing",
+				"SOC 2",
+				"data residency",
+				"SSO",
+				"audit logs",
+				"retention",
+				"API limits",
+			]),
+		);
+	});
+
+	it("repairs the Nulane and Kathmandu memo entity pollution into products plus axes", async () => {
+		const result = await createFirstResearchPlanDraft(
+			{
+				jobId: "job-cube-memo-entity-pollution",
+				userRequest:
+					"Compare Nulane 400X and Kathmandu Cube 2025 edition bicycles in Europe markets. Pay attention to pricing, and availability in Medium frame sizes.",
+				selectedDepth: "standard",
+				researchLanguage: "en",
+			},
+			{
+				structuredPlanner: {
+					draftPlan: vi.fn(async (_, context) => ({
+						goal: "Compare Nulane 400X and Kathmandu Cube 2025 edition bicycles in Europe markets. Pay attention to pricing, and availability in Medium frame sizes.",
+						depth: "standard",
+						researchLanguage: "en",
+						reportIntent: "comparison",
+						comparedEntities: [
+							"Nulane 400X",
+							"Kathmandu Cube 2025 edition bicycles in Europe markets. Pay attention to pricing",
+							"availability in Medium frame sizes",
+						],
+						comparisonAxes: ["pricing"],
+						researchBudget: context.selectedBudget,
+						keyQuestions: ["How do the models compare?"],
+						sourceScope: {
+							includePublicWeb: true,
+							planningContextDisclosure: null,
+						},
+						reportShape: ["Executive summary"],
+						constraints: [],
+						deliverables: ["Cited Research Report"],
+					})),
+				},
+			},
+		);
+
+		expect(result.plan.comparedEntities).toEqual([
+			"Cube Nulane 400X",
+			"Cube Kathmandu",
+		]);
+		expect(result.plan.comparedEntities?.join("\n").toLowerCase()).not.toMatch(
+			/pricing|availability|medium frame|europe|2025 edition|bicycles/,
+		);
+		expect(result.plan.comparisonAxes).toEqual(
+			expect.arrayContaining(["pricing", "availability in Medium frame sizes"]),
+		);
+	});
+
 	it("drafts concrete fallback questions for the main non-comparison report intents", async () => {
 		const cases = [
 			{

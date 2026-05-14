@@ -1,805 +1,1028 @@
 <script lang="ts">
-	import { t } from '$lib/i18n';
-	import type { I18nKey } from '$lib/i18n';
-	import type {
-		DeepResearchDepth,
-		DeepResearchJob,
-		DeepResearchJobStatus,
-		DeepResearchReportIntent,
-		DeepResearchSourceCounts,
-		DeepResearchTimelineEvent,
-		DeepResearchPlanSummary,
-		DocumentWorkspaceItem,
-	} from '$lib/types';
+import { t } from "$lib/i18n";
+import type { I18nKey } from "$lib/i18n";
+import type {
+	DeepResearchDepth,
+	DeepResearchJob,
+	DeepResearchJobStatus,
+	DeepResearchReportIntent,
+	DeepResearchSourceCounts,
+	DeepResearchTimelineEvent,
+	DeepResearchPlanSummary,
+	DocumentWorkspaceItem,
+	DeepResearchMemoRecoveryAction,
+} from "$lib/types";
 
-	type VisiblePlanSection = {
-		heading: string;
-		items: string[];
+type VisiblePlanSection = {
+	heading: string;
+	items: string[];
+};
+
+type VisiblePlan = {
+	sections: VisiblePlanSection[];
+};
+
+type TimelineStep = {
+	id: string;
+	labelKey: I18nKey;
+	stages: string[];
+	status: "completed" | "active" | "pending";
+	events: TimelineEventView[];
+};
+
+type TimelineEventView = DeepResearchTimelineEvent & {
+	showSourceCounts: boolean;
+	isMeaningful: boolean;
+};
+
+type ResearchCardSeverity =
+	| "awaiting_plan"
+	| "needs_attention"
+	| "working"
+	| "completed"
+	| "insufficient_evidence"
+	| "cancelled"
+	| "failed";
+
+let {
+	job,
+	onApprove = undefined,
+	onEdit = undefined,
+	onCancel = undefined,
+	onOpenReport = undefined,
+	onDiscussReport = undefined,
+	onResearchFurther = undefined,
+	onAdvanceResearch = undefined,
+}: {
+	job: DeepResearchJob;
+	onApprove?: ((jobId: string) => void | Promise<void>) | undefined;
+	onEdit?:
+		| ((
+				jobId: string,
+				instructions: string,
+				reportIntent?: DeepResearchReportIntent,
+		  ) => void | Promise<void>)
+		| undefined;
+	onCancel?: ((jobId: string) => void | Promise<void>) | undefined;
+	onOpenReport?: ((document: DocumentWorkspaceItem) => void) | undefined;
+	onDiscussReport?: ((jobId: string) => void | Promise<void>) | undefined;
+	onResearchFurther?:
+		| ((
+				jobId: string,
+				options?: { depth?: DeepResearchDepth },
+		  ) => void | Promise<void>)
+		| undefined;
+	onAdvanceResearch?: ((jobId: string) => void | Promise<void>) | undefined;
+} = $props();
+
+let isEditingPlan = $state(false);
+let planEditInstructions = $state("");
+let selectedPlanReportIntent = $state<DeepResearchReportIntent | "">("");
+let planEditPending = $state(false);
+let planApprovalPending = $state(false);
+let advancePending = $state(false);
+let isStageDetailOpen = $state(false);
+let isTimelineOpen = $state(false);
+let timelinePreferenceJobId = $state<string | null>(null);
+let hasManualTimelinePreference = $state(false);
+let planEditError = $state<string | null>(null);
+let advanceError = $state<string | null>(null);
+let memoRecoveryPendingKey = $state<string | null>(null);
+let memoRecoveryError = $state<string | null>(null);
+let failedFavicons = $state<Record<string, true>>({});
+
+let isOptimisticJob = $derived(job.id.startsWith("pending-deep-research-"));
+let canCancel = $derived(
+	!isOptimisticJob &&
+		(job.status === "awaiting_plan" || job.status === "awaiting_approval"),
+);
+let canAdvanceResearch = $derived(
+	job.status === "approved" || job.status === "running",
+);
+let activePlan = $derived(job.plan ?? job.currentPlan ?? null);
+let activeReportIntent = $derived(activePlan?.rawPlan?.reportIntent ?? null);
+let canApprovePlan = $derived(
+	job.status === "awaiting_approval" && Boolean(activePlan),
+);
+let hasReportIntentEdit = $derived(
+	Boolean(
+		selectedPlanReportIntent && selectedPlanReportIntent !== activeReportIntent,
+	),
+);
+let evidenceLimitationMemo = $derived(job.evidenceLimitationMemo ?? null);
+let isEvidenceLimitationMemo = $derived(
+	job.status === "completed" &&
+		(job.stage === "evidence_limitation_memo_ready" ||
+			Boolean(evidenceLimitationMemo)),
+);
+let researchSeverity = $derived(
+	getResearchSeverity(job, isEvidenceLimitationMemo),
+);
+let reportDocument = $derived(buildReportDocument(job));
+let sourceCounts = $derived(
+	job.sourceCounts ?? { discovered: 0, reviewed: 0, cited: 0 },
+);
+let visiblePlan = $derived(activePlan ? buildVisiblePlan(activePlan) : null);
+let timelineSteps = $derived(buildTimelineSteps(job));
+let visibleTimelineSteps = $derived(
+	buildVisibleTimelineSteps(job, timelineSteps),
+);
+let effectiveTimelineOpen = $derived(
+	timelinePreferenceJobId === job.id
+		? isTimelineOpen
+		: shouldOpenTimelineByDefault(job),
+);
+let activeStage = $derived(
+	timelineSteps.find((step) => step.status === "active") ??
+		timelineSteps.at(-1) ??
+		null,
+);
+let activeStageLabelKey = $derived(
+	activeStage
+		? timelineStepLabelKey(job, activeStage)
+		: "deepResearch.timeline.planDrafting",
+);
+let progressRingClass = $derived(
+	`research-card__progress-ring research-card__progress-ring--${stageProgressBand(job)}`,
+);
+let stageDetailRows = $derived(buildStageDetailRows(job));
+let costLabel = $derived(
+	formatCostLabel(job.usageSummary?.totalCostUsdMicros ?? 0),
+);
+let finalResearchTimeLabel = $derived(formatFinalResearchTimeLabel(job));
+let hasSourceLedgerProgress = $derived(
+	sourceCounts.discovered > 0 ||
+		sourceCounts.reviewed > 0 ||
+		sourceCounts.cited > 0,
+);
+let visibleSources = $derived(
+	(job.sources ?? [])
+		.filter((source) => source.reviewedAt || source.citedAt)
+		.slice(0, 4),
+);
+
+const depthKeys: Record<DeepResearchDepth, I18nKey> = {
+	focused: "deepResearch.depth.focused",
+	standard: "deepResearch.depth.standard",
+	max: "deepResearch.depth.max",
+};
+
+const statusKeys: Record<DeepResearchJobStatus, I18nKey> = {
+	awaiting_plan: "deepResearch.status.awaitingPlan",
+	awaiting_approval: "deepResearch.status.awaitingApproval",
+	approved: "deepResearch.status.approved",
+	running: "deepResearch.status.running",
+	completed: "deepResearch.status.completed",
+	failed: "deepResearch.status.failed",
+	cancelled: "deepResearch.status.cancelled",
+};
+
+const reportIntentKeys: Record<DeepResearchReportIntent, I18nKey> = {
+	comparison: "deepResearch.reportIntent.comparison",
+	recommendation: "deepResearch.reportIntent.recommendation",
+	investigation: "deepResearch.reportIntent.investigation",
+	market_scan: "deepResearch.reportIntent.marketScan",
+	product_scan: "deepResearch.reportIntent.productScan",
+	limitation_focused: "deepResearch.reportIntent.limitationFocused",
+};
+
+const reportIntentOptions = [
+	"comparison",
+	"recommendation",
+	"investigation",
+	"market_scan",
+	"product_scan",
+	"limitation_focused",
+] satisfies DeepResearchReportIntent[];
+
+$effect(() => {
+	const defaultOpen = shouldOpenTimelineByDefault(job);
+	if (timelinePreferenceJobId !== job.id) {
+		timelinePreferenceJobId = job.id;
+		hasManualTimelinePreference = false;
+		isTimelineOpen = defaultOpen;
+		return;
+	}
+	if (!hasManualTimelinePreference && defaultOpen) {
+		isTimelineOpen = true;
+	}
+});
+
+function getResearchSeverity(
+	job: DeepResearchJob,
+	hasEvidenceLimitationMemo: boolean,
+): ResearchCardSeverity {
+	if (hasEvidenceLimitationMemo) return "insufficient_evidence";
+	if (job.status === "awaiting_approval") return "needs_attention";
+	if (job.status === "approved" || job.status === "running") return "working";
+	if (job.status === "completed") return "completed";
+	if (job.status === "cancelled") return "cancelled";
+	if (job.status === "failed") return "failed";
+	return "awaiting_plan";
+}
+
+function severityLabelKey(severity: ResearchCardSeverity): I18nKey {
+	if (severity === "needs_attention")
+		return "deepResearch.status.needsAttention";
+	if (severity === "working") return "deepResearch.status.working";
+	if (severity === "insufficient_evidence")
+		return "deepResearch.status.insufficientEvidence";
+	if (severity === "awaiting_plan") return statusKeys.awaiting_plan;
+	return statusKeys[severity];
+}
+
+function sourceCountLabels(sourceCounts: DeepResearchSourceCounts) {
+	return [
+		$t("deepResearch.timeline.discovered", { count: sourceCounts.discovered }),
+		$t("deepResearch.timeline.reviewed", { count: sourceCounts.reviewed }),
+		$t("deepResearch.timeline.cited", { count: sourceCounts.cited }),
+	];
+}
+
+function markFaviconFailed(sourceId: string) {
+	failedFavicons = {
+		...failedFavicons,
+		[sourceId]: true,
 	};
+}
 
-	type VisiblePlan = {
-		sections: VisiblePlanSection[];
-	};
+function handleStageDetailKeydown(event: KeyboardEvent) {
+	if (event.key === "Escape") {
+		isStageDetailOpen = false;
+	}
+}
 
-	type TimelineStep = {
-		id: string;
-		labelKey: I18nKey;
-		stages: string[];
-		status: 'completed' | 'active' | 'pending';
-		events: TimelineEventView[];
-	};
+function formatReportIntent(intent: DeepResearchReportIntent): string {
+	return $t(reportIntentKeys[intent]);
+}
 
-	type TimelineEventView = DeepResearchTimelineEvent & {
-		showSourceCounts: boolean;
-		isMeaningful: boolean;
-	};
-
-	type ResearchCardSeverity =
-		| 'awaiting_plan'
-		| 'needs_attention'
-		| 'working'
-		| 'completed'
-		| 'insufficient_evidence'
-		| 'cancelled'
-		| 'failed';
-
-	let {
-		job,
-		onApprove = undefined,
-		onEdit = undefined,
-		onCancel = undefined,
-		onOpenReport = undefined,
-		onDiscussReport = undefined,
-		onResearchFurther = undefined,
-		onAdvanceResearch = undefined,
-	}: {
-		job: DeepResearchJob;
-		onApprove?: ((jobId: string) => void | Promise<void>) | undefined;
-		onEdit?:
-			| ((
-					jobId: string,
-					instructions: string,
-					reportIntent?: DeepResearchReportIntent
-				) => void | Promise<void>)
-			| undefined;
-		onCancel?: ((jobId: string) => void | Promise<void>) | undefined;
-		onOpenReport?: ((document: DocumentWorkspaceItem) => void) | undefined;
-		onDiscussReport?: ((jobId: string) => void | Promise<void>) | undefined;
-		onResearchFurther?:
-			| ((jobId: string, options?: { depth?: DeepResearchDepth }) => void | Promise<void>)
-			| undefined;
-		onAdvanceResearch?: ((jobId: string) => void | Promise<void>) | undefined;
-	} = $props();
-
-	let isEditingPlan = $state(false);
-	let planEditInstructions = $state('');
-	let selectedPlanReportIntent = $state<DeepResearchReportIntent | ''>('');
-	let planEditPending = $state(false);
-	let planApprovalPending = $state(false);
-	let advancePending = $state(false);
-	let isStageDetailOpen = $state(false);
-	let isTimelineOpen = $state(false);
-	let timelinePreferenceJobId = $state<string | null>(null);
-	let hasManualTimelinePreference = $state(false);
-	let planEditError = $state<string | null>(null);
-	let advanceError = $state<string | null>(null);
-	let failedFavicons = $state<Record<string, true>>({});
-
-	let isOptimisticJob = $derived(job.id.startsWith('pending-deep-research-'));
-	let canCancel = $derived(
-		!isOptimisticJob && (job.status === 'awaiting_plan' || job.status === 'awaiting_approval')
+function isInternalApprovalConstraint(value: string): boolean {
+	return (
+		/do not start source-heavy research until the research plan is approved/i.test(
+			value,
+		) || /ne induljon forrásigényes kutatás/i.test(value)
 	);
-	let canAdvanceResearch = $derived(job.status === 'approved' || job.status === 'running');
-	let activePlan = $derived(job.plan ?? job.currentPlan ?? null);
-	let activeReportIntent = $derived(activePlan?.rawPlan?.reportIntent ?? null);
-	let canApprovePlan = $derived(job.status === 'awaiting_approval' && Boolean(activePlan));
-	let hasReportIntentEdit = $derived(
-		Boolean(selectedPlanReportIntent && selectedPlanReportIntent !== activeReportIntent)
-	);
-	let evidenceLimitationMemo = $derived(job.evidenceLimitationMemo ?? null);
-	let isEvidenceLimitationMemo = $derived(
-		job.status === 'completed' &&
-			(job.stage === 'evidence_limitation_memo_ready' || Boolean(evidenceLimitationMemo))
-	);
-	let researchSeverity = $derived(getResearchSeverity(job, isEvidenceLimitationMemo));
-	let reportDocument = $derived(buildReportDocument(job));
-	let sourceCounts = $derived(job.sourceCounts ?? { discovered: 0, reviewed: 0, cited: 0 });
-	let visiblePlan = $derived(activePlan ? buildVisiblePlan(activePlan) : null);
-	let timelineSteps = $derived(buildTimelineSteps(job));
-	let visibleTimelineSteps = $derived(buildVisibleTimelineSteps(job, timelineSteps));
-	let effectiveTimelineOpen = $derived(
-		timelinePreferenceJobId === job.id ? isTimelineOpen : shouldOpenTimelineByDefault(job)
-	);
-	let activeStage = $derived(timelineSteps.find((step) => step.status === 'active') ?? timelineSteps.at(-1) ?? null);
-	let activeStageLabelKey = $derived(
-		activeStage ? timelineStepLabelKey(job, activeStage) : 'deepResearch.timeline.planDrafting'
-	);
-	let progressRingClass = $derived(`research-card__progress-ring research-card__progress-ring--${stageProgressBand(job)}`);
-	let stageDetailRows = $derived(buildStageDetailRows(job));
-	let costLabel = $derived(formatCostLabel(job.usageSummary?.totalCostUsdMicros ?? 0));
-	let finalResearchTimeLabel = $derived(formatFinalResearchTimeLabel(job));
-	let hasSourceLedgerProgress = $derived(
-		sourceCounts.discovered > 0 || sourceCounts.reviewed > 0 || sourceCounts.cited > 0
-	);
-	let visibleSources = $derived(
-		(job.sources ?? [])
-			.filter((source) => source.reviewedAt || source.citedAt)
-			.slice(0, 4)
-	);
+}
 
-	const depthKeys: Record<DeepResearchDepth, I18nKey> = {
-		focused: 'deepResearch.depth.focused',
-		standard: 'deepResearch.depth.standard',
-		max: 'deepResearch.depth.max',
-	};
+function compactItems(items: Array<string | null | undefined>): string[] {
+	return items
+		.map((item) => item?.trim() ?? "")
+		.filter((item) => item.length > 0 && !isInternalApprovalConstraint(item));
+}
 
-	const statusKeys: Record<DeepResearchJobStatus, I18nKey> = {
-		awaiting_plan: 'deepResearch.status.awaitingPlan',
-		awaiting_approval: 'deepResearch.status.awaitingApproval',
-		approved: 'deepResearch.status.approved',
-		running: 'deepResearch.status.running',
-		completed: 'deepResearch.status.completed',
-		failed: 'deepResearch.status.failed',
-		cancelled: 'deepResearch.status.cancelled',
-	};
-
-	const reportIntentKeys: Record<DeepResearchReportIntent, I18nKey> = {
-		comparison: 'deepResearch.reportIntent.comparison',
-		recommendation: 'deepResearch.reportIntent.recommendation',
-		investigation: 'deepResearch.reportIntent.investigation',
-		market_scan: 'deepResearch.reportIntent.marketScan',
-		product_scan: 'deepResearch.reportIntent.productScan',
-		limitation_focused: 'deepResearch.reportIntent.limitationFocused',
-	};
-
-	const reportIntentOptions = [
-		'comparison',
-		'recommendation',
-		'investigation',
-		'market_scan',
-		'product_scan',
-		'limitation_focused',
-	] satisfies DeepResearchReportIntent[];
-
-	$effect(() => {
-		const defaultOpen = shouldOpenTimelineByDefault(job);
-		if (timelinePreferenceJobId !== job.id) {
-			timelinePreferenceJobId = job.id;
-			hasManualTimelinePreference = false;
-			isTimelineOpen = defaultOpen;
-			return;
-		}
-		if (!hasManualTimelinePreference && defaultOpen) {
-			isTimelineOpen = true;
-		}
-	});
-
-	function getResearchSeverity(
-		job: DeepResearchJob,
-		hasEvidenceLimitationMemo: boolean
-	): ResearchCardSeverity {
-		if (hasEvidenceLimitationMemo) return 'insufficient_evidence';
-		if (job.status === 'awaiting_approval') return 'needs_attention';
-		if (job.status === 'approved' || job.status === 'running') return 'working';
-		if (job.status === 'completed') return 'completed';
-		if (job.status === 'cancelled') return 'cancelled';
-		if (job.status === 'failed') return 'failed';
-		return 'awaiting_plan';
-	}
-
-	function severityLabelKey(severity: ResearchCardSeverity): I18nKey {
-		if (severity === 'needs_attention') return 'deepResearch.status.needsAttention';
-		if (severity === 'working') return 'deepResearch.status.working';
-		if (severity === 'insufficient_evidence') return 'deepResearch.status.insufficientEvidence';
-		if (severity === 'awaiting_plan') return statusKeys.awaiting_plan;
-		return statusKeys[severity];
-	}
-
-	function sourceCountLabels(sourceCounts: DeepResearchSourceCounts) {
-		return [
-			$t('deepResearch.timeline.discovered', { count: sourceCounts.discovered }),
-			$t('deepResearch.timeline.reviewed', { count: sourceCounts.reviewed }),
-			$t('deepResearch.timeline.cited', { count: sourceCounts.cited }),
-		];
-	}
-
-	function markFaviconFailed(sourceId: string) {
-		failedFavicons = {
-			...failedFavicons,
-			[sourceId]: true,
-		};
-	}
-
-	function handleStageDetailKeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape') {
-			isStageDetailOpen = false;
-		}
-	}
-
-	function formatReportIntent(intent: DeepResearchReportIntent): string {
-		return $t(reportIntentKeys[intent]);
-	}
-
-	function isInternalApprovalConstraint(value: string): boolean {
-		return /do not start source-heavy research until the research plan is approved/i.test(value) ||
-			/ne induljon forrásigényes kutatás/i.test(value);
-	}
-
-	function compactItems(items: Array<string | null | undefined>): string[] {
-		return items
-			.map((item) => item?.trim() ?? '')
-			.filter((item) => item.length > 0 && !isInternalApprovalConstraint(item));
-	}
-
-	function buildVisiblePlan(plan: DeepResearchPlanSummary): VisiblePlan {
-		if (plan.rawPlan) {
-			const rawPlan = plan.rawPlan;
-			const sections: VisiblePlanSection[] = [];
-			const keyQuestions = compactItems(rawPlan.keyQuestions);
-			if (keyQuestions.length > 0) {
-				sections.push({ heading: $t('deepResearch.plan.keyQuestions'), items: keyQuestions });
-			}
-
-			const deliverables = compactItems(rawPlan.deliverables);
-			if (deliverables.length > 0) {
-				sections.push({ heading: $t('deepResearch.plan.deliverables'), items: deliverables });
-			}
-
-			return { sections };
-		}
-
-		return parseRenderedPlan(plan.renderedPlan);
-	}
-
-	function parseRenderedPlan(renderedPlan: string): VisiblePlan {
-		const lines = renderedPlan
-			.split('\n')
-			.map((line) => line.trim())
-			.filter((line) => {
-				if (!line) return false;
-				if (/^#\s+/.test(line)) return false;
-				if (/^(Research Plan|Kutatási terv)$/i.test(line)) return false;
-				if (/^(Cost|Költség):/i.test(line)) return false;
-				if (/^(Key questions|Kulcskérdések|Deliverables|Eredmények|Research steps|Kutatási lépések):?$/i.test(line)) return false;
-				if (isInternalApprovalConstraint(line.replace(/^-\s*/, ''))) return false;
-				return true;
-			});
-		const goalIndex = lines.findIndex((line) => /^(Goal|Cél):/i.test(line));
-		const remaining = lines.filter((_, index) => index !== goalIndex);
-		const goalLine = goalIndex >= 0 ? lines[goalIndex]?.replace(/^(Goal|Cél):\s*/i, '').trim() : '';
+function buildVisiblePlan(plan: DeepResearchPlanSummary): VisiblePlan {
+	if (plan.rawPlan) {
+		const rawPlan = plan.rawPlan;
 		const sections: VisiblePlanSection[] = [];
-		if (goalLine) {
-			sections.push({ heading: $t('deepResearch.plan.goal'), items: [goalLine] });
-		}
-		const keyQuestionItems = remaining.filter((line) => !/^(Goal|Cél|Expected report shape|Várt jelentésszerkezet):/i.test(line));
-		if (keyQuestionItems.length > 0) {
+		const keyQuestions = compactItems(rawPlan.keyQuestions);
+		if (keyQuestions.length > 0) {
 			sections.push({
-				heading: $t('deepResearch.plan.keyQuestions'),
-				items: keyQuestionItems,
+				heading: $t("deepResearch.plan.keyQuestions"),
+				items: keyQuestions,
 			});
 		}
-		return {
-			sections,
-		};
-	}
 
-	function formatCostLabel(costUsdMicros: number): string | null {
-		if (!Number.isFinite(costUsdMicros) || costUsdMicros <= 0) return null;
-		return $t('deepResearch.estimatedCost', {
-			cost: `$${(costUsdMicros / 1_000_000).toFixed(4)}`,
-		});
-	}
-
-	function formatFinalResearchTimeLabel(job: DeepResearchJob): string | null {
-		if (job.status !== 'completed') return null;
-		const runtimeMs = job.runtimeEstimate?.actualRuntimeMs ?? (
-			job.completedAt && job.createdAt ? job.completedAt - job.createdAt : null
-		);
-		if (!runtimeMs || !Number.isFinite(runtimeMs) || runtimeMs <= 0) return null;
-		const totalSeconds = Math.max(1, Math.round(runtimeMs / 1000));
-		const hours = Math.floor(totalSeconds / 3600);
-		const minutes = Math.floor((totalSeconds % 3600) / 60);
-		const seconds = totalSeconds % 60;
-		const time =
-			hours > 0
-				? `${hours}h ${String(minutes).padStart(2, '0')}m`
-				: `${minutes}m ${String(seconds).padStart(2, '0')}s`;
-		return $t('deepResearch.finalResearchTime', { time });
-	}
-
-	function buildTimelineSteps(job: DeepResearchJob): TimelineStep[] {
-		const currentIndex = activeTimelineIndex(job);
-		const timelineEvents = buildTimelineEventViews(job.timeline ?? []);
-		return TIMELINE_STEP_DEFINITIONS.map((step, index) => {
-			const events = timelineEvents.filter((event) => step.stages.includes(event.stage));
-			return {
-				...step,
-				status:
-					job.status === 'completed' || index < currentIndex
-						? 'completed'
-						: index === currentIndex
-							? 'active'
-							: 'pending',
-				events,
-			};
-		}).filter((step, index) => {
-			if (step.events.length > 0) return true;
-			if (index === currentIndex) return true;
-			if (job.status === 'awaiting_approval' && index === currentIndex - 1) return true;
-			return false;
-		});
-	}
-
-	function buildVisibleTimelineSteps(job: DeepResearchJob, steps: TimelineStep[]): TimelineStep[] {
-		if (job.status !== 'running' && job.status !== 'approved') return steps;
-		return steps
-			.map((step) => ({
-				...step,
-				events: step.events.filter((event) => event.isMeaningful),
-			}))
-			.filter((step) => step.events.length > 0);
-	}
-
-	function stageProgressBand(job: DeepResearchJob): 'start' | 'early' | 'middle' | 'late' | 'done' {
-		const index = activeTimelineIndex(job);
-		if (job.status === 'completed') return 'done';
-		if (index <= 1) return 'start';
-		if (index <= 3) return 'early';
-		if (index <= 6) return 'middle';
-		return 'late';
-	}
-
-	function buildStageDetailRows(job: DeepResearchJob): string[] {
-		return [
-			formatPassProgress(job),
-			formatOpenCoverageGaps(job),
-			formatResolvedClaimConflicts(job),
-			formatAuditRepairState(job),
-		].filter((row): row is string => Boolean(row));
-	}
-
-	function formatPassProgress(job: DeepResearchJob): string | null {
-		const checkpoints = job.passCheckpoints ?? [];
-		if (checkpoints.length === 0) return null;
-		const completed = checkpoints.filter((checkpoint) => checkpoint.lifecycleState === 'decided').length;
-		const running = checkpoints.filter((checkpoint) => checkpoint.lifecycleState === 'running').length;
-		if (completed > 0 && running > 0) {
-			const key =
-				completed === 1 && running === 1
-					? 'deepResearch.progress.meaningfulPassesCompletedAndRunning'
-					: 'deepResearch.progress.meaningfulPassesCompletedAndRunningPlural';
-			return $t(key, {
-				completed,
-				running,
+		const deliverables = compactItems(rawPlan.deliverables);
+		if (deliverables.length > 0) {
+			sections.push({
+				heading: $t("deepResearch.plan.deliverables"),
+				items: deliverables,
 			});
 		}
-		if (completed > 0) {
-			return $t(
-				completed === 1
-					? 'deepResearch.progress.meaningfulPassesCompleted'
-					: 'deepResearch.progress.meaningfulPassesCompletedPlural',
-				{ count: completed }
-			);
-		}
-		if (running > 0) {
-			return $t(
-				running === 1
-					? 'deepResearch.progress.meaningfulPassesRunning'
-					: 'deepResearch.progress.meaningfulPassesRunningPlural',
-				{ count: running }
-			);
-		}
-		return null;
+
+		return { sections };
 	}
 
-	function formatOpenCoverageGaps(job: DeepResearchJob): string | null {
-		const openGaps = (job.coverageGaps ?? []).filter(
-			(gap) => gap.lifecycleState === 'open' || gap.lifecycleState === 'in_progress'
-		).length;
-		if (openGaps === 0) return null;
-		return $t(
-			openGaps === 1
-				? 'deepResearch.progress.openCoverageGaps'
-				: 'deepResearch.progress.openCoverageGapsPlural',
-			{ count: openGaps }
-		);
-	}
+	return parseRenderedPlan(plan.renderedPlan);
+}
 
-	function formatResolvedClaimConflicts(job: DeepResearchJob): string | null {
-		const conflictGroups = new Map<string, Set<string>>();
-		for (const claim of job.synthesisClaims ?? []) {
-			if (!claim.competingClaimGroupId || claim.status === 'needs-repair') continue;
-			const statuses = conflictGroups.get(claim.competingClaimGroupId) ?? new Set<string>();
-			statuses.add(claim.status);
-			conflictGroups.set(claim.competingClaimGroupId, statuses);
-		}
-		const resolvedConflicts = [...conflictGroups.values()].filter(
-			(statuses) => statuses.has('accepted') && statuses.has('rejected')
-		).length;
-		if (resolvedConflicts === 0) return null;
-		return $t(
-			resolvedConflicts === 1
-				? 'deepResearch.progress.resolvedClaimConflicts'
-				: 'deepResearch.progress.resolvedClaimConflictsPlural',
-			{ count: resolvedConflicts }
-		);
-	}
-
-	function formatAuditRepairState(job: DeepResearchJob): string | null {
-		if (hasRunningCitationAuditRepair(job)) return $t('deepResearch.progress.auditRepairRunning');
-		const needsRepair = (job.synthesisClaims ?? []).some((claim) => claim.status === 'needs-repair');
-		if (needsRepair) return $t('deepResearch.progress.auditRepairNeeded');
-		return null;
-	}
-
-	function hasRunningCitationAuditRepair(job: DeepResearchJob): boolean {
-		const repairPoint = (job.resumePoints ?? []).find(
-			(point) => point.boundary === 'repair' && point.status === 'running'
-		);
-		if (repairPoint) return true;
-		return (
-			job.stage === 'research_tasks' &&
-			(job.passCheckpoints ?? []).some(
-				(checkpoint) =>
-					checkpoint.lifecycleState === 'running' &&
-					/\b(repair|citation audit)\b/i.test(checkpoint.searchIntent)
+function parseRenderedPlan(renderedPlan: string): VisiblePlan {
+	const lines = renderedPlan
+		.split("\n")
+		.map((line) => line.trim())
+		.filter((line) => {
+			if (!line) return false;
+			if (/^#\s+/.test(line)) return false;
+			if (/^(Research Plan|Kutatási terv)$/i.test(line)) return false;
+			if (/^(Cost|Költség):/i.test(line)) return false;
+			if (
+				/^(Key questions|Kulcskérdések|Deliverables|Eredmények|Research steps|Kutatási lépések):?$/i.test(
+					line,
+				)
 			)
-		);
+				return false;
+			if (isInternalApprovalConstraint(line.replace(/^-\s*/, ""))) return false;
+			return true;
+		});
+	const goalIndex = lines.findIndex((line) => /^(Goal|Cél):/i.test(line));
+	const remaining = lines.filter((_, index) => index !== goalIndex);
+	const goalLine =
+		goalIndex >= 0
+			? lines[goalIndex]?.replace(/^(Goal|Cél):\s*/i, "").trim()
+			: "";
+	const sections: VisiblePlanSection[] = [];
+	if (goalLine) {
+		sections.push({ heading: $t("deepResearch.plan.goal"), items: [goalLine] });
 	}
-
-	function buildTimelineEventViews(events: DeepResearchTimelineEvent[]): TimelineEventView[] {
-		let previousCounts: DeepResearchSourceCounts | null = null;
-		return events.map((event) => {
-			const countsChanged = previousCounts
-				? !sameSourceCounts(previousCounts, event.sourceCounts)
-				: hasAnySourceCounts(event.sourceCounts);
-			const showSourceCounts =
-				countsChanged || isSourceSpecificTimelineEvent(event) || event.warnings.length > 0;
-			const isMeaningful =
-				countsChanged ||
-				isSourceSpecificTimelineEvent(event) ||
-				isDecisionTimelineEvent(event) ||
-				isTerminalTimelineEvent(event) ||
-				event.assumptions.length > 0 ||
-				event.warnings.length > 0;
-			previousCounts = event.sourceCounts;
-			return {
-				...event,
-				showSourceCounts,
-				isMeaningful,
-			};
+	const keyQuestionItems = remaining.filter(
+		(line) =>
+			!/^(Goal|Cél|Expected report shape|Várt jelentésszerkezet):/i.test(line),
+	);
+	if (keyQuestionItems.length > 0) {
+		sections.push({
+			heading: $t("deepResearch.plan.keyQuestions"),
+			items: keyQuestionItems,
 		});
 	}
+	return {
+		sections,
+	};
+}
 
-	function sameSourceCounts(a: DeepResearchSourceCounts, b: DeepResearchSourceCounts): boolean {
-		return a.discovered === b.discovered && a.reviewed === b.reviewed && a.cited === b.cited;
+function formatCostLabel(costUsdMicros: number): string | null {
+	if (!Number.isFinite(costUsdMicros) || costUsdMicros <= 0) return null;
+	return $t("deepResearch.estimatedCost", {
+		cost: `$${(costUsdMicros / 1_000_000).toFixed(4)}`,
+	});
+}
+
+function formatFinalResearchTimeLabel(job: DeepResearchJob): string | null {
+	if (job.status !== "completed") return null;
+	const runtimeMs =
+		job.runtimeEstimate?.actualRuntimeMs ??
+		(job.completedAt && job.createdAt ? job.completedAt - job.createdAt : null);
+	if (!runtimeMs || !Number.isFinite(runtimeMs) || runtimeMs <= 0) return null;
+	const totalSeconds = Math.max(1, Math.round(runtimeMs / 1000));
+	const hours = Math.floor(totalSeconds / 3600);
+	const minutes = Math.floor((totalSeconds % 3600) / 60);
+	const seconds = totalSeconds % 60;
+	const time =
+		hours > 0
+			? `${hours}h ${String(minutes).padStart(2, "0")}m`
+			: `${minutes}m ${String(seconds).padStart(2, "0")}s`;
+	return $t("deepResearch.finalResearchTime", { time });
+}
+
+function buildTimelineSteps(job: DeepResearchJob): TimelineStep[] {
+	const currentIndex = activeTimelineIndex(job);
+	const timelineEvents = buildTimelineEventViews(job.timeline ?? []);
+	return TIMELINE_STEP_DEFINITIONS.map((step, index) => {
+		const events = timelineEvents.filter((event) =>
+			step.stages.includes(event.stage),
+		);
+		return {
+			...step,
+			status:
+				job.status === "completed" || index < currentIndex
+					? "completed"
+					: index === currentIndex
+						? "active"
+						: "pending",
+			events,
+		};
+	}).filter((step, index) => {
+		if (step.events.length > 0) return true;
+		if (index === currentIndex) return true;
+		if (job.status === "awaiting_approval" && index === currentIndex - 1)
+			return true;
+		return false;
+	});
+}
+
+function buildVisibleTimelineSteps(
+	job: DeepResearchJob,
+	steps: TimelineStep[],
+): TimelineStep[] {
+	if (job.status !== "running" && job.status !== "approved") return steps;
+	return steps
+		.map((step) => ({
+			...step,
+			events: step.events.filter((event) => event.isMeaningful),
+		}))
+		.filter((step) => step.events.length > 0);
+}
+
+function stageProgressBand(
+	job: DeepResearchJob,
+): "start" | "early" | "middle" | "late" | "done" {
+	const index = activeTimelineIndex(job);
+	if (job.status === "completed") return "done";
+	if (index <= 1) return "start";
+	if (index <= 3) return "early";
+	if (index <= 6) return "middle";
+	return "late";
+}
+
+function buildStageDetailRows(job: DeepResearchJob): string[] {
+	return [
+		formatPassProgress(job),
+		formatOpenCoverageGaps(job),
+		formatResolvedClaimConflicts(job),
+		formatAuditRepairState(job),
+	].filter((row): row is string => Boolean(row));
+}
+
+function formatPassProgress(job: DeepResearchJob): string | null {
+	const checkpoints = job.passCheckpoints ?? [];
+	if (checkpoints.length === 0) return null;
+	const completed = checkpoints.filter(
+		(checkpoint) => checkpoint.lifecycleState === "decided",
+	).length;
+	const running = checkpoints.filter(
+		(checkpoint) => checkpoint.lifecycleState === "running",
+	).length;
+	if (completed > 0 && running > 0) {
+		const key =
+			completed === 1 && running === 1
+				? "deepResearch.progress.meaningfulPassesCompletedAndRunning"
+				: "deepResearch.progress.meaningfulPassesCompletedAndRunningPlural";
+		return $t(key, {
+			completed,
+			running,
+		});
 	}
-
-	function hasAnySourceCounts(sourceCounts: DeepResearchSourceCounts): boolean {
-		return sourceCounts.discovered > 0 || sourceCounts.reviewed > 0 || sourceCounts.cited > 0;
-	}
-
-	function isSourceSpecificTimelineEvent(event: DeepResearchTimelineEvent): boolean {
-		const eventText = `${event.stage} ${event.kind} ${event.messageKey}`.toLowerCase();
-		return eventText.includes('source') || eventText.includes('citation');
-	}
-
-	function isDecisionTimelineEvent(event: DeepResearchTimelineEvent): boolean {
-		const eventText = `${event.stage} ${event.kind} ${event.messageKey}`.toLowerCase();
-		return (
-			eventText.includes('coverage') ||
-			eventText.includes('repair') ||
-			eventText.includes('assumption')
+	if (completed > 0) {
+		return $t(
+			completed === 1
+				? "deepResearch.progress.meaningfulPassesCompleted"
+				: "deepResearch.progress.meaningfulPassesCompletedPlural",
+			{ count: completed },
 		);
 	}
-
-	function isTerminalTimelineEvent(event: DeepResearchTimelineEvent): boolean {
-		const eventText = `${event.stage} ${event.kind} ${event.messageKey}`.toLowerCase();
-		return (
-			eventText.includes('completed') ||
-			eventText.includes('memo') ||
-			eventText.includes('failed') ||
-			eventText.includes('cancelled')
+	if (running > 0) {
+		return $t(
+			running === 1
+				? "deepResearch.progress.meaningfulPassesRunning"
+				: "deepResearch.progress.meaningfulPassesRunningPlural",
+			{ count: running },
 		);
 	}
+	return null;
+}
 
-	function countTimelineAttentionEvents(job: DeepResearchJob): number {
-		return (job.timeline ?? []).filter(
-			(event) => {
-				const eventText = `${event.stage} ${event.kind} ${event.messageKey}`.toLowerCase();
-				return (
-					event.warnings.length > 0 ||
-					eventText.includes('failed') ||
-					eventText.includes('failure') ||
-					eventText.includes('memo')
-				);
-			}
-		).length;
+function formatOpenCoverageGaps(job: DeepResearchJob): string | null {
+	const openGaps = (job.coverageGaps ?? []).filter(
+		(gap) =>
+			gap.lifecycleState === "open" || gap.lifecycleState === "in_progress",
+	).length;
+	if (openGaps === 0) return null;
+	return $t(
+		openGaps === 1
+			? "deepResearch.progress.openCoverageGaps"
+			: "deepResearch.progress.openCoverageGapsPlural",
+		{ count: openGaps },
+	);
+}
+
+function formatResolvedClaimConflicts(job: DeepResearchJob): string | null {
+	const conflictGroups = new Map<string, Set<string>>();
+	for (const claim of job.synthesisClaims ?? []) {
+		if (!claim.competingClaimGroupId || claim.status === "needs-repair")
+			continue;
+		const statuses =
+			conflictGroups.get(claim.competingClaimGroupId) ?? new Set<string>();
+		statuses.add(claim.status);
+		conflictGroups.set(claim.competingClaimGroupId, statuses);
 	}
+	const resolvedConflicts = [...conflictGroups.values()].filter(
+		(statuses) => statuses.has("accepted") && statuses.has("rejected"),
+	).length;
+	if (resolvedConflicts === 0) return null;
+	return $t(
+		resolvedConflicts === 1
+			? "deepResearch.progress.resolvedClaimConflicts"
+			: "deepResearch.progress.resolvedClaimConflictsPlural",
+		{ count: resolvedConflicts },
+	);
+}
 
-	function shouldOpenTimelineByDefault(job: DeepResearchJob): boolean {
-		if (job.status !== 'running' && job.status !== 'approved') return true;
-		return countTimelineAttentionEvents(job) > 0;
-	}
+function formatAuditRepairState(job: DeepResearchJob): string | null {
+	if (hasRunningCitationAuditRepair(job))
+		return $t("deepResearch.progress.auditRepairRunning");
+	const needsRepair = (job.synthesisClaims ?? []).some(
+		(claim) => claim.status === "needs-repair",
+	);
+	if (needsRepair) return $t("deepResearch.progress.auditRepairNeeded");
+	return null;
+}
 
-	function showTimelineStepLabel(job: DeepResearchJob): boolean {
-		return job.status !== 'running' && job.status !== 'approved';
-	}
+function hasRunningCitationAuditRepair(job: DeepResearchJob): boolean {
+	const repairPoint = (job.resumePoints ?? []).find(
+		(point) => point.boundary === "repair" && point.status === "running",
+	);
+	if (repairPoint) return true;
+	return (
+		job.stage === "research_tasks" &&
+		(job.passCheckpoints ?? []).some(
+			(checkpoint) =>
+				checkpoint.lifecycleState === "running" &&
+				/\b(repair|citation audit)\b/i.test(checkpoint.searchIntent),
+		)
+	);
+}
 
-	function toggleTimeline() {
-		hasManualTimelinePreference = true;
-		isTimelineOpen = !effectiveTimelineOpen;
-	}
+function buildTimelineEventViews(
+	events: DeepResearchTimelineEvent[],
+): TimelineEventView[] {
+	let previousCounts: DeepResearchSourceCounts | null = null;
+	return events.map((event) => {
+		const countsChanged = previousCounts
+			? !sameSourceCounts(previousCounts, event.sourceCounts)
+			: hasAnySourceCounts(event.sourceCounts);
+		const showSourceCounts =
+			countsChanged ||
+			isSourceSpecificTimelineEvent(event) ||
+			event.warnings.length > 0;
+		const isMeaningful =
+			countsChanged ||
+			isSourceSpecificTimelineEvent(event) ||
+			isDecisionTimelineEvent(event) ||
+			isTerminalTimelineEvent(event) ||
+			event.assumptions.length > 0 ||
+			event.warnings.length > 0;
+		previousCounts = event.sourceCounts;
+		return {
+			...event,
+			showSourceCounts,
+			isMeaningful,
+		};
+	});
+}
 
-	function timelineEventSummary(event: TimelineEventView): string {
-		if (!isLocalizableTimelineSummary(event)) {
-			return event.summary;
-		}
-		if (event.messageKey === 'deepResearch.timeline.planGenerated') {
-			return $t('deepResearch.timeline.summary.planGenerated');
-		}
-		if (event.messageKey === 'deepResearch.timeline.sourceDiscoveryCompleted') {
-			return $t('deepResearch.timeline.summary.sourceDiscoveryCompleted', {
-				count: timelineNumberParam(event, ['discoveredSources'], event.sourceCounts.discovered),
-			});
-		}
-		if (event.messageKey === 'deepResearch.timeline.sourceReviewCompleted') {
-			return $t('deepResearch.timeline.summary.sourceReviewCompleted', {
-				count: timelineNumberParam(event, ['reviewedSources'], event.sourceCounts.reviewed),
-			});
-		}
-		if (event.messageKey === 'deepResearch.timeline.researchTasksCompleted') {
-			return $t('deepResearch.timeline.summary.researchTasksCompleted', {
-				passNumber: timelineNumberParam(event, ['passNumber'], 1),
-				count: timelineNumberParam(event, ['completedTasks'], 0),
-			});
-		}
-		if (event.messageKey === 'deepResearch.timeline.coverageSufficient') {
-			return $t('deepResearch.timeline.summary.coverageSufficient');
-		}
-		if (event.messageKey === 'deepResearch.timeline.coverageLimited') {
-			return $t('deepResearch.timeline.summary.coverageLimited');
-		}
-		if (event.messageKey === 'deepResearch.timeline.coverageInsufficient') {
-			return $t('deepResearch.timeline.summary.coverageInsufficient');
-		}
-		if (event.messageKey === 'deepResearch.timeline.citationAuditCompleted') {
-			return $t('deepResearch.timeline.summary.citationAuditCompleted');
-		}
-		if (event.messageKey === 'deepResearch.timeline.citationAuditFailed') {
-			return $t('deepResearch.timeline.summary.citationAuditFailed');
-		}
-		if (event.messageKey === 'deepResearch.timeline.citationAuditRepairPassCreated') {
-			return $t('deepResearch.timeline.summary.citationAuditRepairPassCreated', {
-				passNumber: timelineNumberParam(event, ['passNumber'], 1),
-				count: timelineNumberParam(event, ['repairTasks'], 0),
-			});
-		}
-		if (event.messageKey === 'deepResearch.timeline.evidenceLimitationMemoCompleted') {
-			return $t('deepResearch.timeline.summary.evidenceLimitationMemoCompleted');
-		}
-		if (event.messageKey === 'deepResearch.timeline.workerCancelled') {
-			return $t('deepResearch.timeline.summary.workerCancelled');
-		}
-		if (event.messageKey === 'deepResearch.timeline.workerStaleRecovered') {
-			return $t('deepResearch.timeline.summary.workerStaleRecovered');
-		}
+function sameSourceCounts(
+	a: DeepResearchSourceCounts,
+	b: DeepResearchSourceCounts,
+): boolean {
+	return (
+		a.discovered === b.discovered &&
+		a.reviewed === b.reviewed &&
+		a.cited === b.cited
+	);
+}
+
+function hasAnySourceCounts(sourceCounts: DeepResearchSourceCounts): boolean {
+	return (
+		sourceCounts.discovered > 0 ||
+		sourceCounts.reviewed > 0 ||
+		sourceCounts.cited > 0
+	);
+}
+
+function isSourceSpecificTimelineEvent(
+	event: DeepResearchTimelineEvent,
+): boolean {
+	const eventText =
+		`${event.stage} ${event.kind} ${event.messageKey}`.toLowerCase();
+	return eventText.includes("source") || eventText.includes("citation");
+}
+
+function isDecisionTimelineEvent(event: DeepResearchTimelineEvent): boolean {
+	const eventText =
+		`${event.stage} ${event.kind} ${event.messageKey}`.toLowerCase();
+	return (
+		eventText.includes("coverage") ||
+		eventText.includes("repair") ||
+		eventText.includes("assumption")
+	);
+}
+
+function isTerminalTimelineEvent(event: DeepResearchTimelineEvent): boolean {
+	const eventText =
+		`${event.stage} ${event.kind} ${event.messageKey}`.toLowerCase();
+	return (
+		eventText.includes("completed") ||
+		eventText.includes("memo") ||
+		eventText.includes("failed") ||
+		eventText.includes("cancelled")
+	);
+}
+
+function countTimelineAttentionEvents(job: DeepResearchJob): number {
+	return (job.timeline ?? []).filter((event) => {
+		const eventText =
+			`${event.stage} ${event.kind} ${event.messageKey}`.toLowerCase();
+		return (
+			event.warnings.length > 0 ||
+			eventText.includes("failed") ||
+			eventText.includes("failure") ||
+			eventText.includes("memo")
+		);
+	}).length;
+}
+
+function shouldOpenTimelineByDefault(job: DeepResearchJob): boolean {
+	if (job.status !== "running" && job.status !== "approved") return true;
+	return countTimelineAttentionEvents(job) > 0;
+}
+
+function showTimelineStepLabel(job: DeepResearchJob): boolean {
+	return job.status !== "running" && job.status !== "approved";
+}
+
+function toggleTimeline() {
+	hasManualTimelinePreference = true;
+	isTimelineOpen = !effectiveTimelineOpen;
+}
+
+function timelineEventSummary(event: TimelineEventView): string {
+	if (!isLocalizableTimelineSummary(event)) {
 		return event.summary;
 	}
-
-	function isLocalizableTimelineSummary(event: DeepResearchTimelineEvent): boolean {
-		const summary = event.summary.trim();
-		if (event.messageKey === 'deepResearch.timeline.planGenerated') {
-			return summary === 'Research Plan drafted for approval.';
-		}
-		if (event.messageKey === 'deepResearch.timeline.sourceDiscoveryCompleted') {
-			return /^Discovered \d+ public web source candidates\.$/.test(summary);
-		}
-		if (event.messageKey === 'deepResearch.timeline.sourceReviewCompleted') {
-			return /^Source review completed for \d+ reviewed sources?\.$/.test(summary);
-		}
-		if (event.messageKey === 'deepResearch.timeline.researchTasksCompleted') {
-			return /^Research task pass \d+ completed with \d+ completed tasks?\.$/.test(summary);
-		}
-		if (event.messageKey === 'deepResearch.timeline.coverageSufficient') {
-			return summary === 'Reviewed evidence covers the approved Research Plan key questions.';
-		}
-		if (event.messageKey === 'deepResearch.timeline.coverageLimited') {
-			return summary === 'Depth budget is exhausted; incomplete coverage will be disclosed as report limitations.';
-		}
-		if (event.messageKey === 'deepResearch.timeline.coverageInsufficient') {
-			return summary === 'Coverage gaps remain before report synthesis.';
-		}
-		if (event.messageKey === 'deepResearch.timeline.citationAuditCompleted') {
-			return summary === 'Citation audit completed and unsupported claims were removed or retained with citations.';
-		}
-		if (event.messageKey === 'deepResearch.timeline.citationAuditFailed') {
-			return summary === 'Citation audit failed because no credible supported claims remained.';
-		}
-		if (event.messageKey === 'deepResearch.timeline.citationAuditRepairPassCreated') {
-			return /^Citation audit created repair pass \d+ with \d+ repair tasks?\.$/.test(summary);
-		}
-		if (event.messageKey === 'deepResearch.timeline.evidenceLimitationMemoCompleted') {
-			return summary === 'Research completed with an Evidence Limitation Memo because there was not enough credible topic-relevant evidence.';
-		}
-		if (event.messageKey === 'deepResearch.timeline.workerCancelled') {
-			return summary === 'Deep Research job cancelled before further worker advancement.';
-		}
-		if (event.messageKey === 'deepResearch.timeline.workerStaleRecovered') {
-			return summary === 'Deep Research job resumed from the latest durable Research Resume Point after exceeding the stale worker timeout.';
-		}
-		return false;
+	if (event.messageKey === "deepResearch.timeline.planGenerated") {
+		return $t("deepResearch.timeline.summary.planGenerated");
 	}
-
-	function timelineNumberParam(event: DeepResearchTimelineEvent, names: string[], fallback: number): number {
-		for (const name of names) {
-			const value = event.messageParams?.[name];
-			const parsed = typeof value === 'number' ? value : Number(value);
-			if (Number.isFinite(parsed)) return parsed;
-		}
-		return fallback;
+	if (event.messageKey === "deepResearch.timeline.sourceDiscoveryCompleted") {
+		return $t("deepResearch.timeline.summary.sourceDiscoveryCompleted", {
+			count: timelineNumberParam(
+				event,
+				["discoveredSources"],
+				event.sourceCounts.discovered,
+			),
+		});
 	}
-
-	function activeTimelineIndex(job: DeepResearchJob): number {
-		if (job.status === 'completed') return TIMELINE_STEP_DEFINITIONS.length - 1;
-		if (job.status === 'awaiting_approval') return 2;
-		const stage = job.stage ?? '';
-		const index = TIMELINE_STEP_DEFINITIONS.findIndex((step) => step.stages.includes(stage));
-		return Math.max(0, index);
+	if (event.messageKey === "deepResearch.timeline.sourceReviewCompleted") {
+		return $t("deepResearch.timeline.summary.sourceReviewCompleted", {
+			count: timelineNumberParam(
+				event,
+				["reviewedSources"],
+				event.sourceCounts.reviewed,
+			),
+		});
 	}
-
-	function timelineStepLabelKey(job: DeepResearchJob, step: TimelineStep): I18nKey {
-		if (step.id === 'gaps' && hasRunningCitationAuditRepair(job)) {
-			return 'deepResearch.timeline.repairingCitations';
-		}
-		return step.labelKey;
+	if (event.messageKey === "deepResearch.timeline.researchTasksCompleted") {
+		return $t("deepResearch.timeline.summary.researchTasksCompleted", {
+			passNumber: timelineNumberParam(event, ["passNumber"], 1),
+			count: timelineNumberParam(event, ["completedTasks"], 0),
+		});
 	}
-
-	const TIMELINE_STEP_DEFINITIONS = [
-		{ id: 'plan', labelKey: 'deepResearch.timeline.planDrafting', stages: ['plan_generation'] },
-		{ id: 'plan-drafted', labelKey: 'deepResearch.timeline.planDrafted', stages: ['plan_drafted', 'plan_revised'] },
-		{ id: 'approval', labelKey: 'deepResearch.timeline.awaitingApproval', stages: ['plan_approved'] },
-		{ id: 'discovery', labelKey: 'deepResearch.timeline.discoveringSources', stages: ['source_discovery'] },
-		{ id: 'review', labelKey: 'deepResearch.timeline.reviewingSources', stages: ['source_review'] },
-		{ id: 'coverage', labelKey: 'deepResearch.timeline.checkingCoverage', stages: ['coverage_assessment'] },
-		{ id: 'gaps', labelKey: 'deepResearch.timeline.fillingGaps', stages: ['research_tasks'] },
-		{ id: 'synthesis', labelKey: 'deepResearch.timeline.synthesizing', stages: ['synthesis'] },
-		{ id: 'audit', labelKey: 'deepResearch.timeline.auditingCitations', stages: ['citation_audit', 'citation_audit_failed'] },
-		{ id: 'writing', labelKey: 'deepResearch.timeline.writingReport', stages: ['report_assembly', 'report_writing', 'report_ready'] },
-		{ id: 'completed', labelKey: 'deepResearch.timeline.completed', stages: ['completed'] },
-	] satisfies Array<Omit<TimelineStep, 'status' | 'events'>>;
-
-	function cancelJob() {
-		if (!canCancel || !onCancel) return;
-		void onCancel(job.id);
+	if (event.messageKey === "deepResearch.timeline.coverageSufficient") {
+		return $t("deepResearch.timeline.summary.coverageSufficient");
 	}
-
-	function buildReportFilename(title: string): string {
-		const safeTitle = title
-			.replace(/[\\/:*?"<>|]+/g, ' ')
-			.replace(/\s+/g, ' ')
-			.trim()
-			.slice(0, 96);
-		return `Research Report - ${safeTitle || 'Deep Research'}.md`;
+	if (event.messageKey === "deepResearch.timeline.coverageLimited") {
+		return $t("deepResearch.timeline.summary.coverageLimited");
 	}
-
-	function buildReportDocument(job: DeepResearchJob): DocumentWorkspaceItem | null {
-		if (job.status !== 'completed' || !job.reportArtifactId) return null;
-		if (job.stage === 'evidence_limitation_memo_ready' || job.evidenceLimitationMemo) return null;
-		const filename = buildReportFilename(job.title);
-		return {
-			id: `artifact:${job.reportArtifactId}`,
-			source: 'knowledge_artifact',
-			filename,
-			title: filename,
-			documentLabel: filename,
-			documentRole: 'research_report',
-			versionNumber: 1,
-			mimeType: 'text/markdown',
-			artifactId: job.reportArtifactId,
-			conversationId: job.conversationId,
-			previewUrl: `/api/knowledge/${job.reportArtifactId}/preview`,
-			downloadUrl: `/api/knowledge/${job.reportArtifactId}/download`,
-		};
+	if (event.messageKey === "deepResearch.timeline.coverageInsufficient") {
+		return $t("deepResearch.timeline.summary.coverageInsufficient");
 	}
-
-	function openReport() {
-		if (!reportDocument || !onOpenReport) return;
-		onOpenReport(reportDocument);
+	if (event.messageKey === "deepResearch.timeline.citationAuditCompleted") {
+		return $t("deepResearch.timeline.summary.citationAuditCompleted");
 	}
-
-	function discussResearchArtifact() {
-		if (!onDiscussReport) return;
-		void onDiscussReport(job.id);
+	if (event.messageKey === "deepResearch.timeline.citationAuditFailed") {
+		return $t("deepResearch.timeline.summary.citationAuditFailed");
 	}
-
-	function researchFurther(options?: { depth?: DeepResearchDepth }) {
-		if (!onResearchFurther) return;
-		if (options) {
-			void onResearchFurther(job.id, options);
-			return;
-		}
-		void onResearchFurther(job.id);
+	if (
+		event.messageKey === "deepResearch.timeline.citationAuditRepairPassCreated"
+	) {
+		return $t("deepResearch.timeline.summary.citationAuditRepairPassCreated", {
+			passNumber: timelineNumberParam(event, ["passNumber"], 1),
+			count: timelineNumberParam(event, ["repairTasks"], 0),
+		});
 	}
-
-	function nextDeeperDepth(depth: DeepResearchDepth): DeepResearchDepth {
-		if (depth === 'focused') return 'standard';
-		return 'max';
+	if (
+		event.messageKey === "deepResearch.timeline.evidenceLimitationMemoCompleted"
+	) {
+		return $t("deepResearch.timeline.summary.evidenceLimitationMemoCompleted");
 	}
-
-	function canRunMemoRecoveryAction(action: { kind: string }): boolean {
-		if (action.kind === 'add_sources') return Boolean(onDiscussReport);
-		return Boolean(onResearchFurther);
+	if (event.messageKey === "deepResearch.timeline.workerCancelled") {
+		return $t("deepResearch.timeline.summary.workerCancelled");
 	}
+	if (event.messageKey === "deepResearch.timeline.workerStaleRecovered") {
+		return $t("deepResearch.timeline.summary.workerStaleRecovered");
+	}
+	return event.summary;
+}
 
-	function runMemoRecoveryAction(action: { kind: string }) {
-		if (action.kind === 'add_sources') {
-			discussResearchArtifact();
-			return;
-		}
-		researchFurther(
-			action.kind === 'choose_deeper_depth'
-				? { depth: nextDeeperDepth(job.depth) }
-				: undefined
+function isLocalizableTimelineSummary(
+	event: DeepResearchTimelineEvent,
+): boolean {
+	const summary = event.summary.trim();
+	if (event.messageKey === "deepResearch.timeline.planGenerated") {
+		return summary === "Research Plan drafted for approval.";
+	}
+	if (event.messageKey === "deepResearch.timeline.sourceDiscoveryCompleted") {
+		return /^Discovered \d+ public web source candidates\.$/.test(summary);
+	}
+	if (event.messageKey === "deepResearch.timeline.sourceReviewCompleted") {
+		return /^Source review completed for \d+ reviewed sources?\.$/.test(
+			summary,
 		);
 	}
+	if (event.messageKey === "deepResearch.timeline.researchTasksCompleted") {
+		return /^Research task pass \d+ completed with \d+ completed tasks?\.$/.test(
+			summary,
+		);
+	}
+	if (event.messageKey === "deepResearch.timeline.coverageSufficient") {
+		return (
+			summary ===
+			"Reviewed evidence covers the approved Research Plan key questions."
+		);
+	}
+	if (event.messageKey === "deepResearch.timeline.coverageLimited") {
+		return (
+			summary ===
+			"Depth budget is exhausted; incomplete coverage will be disclosed as report limitations."
+		);
+	}
+	if (event.messageKey === "deepResearch.timeline.coverageInsufficient") {
+		return summary === "Coverage gaps remain before report synthesis.";
+	}
+	if (event.messageKey === "deepResearch.timeline.citationAuditCompleted") {
+		return (
+			summary ===
+			"Citation audit completed and unsupported claims were removed or retained with citations."
+		);
+	}
+	if (event.messageKey === "deepResearch.timeline.citationAuditFailed") {
+		return (
+			summary ===
+			"Citation audit failed because no credible supported claims remained."
+		);
+	}
+	if (
+		event.messageKey === "deepResearch.timeline.citationAuditRepairPassCreated"
+	) {
+		return /^Citation audit created repair pass \d+ with \d+ repair tasks?\.$/.test(
+			summary,
+		);
+	}
+	if (
+		event.messageKey === "deepResearch.timeline.evidenceLimitationMemoCompleted"
+	) {
+		return (
+			summary ===
+			"Research completed with an Evidence Limitation Memo because there was not enough credible topic-relevant evidence."
+		);
+	}
+	if (event.messageKey === "deepResearch.timeline.workerCancelled") {
+		return (
+			summary ===
+			"Deep Research job cancelled before further worker advancement."
+		);
+	}
+	if (event.messageKey === "deepResearch.timeline.workerStaleRecovered") {
+		return (
+			summary ===
+			"Deep Research job resumed from the latest durable Research Resume Point after exceeding the stale worker timeout."
+		);
+	}
+	return false;
+}
 
-	async function advanceResearch() {
-		if (!canAdvanceResearch || !onAdvanceResearch || advancePending) return;
-		advancePending = true;
-		advanceError = null;
-		try {
-			await onAdvanceResearch(job.id);
-		} catch (err) {
-			advanceError = err instanceof Error ? err.message : $t('deepResearch.advanceWorkflowFailed');
-		} finally {
-			advancePending = false;
+function timelineNumberParam(
+	event: DeepResearchTimelineEvent,
+	names: string[],
+	fallback: number,
+): number {
+	for (const name of names) {
+		const value = event.messageParams?.[name];
+		const parsed = typeof value === "number" ? value : Number(value);
+		if (Number.isFinite(parsed)) return parsed;
+	}
+	return fallback;
+}
+
+function activeTimelineIndex(job: DeepResearchJob): number {
+	if (job.status === "completed") return TIMELINE_STEP_DEFINITIONS.length - 1;
+	if (job.status === "awaiting_approval") return 2;
+	const stage = job.stage ?? "";
+	const index = TIMELINE_STEP_DEFINITIONS.findIndex((step) =>
+		step.stages.includes(stage),
+	);
+	return Math.max(0, index);
+}
+
+function timelineStepLabelKey(
+	job: DeepResearchJob,
+	step: TimelineStep,
+): I18nKey {
+	if (step.id === "gaps" && hasRunningCitationAuditRepair(job)) {
+		return "deepResearch.timeline.repairingCitations";
+	}
+	return step.labelKey;
+}
+
+const TIMELINE_STEP_DEFINITIONS = [
+	{
+		id: "plan",
+		labelKey: "deepResearch.timeline.planDrafting",
+		stages: ["plan_generation"],
+	},
+	{
+		id: "plan-drafted",
+		labelKey: "deepResearch.timeline.planDrafted",
+		stages: ["plan_drafted", "plan_revised"],
+	},
+	{
+		id: "approval",
+		labelKey: "deepResearch.timeline.awaitingApproval",
+		stages: ["plan_approved"],
+	},
+	{
+		id: "discovery",
+		labelKey: "deepResearch.timeline.discoveringSources",
+		stages: ["source_discovery"],
+	},
+	{
+		id: "review",
+		labelKey: "deepResearch.timeline.reviewingSources",
+		stages: ["source_review"],
+	},
+	{
+		id: "coverage",
+		labelKey: "deepResearch.timeline.checkingCoverage",
+		stages: ["coverage_assessment"],
+	},
+	{
+		id: "gaps",
+		labelKey: "deepResearch.timeline.fillingGaps",
+		stages: ["research_tasks"],
+	},
+	{
+		id: "synthesis",
+		labelKey: "deepResearch.timeline.synthesizing",
+		stages: ["synthesis"],
+	},
+	{
+		id: "audit",
+		labelKey: "deepResearch.timeline.auditingCitations",
+		stages: ["citation_audit", "citation_audit_failed"],
+	},
+	{
+		id: "writing",
+		labelKey: "deepResearch.timeline.writingReport",
+		stages: ["report_assembly", "report_writing", "report_ready"],
+	},
+	{
+		id: "completed",
+		labelKey: "deepResearch.timeline.completed",
+		stages: ["completed"],
+	},
+] satisfies Array<Omit<TimelineStep, "status" | "events">>;
+
+function cancelJob() {
+	if (!canCancel || !onCancel) return;
+	void onCancel(job.id);
+}
+
+function buildReportFilename(title: string): string {
+	const safeTitle = title
+		.replace(/[\\/:*?"<>|]+/g, " ")
+		.replace(/\s+/g, " ")
+		.trim()
+		.slice(0, 96);
+	return `Research Report - ${safeTitle || "Deep Research"}.md`;
+}
+
+function buildReportDocument(
+	job: DeepResearchJob,
+): DocumentWorkspaceItem | null {
+	if (job.status !== "completed" || !job.reportArtifactId) return null;
+	if (
+		job.stage === "evidence_limitation_memo_ready" ||
+		job.evidenceLimitationMemo
+	)
+		return null;
+	const filename = buildReportFilename(job.title);
+	return {
+		id: `artifact:${job.reportArtifactId}`,
+		source: "knowledge_artifact",
+		filename,
+		title: filename,
+		documentLabel: filename,
+		documentRole: "research_report",
+		versionNumber: 1,
+		mimeType: "text/markdown",
+		artifactId: job.reportArtifactId,
+		conversationId: job.conversationId,
+		previewUrl: `/api/knowledge/${job.reportArtifactId}/preview`,
+		downloadUrl: `/api/knowledge/${job.reportArtifactId}/download`,
+	};
+}
+
+function openReport() {
+	if (!reportDocument || !onOpenReport) return;
+	onOpenReport(reportDocument);
+}
+
+function discussResearchArtifact() {
+	if (!onDiscussReport) return;
+	return onDiscussReport(job.id);
+}
+
+function researchFurther(options?: { depth?: DeepResearchDepth }) {
+	if (!onResearchFurther) return;
+	if (options) {
+		return onResearchFurther(job.id, options);
+	}
+	return onResearchFurther(job.id);
+}
+
+function nextDeeperDepth(depth: DeepResearchDepth): DeepResearchDepth {
+	if (depth === "focused") return "standard";
+	return "max";
+}
+
+function memoRecoveryActionKey(action: { kind: string }): string {
+	if (action.kind === "choose_deeper_depth") {
+		return `${action.kind}:${nextDeeperDepth(job.depth)}`;
+	}
+	return action.kind;
+}
+
+function canRunMemoRecoveryAction(action: { kind: string }): boolean {
+	if (memoRecoveryPendingKey) return false;
+	if (action.kind === "add_sources") return Boolean(onDiscussReport);
+	return Boolean(onResearchFurther);
+}
+
+async function runMemoRecoveryAction(action: DeepResearchMemoRecoveryAction) {
+	if (!canRunMemoRecoveryAction(action)) return;
+	const actionKey = memoRecoveryActionKey(action);
+	memoRecoveryPendingKey = actionKey;
+	memoRecoveryError = null;
+	try {
+		if (action.kind === "add_sources") {
+			await discussResearchArtifact();
+			return;
 		}
+		await researchFurther(
+			action.kind === "choose_deeper_depth"
+				? { depth: nextDeeperDepth(job.depth) }
+				: undefined,
+		);
+	} catch (err) {
+		memoRecoveryError =
+			err instanceof Error ? err.message : $t("deepResearch.memo.actionFailed");
+	} finally {
+		memoRecoveryPendingKey = null;
 	}
+}
 
-	async function approvePlan() {
-		if (!canApprovePlan || !onApprove || planApprovalPending) return;
-		planApprovalPending = true;
-		try {
-			await onApprove(job.id);
-		} catch (err) {
-			planEditError = err instanceof Error ? err.message : $t('deepResearch.approvePlanFailed');
-		} finally {
-			planApprovalPending = false;
+async function advanceResearch() {
+	if (!canAdvanceResearch || !onAdvanceResearch || advancePending) return;
+	advancePending = true;
+	advanceError = null;
+	try {
+		await onAdvanceResearch(job.id);
+	} catch (err) {
+		advanceError =
+			err instanceof Error
+				? err.message
+				: $t("deepResearch.advanceWorkflowFailed");
+	} finally {
+		advancePending = false;
+	}
+}
+
+async function approvePlan() {
+	if (!canApprovePlan || !onApprove || planApprovalPending) return;
+	planApprovalPending = true;
+	try {
+		await onApprove(job.id);
+	} catch (err) {
+		planEditError =
+			err instanceof Error ? err.message : $t("deepResearch.approvePlanFailed");
+	} finally {
+		planApprovalPending = false;
+	}
+}
+
+function editPlan() {
+	if (!canApprovePlan || !onEdit) return;
+	selectedPlanReportIntent = activeReportIntent ?? "";
+	isEditingPlan = true;
+	planEditError = null;
+}
+
+async function submitPlanEdit(event: SubmitEvent) {
+	event.preventDefault();
+	if (!canApprovePlan || !onEdit || planEditPending || planApprovalPending)
+		return;
+	const trimmedInstructions = planEditInstructions.trim();
+	const reportIntent = hasReportIntentEdit
+		? selectedPlanReportIntent
+		: undefined;
+	if (!trimmedInstructions && !reportIntent) return;
+
+	planEditPending = true;
+	planEditError = null;
+	try {
+		if (reportIntent) {
+			await onEdit(job.id, trimmedInstructions, reportIntent);
+		} else {
+			await onEdit(job.id, trimmedInstructions);
 		}
+		planEditInstructions = "";
+		selectedPlanReportIntent = "";
+		isEditingPlan = false;
+	} catch (err) {
+		planEditError =
+			err instanceof Error ? err.message : $t("deepResearch.editPlanFailed");
+	} finally {
+		planEditPending = false;
 	}
-
-	function editPlan() {
-		if (!canApprovePlan || !onEdit) return;
-		selectedPlanReportIntent = activeReportIntent ?? '';
-		isEditingPlan = true;
-		planEditError = null;
-	}
-
-	async function submitPlanEdit(event: SubmitEvent) {
-		event.preventDefault();
-		if (!canApprovePlan || !onEdit || planEditPending || planApprovalPending) return;
-		const trimmedInstructions = planEditInstructions.trim();
-		const reportIntent = hasReportIntentEdit ? selectedPlanReportIntent : undefined;
-		if (!trimmedInstructions && !reportIntent) return;
-
-		planEditPending = true;
-		planEditError = null;
-		try {
-			if (reportIntent) {
-				await onEdit(job.id, trimmedInstructions, reportIntent);
-			} else {
-				await onEdit(job.id, trimmedInstructions);
-			}
-			planEditInstructions = '';
-			selectedPlanReportIntent = '';
-			isEditingPlan = false;
-		} catch (err) {
-			planEditError = err instanceof Error ? err.message : $t('deepResearch.editPlanFailed');
-		} finally {
-			planEditPending = false;
-		}
-	}
+}
 </script>
 
 <svelte:window onkeydown={handleStageDetailKeydown} />
@@ -1084,15 +1307,21 @@
 								class="research-card__memo-action-button"
 								onclick={() => runMemoRecoveryAction(action)}
 								disabled={!canRunMemoRecoveryAction(action)}
+								aria-busy={memoRecoveryPendingKey === memoRecoveryActionKey(action)}
 								aria-label={action.label}
 								title={action.label}
 							>
-								{action.label}
+								{memoRecoveryPendingKey === memoRecoveryActionKey(action)
+									? $t('deepResearch.memo.actionPending')
+									: action.label}
 							</button>
 							<p>{action.description}</p>
 						</li>
 					{/each}
 				</ul>
+				{#if memoRecoveryError}
+					<p class="research-card__error" role="alert">{memoRecoveryError}</p>
+				{/if}
 			</div>
 		</section>
 	{/if}

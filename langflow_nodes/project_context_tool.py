@@ -69,7 +69,7 @@ class ProjectContextToolComponent(Component):
             name="maxSiblings",
             display_name="Max Siblings",
             info="Maximum sibling conversation summaries to return. Capped by AlfyAI.",
-            value=5,
+            value=10,
             tool_mode=True,
         ),
         StrInput(
@@ -83,7 +83,7 @@ class ProjectContextToolComponent(Component):
             name="maxMessages",
             display_name="Max Messages",
             info="Maximum recent user/assistant messages to return for detail mode. Capped by AlfyAI.",
-            value=6,
+            value=15,
             tool_mode=True,
         ),
         BoolInput(
