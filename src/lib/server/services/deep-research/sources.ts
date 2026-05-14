@@ -30,6 +30,12 @@ export type ResearchSourceLedgerEntry = {
 	citedAt?: string | null;
 };
 
+export type AcceptedReviewedResearchSourceCandidate = {
+	reviewedAt?: string | Date | null;
+	rejectedReason?: string | null;
+	topicRelevant?: boolean | null;
+};
+
 export type SaveDiscoveredResearchSourceInput = {
 	jobId: string;
 	conversationId: string;
@@ -139,18 +145,29 @@ export async function listResearchSources(
 	return rows.map(mapSourceRow);
 }
 
-export function buildDefaultResearchSourceLedger<T extends ResearchSourceLedgerEntry>(
-	sources: T[],
-): T[] {
+export function isAcceptedReviewedResearchSource(
+	source: AcceptedReviewedResearchSourceCandidate,
+): boolean {
+	return (
+		Boolean(source.reviewedAt) &&
+		!source.rejectedReason &&
+		source.topicRelevant !== false
+	);
+}
+
+export function buildDefaultResearchSourceLedger<
+	T extends ResearchSourceLedgerEntry,
+>(sources: T[]): T[] {
 	return sources.filter((source) => {
-		if (source.citedAt || source.status === "cited") return true;
-		if (
-			(source.reviewedAt || source.status === "reviewed") &&
-			source.topicRelevant !== false
-		) {
-			return true;
+		if (source.citedAt || source.status === "cited") {
+			return isAcceptedReviewedResearchSource(source);
 		}
-		if (source.topicRelevant === false && explainsResearchLimitation(source)) {
+		if (isAcceptedReviewedResearchSource(source)) return true;
+		if (
+			source.reviewedAt &&
+			(source.rejectedReason || source.topicRelevant === false) &&
+			explainsResearchLimitation(source)
+		) {
 			return true;
 		}
 		return false;
@@ -224,14 +241,19 @@ export async function markResearchSourceReviewed(
 			rejectedReason: null,
 			topicRelevant: normalizeNullableBoolean(input.topicRelevant),
 			topicRelevanceReason: normalizeNullableText(input.topicRelevanceReason),
-			supportedKeyQuestionsJson: JSON.stringify(input.supportedKeyQuestions ?? []),
+			supportedKeyQuestionsJson: JSON.stringify(
+				input.supportedKeyQuestions ?? [],
+			),
 			comparedEntity: normalizeNullableText(input.comparedEntity),
 			comparisonAxis: normalizeNullableText(input.comparisonAxis),
 			extractedClaimsJson: JSON.stringify(input.extractedClaims ?? []),
 			sourceQualitySignalsJson: stringifySourceQualitySignals(
 				input.sourceQualitySignals,
 			),
-			openedContentLength: Math.max(0, Math.floor(input.openedContentLength ?? 0)),
+			openedContentLength: Math.max(
+				0,
+				Math.floor(input.openedContentLength ?? 0),
+			),
 			updatedAt: reviewedAt,
 		})
 		.where(eq(deepResearchSources.id, existing.id))
@@ -269,14 +291,19 @@ export async function markResearchSourceRejected(
 			relevanceScore: normalizeNullableScore(input.relevanceScore),
 			topicRelevant: normalizeNullableBoolean(input.topicRelevant),
 			topicRelevanceReason: normalizeNullableText(input.topicRelevanceReason),
-			supportedKeyQuestionsJson: JSON.stringify(input.supportedKeyQuestions ?? []),
+			supportedKeyQuestionsJson: JSON.stringify(
+				input.supportedKeyQuestions ?? [],
+			),
 			comparedEntity: normalizeNullableText(input.comparedEntity),
 			comparisonAxis: normalizeNullableText(input.comparisonAxis),
 			extractedClaimsJson: JSON.stringify(input.extractedClaims ?? []),
 			sourceQualitySignalsJson: stringifySourceQualitySignals(
 				input.sourceQualitySignals,
 			),
-			openedContentLength: Math.max(0, Math.floor(input.openedContentLength ?? 0)),
+			openedContentLength: Math.max(
+				0,
+				Math.floor(input.openedContentLength ?? 0),
+			),
 			updatedAt: rejectedAt,
 		})
 		.where(eq(deepResearchSources.id, existing.id))
@@ -305,6 +332,9 @@ export async function markResearchSourceCited(
 	}
 	if (!existing.reviewedAt) {
 		throw new Error("Research source must be reviewed before citation");
+	}
+	if (!isAcceptedReviewedResearchSource(existing)) {
+		throw new Error("Research source must be accepted before citation");
 	}
 
 	const citedAt = input.citedAt ?? new Date();
@@ -407,12 +437,16 @@ function normalizeNullableBoolean(value: unknown): boolean | null {
 	return Boolean(value);
 }
 
-function normalizeNullableText(value: string | null | undefined): string | null {
+function normalizeNullableText(
+	value: string | null | undefined,
+): string | null {
 	const normalized = value?.replace(/\s+/g, " ").trim();
 	return normalized ? normalized : null;
 }
 
-function explainsResearchLimitation(source: ResearchSourceLedgerEntry): boolean {
+function explainsResearchLimitation(
+	source: ResearchSourceLedgerEntry,
+): boolean {
 	const text = [
 		source.rejectedReason,
 		source.topicRelevanceReason,

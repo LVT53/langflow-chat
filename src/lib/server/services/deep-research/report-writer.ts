@@ -1,10 +1,14 @@
 import type {
+	DeepResearchClaimEvidenceLink,
 	DeepResearchEvidenceNote,
 	DeepResearchSourceStatus,
 	DeepResearchSynthesisClaim,
 } from "$lib/types";
 import type { ResearchLanguage, ResearchPlan } from "./planning";
-import { buildDefaultResearchSourceLedger } from "./sources";
+import {
+	buildDefaultResearchSourceLedger,
+	isAcceptedReviewedResearchSource,
+} from "./sources";
 import type { SynthesisFinding, SynthesisNotes } from "./synthesis";
 
 export type ResearchReportSourceStatus = DeepResearchSourceStatus;
@@ -203,11 +207,28 @@ type ComparisonEvidenceCell = {
 	text: string;
 	cue: EvidenceConfidenceCueKind | null;
 };
+type LinkedComparisonEvidence = {
+	note: DeepResearchEvidenceNote;
+	claim: DeepResearchSynthesisClaim;
+	usefulLinks: DeepResearchClaimEvidenceLink[];
+	entity: string;
+	axis: string;
+	axisKey: string;
+};
+type ComparisonAxisGroup = {
+	key: string;
+	label: string;
+	sourceLabels: string[];
+	order: number;
+	evidenceCount: number;
+};
 
 export const MAX_REPORT_KEY_FINDINGS = 7;
 const MAX_EXECUTIVE_SUMMARY_FINDINGS = 3;
 const MAX_REPORT_TITLE_WORDS = 16;
 const MAX_EVIDENCE_LIMITATION_MEMO_REASONS = 5;
+const MAX_COMPARISON_MATRIX_AXES = 10;
+const MAX_COMPARISON_MATRIX_CELL_CLAIMS = 3;
 
 const reportLabels: Record<
 	ResearchLanguage,
@@ -662,9 +683,13 @@ export function writeEvidenceLimitationMemo(
 	const sourceLedgerSnapshotSources = selectSourceLedgerSnapshotSources(
 		input.sources ?? [],
 	);
+	const methodologyScope = reportLabels[researchLanguage].methodologyScope(
+		formatDepthLabel(input.plan.depth, researchLanguage),
+	);
 	const markdown = renderEvidenceLimitationMemoMarkdown({
 		title,
 		reviewedScope: input.reviewedScope,
+		methodologyScope,
 		limitations: visibleLimitations,
 		nextResearchDirection,
 		recoveryActions,
@@ -683,6 +708,18 @@ export function writeEvidenceLimitationMemo(
 		sourceLedgerSnapshotSources,
 		markdown,
 	};
+}
+
+export function isComparisonMatrixEntirelyNotEstablished(
+	matrix: StructuredResearchComparisonMatrix | null | undefined,
+): boolean {
+	if (!matrix || matrix.cells.length === 0) return false;
+	return matrix.cells.every(
+		(cell) =>
+			cell.claimIds.length === 0 ||
+			!normalizeText(cell.text) ||
+			isNotEstablishedMatrixCellText(cell.text),
+	);
 }
 
 export function renderAuditedResearchReportMarkdown(input: {
@@ -834,7 +871,9 @@ export function renderAuditedResearchReportMarkdown(input: {
 
 	if (
 		input.auditedReport.limitations.length > 0 &&
-		!input.reportDraft.reportBlocks.some((block) => block.kind === "limitations")
+		!input.reportDraft.reportBlocks.some(
+			(block) => block.kind === "limitations",
+		)
 	) {
 		lines.push(
 			`## ${labels.reportLimitations}`,
@@ -860,9 +899,14 @@ function auditedClaimsForSectionHeading(input: {
 		(section) => normalizeLabel(section.heading) === normalizedHeading,
 	);
 	if (exactSection) return exactSection.claims;
-	if (isAuditedComparisonSectionHeading(input.heading, input.researchLanguage)) {
+	if (
+		isAuditedComparisonSectionHeading(input.heading, input.researchLanguage)
+	) {
 		const comparisonSection = input.auditedReport.sections.find((section) =>
-			isAuditedComparisonSectionHeading(section.heading, input.researchLanguage),
+			isAuditedComparisonSectionHeading(
+				section.heading,
+				input.researchLanguage,
+			),
 		);
 		if (comparisonSection) return comparisonSection.claims;
 	}
@@ -877,7 +921,9 @@ function renderAuditedSectionClaimLines(input: {
 }): string[] {
 	const labels = reportLabels[input.researchLanguage];
 	if (input.claims.length === 0) return [`- ${labels.emptyBullet}`];
-	if (isAuditedComparisonSectionHeading(input.heading, input.researchLanguage)) {
+	if (
+		isAuditedComparisonSectionHeading(input.heading, input.researchLanguage)
+	) {
 		return [
 			`| # | ${labels.evidenceBackedPoint} |`,
 			"| --- | --- |",
@@ -905,7 +951,13 @@ function selectAuditedCitedSources(
 		(claim) => claim.citationSourceIds,
 	)) {
 		const source = sourceById.get(sourceId);
-		if (!source || seen.has(source.id)) continue;
+		if (
+			!source ||
+			seen.has(source.id) ||
+			!isAcceptedReviewedResearchSource(source)
+		) {
+			continue;
+		}
 		seen.add(source.id);
 		citedSources.push(source);
 	}
@@ -1349,16 +1401,21 @@ function buildSourceLedgerSnapshot(
 	const labels = reportLabels[researchLanguage];
 	const scopedSources = selectSourceLedgerSnapshotSources(sources);
 	const citedSources = scopedSources.filter(
-		(source) => source.status === "cited" || Boolean(source.citedAt),
+		(source) =>
+			isAcceptedReviewedResearchSource(source) &&
+			(source.status === "cited" || Boolean(source.citedAt)),
 	);
 	const reviewedSources = scopedSources.filter(
 		(source) =>
+			isAcceptedReviewedResearchSource(source) &&
 			source.status !== "cited" &&
-			!source.citedAt &&
-			source.topicRelevant !== false,
+			!source.citedAt,
 	);
 	const rejectedSources = scopedSources.filter(
-		(source) => source.topicRelevant === false,
+		(source) =>
+			source.reviewedAt &&
+			!isAcceptedReviewedResearchSource(source) &&
+			(source.rejectedReason || source.topicRelevant === false),
 	);
 
 	return [
@@ -1433,10 +1490,9 @@ function buildStructuredSectionsFromClaims(
 				body,
 				citationCandidates,
 			);
-			const references =
-				comparisonMatrix
-					? referencesFromComparisonMatrix(comparisonMatrix)
-					: citationBlocks.length > 0
+			const references = comparisonMatrix
+				? referencesFromComparisonMatrix(comparisonMatrix)
+				: citationBlocks.length > 0
 					? referencesFromStructuredTextBlocks(citationBlocks)
 					: fallbackReferences;
 			return {
@@ -1993,7 +2049,9 @@ function buildDecisionBriefComparisonMatrix(
 	if (matrix) return renderComparisonMatrix(matrix, researchLanguage);
 
 	return (input.synthesisClaims ?? [])
-		.filter((claim) => claim.status === "accepted" || claim.status === "limited")
+		.filter(
+			(claim) => claim.status === "accepted" || claim.status === "limited",
+		)
 		.map((claim) => `- ${normalizeText(claim.statement)}`)
 		.filter((line) => line !== "-")
 		.join("\n");
@@ -2004,74 +2062,51 @@ function buildStructuredComparisonMatrix(
 	researchLanguage: ResearchLanguage,
 ): StructuredResearchComparisonMatrix | null {
 	const labels = reportLabels[researchLanguage];
-	const evidenceById = new Map(
-		(input.evidenceNotes ?? []).map((note) => [note.id, note]),
+	const linkedComparisonEvidence = buildLinkedComparisonEvidence(input);
+	const entities = buildComparisonMatrixEntities(
+		input.plan.comparedEntities ?? [],
+		linkedComparisonEvidence,
 	);
-	const claimByEvidenceId = new Map<string, DeepResearchSynthesisClaim>();
-	for (const claim of input.synthesisClaims ?? []) {
-		if (claim.status !== "accepted" && claim.status !== "limited") continue;
-		for (const link of claim.evidenceLinks) {
-			if (!["support", "qualification"].includes(link.relation)) continue;
-			claimByEvidenceId.set(link.evidenceNoteId, claim);
-		}
-	}
-	const linkedComparisonNotes = (input.evidenceNotes ?? []).filter((note) =>
-		claimByEvidenceId.has(note.id),
+	const axisGroups = buildComparisonMatrixAxisGroups(
+		input.plan.comparisonAxes ?? [],
+		linkedComparisonEvidence,
 	);
-	const entities = uniqueValues(
-		(input.plan.comparedEntities?.length
-			? input.plan.comparedEntities
-			: linkedComparisonNotes.map((note) => note.comparedEntity ?? "")
-		)
-			.map(normalizeText)
-			.filter(Boolean),
-	);
-	const axes = uniqueValues(
-		(input.plan.comparisonAxes?.length
-			? input.plan.comparisonAxes
-			: linkedComparisonNotes.map((note) => note.comparisonAxis ?? "")
-		)
-			.map(normalizeText)
-			.filter(Boolean),
-	);
-	if (entities.length === 0 || axes.length === 0) {
+	if (entities.length === 0 || axisGroups.length === 0) {
 		return null;
 	}
 
-	const matrixAxes: StructuredResearchComparisonMatrixAxis[] = axes.map(
-		(axis) => {
-			const filledCellCount = entities.filter((entity) => {
-			const note = findComparisonEvidenceNote(
-				evidenceById,
-				entity,
-				axis,
-				claimByEvidenceId,
-			);
-			const claim = note ? claimByEvidenceId.get(note.id) : undefined;
-				return Boolean(claim && normalizeText(claim.statement));
-			}).length;
+	const matrixAxes: StructuredResearchComparisonMatrixAxis[] = axisGroups.map(
+		(axisGroup) => {
+			const filledCellCount = entities.filter(
+				(entity) =>
+					findComparisonEvidenceForCell(
+						linkedComparisonEvidence,
+						entity,
+						axisGroup.key,
+					).length > 0,
+			).length;
 			return {
-				label: axis,
-				decisionMeaning: labels.decisionMeaningBody(axis, filledCellCount),
+				label: axisGroup.label,
+				decisionMeaning: labels.decisionMeaningBody(
+					axisGroup.label,
+					filledCellCount,
+				),
 			};
 		},
 	);
-	const cells = matrixAxes.flatMap((axis) =>
+	const cells = axisGroups.flatMap((axisGroup, index) =>
 		entities.map((entity) => {
-			const note = findComparisonEvidenceNote(
-				evidenceById,
+			const linkedEvidence = findComparisonEvidenceForCell(
+				linkedComparisonEvidence,
 				entity,
-				axis.label,
-				claimByEvidenceId,
+				axisGroup.key,
 			);
-			const claim = note ? claimByEvidenceId.get(note.id) : undefined;
 			return buildComparisonEvidenceCell(
 				entity,
-				axis.label,
-				claim ? note : null,
-				claim,
+				matrixAxes[index].label,
+				linkedEvidence,
 				labels.notEstablished,
-				axis.decisionMeaning,
+				matrixAxes[index].decisionMeaning,
 			);
 		}),
 	);
@@ -2141,39 +2176,119 @@ function referencesFromComparisonMatrix(
 	};
 }
 
-function findComparisonEvidenceNote(
-	evidenceById: Map<string, DeepResearchEvidenceNote>,
-	entity: string,
-	axis: string,
-	claimByEvidenceId?: Map<string, DeepResearchSynthesisClaim>,
-): DeepResearchEvidenceNote | null {
-	const normalizedEntity = normalizeComparisonKey(entity);
-	const normalizedAxis = normalizeComparisonKey(axis);
-	const candidates: DeepResearchEvidenceNote[] = [];
-	for (const note of evidenceById.values()) {
-		if (
-			normalizeComparisonKey(note.comparedEntity ?? "") === normalizedEntity &&
-			normalizeComparisonKey(note.comparisonAxis ?? "") === normalizedAxis
-		) {
-			candidates.push(note);
+function buildLinkedComparisonEvidence(
+	input: WriteResearchReportInput,
+): LinkedComparisonEvidence[] {
+	const evidenceById = new Map(
+		(input.evidenceNotes ?? []).map((note) => [note.id, note]),
+	);
+	const linkedEvidence: LinkedComparisonEvidence[] = [];
+	for (const claim of input.synthesisClaims ?? []) {
+		if (claim.status !== "accepted" && claim.status !== "limited") continue;
+		const usefulLinks = claim.evidenceLinks.filter((link) =>
+			["support", "qualification"].includes(link.relation),
+		);
+		for (const link of usefulLinks) {
+			const note = evidenceById.get(link.evidenceNoteId);
+			if (!note) continue;
+			const entity = normalizeText(note.comparedEntity ?? "");
+			const axis = normalizeText(note.comparisonAxis ?? "");
+			if (!entity || !axis) continue;
+			linkedEvidence.push({
+				note,
+				claim,
+				usefulLinks: usefulLinks.filter(
+					(item) => item.evidenceNoteId === note.id,
+				),
+				entity,
+				axis,
+				axisKey: comparisonAxisKey(axis),
+			});
 		}
 	}
-	return (
-		candidates.find((note) => claimByEvidenceId?.has(note.id)) ??
-		candidates[0] ??
-		null
+	return linkedEvidence;
+}
+
+function buildComparisonMatrixEntities(
+	plannedEntities: string[],
+	linkedEvidence: LinkedComparisonEvidence[],
+): string[] {
+	const evidenceEntities = uniqueComparisonLabels(
+		linkedEvidence.map((item) => item.entity),
+	);
+	if (evidenceEntities.length === 0) return [];
+	const planned = uniqueComparisonLabels(plannedEntities);
+	if (planned.length === 0) return evidenceEntities;
+
+	const validatedPlanned = planned.filter((entity) =>
+		evidenceEntities.some((evidenceEntity) =>
+			comparisonLabelsMatch(entity, evidenceEntity),
+		),
+	);
+	const evidenceNotRepresented = evidenceEntities.filter(
+		(evidenceEntity) =>
+			!validatedPlanned.some((entity) =>
+				comparisonLabelsMatch(entity, evidenceEntity),
+			),
+	);
+	return [...validatedPlanned, ...evidenceNotRepresented];
+}
+
+function buildComparisonMatrixAxisGroups(
+	plannedAxes: string[],
+	linkedEvidence: LinkedComparisonEvidence[],
+): ComparisonAxisGroup[] {
+	const groups = new Map<string, ComparisonAxisGroup>();
+	let order = 0;
+	const addAxis = (label: string, evidenceCount: number) => {
+		const normalizedLabel = normalizeText(label);
+		if (!normalizedLabel) return;
+		const key = comparisonAxisKey(normalizedLabel);
+		const existing = groups.get(key);
+		if (existing) {
+			existing.sourceLabels.push(normalizedLabel);
+			existing.evidenceCount += evidenceCount;
+			existing.label = comparisonAxisDisplayLabel(key, existing.sourceLabels);
+			return;
+		}
+		const sourceLabels = [normalizedLabel];
+		groups.set(key, {
+			key,
+			label: comparisonAxisDisplayLabel(key, sourceLabels),
+			sourceLabels,
+			order: order++,
+			evidenceCount,
+		});
+	};
+
+	for (const axis of plannedAxes) addAxis(axis, 0);
+	for (const item of linkedEvidence) addAxis(item.axis, 1);
+
+	return [...groups.values()]
+		.filter((group) => group.evidenceCount > 0)
+		.sort((left, right) => left.order - right.order)
+		.slice(0, MAX_COMPARISON_MATRIX_AXES);
+}
+
+function findComparisonEvidenceForCell(
+	linkedEvidence: LinkedComparisonEvidence[],
+	entity: string,
+	axisKey: string,
+): LinkedComparisonEvidence[] {
+	return linkedEvidence.filter(
+		(item) =>
+			item.axisKey === axisKey && comparisonLabelsMatch(entity, item.entity),
 	);
 }
 
 function buildComparisonEvidenceCell(
 	entity: string,
 	axis: string,
-	note: DeepResearchEvidenceNote | null,
-	claim: DeepResearchSynthesisClaim | undefined,
+	linkedEvidence: LinkedComparisonEvidence[],
 	notEstablishedLabel: string,
 	decisionMeaning = "",
 ): StructuredResearchComparisonMatrixCell {
-	if (!note) {
+	if (linkedEvidence.length === 0) {
 		return {
 			entity,
 			axis,
@@ -2185,8 +2300,25 @@ function buildComparisonEvidenceCell(
 			sourceIds: [],
 		};
 	}
-	const text = normalizeText(claim?.statement ?? note.findingText);
-	if (!text) {
+	const cellBlocks = dedupeStructuredTextBlocks(
+		linkedEvidence
+			.map((item) => {
+				const text = normalizeText(
+					item.claim.statement || item.note.findingText,
+				);
+				if (!text) return null;
+				return {
+					text,
+					claimIds: [item.claim.id],
+					evidenceLinkIds: item.usefulLinks.map((link) => link.id),
+					sourceIds: sourceIdsFromEvidenceNote(item.note),
+				};
+			})
+			.filter((block): block is StructuredResearchReportTextBlock =>
+				Boolean(block),
+			),
+	).slice(0, MAX_COMPARISON_MATRIX_CELL_CLAIMS);
+	if (cellBlocks.length === 0) {
 		return {
 			entity,
 			axis,
@@ -2198,22 +2330,18 @@ function buildComparisonEvidenceCell(
 			sourceIds: [],
 		};
 	}
-	const usefulLinks =
-		claim?.evidenceLinks.filter(
-			(link) =>
-				link.evidenceNoteId === note.id &&
-				["support", "qualification"].includes(link.relation),
-		) ?? [];
-	const cue = selectEvidenceConfidenceCue(note, claim);
+	const cue = selectDominantEvidenceConfidenceCue(linkedEvidence);
 	return {
 		entity,
 		axis,
-		text,
+		text: cellBlocks.map((block) => block.text).join(" "),
 		confidenceCue: cue,
 		decisionMeaning,
-		claimIds: claim ? [claim.id] : [],
-		evidenceLinkIds: usefulLinks.map((link) => link.id),
-		sourceIds: sourceIdsFromEvidenceNote(note),
+		claimIds: uniqueValues(cellBlocks.flatMap((block) => block.claimIds)),
+		evidenceLinkIds: uniqueValues(
+			cellBlocks.flatMap((block) => block.evidenceLinkIds),
+		),
+		sourceIds: uniqueValues(cellBlocks.flatMap((block) => block.sourceIds)),
 	};
 }
 
@@ -2227,26 +2355,47 @@ function renderComparisonMatrixCell(input: {
 	if (!cell || !normalizeText(cell.text) || cell.claimIds.length === 0) {
 		return { text: input.notEstablishedLabel, cue: null };
 	}
-	const auditedClaim = input.auditedClaimById
-		? cell.claimIds.map((claimId) => input.auditedClaimById?.get(claimId)).find(Boolean)
-		: null;
-	if (input.auditedClaimById && !auditedClaim) {
+	const auditedClaims = input.auditedClaimById
+		? cell.claimIds
+				.map((claimId) => input.auditedClaimById?.get(claimId))
+				.filter((claim): claim is AuditedResearchReportClaim => Boolean(claim))
+		: [];
+	if (input.auditedClaimById && auditedClaims.length === 0) {
 		return { text: input.notEstablishedLabel, cue: null };
 	}
-	const text = normalizeText(auditedClaim?.text ?? cell.text);
+	const text = input.auditedClaimById
+		? auditedClaims
+				.map((claim) => {
+					const claimText = normalizeText(claim.text);
+					if (!claimText) return "";
+					return `${claimText}${formatCitationSuffixFromSourceIds(
+						claim.citationSourceIds,
+						input.sourceById,
+					)}`;
+				})
+				.filter(Boolean)
+				.join(" ")
+		: normalizeText(cell.text);
 	if (!text || text === input.notEstablishedLabel) {
 		return { text: input.notEstablishedLabel, cue: null };
 	}
-	const citationSourceIds = auditedClaim?.citationSourceIds ?? cell.sourceIds;
-	const citationSuffix = formatCitationSuffixFromSourceIds(
-		citationSourceIds,
-		input.sourceById,
-	);
-	const cueLabel = cell.confidenceCue ? confidenceCueLabel(cell.confidenceCue) : "";
+	const citationSuffix = input.auditedClaimById
+		? ""
+		: formatCitationSuffixFromSourceIds(cell.sourceIds, input.sourceById);
+	const cueLabel = cell.confidenceCue
+		? confidenceCueLabel(cell.confidenceCue)
+		: "";
 	return {
 		text: `${cueLabel ? `${cueLabel} ` : ""}${text}${citationSuffix}`,
 		cue: cell.confidenceCue,
 	};
+}
+
+function isNotEstablishedMatrixCellText(value: string): boolean {
+	const normalized = normalizeComparisonKey(value);
+	return Object.values(reportLabels).some(
+		(labels) => normalizeComparisonKey(labels.notEstablished) === normalized,
+	);
 }
 
 function formatCitationSuffixFromSourceIds(
@@ -2268,7 +2417,8 @@ function buildSourceLookup(
 	const sourceById = new Map<string, CitedResearchReportSource>();
 	for (const source of sources) {
 		sourceById.set(source.id, source);
-		if (source.reviewedSourceId) sourceById.set(source.reviewedSourceId, source);
+		if (source.reviewedSourceId)
+			sourceById.set(source.reviewedSourceId, source);
 	}
 	return sourceById;
 }
@@ -2315,6 +2465,23 @@ function selectEvidenceConfidenceCue(
 		return "vendor_claim";
 	}
 	return null;
+}
+
+function selectDominantEvidenceConfidenceCue(
+	linkedEvidence: LinkedComparisonEvidence[],
+): EvidenceConfidenceCueKind | null {
+	const cuePriority: EvidenceConfidenceCueKind[] = [
+		"dated_price",
+		"official_spec",
+		"vendor_claim",
+		"owner_report",
+	];
+	const cues = new Set(
+		linkedEvidence
+			.map((item) => selectEvidenceConfidenceCue(item.note, item.claim))
+			.filter((cue): cue is EvidenceConfidenceCueKind => Boolean(cue)),
+	);
+	return cuePriority.find((cue) => cues.has(cue)) ?? null;
 }
 
 function confidenceCueLabel(cue: EvidenceConfidenceCueKind): string {
@@ -2377,6 +2544,140 @@ function normalizeComparisonKey(value: string): string {
 		.replace(/\p{Diacritic}/gu, "")
 		.replace(/[^a-z0-9]+/g, " ")
 		.trim();
+}
+
+function comparisonAxisKey(value: string): string {
+	const normalized = normalizeComparisonKey(value);
+	const hasMotor = /\b(motor|drive unit|driveunit|torque)\b/.test(normalized);
+	const hasBattery = /\b(battery|batteries|wh|watt hour|watt hours)\b/.test(
+		normalized,
+	);
+	if (
+		/\b(price|pricing|cost|costs|msrp|eur|euro|usd|gbp|discount)\b/.test(
+			normalized,
+		)
+	) {
+		return "price";
+	}
+	if (
+		/\b(availability|available|stock|in stock|out of stock|backorder|delivery|regional)\b/.test(
+			normalized,
+		)
+	) {
+		return "availability_stock";
+	}
+	if (hasMotor && hasBattery) return "motor_battery";
+	if (hasMotor) return "motor";
+	if (hasBattery) return "battery";
+	if (/\b(weight|weighs|kg|kilogram|kilograms)\b/.test(normalized)) {
+		return "weight";
+	}
+	if (
+		/\b(drivetrain|drive train|groupset|derailleur|cassette|chain)\b/.test(
+			normalized,
+		)
+	) {
+		return "drivetrain";
+	}
+	if (
+		/\b(frame size|framesize|medium frame|small frame|large frame|size)\b/.test(
+			normalized,
+		)
+	) {
+		return "frame_size";
+	}
+	if (/\b(brake|brakes|disc|rotor|caliper)\b/.test(normalized)) {
+		return "brakes";
+	}
+	if (
+		/\b(geometry|reach|stack|head angle|seat angle|wheelbase)\b/.test(
+			normalized,
+		)
+	) {
+		return "geometry";
+	}
+	if (
+		/\b(accessory|accessories|rack|fender|mudguard|lights|kickstand)\b/.test(
+			normalized,
+		)
+	) {
+		return "accessories";
+	}
+	return normalized;
+}
+
+function comparisonAxisDisplayLabel(key: string, labels: string[]): string {
+	if (key === "availability_stock") return "Availability / stock status";
+	if (key === "frame_size") return "Frame size";
+	if (key === "price") {
+		const existing = labels.find((label) => /\bprice|pricing\b/i.test(label));
+		return existing ?? "Price";
+	}
+	const existing = labels.find((label) => normalizeText(label));
+	if (existing) return existing;
+	const knownLabels: Record<string, string> = {
+		motor_battery: "Motor and battery",
+		motor: "Motor",
+		battery: "Battery",
+		weight: "Weight",
+		drivetrain: "Drivetrain",
+		brakes: "Brakes",
+		geometry: "Geometry",
+		accessories: "Accessories",
+	};
+	return knownLabels[key] ?? key;
+}
+
+function uniqueComparisonLabels(values: string[]): string[] {
+	const labels: string[] = [];
+	for (const value of values.map(normalizeText).filter(Boolean)) {
+		if (
+			labels.some(
+				(label) =>
+					normalizeComparisonKey(label) === normalizeComparisonKey(value),
+			)
+		) {
+			continue;
+		}
+		labels.push(value);
+	}
+	return labels;
+}
+
+function comparisonLabelsMatch(left: string, right: string): boolean {
+	const normalizedLeft = normalizeComparisonKey(left);
+	const normalizedRight = normalizeComparisonKey(right);
+	if (!normalizedLeft || !normalizedRight) return false;
+	if (normalizedLeft === normalizedRight) return true;
+	const [shorter, longer] =
+		normalizedLeft.length <= normalizedRight.length
+			? [normalizedLeft, normalizedRight]
+			: [normalizedRight, normalizedLeft];
+	if (shorter.length >= 8 && longer.includes(shorter)) return true;
+	const shorterTokens = comparisonLabelTokens(shorter);
+	const longerTokens = new Set(comparisonLabelTokens(longer));
+	return (
+		shorterTokens.length >= 2 &&
+		shorterTokens.every((token) => longerTokens.has(token))
+	);
+}
+
+function comparisonLabelTokens(value: string): string[] {
+	const stopTokens = new Set([
+		"the",
+		"and",
+		"for",
+		"with",
+		"bike",
+		"bikes",
+		"model",
+		"year",
+		"size",
+		"frame",
+	]);
+	return normalizeComparisonKey(value)
+		.split(" ")
+		.filter((token) => token.length > 2 && !stopTokens.has(token));
 }
 
 function sectionHeadingsForIntent(
@@ -2460,6 +2761,7 @@ function buildEvidenceLimitationMemoRecoveryActions(
 function renderEvidenceLimitationMemoMarkdown(input: {
 	title: string;
 	reviewedScope: EvidenceLimitationMemoReviewedScope;
+	methodologyScope: string;
 	limitations: string[];
 	nextResearchDirection: string;
 	recoveryActions: EvidenceLimitationMemoRecoveryAction[];
@@ -2481,6 +2783,8 @@ function renderEvidenceLimitationMemoMarkdown(input: {
 		`| ${labels.reviewedSources} | ${input.reviewedScope.reviewedCount} |`,
 		`| ${labels.topicRelevantReviewedSources} | ${input.reviewedScope.topicRelevantCount} |`,
 		`| ${labels.rejectedOrOffTopicSources} | ${input.reviewedScope.rejectedOrOffTopicCount} |`,
+		"",
+		input.methodologyScope,
 		"",
 		`## ${labels.groundedLimitationReasons}`,
 		...limitationReasonLines,
@@ -2572,10 +2876,15 @@ function buildCitedSources(
 ): CitedResearchReportSource[] {
 	const sourcesByReviewedId = new Map(
 		sources
+			.filter(isAcceptedReviewedResearchSource)
 			.filter((source) => source.reviewedSourceId)
 			.map((source) => [source.reviewedSourceId, source]),
 	);
-	const sourcesById = new Map(sources.map((source) => [source.id, source]));
+	const sourcesById = new Map(
+		sources
+			.filter(isAcceptedReviewedResearchSource)
+			.map((source) => [source.id, source]),
+	);
 	const citedSources: CitedResearchReportSource[] = [];
 	const seenSourceIds = new Set<string>();
 
@@ -2583,14 +2892,9 @@ function buildCitedSources(
 		for (const sourceRef of finding.sourceRefs) {
 			const source =
 				sourcesByReviewedId.get(sourceRef.reviewedSourceId) ??
-				sourcesById.get(sourceRef.discoveredSourceId) ??
-				({
-					id: sourceRef.discoveredSourceId,
-					reviewedSourceId: sourceRef.reviewedSourceId,
-					status: "reviewed",
-					title: sourceRef.title,
-					url: sourceRef.canonicalUrl,
-				} satisfies ResearchReportSource);
+				sourcesById.get(sourceRef.discoveredSourceId);
+
+			if (!source) continue;
 
 			if (seenSourceIds.has(source.id)) {
 				continue;
@@ -2614,10 +2918,15 @@ function buildCitedSourcesFromStructuredReport(
 	const citedSourceIds = collectStructuredReportSourceIds(report);
 	const sourcesByReviewedId = new Map(
 		sources
+			.filter(isAcceptedReviewedResearchSource)
 			.filter((source) => source.reviewedSourceId)
 			.map((source) => [source.reviewedSourceId, source]),
 	);
-	const sourcesById = new Map(sources.map((source) => [source.id, source]));
+	const sourcesById = new Map(
+		sources
+			.filter(isAcceptedReviewedResearchSource)
+			.map((source) => [source.id, source]),
+	);
 	const citedSources: CitedResearchReportSource[] = [];
 	const seen = new Set<string>();
 	for (const sourceId of citedSourceIds) {
@@ -2892,7 +3201,11 @@ function buildStructuredReportSectionsForMarkdown(
 	return report.sections.map((section) => ({
 		heading: section.heading,
 		body: section.comparisonMatrix
-			? renderComparisonMatrix(section.comparisonMatrix, researchLanguage, citedSources)
+			? renderComparisonMatrix(
+					section.comparisonMatrix,
+					researchLanguage,
+					citedSources,
+				)
 			: section.body
 					.split("\n")
 					.map((line) => {

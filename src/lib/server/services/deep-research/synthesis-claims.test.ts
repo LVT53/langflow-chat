@@ -354,6 +354,8 @@ describe("deep research Synthesis Claims", () => {
 	it("persists claim type and centrality from Synthesis Notes", async () => {
 		const { upsertResearchPassCheckpoint } = await import("./pass-state");
 		const { saveDeepResearchEvidenceNotes } = await import("./evidence-notes");
+		const { markResearchSourceReviewed, saveDiscoveredResearchSource } =
+			await import("./sources");
 		const { saveDeepResearchSynthesisClaimsFromNotes } = await import(
 			"./synthesis-claims"
 		);
@@ -366,17 +368,39 @@ describe("deep research Synthesis Claims", () => {
 			searchIntent: "Initial approved-plan source review",
 			now: new Date("2026-05-05T10:10:00.000Z"),
 		});
+		const discoveredSource = await saveDiscoveredResearchSource({
+			userId: "user-1",
+			jobId: "job-1",
+			conversationId: "conversation-1",
+			url: "https://vendor.example.com/model-x/specs",
+			title: "Model X official specifications",
+			provider: "public_web",
+			discoveredAt: new Date("2026-05-05T10:10:30.000Z"),
+		});
+		const reviewedSource = await markResearchSourceReviewed({
+			userId: "user-1",
+			sourceId: discoveredSource.id,
+			reviewedAt: new Date("2026-05-05T10:10:45.000Z"),
+			reviewedNote:
+				"Model X officially includes 16 GB memory and 1 TB storage.",
+			topicRelevant: true,
+			supportedKeyQuestions: ["What are Model X official specifications?"],
+			extractedClaims: [
+				"Model X officially includes 16 GB memory and 1 TB storage.",
+			],
+		});
 		const [evidenceNote] = await saveDeepResearchEvidenceNotes({
 			userId: "user-1",
 			jobId: "job-1",
 			conversationId: "conversation-1",
 			passCheckpointId: checkpoint.id,
+			sourceId: reviewedSource.id,
 			notes: [
 				{
 					findingText:
 						"Model X officially includes 16 GB memory and 1 TB storage.",
 					supportedKeyQuestion: "What are Model X official specifications?",
-					sourceSupport: { sourceIds: ["reviewed-specs"] },
+					sourceSupport: { sourceId: reviewedSource.id },
 				},
 			],
 			now: new Date("2026-05-05T10:11:00.000Z"),
@@ -399,8 +423,8 @@ describe("deep research Synthesis Claims", () => {
 							"Model X officially includes 16 GB memory and 1 TB storage.",
 						sourceRefs: [
 							{
-								reviewedSourceId: "reviewed-specs",
-								discoveredSourceId: "source-specs",
+								reviewedSourceId: reviewedSource.id,
+								discoveredSourceId: reviewedSource.id,
 								canonicalUrl: "https://vendor.example.com/model-x/specs",
 								title: "Model X official specifications",
 							},

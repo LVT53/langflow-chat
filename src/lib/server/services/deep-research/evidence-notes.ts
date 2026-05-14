@@ -16,6 +16,7 @@ import {
 	normalizeSourceQualitySignals,
 	parseSourceQualitySignals,
 } from "./source-quality";
+import { isAcceptedReviewedResearchSource } from "./sources";
 
 type DeepResearchEvidenceNoteRow =
 	typeof deepResearchEvidenceNotes.$inferSelect;
@@ -72,10 +73,30 @@ export async function saveDeepResearchEvidenceNotes(
 	if (normalizedNotes.length === 0) return [];
 
 	const { db } = await import("$lib/server/db");
+	const acceptedSourceIds = await acceptedReviewedSourceIdsForEvidence({
+		userId: input.userId,
+		jobId: input.jobId,
+		sourceIds: uniqueValues([
+			input.sourceId,
+			...normalizedNotes.flatMap((note) =>
+				sourceIdsFromEvidenceSourceSupport(note.sourceSupport),
+			),
+		]),
+	});
+	if (input.sourceId && !acceptedSourceIds.has(input.sourceId)) return [];
+	const sourceEligibleNotes = normalizedNotes.filter((note) => {
+		const noteSourceIds = uniqueValues([
+			input.sourceId,
+			...sourceIdsFromEvidenceSourceSupport(note.sourceSupport),
+		]);
+		return noteSourceIds.every((sourceId) => acceptedSourceIds.has(sourceId));
+	});
+	if (sourceEligibleNotes.length === 0) return [];
+
 	const now = input.now ?? new Date();
 	const rows: DeepResearchEvidenceNoteRow[] = [];
 	for (const noteChunk of chunkArray(
-		normalizedNotes,
+		sourceEligibleNotes,
 		SQLITE_SAFE_INSERT_CHUNK_SIZE,
 	)) {
 		const insertedRows = await db
@@ -144,7 +165,12 @@ export async function saveResearchTaskEvidenceNotes(input: {
 	const validSourceRows =
 		sourceIds.length > 0
 			? await db
-					.select({ id: deepResearchSources.id })
+					.select({
+						id: deepResearchSources.id,
+						reviewedAt: deepResearchSources.reviewedAt,
+						rejectedReason: deepResearchSources.rejectedReason,
+						topicRelevant: deepResearchSources.topicRelevant,
+					})
 					.from(deepResearchSources)
 					.where(
 						and(
@@ -154,7 +180,10 @@ export async function saveResearchTaskEvidenceNotes(input: {
 						),
 					)
 			: [];
-	const validSourceIds = validSourceRows.map((row) => row.id);
+	const validSourceIds = validSourceRows
+		.filter(isAcceptedReviewedResearchSource)
+		.map((row) => row.id);
+	if (sourceIds.length > 0 && validSourceIds.length === 0) return [];
 	const findings = [
 		input.output.summary,
 		...(input.output.findings ?? []),
@@ -349,6 +378,48 @@ function normalizeOptionalText(
 
 function normalizeStringList(values: string[]): string[] {
 	return values.map(normalizeText).filter(Boolean);
+}
+
+async function acceptedReviewedSourceIdsForEvidence(input: {
+	userId: string;
+	jobId: string;
+	sourceIds: Array<string | null | undefined>;
+}): Promise<Set<string>> {
+	const sourceIds = uniqueValues(input.sourceIds);
+	if (sourceIds.length === 0) return new Set();
+	const { db } = await import("$lib/server/db");
+	const rows = await db
+		.select({
+			id: deepResearchSources.id,
+			reviewedAt: deepResearchSources.reviewedAt,
+			rejectedReason: deepResearchSources.rejectedReason,
+			topicRelevant: deepResearchSources.topicRelevant,
+		})
+		.from(deepResearchSources)
+		.where(
+			and(
+				eq(deepResearchSources.userId, input.userId),
+				eq(deepResearchSources.jobId, input.jobId),
+				inArray(deepResearchSources.id, sourceIds),
+			),
+		);
+	return new Set(
+		rows.filter(isAcceptedReviewedResearchSource).map((row) => row.id),
+	);
+}
+
+function sourceIdsFromEvidenceSourceSupport(
+	sourceSupport: Record<string, unknown>,
+): string[] {
+	return [
+		sourceSupport.sourceId,
+		sourceSupport.reviewedSourceId,
+		...(Array.isArray(sourceSupport.sourceIds) ? sourceSupport.sourceIds : []),
+	].filter((value): value is string => typeof value === "string" && value);
+}
+
+function uniqueValues<T>(values: Array<T | null | undefined>): T[] {
+	return [...new Set(values.filter((value): value is T => value != null))];
 }
 
 function parseObject(value: string): Record<string, unknown> {

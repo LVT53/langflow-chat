@@ -219,6 +219,58 @@ describe("Deep Research citation audit", () => {
 		);
 	});
 
+	it("turns claims that cite rejected or off-topic sources into visible limitations", async () => {
+		const result = await auditDeepResearchReportCitations({
+			jobId: "job-rejected-source",
+			report: {
+				title: "Cube buying report",
+				sections: [
+					{
+						heading: "Findings",
+						claims: [
+							{
+								id: "claim-off-topic-source",
+								text: "Cube buyers should choose based on Volkswagen EV discounts.",
+								core: true,
+								citationSourceIds: ["source-off-topic-cited"],
+							},
+						],
+					},
+				],
+				limitations: [],
+			},
+			citedSources: [
+				{
+					id: "source-off-topic-cited",
+					status: "cited",
+					title: "Volkswagen EV prices",
+					url: "https://cars.example.test/volkswagen-ev-prices",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
+					reviewedNote:
+						"Volkswagen EV discounts changed buyer economics in Hungary.",
+					rejectedReason:
+						"Rejected because the source is off-topic for the approved Research Plan.",
+					topicRelevant: false,
+				},
+			],
+		});
+
+		expect(result.status).toBe("failed");
+		expect(result.canComplete).toBe(false);
+		expect(result.auditedReport.sections[0].claims).toEqual([]);
+		expect(result.limitations).toContain(
+			"Removed claim because it cited sources that were not both reviewed and cited: Cube buyers should choose based on Volkswagen EV discounts.",
+		);
+		expect(result.findings).toContainEqual(
+			expect.objectContaining({
+				claimId: "claim-off-topic-source",
+				status: "unsupported_source",
+				sourceIds: ["source-off-topic-cited"],
+			}),
+		);
+	});
+
 	it("removes unsupported core claims and completes with limitations when useful support remains", async () => {
 		const result = await auditDeepResearchReportCitations({
 			jobId: "job-1",
@@ -387,9 +439,9 @@ describe("Deep Research citation audit", () => {
 		});
 
 		expect(result.status).toBe("completed_with_limitations");
-		expect(result.auditedReport.sections[0].claims.map((claim) => claim.id)).toEqual([
-			"claim-specs",
-		]);
+		expect(
+			result.auditedReport.sections[0].claims.map((claim) => claim.id),
+		).toEqual(["claim-specs"]);
 		expect(result.findings).toContainEqual(
 			expect.objectContaining({
 				claimId: "claim-reliability",
@@ -595,8 +647,7 @@ describe("Deep Research citation audit", () => {
 					url: "https://health.gov.example/migraine",
 					reviewedAt: "2026-05-05T12:00:00.000Z",
 					citedAt: "2026-05-05T12:10:00.000Z",
-					reviewedNote:
-						"Clinical treatment Alpha reduces migraine symptoms.",
+					reviewedNote: "Clinical treatment Alpha reduces migraine symptoms.",
 					extractedClaims: [
 						"Clinical treatment Alpha reduces migraine symptoms.",
 					],

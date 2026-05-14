@@ -717,6 +717,8 @@ describe("Deep Research report readability regression fixtures", () => {
 					id: `source-title-${index + 1}`,
 					reviewedSourceId: finding.sourceRefs[0].reviewedSourceId,
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: finding.statement,
 					url: finding.sourceRefs[0].canonicalUrl,
 				})),

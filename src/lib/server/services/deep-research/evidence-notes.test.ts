@@ -56,7 +56,8 @@ async function seedDeepResearchJob() {
 			title: "EU AI training data guidance",
 			provider: "web",
 			snippet: "EU guidance on copyright exceptions for AI training data.",
-			reviewedNote: "EU text-and-data mining exceptions require rights-reservation checks.",
+			reviewedNote:
+				"EU text-and-data mining exceptions require rights-reservation checks.",
 			relevanceScore: 90,
 			topicRelevant: true,
 			supportedKeyQuestionsJson: JSON.stringify([
@@ -98,16 +99,11 @@ describe("deep research Evidence Notes", () => {
 	});
 
 	it("rehydrates durable Evidence Notes across multiple Iterative Research Passes", async () => {
-		const {
-			completeResearchPassCheckpoint,
-			upsertResearchPassCheckpoint,
-		} = await import("./pass-state");
+		const { completeResearchPassCheckpoint, upsertResearchPassCheckpoint } =
+			await import("./pass-state");
 		const { completeResearchTask, createResearchTasksFromCoverageGaps } =
 			await import("./tasks");
-		const {
-			listDeepResearchEvidenceNotes,
-			saveDeepResearchEvidenceNotes,
-		} = await import("./evidence-notes");
+		const { saveDeepResearchEvidenceNotes } = await import("./evidence-notes");
 
 		const passOne = await upsertResearchPassCheckpoint({
 			userId: "user-1",
@@ -178,7 +174,9 @@ describe("deep research Evidence Notes", () => {
 			taskId: task.id,
 			output: {
 				summary: "US litigation remains unsettled across several cases.",
-				findings: ["Several US copyright training-data cases remain unresolved."],
+				findings: [
+					"Several US copyright training-data cases remain unresolved.",
+				],
 				sourceIds: ["source-eu"],
 				comparedEntity: "United States",
 				comparisonAxis: "litigation status",
@@ -224,29 +222,29 @@ describe("deep research Evidence Notes", () => {
 		);
 		expect(rehydrated).toEqual(
 			expect.arrayContaining([
-			expect.objectContaining({
-				jobId: "job-1",
-				conversationId: "conversation-1",
-				userId: "user-1",
-				passCheckpointId: passTwo.id,
-				passNumber: 2,
-				sourceId: "source-eu",
-				taskId: task.id,
-				supportedKeyQuestion: "Which US litigation is still unresolved?",
-				comparedEntity: "United States",
-				comparisonAxis: "litigation status",
-				findingText: "US litigation remains unsettled across several cases.",
-				sourceSupport: expect.objectContaining({
-					sourceIds: ["source-eu"],
+				expect.objectContaining({
+					jobId: "job-1",
+					conversationId: "conversation-1",
+					userId: "user-1",
+					passCheckpointId: passTwo.id,
+					passNumber: 2,
+					sourceId: "source-eu",
+					taskId: task.id,
+					supportedKeyQuestion: "Which US litigation is still unresolved?",
+					comparedEntity: "United States",
+					comparisonAxis: "litigation status",
+					findingText: "US litigation remains unsettled across several cases.",
+					sourceSupport: expect.objectContaining({
+						sourceIds: ["source-eu"],
+					}),
 				}),
-			}),
-			expect.objectContaining({
-				passCheckpointId: passTwo.id,
-				passNumber: 2,
-				taskId: task.id,
-				findingText:
-					"Several US copyright training-data cases remain unresolved.",
-			}),
+				expect.objectContaining({
+					passCheckpointId: passTwo.id,
+					passNumber: 2,
+					taskId: task.id,
+					findingText:
+						"Several US copyright training-data cases remain unresolved.",
+				}),
 			]),
 		);
 		expect(new Set(rehydrated.map((note) => note.id)).size).toBe(3);
@@ -254,10 +252,8 @@ describe("deep research Evidence Notes", () => {
 
 	it("allows the same source to have different Source Quality Signals per Evidence Note", async () => {
 		const { upsertResearchPassCheckpoint } = await import("./pass-state");
-		const {
-			listDeepResearchEvidenceNotes,
-			saveDeepResearchEvidenceNotes,
-		} = await import("./evidence-notes");
+		const { listDeepResearchEvidenceNotes, saveDeepResearchEvidenceNotes } =
+			await import("./evidence-notes");
 
 		const checkpoint = await upsertResearchPassCheckpoint({
 			userId: "user-1",
@@ -277,7 +273,8 @@ describe("deep research Evidence Notes", () => {
 			sourceId: "source-eu",
 			notes: [
 				{
-					findingText: "The vendor page directly states the official memory specification.",
+					findingText:
+						"The vendor page directly states the official memory specification.",
 					supportedKeyQuestion: "What are the official specifications?",
 					sourceQualitySignals: {
 						sourceType: "official_vendor",
@@ -289,7 +286,8 @@ describe("deep research Evidence Notes", () => {
 					},
 				},
 				{
-					findingText: "The vendor page does not independently prove long-term reliability.",
+					findingText:
+						"The vendor page does not independently prove long-term reliability.",
 					supportedKeyQuestion: "Is the product independently reliable?",
 					sourceQualitySignals: {
 						sourceType: "official_vendor",
@@ -336,6 +334,74 @@ describe("deep research Evidence Notes", () => {
 				}),
 			]),
 		);
+	});
+
+	it("does not create Evidence Notes for rejected or off-topic reviewed sources", async () => {
+		const { upsertResearchPassCheckpoint } = await import("./pass-state");
+		const { listDeepResearchEvidenceNotes, saveDeepResearchEvidenceNotes } =
+			await import("./evidence-notes");
+		const { saveDiscoveredResearchSource, markResearchSourceRejected } =
+			await import("./sources");
+
+		const discovered = await saveDiscoveredResearchSource({
+			userId: "user-1",
+			jobId: "job-1",
+			conversationId: "conversation-1",
+			url: "https://cars.example.test/volkswagen-ev-prices",
+			title: "Volkswagen EV prices in Hungary",
+			provider: "web",
+			sourceText:
+				"Volkswagen ID electric car prices, dealer discounts, and Hungarian EV market changes.",
+			discoveredAt: new Date("2026-05-05T10:10:00.000Z"),
+		});
+		const rejected = await markResearchSourceRejected({
+			userId: "user-1",
+			sourceId: discovered.id,
+			rejectedAt: new Date("2026-05-05T10:11:00.000Z"),
+			rejectedReason:
+				"Rejected because the source is off-topic for the approved Research Plan.",
+			relevanceScore: 95,
+			topicRelevant: false,
+			topicRelevanceReason:
+				"Source discusses Volkswagen EV prices, not AI copyright rules.",
+			extractedClaims: ["Volkswagen EV prices dropped in Hungary."],
+			openedContentLength: 860,
+		});
+		const checkpoint = await upsertResearchPassCheckpoint({
+			userId: "user-1",
+			jobId: "job-1",
+			conversationId: "conversation-1",
+			passNumber: 1,
+			searchIntent: "Initial approved-plan source review",
+			reviewedSourceIds: [rejected.id],
+			now: new Date("2026-05-05T10:12:00.000Z"),
+		});
+
+		const saved = await saveDeepResearchEvidenceNotes({
+			userId: "user-1",
+			jobId: "job-1",
+			conversationId: "conversation-1",
+			passCheckpointId: checkpoint.id,
+			sourceId: rejected.id,
+			notes: [
+				{
+					findingText: "Volkswagen EV prices dropped in Hungary.",
+					sourceSupport: {
+						sourceId: rejected.id,
+						url: rejected.url,
+						title: rejected.title,
+					},
+				},
+			],
+			now: new Date("2026-05-05T10:13:00.000Z"),
+		});
+		const notes = await listDeepResearchEvidenceNotes({
+			userId: "user-1",
+			jobId: "job-1",
+		});
+
+		expect(saved).toEqual([]);
+		expect(notes).toEqual([]);
 	});
 
 	it("writes durable Evidence Notes from source review outputs", async () => {
@@ -414,7 +480,7 @@ describe("deep research Evidence Notes", () => {
 								"EU text-and-data mining exceptions require rights-reservation checks.",
 							],
 							extractedText:
-								"EU guidance says rights reservations affect text-and-data mining exceptions.",
+								"EU AI copyright training data guidance says rights reservations affect text-and-data mining exceptions.",
 							relevanceScore: 95,
 							supportedKeyQuestions: [
 								"How does EU law treat AI training data?",

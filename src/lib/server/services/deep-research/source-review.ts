@@ -74,6 +74,14 @@ export type ReviewedResearchSourceNotes = {
 export type PersistedReviewedResearchSourceNotes =
 	ReviewedResearchSourceNotes & {
 		id: string;
+		reviewedAt: string;
+		createdAt: string;
+	};
+
+type PersistedReviewedResearchSourceNotesRecord =
+	ReviewedResearchSourceNotes & {
+		id: string;
+		reviewedAt?: string | null;
 		createdAt: string;
 	};
 
@@ -142,93 +150,101 @@ export async function triageAndReviewSources(
 		triage.selectedSources,
 		reviewConcurrency,
 		async (source) => {
-		const review = await dependencies.reviewer.reviewSource(source);
-		const extractedText = review.extractedText
-			? normalizeText(review.extractedText)
-			: null;
-		const sourceText = extractedText ?? source.sourceText ?? source.snippet ?? "";
-		const topicRelevance = evaluateTopicRelevance({
-			planGoal: input.planGoal,
-			keyQuestions: input.keyQuestions ?? [],
-			source,
-			sourceText,
-		});
-		const supportedKeyQuestions = normalizeSupportedKeyQuestions(
-			review.supportedKeyQuestions,
-			input.keyQuestions ?? [],
-			sourceText,
-		);
-		const keyFindings = normalizeTextList(review.keyFindings ?? []);
-		const relevanceScore = normalizeRelevanceScore(
-			review.relevanceScore,
-			{
+			const review = await dependencies.reviewer.reviewSource(source);
+			const extractedText = review.extractedText
+				? normalizeText(review.extractedText)
+				: null;
+			const sourceText =
+				extractedText ?? source.sourceText ?? source.snippet ?? "";
+			const topicRelevance = evaluateTopicRelevance({
+				planGoal: input.planGoal,
+				keyQuestions: input.keyQuestions ?? [],
+				source,
+				sourceText,
+			});
+			const supportedKeyQuestions = normalizeSupportedKeyQuestions(
+				review.supportedKeyQuestions,
+				input.keyQuestions ?? [],
+				sourceText,
+			);
+			const comparisonSupport = evaluateComparisonSupport({
+				source,
+				sourceText: [source.title, source.snippet, sourceText]
+					.filter(Boolean)
+					.join(" "),
+				reviewedComparedEntity: review.comparedEntity,
+				reviewedComparisonAxis: review.comparisonAxis,
+			});
+			const keyFindings = normalizeTextList(review.keyFindings ?? []);
+			const relevanceScore = normalizeRelevanceScore(review.relevanceScore, {
 				supportedKeyQuestions,
 				keyFindings,
 				sourceText,
 				title: source.title,
-			},
-		);
-		const rejectedReason =
-			normalizeRejectedReason(review.rejectedReason) ??
-			defaultRejectedReason({
-				relevanceScore,
-				supportedKeyQuestions,
-				source,
-				sourceText,
-				topicRelevance,
-				requiresKeyQuestionSupport: (input.keyQuestions ?? []).length > 0,
 			});
-		const sourceQualitySignals = evaluateSourceQualitySignals({
-			url: source.canonicalUrl,
-			title: source.title,
-			snippet: source.snippet,
-			sourceText,
-			keyFindings,
-			supportedKeyQuestions,
-			relevanceScore,
-		});
-		const sourceAuthoritySummary =
-			deriveSourceAuthoritySummary(sourceQualitySignals);
-		const notes = await dependencies.repository.saveReviewedSourceNotes({
-			jobId: input.jobId,
-			discoveredSourceId: source.id,
-			canonicalUrl: source.canonicalUrl,
-			title: source.title,
-			duplicateSourceIds: source.duplicateSourceIds,
-			authorityScore: source.authorityScore,
-			qualityScore: source.qualityScore,
-			reviewScore: source.reviewScore,
-			summary: normalizeText(review.summary),
-			keyFindings,
-			extractedText,
-			relevanceScore,
-			topicRelevant: topicRelevance.relevant,
-			topicRelevanceReason: buildTopicRelevanceReason(topicRelevance),
-			supportedKeyQuestions,
-			intendedComparedEntity: normalizeOptionalText(
-				source.intendedComparedEntity,
-			),
-			intendedComparisonAxis: normalizeOptionalText(
-				source.intendedComparisonAxis,
-			),
-			comparedEntity:
-				normalizeOptionalText(review.comparedEntity) ??
-				normalizeOptionalText(source.intendedComparedEntity),
-			comparisonAxis:
-				normalizeOptionalText(review.comparisonAxis) ??
-				normalizeOptionalText(source.intendedComparisonAxis),
-			extractedClaims: normalizeTextList(review.extractedClaims ?? keyFindings),
-			sourceQualitySignals,
-			sourceAuthoritySummary: sourceAuthoritySummary ?? {
-				label: "Weak source fit",
-				score: 0,
-				reasons: [],
-			},
-			rejectedReason,
-			openedContentLength: sourceText.length,
-		});
+			const rejectedReason =
+				normalizeRejectedReason(review.rejectedReason) ??
+				comparisonSupport.rejectedReason ??
+				defaultRejectedReason({
+					relevanceScore,
+					supportedKeyQuestions,
+					source,
+					sourceText,
+					topicRelevance,
+					requiresKeyQuestionSupport: (input.keyQuestions ?? []).length > 0,
+				});
+			const sourceQualitySignals = evaluateSourceQualitySignals({
+				url: source.canonicalUrl,
+				title: source.title,
+				snippet: source.snippet,
+				sourceText,
+				keyFindings,
+				supportedKeyQuestions,
+				relevanceScore,
+			});
+			const sourceAuthoritySummary =
+				deriveSourceAuthoritySummary(sourceQualitySignals);
+			const notes = normalizePersistedReviewedSourceNotes(
+				await dependencies.repository.saveReviewedSourceNotes({
+					jobId: input.jobId,
+					discoveredSourceId: source.id,
+					canonicalUrl: source.canonicalUrl,
+					title: source.title,
+					duplicateSourceIds: source.duplicateSourceIds,
+					authorityScore: source.authorityScore,
+					qualityScore: source.qualityScore,
+					reviewScore: source.reviewScore,
+					summary: normalizeText(review.summary),
+					keyFindings,
+					extractedText,
+					relevanceScore,
+					topicRelevant: topicRelevance.relevant,
+					topicRelevanceReason: buildTopicRelevanceReason(topicRelevance),
+					supportedKeyQuestions,
+					intendedComparedEntity: normalizeOptionalText(
+						source.intendedComparedEntity,
+					),
+					intendedComparisonAxis: normalizeOptionalText(
+						source.intendedComparisonAxis,
+					),
+					comparedEntity: comparisonSupport.comparedEntity,
+					comparisonAxis: comparisonSupport.comparisonAxis,
+					extractedClaims: normalizeTextList(
+						review.extractedClaims ?? keyFindings,
+					),
+					sourceQualitySignals,
+					sourceAuthoritySummary: sourceAuthoritySummary ?? {
+						label: "Weak source fit",
+						score: 0,
+						reasons: [],
+					},
+					rejectedReason,
+					openedContentLength: sourceText.length,
+				}),
+			);
 
-			return !notes.rejectedReason && notes.relevanceScore >= MIN_RELEVANCE_SCORE
+			return !notes.rejectedReason &&
+				notes.relevanceScore >= MIN_RELEVANCE_SCORE
 				? notes
 				: null;
 		},
@@ -241,6 +257,15 @@ export async function triageAndReviewSources(
 		...triage,
 		reviewedCount: reviewedSources.length,
 		reviewedSources,
+	};
+}
+
+function normalizePersistedReviewedSourceNotes(
+	notes: PersistedReviewedResearchSourceNotesRecord,
+): PersistedReviewedResearchSourceNotes {
+	return {
+		...notes,
+		reviewedAt: notes.reviewedAt || notes.createdAt,
 	};
 }
 
@@ -342,7 +367,8 @@ const MIN_RELEVANCE_SCORE = 55;
 
 function isBlockedOrNoiseSource(source: DiscoveredResearchSource): boolean {
 	const title = source.title.toLowerCase();
-	const content = `${source.title} ${source.snippet ?? ""} ${source.sourceText ?? ""}`.toLowerCase();
+	const content =
+		`${source.title} ${source.snippet ?? ""} ${source.sourceText ?? ""}`.toLowerCase();
 	return [
 		"request rejected",
 		"checking your browser",
@@ -360,19 +386,26 @@ function normalizeSupportedKeyQuestions(
 ): string[] {
 	const normalizedExplicit = normalizeTextList(explicitQuestions ?? []);
 	if (normalizedExplicit.length > 0) {
-		return normalizedExplicit.filter((question) =>
-			planQuestions.length === 0 ||
-			planQuestions.some((planQuestion) => questionsOverlap(question, planQuestion)),
+		return normalizedExplicit.filter(
+			(question) =>
+				planQuestions.length === 0 ||
+				planQuestions.some((planQuestion) =>
+					questionsOverlap(question, planQuestion),
+				),
 		);
 	}
-	return planQuestions.filter((question) => sourceSupportsQuestion(sourceText, question));
+	return planQuestions.filter((question) =>
+		sourceSupportsQuestion(sourceText, question),
+	);
 }
 
 function sourceSupportsQuestion(sourceText: string, question: string): boolean {
 	const sourceTerms = importantTerms(sourceText);
 	const questionTerms = importantTerms(question);
 	if (questionTerms.size === 0) return false;
-	const overlap = [...questionTerms].filter((term) => sourceTerms.has(term)).length;
+	const overlap = [...questionTerms].filter((term) =>
+		sourceTerms.has(term),
+	).length;
 	return overlap >= Math.min(2, questionTerms.size);
 }
 
@@ -484,18 +517,29 @@ function normalizeRelevanceScore(
 	if (input.supportedKeyQuestions.length > 0) computed += 35;
 	if (input.keyFindings.length > 0) computed += 20;
 	if (input.sourceText.length >= 500) computed += 10;
-	if (!isBlockedOrNoiseSource({ id: "", url: "https://example.test", title: input.title, sourceText: input.sourceText })) {
+	if (
+		!isBlockedOrNoiseSource({
+			id: "",
+			url: "https://example.test",
+			title: input.title,
+			sourceText: input.sourceText,
+		})
+	) {
 		computed += 10;
 	}
 	return Math.max(0, Math.min(100, computed));
 }
 
-function normalizeRejectedReason(reason: string | null | undefined): string | null {
+function normalizeRejectedReason(
+	reason: string | null | undefined,
+): string | null {
 	const normalized = reason?.replace(/\s+/g, " ").trim();
 	return normalized ? normalized : null;
 }
 
-function normalizeOptionalText(value: string | null | undefined): string | null {
+function normalizeOptionalText(
+	value: string | null | undefined,
+): string | null {
 	const normalized = value?.replace(/\s+/g, " ").trim();
 	return normalized ? normalized : null;
 }
@@ -514,7 +558,10 @@ function defaultRejectedReason(input: {
 	if (input.sourceText.trim().length === 0) {
 		return "Rejected because no usable source content was available.";
 	}
-	if (input.requiresKeyQuestionSupport && input.supportedKeyQuestions.length === 0) {
+	if (
+		input.requiresKeyQuestionSupport &&
+		input.supportedKeyQuestions.length === 0
+	) {
 		return "Rejected because the source does not support any approved key question.";
 	}
 	if (input.topicRelevance && !input.topicRelevance.relevant) {
@@ -526,7 +573,96 @@ function defaultRejectedReason(input: {
 	return null;
 }
 
-function buildTopicRelevanceReason(result: TopicRelevanceResult): string | null {
+function evaluateComparisonSupport(input: {
+	source: SourceReviewCandidate;
+	sourceText: string;
+	reviewedComparedEntity?: string | null;
+	reviewedComparisonAxis?: string | null;
+}): {
+	comparedEntity: string | null;
+	comparisonAxis: string | null;
+	rejectedReason: string | null;
+} {
+	const intendedEntity = normalizeOptionalText(
+		input.source.intendedComparedEntity,
+	);
+	const intendedAxis = normalizeOptionalText(
+		input.source.intendedComparisonAxis,
+	);
+	const reviewedEntity = normalizeOptionalText(input.reviewedComparedEntity);
+	const reviewedAxis = normalizeOptionalText(input.reviewedComparisonAxis);
+
+	if (!intendedEntity && !intendedAxis) {
+		return {
+			comparedEntity: reviewedEntity,
+			comparisonAxis: reviewedAxis,
+			rejectedReason: null,
+		};
+	}
+
+	const comparedEntity =
+		reviewedEntity && supportsComparisonTerm(input.sourceText, reviewedEntity)
+			? reviewedEntity
+			: intendedEntity &&
+					supportsComparisonTerm(input.sourceText, intendedEntity)
+				? intendedEntity
+				: null;
+	const comparisonAxis =
+		reviewedAxis && supportsComparisonTerm(input.sourceText, reviewedAxis)
+			? reviewedAxis
+			: intendedAxis && supportsComparisonTerm(input.sourceText, intendedAxis)
+				? intendedAxis
+				: null;
+	const requiresEntity = Boolean(intendedEntity);
+	const requiresAxis = Boolean(intendedAxis);
+	const supported =
+		(!requiresEntity || comparedEntity !== null) &&
+		(!requiresAxis || comparisonAxis !== null);
+
+	return {
+		comparedEntity: supported ? comparedEntity : null,
+		comparisonAxis: supported ? comparisonAxis : null,
+		rejectedReason: supported
+			? null
+			: "Rejected because the source does not support the intended comparison entity and axis.",
+	};
+}
+
+function supportsComparisonTerm(sourceText: string, term: string): boolean {
+	const normalizedSource = normalizeTopicText(sourceText);
+	const normalizedTerm = normalizeTopicText(term);
+	if (!normalizedTerm) return false;
+	const termTokens = comparisonSupportTokens(normalizedTerm);
+	if (termTokens.length === 0) return false;
+	if (isNegatedComparisonMention(normalizedSource, termTokens)) return false;
+	return termTokens.every((token) => normalizedSource.includes(token));
+}
+
+function comparisonSupportTokens(value: string): string[] {
+	return value
+		.split(/[^a-z0-9]+/iu)
+		.map((token) => token.trim())
+		.filter(Boolean);
+}
+
+function isNegatedComparisonMention(
+	normalizedSource: string,
+	termTokens: string[],
+): boolean {
+	const tokenPattern = termTokens.map(escapeRegExp).join("|");
+	return new RegExp(
+		`\\b(?:does not|do not|not|no|without)\\b(?:\\s+\\w+){0,12}\\s+(?:${tokenPattern})\\b`,
+		"iu",
+	).test(normalizedSource);
+}
+
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function buildTopicRelevanceReason(
+	result: TopicRelevanceResult,
+): string | null {
 	if (result.anchors.length === 0) return null;
 	if (result.relevant) {
 		return `Matched topic anchors: ${result.matchedAnchors.join(", ")}.`;
@@ -593,7 +729,8 @@ function evaluateTopicRelevance(input: {
 	const matchedAnchors = anchors.filter((anchor) =>
 		searchableSourceText.includes(normalizeTopicText(anchor)),
 	);
-	const requiredMatches = anchors.length === 1 ? 1 : Math.min(2, anchors.length);
+	const requiredMatches =
+		anchors.length === 1 ? 1 : Math.min(2, anchors.length);
 	return {
 		relevant: matchedAnchors.length >= requiredMatches,
 		anchors,

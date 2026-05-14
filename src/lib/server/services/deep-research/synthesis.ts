@@ -1,6 +1,7 @@
 import type { DeepResearchClaimType } from "$lib/types";
 import { classifyDeepResearchClaimType } from "./source-quality";
 import type { PersistedReviewedResearchSourceNotes } from "./source-review";
+import { isAcceptedReviewedResearchSource } from "./sources";
 
 export type ResearchSourceReference = {
 	reviewedSourceId: string;
@@ -50,10 +51,10 @@ export async function buildSynthesisNotes(
 	input: BuildSynthesisNotesInput,
 ): Promise<SynthesisNotes> {
 	const eligibleReviewedSources = input.reviewedSources.filter(
-		isAcceptedReviewedSource,
+		isAcceptedReviewedResearchSource,
 	);
 	const reviewedSourcesById = new Map(
-		input.reviewedSources.map((source) => [source.id, source]),
+		eligibleReviewedSources.map((source) => [source.id, source]),
 	);
 	const reviewedFindings = eligibleReviewedSources.flatMap((source) =>
 		source.keyFindings.map((finding) => ({
@@ -108,8 +109,10 @@ function synthesizeCompletedTaskOutputs(
 
 	for (const task of tasks) {
 		const sourceRefs = (task.sourceRefs ?? []).filter((sourceRef) => {
-			const reviewedSource = reviewedSourcesById.get(sourceRef.reviewedSourceId);
-			return !reviewedSource || isAcceptedReviewedSource(reviewedSource);
+			const reviewedSource = reviewedSourcesById.get(
+				sourceRef.reviewedSourceId,
+			);
+			return Boolean(reviewedSource);
 		});
 		const declaredSupportLevel =
 			task.supportLevel ?? (sourceRefs.length > 0 ? "strong" : "missing");
@@ -143,12 +146,6 @@ function synthesizeCompletedTaskOutputs(
 	}
 
 	return { supportedFindings, assumptions, reportLimitations };
-}
-
-function isAcceptedReviewedSource(
-	source: PersistedReviewedResearchSourceNotes,
-): boolean {
-	return !source.rejectedReason && source.topicRelevant !== false;
 }
 
 function findConflictingReviewedFindings(findings: SynthesisFinding[]): {

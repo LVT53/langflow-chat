@@ -473,67 +473,64 @@ describe("public web discovery", () => {
 		["focused", 6],
 		["standard", 12],
 		["max", 24],
-	] as const)(
-		"uses the %s comparison query cap for entity-axis discovery",
-		async (depth, expectedQueryCount) => {
-			const comparisonPlan: ResearchPlan = {
-				...approvedPlan,
-				depth,
-				comparedEntities: [
-					"Entity A",
-					"Entity B",
-					"Entity C",
-					"Entity D",
-					"Entity E",
-					"Entity F",
-				],
-				comparisonAxes: ["privacy", "pricing", "security", "roadmap"],
-				goal: "Compare six entities across four axes",
-				researchBudget: {
-					sourceReviewCeiling: 240,
-					synthesisPassCeiling: 2,
-				},
-			};
-			const researchWeb = vi.fn().mockResolvedValue({
-				sources: [],
-				diagnostics: {
-					providerCalls: [],
-				},
-			});
-			const saveDiscoveredSources = vi.fn(async (sources) => sources);
-			const saveTimelineEvent = vi.fn(async (event) => ({
-				...event,
-				id: "event-1",
-				createdAt: event.occurredAt,
-			}));
+	] as const)("uses the %s comparison query cap for entity-axis discovery", async (depth, expectedQueryCount) => {
+		const comparisonPlan: ResearchPlan = {
+			...approvedPlan,
+			depth,
+			comparedEntities: [
+				"Entity A",
+				"Entity B",
+				"Entity C",
+				"Entity D",
+				"Entity E",
+				"Entity F",
+			],
+			comparisonAxes: ["privacy", "pricing", "security", "roadmap"],
+			goal: "Compare six entities across four axes",
+			researchBudget: {
+				sourceReviewCeiling: 240,
+				synthesisPassCeiling: 2,
+			},
+		};
+		const researchWeb = vi.fn().mockResolvedValue({
+			sources: [],
+			diagnostics: {
+				providerCalls: [],
+			},
+		});
+		const saveDiscoveredSources = vi.fn(async (sources) => sources);
+		const saveTimelineEvent = vi.fn(async (event) => ({
+			...event,
+			id: "event-1",
+			createdAt: event.occurredAt,
+		}));
 
-			const result = await runPublicWebDiscoveryPass(
-				{
-					jobId: `job-comparison-${depth}`,
-					conversationId: "conversation-1",
-					userId: "user-1",
-					approvedPlan: comparisonPlan,
-					now: new Date("2026-05-05T12:00:00.000Z"),
-				},
-				{
-					researchWeb,
-					sourceRepository: { saveDiscoveredSources },
-					timelineRepository: { saveTimelineEvent },
-				},
-			);
+		const result = await runPublicWebDiscoveryPass(
+			{
+				jobId: `job-comparison-${depth}`,
+				conversationId: "conversation-1",
+				userId: "user-1",
+				approvedPlan: comparisonPlan,
+				now: new Date("2026-05-05T12:00:00.000Z"),
+			},
+			{
+				researchWeb,
+				sourceRepository: { saveDiscoveredSources },
+				timelineRepository: { saveTimelineEvent },
+			},
+		);
 
-			expect(researchWeb).toHaveBeenCalledTimes(expectedQueryCount);
-			expect(result.queries).toHaveLength(expectedQueryCount);
-			expect(result.queries[0]).toBe("Entity A privacy");
-			expect(result.queries.at(-1)).toBe(
-				expectedQueryCount === 6
-					? "Entity F privacy"
-					: expectedQueryCount === 12
-						? "Entity F pricing"
-						: "Entity F roadmap",
-			);
-		},
-	);
+		expect(researchWeb).toHaveBeenCalledTimes(expectedQueryCount);
+		expect(result.queries).toHaveLength(expectedQueryCount);
+		expect(result.queries[0]).toBe("Entity A privacy");
+		expect(result.queries.at(-1)).toBe(
+			expectedQueryCount === 6
+				? "Entity F privacy"
+				: expectedQueryCount === 12
+					? "Entity F pricing"
+					: "Entity F roadmap",
+		);
+	});
 
 	it("creates targeted entity-axis queries for comparison plans", async () => {
 		const comparisonPlan: ResearchPlan = {
@@ -605,5 +602,121 @@ describe("public web discovery", () => {
 				}),
 			]),
 		);
+	});
+
+	it("keeps comparison discovery queries entity-axis specific for Cube model constraints", async () => {
+		const comparisonPlan: ResearchPlan = {
+			...approvedPlan,
+			goal: "Compare Cube Nulane 400X and Cube Kathmandu SLX",
+			depth: "standard",
+			comparedEntities: ["Cube Nulane 400X", "Cube Kathmandu SLX"],
+			comparisonAxes: [
+				"focusing 2026 model year",
+				"pricing",
+				"availability in Europe",
+				"Medium frame size",
+			],
+			researchBudget: {
+				sourceReviewCeiling: 80,
+				synthesisPassCeiling: 2,
+			},
+		};
+		const researchWeb = vi.fn().mockResolvedValue({
+			sources: [],
+			diagnostics: {
+				providerCalls: [],
+			},
+		});
+		const saveDiscoveredSources = vi.fn(async (sources) => sources);
+		const saveTimelineEvent = vi.fn(async (event) => ({
+			...event,
+			id: "event-1",
+			createdAt: event.occurredAt,
+		}));
+
+		const result = await runPublicWebDiscoveryPass(
+			{
+				jobId: "job-cube-discovery",
+				conversationId: "conversation-1",
+				userId: "user-1",
+				approvedPlan: comparisonPlan,
+				now: new Date("2026-05-05T12:00:00.000Z"),
+			},
+			{
+				researchWeb,
+				sourceRepository: { saveDiscoveredSources },
+				timelineRepository: { saveTimelineEvent },
+			},
+		);
+
+		expect(result.queries).toEqual([
+			"Cube Nulane 400X 2026 model year",
+			"Cube Kathmandu SLX 2026 model year",
+			"Cube Nulane 400X pricing",
+			"Cube Kathmandu SLX pricing",
+			"Cube Nulane 400X availability Europe",
+			"Cube Kathmandu SLX availability Europe",
+			"Cube Nulane 400X Medium frame size",
+			"Cube Kathmandu SLX Medium frame size",
+		]);
+		expect(result.queries).not.toContain("focusing 2026 model year");
+		for (const query of result.queries) {
+			expect(query).toMatch(/^Cube (?:Nulane 400X|Kathmandu SLX) /);
+		}
+	});
+
+	it("keeps comparison discovery queries entity-axis specific for software compliance axes", async () => {
+		const comparisonPlan: ResearchPlan = {
+			...approvedPlan,
+			goal: "Compare Acme Analytics Pro and Acme Analytics Enterprise",
+			depth: "standard",
+			comparedEntities: ["Acme Analytics Pro", "Acme Analytics Enterprise"],
+			comparisonAxes: ["SOC 2", "data residency", "SSO", "audit logs"],
+			researchBudget: {
+				sourceReviewCeiling: 80,
+				synthesisPassCeiling: 2,
+			},
+		};
+		const researchWeb = vi.fn().mockResolvedValue({
+			sources: [],
+			diagnostics: {
+				providerCalls: [],
+			},
+		});
+		const saveDiscoveredSources = vi.fn(async (sources) => sources);
+		const saveTimelineEvent = vi.fn(async (event) => ({
+			...event,
+			id: "event-1",
+			createdAt: event.occurredAt,
+		}));
+
+		const result = await runPublicWebDiscoveryPass(
+			{
+				jobId: "job-saas-discovery",
+				conversationId: "conversation-1",
+				userId: "user-1",
+				approvedPlan: comparisonPlan,
+				now: new Date("2026-05-05T12:00:00.000Z"),
+			},
+			{
+				researchWeb,
+				sourceRepository: { saveDiscoveredSources },
+				timelineRepository: { saveTimelineEvent },
+			},
+		);
+
+		expect(result.queries).toEqual([
+			"Acme Analytics Pro SOC 2",
+			"Acme Analytics Enterprise SOC 2",
+			"Acme Analytics Pro data residency",
+			"Acme Analytics Enterprise data residency",
+			"Acme Analytics Pro SSO",
+			"Acme Analytics Enterprise SSO",
+			"Acme Analytics Pro audit logs",
+			"Acme Analytics Enterprise audit logs",
+		]);
+		for (const query of result.queries) {
+			expect(query).toMatch(/^Acme Analytics (?:Pro|Enterprise) /);
+		}
 	});
 });

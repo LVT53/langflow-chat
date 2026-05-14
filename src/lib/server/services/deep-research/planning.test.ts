@@ -168,6 +168,153 @@ describe("createFirstResearchPlanDraft", () => {
 		);
 	});
 
+	it("keeps Cube comparison entities product-only while treating size, region, year, and spec terms as axes or constraints", async () => {
+		const result = await createFirstResearchPlanDraft({
+			jobId: "job-cube-entity-axis-cleanup",
+			userRequest:
+				"Compare Cube Nulane 400X and Kathmando SLX, focusing on 2026 model year, pricing, availability in Europe, Medium frame size, specs, weight, motor/battery, drivetrain, brakes, geometry, and accessories.",
+			selectedDepth: "standard",
+			researchLanguage: "en",
+		});
+
+		expect(result.plan.reportIntent).toBe("comparison");
+		expect(result.plan.comparedEntities).toEqual([
+			"Cube Nulane 400X",
+			"Cube Kathmandu SLX",
+		]);
+		expect(result.plan.comparedEntities?.join("\n").toLowerCase()).not.toMatch(
+			/focusing|pricing|availability|europe|medium frame size|model year|specs|weight|motor|battery|drivetrain|brakes|geometry|accessories/,
+		);
+		expect(result.plan.comparisonAxes).toEqual(
+			expect.arrayContaining([
+				"pricing",
+				"availability Europe",
+				"medium frame size",
+				"specs",
+				"weight",
+				"motor/battery",
+				"drivetrain",
+				"brakes",
+				"geometry",
+				"accessories",
+			]),
+		);
+	});
+
+	it("repairs polluted structured Cube comparison metadata before rendering the plan", async () => {
+		const result = await createFirstResearchPlanDraft(
+			{
+				jobId: "job-cube-structured-cleanup",
+				userRequest:
+					"Compare Cube Nulane 400X and Kathmando SLX, focusing on pricing, availability in Europe, and Medium frame size.",
+				selectedDepth: "standard",
+				researchLanguage: "en",
+			},
+			{
+				structuredPlanner: {
+					draftPlan: vi.fn(async (_, context) => ({
+						goal: "Compare Cube Nulane 400X and Kathmando SLX, focusing on pricing, availability in Europe, and Medium frame size.",
+						depth: "standard",
+						researchLanguage: "en",
+						reportIntent: "comparison",
+						comparedEntities: [
+							"Cube Nulane 400X",
+							"Kathmando SLX",
+							"focusing",
+							"pricing",
+							"availability",
+							"Europe",
+							"Medium frame size",
+						],
+						comparisonAxes: ["pricing"],
+						researchBudget: context.selectedBudget,
+						keyQuestions: ["How do the models compare?"],
+						sourceScope: {
+							includePublicWeb: true,
+							planningContextDisclosure: null,
+						},
+						reportShape: ["Executive summary"],
+						constraints: [],
+						deliverables: ["Cited Research Report"],
+					})),
+				},
+			},
+		);
+
+		expect(result.plan.comparedEntities).toEqual([
+			"Cube Nulane 400X",
+			"Cube Kathmandu SLX",
+		]);
+		expect(result.renderedPlan).not.toContain("- focusing");
+		expect(result.renderedPlan).not.toContain("- Europe");
+		expect(result.plan.comparisonAxes).toEqual(
+			expect.arrayContaining(["pricing", "availability", "Medium frame size"]),
+		);
+	});
+
+	it("repairs polluted structured software comparison metadata without bike-specific assumptions", async () => {
+		const result = await createFirstResearchPlanDraft(
+			{
+				jobId: "job-saas-structured-cleanup",
+				userRequest:
+					"Compare Acme Analytics Pro and Acme Analytics Enterprise, focusing on pricing, SOC 2, data residency, SSO, audit logs, retention, and API limits.",
+				selectedDepth: "standard",
+				researchLanguage: "en",
+			},
+			{
+				structuredPlanner: {
+					draftPlan: vi.fn(async (_, context) => ({
+						goal: "Compare Acme Analytics Pro and Acme Analytics Enterprise, focusing on pricing, SOC 2, data residency, SSO, audit logs, retention, and API limits.",
+						depth: "standard",
+						researchLanguage: "en",
+						reportIntent: "comparison",
+						comparedEntities: [
+							"Acme Analytics Pro",
+							"Acme Analytics Enterprise",
+							"focusing",
+							"pricing",
+							"SOC 2",
+							"data residency",
+							"SSO",
+							"audit logs",
+							"retention",
+							"API limits",
+						],
+						comparisonAxes: ["pricing"],
+						researchBudget: context.selectedBudget,
+						keyQuestions: ["How do the Acme Analytics tiers compare?"],
+						sourceScope: {
+							includePublicWeb: true,
+							planningContextDisclosure: null,
+						},
+						reportShape: ["Executive summary"],
+						constraints: [],
+						deliverables: ["Cited Research Report"],
+					})),
+				},
+			},
+		);
+
+		expect(result.plan.comparedEntities).toEqual([
+			"Acme Analytics Pro",
+			"Acme Analytics Enterprise",
+		]);
+		expect(result.plan.comparedEntities?.join("\n").toLowerCase()).not.toMatch(
+			/focusing|pricing|soc 2|data residency|sso|audit logs|retention|api limits/,
+		);
+		expect(result.plan.comparisonAxes).toEqual(
+			expect.arrayContaining([
+				"pricing",
+				"SOC 2",
+				"data residency",
+				"SSO",
+				"audit logs",
+				"retention",
+				"API limits",
+			]),
+		);
+	});
+
 	it("drafts concrete fallback questions for the main non-comparison report intents", async () => {
 		const cases = [
 			{

@@ -340,13 +340,25 @@ function buildComparisonDiscoveryQueries(plan: ResearchPlan): DiscoveryQuery[] {
 		return [];
 	}
 	const comparedEntities = plan.comparedEntities;
-	return plan.comparisonAxes.flatMap((axis) =>
+	const comparisonAxes = plan.comparisonAxes
+		.map(normalizeDiscoveryComparisonAxis)
+		.filter(Boolean);
+	return comparisonAxes.flatMap((axis) =>
 		comparedEntities.map((entity) => ({
 			query: `${entity} ${axis}`,
 			comparedEntity: entity,
 			comparisonAxis: axis,
 		})),
 	);
+}
+
+function normalizeDiscoveryComparisonAxis(axis: string): string {
+	return axis
+		.replace(/\s+/g, " ")
+		.trim()
+		.replace(/^(?:focusing|focused)\s+(?:on\s+)?/iu, "")
+		.replace(/\bavailability\s+in\s+Europe\b/iu, "availability Europe")
+		.trim();
 }
 
 function maxDiscoveryQueryCount(

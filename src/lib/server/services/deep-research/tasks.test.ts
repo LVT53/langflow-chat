@@ -338,4 +338,74 @@ describe("deep research tasks", () => {
 			},
 		]);
 	});
+
+	it("does not persist task Evidence Notes from rejected or off-topic source ids", async () => {
+		const { upsertResearchPassCheckpoint } = await import("./pass-state");
+		const { listDeepResearchEvidenceNotes } = await import("./evidence-notes");
+		const { saveDiscoveredResearchSource, markResearchSourceRejected } =
+			await import("./sources");
+		const { completeResearchTask, createResearchTasksFromCoverageGaps } =
+			await import("./tasks");
+
+		const discovered = await saveDiscoveredResearchSource({
+			userId: "user-1",
+			jobId: "job-1",
+			conversationId: "conversation-1",
+			url: "https://cars.example.test/volkswagen-ev-prices",
+			title: "Volkswagen EV prices in Hungary",
+			provider: "web_search",
+			discoveredAt: new Date("2026-05-05T12:55:00.000Z"),
+		});
+		const rejected = await markResearchSourceRejected({
+			userId: "user-1",
+			sourceId: discovered.id,
+			rejectedAt: new Date("2026-05-05T13:00:00.000Z"),
+			rejectedReason:
+				"Rejected because the source is off-topic for the approved Research Plan.",
+			relevanceScore: 95,
+			topicRelevant: false,
+			extractedClaims: ["Volkswagen EV prices dropped in Hungary."],
+		});
+		await upsertResearchPassCheckpoint({
+			userId: "user-1",
+			jobId: "job-1",
+			conversationId: "conversation-1",
+			passNumber: 2,
+			searchIntent: "Targeted follow-up for pass 1 Coverage Gaps",
+			reviewedSourceIds: [rejected.id],
+			now: new Date("2026-05-05T13:01:00.000Z"),
+		});
+		const [task] = await createResearchTasksFromCoverageGaps({
+			userId: "user-1",
+			jobId: "job-1",
+			conversationId: "conversation-1",
+			passNumber: 2,
+			gaps: [
+				{
+					id: "gap-off-topic",
+					keyQuestion: "What source-backed answer is available?",
+					summary: "Need source-backed task output.",
+					severity: "critical",
+				},
+			],
+			now: new Date("2026-05-05T13:02:00.000Z"),
+		});
+
+		await completeResearchTask({
+			userId: "user-1",
+			taskId: task.id,
+			output: {
+				summary: "Volkswagen EV prices dropped in Hungary.",
+				findings: ["Volkswagen EV discounts should guide Cube buyers."],
+				sourceIds: [rejected.id],
+			},
+			now: new Date("2026-05-05T13:03:00.000Z"),
+		});
+		const notes = await listDeepResearchEvidenceNotes({
+			userId: "user-1",
+			jobId: "job-1",
+		});
+
+		expect(notes).toEqual([]);
+	});
 });

@@ -545,6 +545,704 @@ describe("real Deep Research workflow stepper", () => {
 		);
 	});
 
+	it("feeds only accepted reviewed sources to research task and synthesis prompts", async () => {
+		const approved = await createApprovedResearchJob();
+		const { db } = await import("$lib/server/db");
+		const {
+			saveDiscoveredResearchSource,
+			markResearchSourceRejected,
+			markResearchSourceReviewed,
+		} = await import("./sources");
+		const { upsertResearchPassCheckpoint } = await import("./pass-state");
+		const { createResearchTasksFromCoverageGaps } = await import("./tasks");
+		const { runDeepResearchWorkflowStep } = await import("./workflow");
+
+		const accepted = await saveDiscoveredResearchSource({
+			userId: "user-1",
+			conversationId: "conv-1",
+			jobId: approved.id,
+			url: "https://agency.example.test/ai-copyright-training-data",
+			title: "Agency AI copyright training data briefing",
+			provider: "public_web",
+			snippet:
+				"EU and US AI copyright training data rules require provenance records.",
+			discoveredAt: new Date("2026-05-05T10:07:00.000Z"),
+		});
+		await markResearchSourceReviewed({
+			userId: "user-1",
+			sourceId: accepted.id,
+			reviewedAt: new Date("2026-05-05T10:08:00.000Z"),
+			reviewedNote:
+				"AI copyright training data rules require provenance records.",
+			topicRelevant: true,
+			supportedKeyQuestions: approved.currentPlan?.rawPlan?.keyQuestions ?? [],
+			extractedClaims: [
+				"AI copyright training data rules require provenance records.",
+			],
+		});
+		const rejected = await saveDiscoveredResearchSource({
+			userId: "user-1",
+			conversationId: "conv-1",
+			jobId: approved.id,
+			url: "https://cars.example.test/volkswagen-ev-prices",
+			title: "Volkswagen EV prices in Hungary",
+			provider: "public_web",
+			snippet: "Volkswagen EV prices and dealer discounts.",
+			discoveredAt: new Date("2026-05-05T10:07:30.000Z"),
+		});
+		await markResearchSourceRejected({
+			userId: "user-1",
+			sourceId: rejected.id,
+			rejectedAt: new Date("2026-05-05T10:08:30.000Z"),
+			rejectedReason:
+				"Rejected because the source is off-topic for the approved Research Plan.",
+			relevanceScore: 95,
+			topicRelevant: false,
+			extractedClaims: ["Volkswagen EV prices dropped in Hungary."],
+		});
+		await upsertResearchPassCheckpoint({
+			userId: "user-1",
+			jobId: approved.id,
+			conversationId: "conv-1",
+			passNumber: 2,
+			searchIntent: "Targeted follow-up for pass 1 Coverage Gaps",
+			reviewedSourceIds: [accepted.id, rejected.id],
+			now: new Date("2026-05-05T10:09:00.000Z"),
+		});
+		const [task] = await createResearchTasksFromCoverageGaps({
+			userId: "user-1",
+			jobId: approved.id,
+			conversationId: "conv-1",
+			passNumber: 2,
+			gaps: [
+				{
+					id: "gap-provenance",
+					keyQuestion: "What provenance records are required?",
+					summary: "Answer provenance record requirements.",
+					severity: "critical",
+				},
+			],
+			now: new Date("2026-05-05T10:10:00.000Z"),
+		});
+		await db
+			.update(schema.deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "research_tasks",
+				updatedAt: new Date("2026-05-05T10:10:30.000Z"),
+			})
+			.where(eq(schema.deepResearchJobs.id, approved.id));
+
+		let executorReviewedSourceIds: string[] = [];
+		let executorAllSourceIds: string[] = [];
+		let synthesisReviewedSourceIds: string[] = [];
+		let synthesisTaskSourceIds: string[] = [];
+		const result = await runDeepResearchWorkflowStep(
+			{
+				userId: "user-1",
+				jobId: approved.id,
+				now: new Date("2026-05-05T10:11:00.000Z"),
+			},
+			{
+				tasks: {
+					executor: async (input) => {
+						expect(input.task.id).toBe(task.id);
+						executorReviewedSourceIds = input.reviewedSources.map(
+							(source) => source.id,
+						);
+						executorAllSourceIds = input.allSources.map((source) => source.id);
+						return {
+							summary:
+								"AI copyright training data rules require provenance records.",
+							findings: [
+								"AI copyright training data rules require provenance records.",
+							],
+							sourceIds: [accepted.id, rejected.id],
+						};
+					},
+				},
+				synthesis: {
+					buildSynthesisNotes: async (input) => {
+						synthesisReviewedSourceIds = input.reviewedSources.map(
+							(source) => source.id,
+						);
+						synthesisTaskSourceIds =
+							input.completedTasks[0]?.sourceRefs?.map(
+								(sourceRef) => sourceRef.reviewedSourceId,
+							) ?? [];
+						return {
+							jobId: approved.id,
+							findings: [],
+							supportedFindings: [],
+							conflicts: [],
+							assumptions: [],
+							reportLimitations: [],
+						};
+					},
+				},
+				reportCompletion: {
+					completeDeepResearchJobWithAuditedReport: async () =>
+						({
+							...approved,
+							status: "completed",
+							stage: "completed",
+						}) as never,
+				},
+			},
+		);
+
+		expect(result).toEqual(expect.objectContaining({ advanced: true }));
+		expect(executorAllSourceIds).toEqual([accepted.id, rejected.id]);
+		expect(executorReviewedSourceIds).toEqual([accepted.id]);
+		expect(synthesisReviewedSourceIds).toEqual([accepted.id]);
+		expect(synthesisTaskSourceIds).toEqual([accepted.id]);
+	});
+
+	it("publishes an Evidence Limitation Memo when a comparison entity lacks useful supported cells", async () => {
+		const approved = await createApprovedResearchJob();
+		const approvedPlan = approved.currentPlan?.rawPlan;
+		if (!approvedPlan) throw new Error("Expected approved plan");
+		const comparisonPlan = {
+			...approvedPlan,
+			goal: "Compare Assistant A and Assistant B for repository workflow.",
+			reportIntent: "comparison" as const,
+			comparedEntities: ["Assistant A", "Assistant B"],
+			comparisonAxes: ["Repository workflow"],
+			keyQuestions: [
+				"How do Assistant A and Assistant B compare on repository workflow?",
+			],
+			researchBudget: {
+				...approvedPlan.researchBudget,
+				meaningfulPassFloor: 1,
+				meaningfulPassCeiling: 1,
+				synthesisPassCeiling: 1,
+				repairPassCeiling: 0,
+			},
+		};
+		const { db } = await import("$lib/server/db");
+		const {
+			saveDiscoveredResearchSource,
+			markResearchSourceRejected,
+			markResearchSourceReviewed,
+		} = await import("./sources");
+		const { upsertResearchPassCheckpoint, completeResearchPassCheckpoint } =
+			await import("./pass-state");
+		const { saveDeepResearchEvidenceNotes } = await import("./evidence-notes");
+		const { getArtifactForUser } = await import(
+			"$lib/server/services/knowledge/store"
+		);
+		const { runDeepResearchWorkflowStep } = await import("./workflow");
+		const completeDeepResearchJobWithAuditedReport = vi.fn(async () => ({
+			...approved,
+			status: "completed",
+			stage: "report_ready",
+		}));
+
+		await db
+			.update(schema.deepResearchPlanVersions)
+			.set({
+				rawPlanJson: JSON.stringify(comparisonPlan),
+			})
+			.where(eq(schema.deepResearchPlanVersions.jobId, approved.id));
+		const assistantASource = await saveDiscoveredResearchSource({
+			userId: "user-1",
+			conversationId: "conv-1",
+			jobId: approved.id,
+			url: "https://assistant-a.example.test/repository-workflow",
+			title: "Assistant A repository workflow documentation",
+			provider: "public_web",
+			snippet: "Assistant A supports repository-aware workflow.",
+			discoveredAt: new Date("2026-05-05T10:07:00.000Z"),
+		});
+		await markResearchSourceReviewed({
+			userId: "user-1",
+			sourceId: assistantASource.id,
+			reviewedAt: new Date("2026-05-05T10:08:00.000Z"),
+			reviewedNote:
+				"Assistant A supports repository-aware workflow with permission controls.",
+			topicRelevant: true,
+			supportedKeyQuestions: comparisonPlan.keyQuestions,
+			comparedEntity: "Assistant A",
+			comparisonAxis: "Repository workflow",
+			extractedClaims: [
+				"Assistant A supports repository-aware workflow with permission controls.",
+			],
+		});
+		const assistantBRejected = await saveDiscoveredResearchSource({
+			userId: "user-1",
+			conversationId: "conv-1",
+			jobId: approved.id,
+			url: "https://unrelated.example.test/assistant-b-pricing-rumors",
+			title: "Assistant B pricing rumors",
+			provider: "public_web",
+			snippet: "Rumors without repository workflow evidence.",
+			discoveredAt: new Date("2026-05-05T10:07:30.000Z"),
+		});
+		await markResearchSourceRejected({
+			userId: "user-1",
+			sourceId: assistantBRejected.id,
+			rejectedAt: new Date("2026-05-05T10:08:30.000Z"),
+			rejectedReason:
+				"Rejected because the source is off-topic for Assistant B repository workflow.",
+			topicRelevant: false,
+			extractedClaims: ["Assistant B pricing rumors are circulating."],
+		});
+		const checkpoint = await upsertResearchPassCheckpoint({
+			userId: "user-1",
+			jobId: approved.id,
+			conversationId: "conv-1",
+			passNumber: 1,
+			searchIntent: "Initial approved-plan source review",
+			reviewedSourceIds: [assistantASource.id],
+			now: new Date("2026-05-05T10:09:00.000Z"),
+		});
+		await completeResearchPassCheckpoint({
+			userId: "user-1",
+			checkpointId: checkpoint.id,
+			nextDecision: "synthesize_report",
+			decisionSummary: "Fixture completed comparison research pass.",
+			now: new Date("2026-05-05T10:09:30.000Z"),
+		});
+		await saveDeepResearchEvidenceNotes({
+			userId: "user-1",
+			jobId: approved.id,
+			conversationId: "conv-1",
+			passCheckpointId: checkpoint.id,
+			sourceId: assistantASource.id,
+			notes: [
+				{
+					supportedKeyQuestion: comparisonPlan.keyQuestions[0],
+					comparedEntity: "Assistant A",
+					comparisonAxis: "Repository workflow",
+					findingText:
+						"Assistant A supports repository-aware workflow with permission controls.",
+					sourceSupport: { sourceId: assistantASource.id },
+				},
+			],
+			now: new Date("2026-05-05T10:10:00.000Z"),
+		});
+		await db
+			.update(schema.deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "synthesis",
+				updatedAt: new Date("2026-05-05T10:11:00.000Z"),
+			})
+			.where(eq(schema.deepResearchJobs.id, approved.id));
+
+		const result = await runDeepResearchWorkflowStep(
+			{
+				userId: "user-1",
+				jobId: approved.id,
+				now: new Date("2026-05-05T10:20:00.000Z"),
+			},
+			{
+				synthesis: {
+					buildSynthesisNotes: async () => ({
+						jobId: approved.id,
+						findings: [],
+						supportedFindings: [
+							{
+								kind: "supported",
+								statement:
+									"Assistant A supports repository-aware workflow with permission controls.",
+								sourceRefs: [
+									{
+										reviewedSourceId: assistantASource.id,
+										discoveredSourceId: assistantASource.id,
+										canonicalUrl: assistantASource.url,
+										title: assistantASource.title ?? assistantASource.url,
+									},
+								],
+								central: true,
+								claimType: "general",
+							},
+						],
+						conflicts: [],
+						assumptions: [],
+						reportLimitations: [],
+					}),
+				},
+				reportCompletion: {
+					completeDeepResearchJobWithAuditedReport,
+				},
+			},
+		);
+		const memoArtifact = result?.job.reportArtifactId
+			? await getArtifactForUser("user-1", result.job.reportArtifactId)
+			: null;
+
+		expect(result).toMatchObject({
+			advanced: true,
+			outcome: "report_completed",
+			job: {
+				id: approved.id,
+				status: "completed",
+				stage: "evidence_limitation_memo_ready",
+				evidenceLimitationMemo: {
+					reviewedScope: {
+						discoveredCount: 2,
+						reviewedCount: 2,
+						topicRelevantCount: 1,
+						rejectedOrOffTopicCount: 1,
+					},
+				},
+			},
+		});
+		expect(completeDeepResearchJobWithAuditedReport).not.toHaveBeenCalled();
+		expect(memoArtifact?.contentText).toContain("# Evidence Limitation Memo:");
+		expect(memoArtifact?.contentText).toContain("| Reviewed sources | 2 |");
+		expect(memoArtifact?.contentText).toContain(
+			"| Rejected or off-topic sources | 1 |",
+		);
+		expect(memoArtifact?.contentText).toContain("Assistant B");
+		expect(memoArtifact?.contentText).toContain("Repository workflow");
+		expect(memoArtifact?.contentText).toContain("Next Research Direction");
+		expect(memoArtifact?.contentText).toContain("Focused Deep Research");
+		expect(memoArtifact?.contentText).not.toContain("Standard Deep Research");
+	});
+
+	it("publishes an Evidence Limitation Memo when reviewed sources do not produce useful accepted claims", async () => {
+		const approved = await createApprovedResearchJob();
+		const approvedPlan = approved.currentPlan?.rawPlan;
+		if (!approvedPlan) throw new Error("Expected approved plan");
+		const investigationPlan = {
+			...approvedPlan,
+			goal: "Assess AI copyright training data provenance rules.",
+			reportIntent: "investigation" as const,
+			comparedEntities: undefined,
+			comparisonAxes: undefined,
+			keyQuestions: [
+				"What provenance records do AI copyright training data rules require?",
+			],
+			researchBudget: {
+				...approvedPlan.researchBudget,
+				meaningfulPassFloor: 1,
+				meaningfulPassCeiling: 1,
+				synthesisPassCeiling: 1,
+				repairPassCeiling: 0,
+			},
+		};
+		const { db } = await import("$lib/server/db");
+		const { saveDiscoveredResearchSource, markResearchSourceReviewed } =
+			await import("./sources");
+		const { upsertResearchPassCheckpoint, completeResearchPassCheckpoint } =
+			await import("./pass-state");
+		const { saveDeepResearchEvidenceNotes } = await import("./evidence-notes");
+		const { getArtifactForUser } = await import(
+			"$lib/server/services/knowledge/store"
+		);
+		const { runDeepResearchWorkflowStep } = await import("./workflow");
+		const completeDeepResearchJobWithAuditedReport = vi.fn(async () => ({
+			...approved,
+			status: "completed",
+			stage: "report_ready",
+		}));
+
+		await db
+			.update(schema.deepResearchPlanVersions)
+			.set({
+				rawPlanJson: JSON.stringify(investigationPlan),
+			})
+			.where(eq(schema.deepResearchPlanVersions.jobId, approved.id));
+		const checkpoint = await upsertResearchPassCheckpoint({
+			userId: "user-1",
+			jobId: approved.id,
+			conversationId: "conv-1",
+			passNumber: 1,
+			searchIntent: "Initial approved-plan source review",
+			reviewedSourceIds: [],
+			now: new Date("2026-05-05T10:09:00.000Z"),
+		});
+		await completeResearchPassCheckpoint({
+			userId: "user-1",
+			checkpointId: checkpoint.id,
+			nextDecision: "synthesize_report",
+			decisionSummary: "Fixture completed investigation research pass.",
+			now: new Date("2026-05-05T10:09:30.000Z"),
+		});
+		for (let index = 1; index <= 3; index += 1) {
+			const source = await saveDiscoveredResearchSource({
+				userId: "user-1",
+				conversationId: "conv-1",
+				jobId: approved.id,
+				url: `https://agency-${index}.example.test/ai-training-provenance`,
+				title: `Agency ${index} AI training provenance guidance`,
+				provider: "public_web",
+				snippet:
+					"Agency guidance discusses AI training data provenance records.",
+				discoveredAt: new Date(`2026-05-05T10:0${index}:00.000Z`),
+			});
+			await markResearchSourceReviewed({
+				userId: "user-1",
+				sourceId: source.id,
+				reviewedAt: new Date(`2026-05-05T10:1${index}:00.000Z`),
+				reviewedNote:
+					"AI copyright training data rules require provenance records.",
+				topicRelevant: true,
+				supportedKeyQuestions: investigationPlan.keyQuestions,
+				extractedClaims: [
+					"AI copyright training data rules require provenance records.",
+				],
+			});
+			await saveDeepResearchEvidenceNotes({
+				userId: "user-1",
+				jobId: approved.id,
+				conversationId: "conv-1",
+				passCheckpointId: checkpoint.id,
+				sourceId: source.id,
+				notes: [
+					{
+						supportedKeyQuestion: investigationPlan.keyQuestions[0],
+						findingText:
+							"AI copyright training data rules require provenance records.",
+						sourceSupport: { sourceId: source.id },
+					},
+				],
+				now: new Date(`2026-05-05T10:2${index}:00.000Z`),
+			});
+		}
+		await db
+			.update(schema.deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "synthesis",
+				updatedAt: new Date("2026-05-05T10:30:00.000Z"),
+			})
+			.where(eq(schema.deepResearchJobs.id, approved.id));
+
+		const result = await runDeepResearchWorkflowStep(
+			{
+				userId: "user-1",
+				jobId: approved.id,
+				now: new Date("2026-05-05T10:40:00.000Z"),
+			},
+			{
+				synthesis: {
+					buildSynthesisNotes: async () => ({
+						jobId: approved.id,
+						findings: [],
+						supportedFindings: [],
+						conflicts: [],
+						assumptions: [],
+						reportLimitations: [],
+					}),
+				},
+				reportCompletion: {
+					completeDeepResearchJobWithAuditedReport,
+				},
+			},
+		);
+		const memoArtifact = result?.job.reportArtifactId
+			? await getArtifactForUser("user-1", result.job.reportArtifactId)
+			: null;
+
+		expect(result).toMatchObject({
+			advanced: true,
+			outcome: "report_completed",
+			job: {
+				id: approved.id,
+				status: "completed",
+				stage: "evidence_limitation_memo_ready",
+			},
+		});
+		expect(completeDeepResearchJobWithAuditedReport).not.toHaveBeenCalled();
+		expect(memoArtifact?.contentText).toContain("# Evidence Limitation Memo:");
+		expect(memoArtifact?.contentText).toContain("| Reviewed sources | 3 |");
+		expect(memoArtifact?.contentText).toContain(
+			"No accepted or limited Synthesis Claim had useful supporting evidence",
+		);
+		expect(memoArtifact?.contentText).toContain("3 accepted reviewed sources");
+	});
+
+	it("publishes an Evidence Limitation Memo for a mostly empty comparison matrix", async () => {
+		const approved = await createApprovedResearchJob();
+		const approvedPlan = approved.currentPlan?.rawPlan;
+		if (!approvedPlan) throw new Error("Expected approved plan");
+		const comparisonPlan = {
+			...approvedPlan,
+			goal: "Compare Assistant A and Assistant B across central buying axes.",
+			reportIntent: "comparison" as const,
+			comparedEntities: ["Assistant A", "Assistant B"],
+			comparisonAxes: ["Repository workflow", "Security", "Pricing"],
+			keyQuestions: [
+				"How do Assistant A and Assistant B compare across repository workflow, security, and pricing?",
+			],
+			researchBudget: {
+				...approvedPlan.researchBudget,
+				meaningfulPassFloor: 1,
+				meaningfulPassCeiling: 1,
+				synthesisPassCeiling: 1,
+				repairPassCeiling: 0,
+			},
+		};
+		const { db } = await import("$lib/server/db");
+		const { saveDiscoveredResearchSource, markResearchSourceReviewed } =
+			await import("./sources");
+		const { upsertResearchPassCheckpoint, completeResearchPassCheckpoint } =
+			await import("./pass-state");
+		const { saveDeepResearchEvidenceNotes } = await import("./evidence-notes");
+		const { runDeepResearchWorkflowStep } = await import("./workflow");
+		const completeDeepResearchJobWithAuditedReport = vi.fn(async () => ({
+			...approved,
+			status: "completed",
+			stage: "report_ready",
+		}));
+		const completeDeepResearchJobWithEvidenceLimitationMemo = vi.fn(
+			async () => ({
+				...approved,
+				status: "completed",
+				stage: "evidence_limitation_memo_ready",
+			}),
+		);
+
+		await db
+			.update(schema.deepResearchPlanVersions)
+			.set({
+				rawPlanJson: JSON.stringify(comparisonPlan),
+			})
+			.where(eq(schema.deepResearchPlanVersions.jobId, approved.id));
+		const checkpoint = await upsertResearchPassCheckpoint({
+			userId: "user-1",
+			jobId: approved.id,
+			conversationId: "conv-1",
+			passNumber: 1,
+			searchIntent: "Initial approved-plan source review",
+			reviewedSourceIds: [],
+			now: new Date("2026-05-05T10:09:00.000Z"),
+		});
+		await completeResearchPassCheckpoint({
+			userId: "user-1",
+			checkpointId: checkpoint.id,
+			nextDecision: "synthesize_report",
+			decisionSummary: "Fixture completed sparse comparison research pass.",
+			now: new Date("2026-05-05T10:09:30.000Z"),
+		});
+		const sourceFixtures = [
+			{
+				entity: "Assistant A",
+				url: "https://assistant-a.example.test/repository-workflow",
+				title: "Assistant A repository workflow documentation",
+				finding:
+					"Assistant A supports repository-aware workflow with permission controls.",
+			},
+			{
+				entity: "Assistant B",
+				url: "https://assistant-b.example.test/repository-workflow",
+				title: "Assistant B repository workflow documentation",
+				finding: "Assistant B indexes repositories for coding assistance.",
+			},
+		];
+		const sources = [];
+		for (const fixture of sourceFixtures) {
+			const source = await saveDiscoveredResearchSource({
+				userId: "user-1",
+				conversationId: "conv-1",
+				jobId: approved.id,
+				url: fixture.url,
+				title: fixture.title,
+				provider: "public_web",
+				snippet: fixture.finding,
+				discoveredAt: new Date("2026-05-05T10:07:00.000Z"),
+			});
+			sources.push(source);
+			await markResearchSourceReviewed({
+				userId: "user-1",
+				sourceId: source.id,
+				reviewedAt: new Date("2026-05-05T10:08:00.000Z"),
+				reviewedNote: fixture.finding,
+				topicRelevant: true,
+				supportedKeyQuestions: comparisonPlan.keyQuestions,
+				comparedEntity: fixture.entity,
+				comparisonAxis: "Repository workflow",
+				extractedClaims: [fixture.finding],
+			});
+			await saveDeepResearchEvidenceNotes({
+				userId: "user-1",
+				jobId: approved.id,
+				conversationId: "conv-1",
+				passCheckpointId: checkpoint.id,
+				sourceId: source.id,
+				notes: [
+					{
+						supportedKeyQuestion: comparisonPlan.keyQuestions[0],
+						comparedEntity: fixture.entity,
+						comparisonAxis: "Repository workflow",
+						findingText: fixture.finding,
+						sourceSupport: { sourceId: source.id },
+					},
+				],
+				now: new Date("2026-05-05T10:10:00.000Z"),
+			});
+		}
+		await db
+			.update(schema.deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "synthesis",
+				updatedAt: new Date("2026-05-05T10:11:00.000Z"),
+			})
+			.where(eq(schema.deepResearchJobs.id, approved.id));
+
+		const result = await runDeepResearchWorkflowStep(
+			{
+				userId: "user-1",
+				jobId: approved.id,
+				now: new Date("2026-05-05T10:20:00.000Z"),
+			},
+			{
+				synthesis: {
+					buildSynthesisNotes: async () => ({
+						jobId: approved.id,
+						findings: [],
+						supportedFindings: sourceFixtures.map((fixture, index) => ({
+							kind: "supported" as const,
+							statement: fixture.finding,
+							sourceRefs: [
+								{
+									reviewedSourceId: sources[index].id,
+									discoveredSourceId: sources[index].id,
+									canonicalUrl: sources[index].url,
+									title: sources[index].title ?? sources[index].url,
+								},
+							],
+							central: true,
+							claimType: "general" as const,
+						})),
+						conflicts: [],
+						assumptions: [],
+						reportLimitations: [],
+					}),
+				},
+				reportCompletion: {
+					completeDeepResearchJobWithAuditedReport,
+					completeDeepResearchJobWithEvidenceLimitationMemo,
+				},
+			},
+		);
+
+		expect(result).toMatchObject({
+			advanced: true,
+			outcome: "report_completed",
+			job: {
+				id: approved.id,
+				status: "completed",
+				stage: "evidence_limitation_memo_ready",
+			},
+		});
+		expect(completeDeepResearchJobWithAuditedReport).not.toHaveBeenCalled();
+		expect(
+			completeDeepResearchJobWithEvidenceLimitationMemo,
+		).toHaveBeenCalledWith(
+			expect.objectContaining({
+				limitations: expect.arrayContaining([
+					expect.stringContaining("Mostly empty comparison matrix"),
+					expect.stringContaining("Unresolved axis gap"),
+				]),
+			}),
+		);
+	});
+
 	it("reviews discovered sources during the source review step and records timeline progress", async () => {
 		const approved = await createApprovedResearchJob();
 		const { db } = await import("$lib/server/db");

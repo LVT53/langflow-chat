@@ -163,6 +163,50 @@ describe("deep research source ledger", () => {
 		});
 	});
 
+	it("does not allow a rejected Reviewed Source to become cited", async () => {
+		const discovered = await saveDiscoveredResearchSource({
+			jobId: "job-1",
+			conversationId: "conversation-1",
+			userId: "user-1",
+			url: "https://cars.example.test/volkswagen-ev-prices",
+			title: "Volkswagen EV prices in Hungary",
+			provider: "web_search",
+			discoveredAt: new Date("2026-05-05T10:30:00.000Z"),
+		});
+		const rejected = await markResearchSourceRejected({
+			userId: "user-1",
+			sourceId: discovered.id,
+			rejectedAt: new Date("2026-05-05T11:00:00.000Z"),
+			rejectedReason:
+				"Rejected because the source is off-topic for the approved Research Plan.",
+			relevanceScore: 95,
+			topicRelevant: false,
+		});
+
+		await expect(
+			markResearchSourceCited({
+				userId: "user-1",
+				sourceId: rejected.id,
+				citedAt: new Date("2026-05-05T11:30:00.000Z"),
+			}),
+		).rejects.toThrow("Research source must be accepted before citation");
+
+		const [listed] = await listResearchSources({
+			userId: "user-1",
+			jobId: "job-1",
+		});
+
+		expect(listed).toMatchObject({
+			id: rejected.id,
+			status: "reviewed",
+			reviewedAt: "2026-05-05T11:00:00.000Z",
+			citedAt: null,
+			rejectedReason:
+				"Rejected because the source is off-topic for the approved Research Plan.",
+			topicRelevant: false,
+		});
+	});
+
 	it("allows a Reviewed Source to later be marked cited", async () => {
 		const discovered = await saveDiscoveredResearchSource({
 			jobId: "job-1",
@@ -329,7 +373,8 @@ describe("deep research source ledger", () => {
 			userId: "user-1",
 			sourceId: cited.id,
 			topicRelevant: true,
-			reviewedNote: "Official documentation directly supports the security claim.",
+			reviewedNote:
+				"Official documentation directly supports the security claim.",
 		});
 		const citedSource = await markResearchSourceCited({
 			userId: "user-1",
@@ -398,9 +443,9 @@ describe("deep research source ledger", () => {
 			reviewedSource,
 			rejectedSource,
 			discoveredOnly,
-			...(await listResearchSources({ userId: "user-1", jobId: "job-1" })).filter(
-				(source) => source.id === offTopicWithoutLimitation.id,
-			),
+			...(
+				await listResearchSources({ userId: "user-1", jobId: "job-1" })
+			).filter((source) => source.id === offTopicWithoutLimitation.id),
 		]);
 
 		expect(ledger.map((source) => source.id)).toEqual([
@@ -417,8 +462,12 @@ describe("deep research source ledger", () => {
 		expect(getResearchSourceFaviconUrl("http://news.example.org/article")).toBe(
 			"http://news.example.org/favicon.ico",
 		);
-		expect(getResearchSourceFaviconUrl("ftp://files.example.com/source")).toBeNull();
-		expect(getResearchSourceFaviconUrl("http://localhost:5173/source")).toBeNull();
+		expect(
+			getResearchSourceFaviconUrl("ftp://files.example.com/source"),
+		).toBeNull();
+		expect(
+			getResearchSourceFaviconUrl("http://localhost:5173/source"),
+		).toBeNull();
 		expect(getResearchSourceFaviconUrl("http://127.0.0.1/source")).toBeNull();
 		expect(getResearchSourceFaviconUrl("http://10.1.2.3/source")).toBeNull();
 		expect(getResearchSourceFaviconUrl("not a url")).toBeNull();

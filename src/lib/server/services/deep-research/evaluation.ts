@@ -326,6 +326,506 @@ export const goldenDeepResearchFixtures = {
 			"- Unrelated forum source [3]",
 		].join("\n"),
 	},
+	cubeModelYearUnrelatedSources: {
+		id: "cube-model-year-unrelated-sources",
+		title: "CUBE 2025/2026 comparison with unrelated model-year sources",
+		plan: {
+			...standardComparisonPlan,
+			goal: "Compare the CUBE 2025 and 2026 bicycle ranges, focusing on model-year changes, pricing, and availability.",
+			reportIntent: "comparison",
+			comparedEntities: ["CUBE 2025 bicycle range", "CUBE 2026 bicycle range"],
+			comparisonAxes: ["Model-year changes", "Pricing", "Availability"],
+			keyQuestions: [
+				"What changed between CUBE 2025 and 2026 bicycle models?",
+				"How do pricing and availability compare for the 2025 and 2026 ranges?",
+			],
+			constraints: [
+				"Reject generic automotive model-year pages and unrelated drivetrain explainers.",
+			],
+		},
+		reviewedSources: [
+			reviewedSource({
+				id: "vw-2026-model-year",
+				title: "Volkswagen 2026 model-year changes",
+				canonicalUrl: "https://cars.example.test/vw-2026-model-year",
+				reviewedAt: "2026-05-05T11:00:00.000Z",
+				supportedKeyQuestions: [
+					"What changed between CUBE 2025 and 2026 bicycle models?",
+				],
+				keyFindings: [
+					"Volkswagen changed trim packaging for the 2026 automotive model year.",
+				],
+				qualityScore: 96,
+				topicRelevant: false,
+			}),
+			reviewedSource({
+				id: "generic-drivetrain-explainer",
+				title: "Generic bicycle drivetrain explainer",
+				canonicalUrl: "https://cycling.example.test/generic-drivetrain",
+				reviewedAt: "2026-05-05T11:02:00.000Z",
+				supportedKeyQuestions: [
+					"How do pricing and availability compare for the 2025 and 2026 ranges?",
+				],
+				keyFindings: [
+					"Drivetrain articles explain cassette ranges but do not compare CUBE model years.",
+				],
+				qualityScore: 82,
+				topicRelevant: false,
+			}),
+		],
+		discoveryRequests: [
+			{
+				query: "focusing 2026 model year changes",
+				sourcePolicy: "general",
+			},
+			{
+				query: "drivetrain differences 2025 2026",
+				sourcePolicy: "general",
+			},
+		],
+		evidenceNotes: [
+			evidenceNote({
+				id: "note-vw-model-year",
+				sourceId: "vw-2026-model-year",
+				findingText:
+					"The reviewed source discusses Volkswagen 2026 model-year trim packaging, not CUBE bicycles.",
+				supportedKeyQuestion:
+					"What changed between CUBE 2025 and 2026 bicycle models?",
+				sourceSupport: {
+					sourceId: "vw-2026-model-year",
+					reviewedSourceId: "vw-2026-model-year",
+				},
+			}),
+		],
+		synthesisClaims: [
+			synthesisClaim({
+				id: "claim-cube-model-year-unsupported",
+				statement:
+					"CUBE 2026 pricing and availability are not established by the reviewed sources.",
+				planQuestion:
+					"How do pricing and availability compare for the 2025 and 2026 ranges?",
+				status: "needs-repair",
+				statusReason:
+					"Reviewed sources were unrelated to the approved CUBE bicycle comparison.",
+				evidenceNoteId: "note-vw-model-year",
+			}),
+		],
+		reportArtifact: {
+			id: "artifact-cube-model-year-unrelated",
+			contentText: [
+				"# Research Report: CUBE 2025 vs 2026 bicycle range",
+				"## Answer",
+				"The available reviewed evidence is insufficient for a reliable CUBE bicycle comparison and should have been published as an Evidence Limitation Memo.",
+				"## Comparison Matrix",
+				"| Axis | CUBE 2025 bicycle range | CUBE 2026 bicycle range | Decision Meaning |",
+				"| --- | --- | --- | --- |",
+				"| Model-year changes | Not established | Not established | Not established |",
+				"| Pricing | Not established | Not established | Not established |",
+				"| Availability | Not established | Not established | Not established |",
+				"## Source Ledger Snapshot",
+				"### Cited Sources",
+				"- Volkswagen 2026 model-year changes - https://cars.example.test/vw-2026-model-year",
+				"### Topic-relevant Reviewed Sources",
+				"- Generic bicycle drivetrain explainer - https://cycling.example.test/generic-drivetrain",
+				"### Rejected/Off-topic Reviewed Sources",
+				"- Volkswagen 2026 model-year changes - https://cars.example.test/vw-2026-model-year",
+			].join("\n"),
+			metadata: {
+				deepResearchReport: true,
+				documentRole: "research_report",
+			},
+		},
+		expectedComparisonGrid: [
+			{
+				comparedEntity: "CUBE 2025 bicycle range",
+				comparisonAxis: "Model-year changes",
+			},
+			{
+				comparedEntity: "CUBE 2026 bicycle range",
+				comparisonAxis: "Model-year changes",
+			},
+			{
+				comparedEntity: "CUBE 2025 bicycle range",
+				comparisonAxis: "Pricing",
+			},
+			{
+				comparedEntity: "CUBE 2026 bicycle range",
+				comparisonAxis: "Pricing",
+			},
+			{
+				comparedEntity: "CUBE 2025 bicycle range",
+				comparisonAxis: "Availability",
+			},
+			{
+				comparedEntity: "CUBE 2026 bicycle range",
+				comparisonAxis: "Availability",
+			},
+		],
+	},
+	nulaneKathmanduComparison: {
+		id: "nulane-kathmandu-comparison",
+		title:
+			"Nulane 400X vs Kathmando/Kathmandu SLX 2025 Europe availability comparison",
+		plan: {
+			...standardComparisonPlan,
+			depth: "focused",
+			goal: "Compare the CUBE Nulane 400X and Kathmando SLX 2025 bikes for Europe pricing, availability, and Medium frame size.",
+			reportIntent: "comparison",
+			comparedEntities: [
+				"CUBE Nulane Hybrid C:62 SLX 400X 2025",
+				"CUBE Kathmandu Hybrid SLX 2025",
+			],
+			comparisonAxes: ["Pricing", "Availability", "Motor and battery"],
+			keyQuestions: [
+				"What 2025 European pricing evidence exists for each bike?",
+				"What availability and Medium frame-size evidence exists for each bike?",
+				"How do the motor and battery specifications compare?",
+			],
+			constraints: [
+				"Normalize the user's Kathmando typo to Kathmandu.",
+				"Treat pricing, availability, Europe, Medium frame size, and model year as constraints or axes, not compared entities.",
+			],
+		},
+		reviewedSources: [
+			reviewedSource({
+				id: "cube-nulane-pricing",
+				title: "Cube Nulane 400X official European listing",
+				canonicalUrl: "https://cube.example.test/nulane-400x",
+				reviewedAt: "2026-05-05T12:00:00.000Z",
+				supportedKeyQuestions: [
+					"What 2025 European pricing evidence exists for each bike?",
+					"What availability and Medium frame-size evidence exists for each bike?",
+					"How do the motor and battery specifications compare?",
+				],
+				keyFindings: [
+					"Nulane is listed at EUR 3,499 in the compared 2025 listing.",
+					"Nulane is shown as available in Medium for European delivery.",
+					"Nulane uses a Bosch SX motor with a 400Wh battery.",
+				],
+				comparedEntity: "CUBE Nulane Hybrid C:62 SLX 400X 2025",
+				comparisonAxis: "Pricing",
+			}),
+			reviewedSource({
+				id: "cube-nulane-availability",
+				title: "Cube Nulane 400X availability listing",
+				canonicalUrl: "https://retailer.example.test/nulane-medium",
+				reviewedAt: "2026-05-05T12:02:00.000Z",
+				supportedKeyQuestions: [
+					"What 2025 European pricing evidence exists for each bike?",
+					"What availability and Medium frame-size evidence exists for each bike?",
+					"How do the motor and battery specifications compare?",
+				],
+				keyFindings: [
+					"Nulane is shown as available in Medium for European delivery.",
+				],
+				comparedEntity: "CUBE Nulane Hybrid C:62 SLX 400X 2025",
+				comparisonAxis: "Availability",
+			}),
+			reviewedSource({
+				id: "cube-nulane-motor",
+				title: "Cube Nulane 400X motor specification",
+				canonicalUrl: "https://cube.example.test/nulane-400x/specs",
+				reviewedAt: "2026-05-05T12:04:00.000Z",
+				supportedKeyQuestions: [
+					"What 2025 European pricing evidence exists for each bike?",
+					"What availability and Medium frame-size evidence exists for each bike?",
+					"How do the motor and battery specifications compare?",
+				],
+				keyFindings: ["Nulane uses a Bosch SX motor with a 400Wh battery."],
+				comparedEntity: "CUBE Nulane Hybrid C:62 SLX 400X 2025",
+				comparisonAxis: "Motor and battery",
+			}),
+			reviewedSource({
+				id: "cube-kathmandu-pricing",
+				title: "Cube Kathmandu SLX official European listing",
+				canonicalUrl: "https://cube.example.test/kathmandu-slx",
+				reviewedAt: "2026-05-05T12:06:00.000Z",
+				supportedKeyQuestions: [
+					"What 2025 European pricing evidence exists for each bike?",
+					"What availability and Medium frame-size evidence exists for each bike?",
+					"How do the motor and battery specifications compare?",
+				],
+				keyFindings: [
+					"Kathmandu is listed at EUR 3,699 in the compared 2025 listing.",
+					"Kathmandu is shown as in stock in Medium for European delivery.",
+					"Kathmandu uses a Bosch CX motor with a 600Wh battery.",
+				],
+				comparedEntity: "CUBE Kathmandu Hybrid SLX 2025",
+				comparisonAxis: "Pricing",
+			}),
+			reviewedSource({
+				id: "cube-kathmandu-availability",
+				title: "Cube Kathmandu SLX availability listing",
+				canonicalUrl: "https://retailer.example.test/kathmandu-medium",
+				reviewedAt: "2026-05-05T12:08:00.000Z",
+				supportedKeyQuestions: [
+					"What 2025 European pricing evidence exists for each bike?",
+					"What availability and Medium frame-size evidence exists for each bike?",
+					"How do the motor and battery specifications compare?",
+				],
+				keyFindings: [
+					"Kathmandu is shown as in stock in Medium for European delivery.",
+				],
+				comparedEntity: "CUBE Kathmandu Hybrid SLX 2025",
+				comparisonAxis: "Availability",
+			}),
+			reviewedSource({
+				id: "cube-kathmandu-motor",
+				title: "Cube Kathmandu SLX motor specification",
+				canonicalUrl: "https://cube.example.test/kathmandu-slx/specs",
+				reviewedAt: "2026-05-05T12:10:00.000Z",
+				supportedKeyQuestions: [
+					"What 2025 European pricing evidence exists for each bike?",
+					"What availability and Medium frame-size evidence exists for each bike?",
+					"How do the motor and battery specifications compare?",
+				],
+				keyFindings: ["Kathmandu uses a Bosch CX motor with a 600Wh battery."],
+				comparedEntity: "CUBE Kathmandu Hybrid SLX 2025",
+				comparisonAxis: "Motor and battery",
+			}),
+		],
+		discoveryRequests: [
+			{
+				query: "CUBE Nulane Hybrid C:62 SLX 400X 2025 Europe price",
+				sourcePolicy: "commerce",
+				comparedEntity: "CUBE Nulane Hybrid C:62 SLX 400X 2025",
+				comparisonAxis: "Pricing",
+			},
+			{
+				query: "CUBE Kathmandu Hybrid SLX 2025 Europe price",
+				sourcePolicy: "commerce",
+				comparedEntity: "CUBE Kathmandu Hybrid SLX 2025",
+				comparisonAxis: "Pricing",
+			},
+			{
+				query: "CUBE Nulane 400X 2025 Medium availability Europe",
+				sourcePolicy: "commerce",
+				comparedEntity: "CUBE Nulane Hybrid C:62 SLX 400X 2025",
+				comparisonAxis: "Availability",
+			},
+			{
+				query:
+					"CUBE Kathmandu Hybrid SLX 2025 Medium availability Europe Kathmando typo",
+				sourcePolicy: "commerce",
+				comparedEntity: "CUBE Kathmandu Hybrid SLX 2025",
+				comparisonAxis: "Availability",
+			},
+			{
+				query: "CUBE Nulane 400X 2025 motor battery specification",
+				sourcePolicy: "commerce",
+				comparedEntity: "CUBE Nulane Hybrid C:62 SLX 400X 2025",
+				comparisonAxis: "Motor and battery",
+			},
+			{
+				query: "CUBE Kathmandu Hybrid SLX 2025 motor battery specification",
+				sourcePolicy: "commerce",
+				comparedEntity: "CUBE Kathmandu Hybrid SLX 2025",
+				comparisonAxis: "Motor and battery",
+			},
+		],
+		evidenceNotes: [
+			evidenceNote({
+				id: "note-nulane-pricing",
+				sourceId: "cube-nulane-pricing",
+				comparedEntity: "CUBE Nulane Hybrid C:62 SLX 400X 2025",
+				comparisonAxis: "Pricing",
+				findingText:
+					"Nulane is listed at EUR 3,499 in the compared 2025 listing.",
+				supportedKeyQuestion:
+					"What 2025 European pricing evidence exists for each bike?",
+				sourceSupport: {
+					sourceId: "cube-nulane-pricing",
+					reviewedSourceId: "cube-nulane-pricing",
+				},
+			}),
+			evidenceNote({
+				id: "note-kathmandu-pricing",
+				sourceId: "cube-kathmandu-pricing",
+				comparedEntity: "CUBE Kathmandu Hybrid SLX 2025",
+				comparisonAxis: "Pricing",
+				findingText:
+					"Kathmandu is listed at EUR 3,699 in the compared 2025 listing.",
+				supportedKeyQuestion:
+					"What 2025 European pricing evidence exists for each bike?",
+				sourceSupport: {
+					sourceId: "cube-kathmandu-pricing",
+					reviewedSourceId: "cube-kathmandu-pricing",
+				},
+			}),
+			evidenceNote({
+				id: "note-nulane-availability",
+				sourceId: "cube-nulane-availability",
+				comparedEntity: "CUBE Nulane Hybrid C:62 SLX 400X 2025",
+				comparisonAxis: "Availability",
+				findingText:
+					"Nulane is shown as available in Medium for European delivery.",
+				supportedKeyQuestion:
+					"What availability and Medium frame-size evidence exists for each bike?",
+				sourceSupport: {
+					sourceId: "cube-nulane-availability",
+					reviewedSourceId: "cube-nulane-availability",
+				},
+			}),
+			evidenceNote({
+				id: "note-kathmandu-availability",
+				sourceId: "cube-kathmandu-availability",
+				comparedEntity: "CUBE Kathmandu Hybrid SLX 2025",
+				comparisonAxis: "Availability",
+				findingText:
+					"Kathmandu is shown as in stock in Medium for European delivery.",
+				supportedKeyQuestion:
+					"What availability and Medium frame-size evidence exists for each bike?",
+				sourceSupport: {
+					sourceId: "cube-kathmandu-availability",
+					reviewedSourceId: "cube-kathmandu-availability",
+				},
+			}),
+			evidenceNote({
+				id: "note-nulane-motor",
+				sourceId: "cube-nulane-motor",
+				comparedEntity: "CUBE Nulane Hybrid C:62 SLX 400X 2025",
+				comparisonAxis: "Motor and battery",
+				findingText: "Nulane uses a Bosch SX motor with a 400Wh battery.",
+				supportedKeyQuestion:
+					"How do the motor and battery specifications compare?",
+				sourceSupport: {
+					sourceId: "cube-nulane-motor",
+					reviewedSourceId: "cube-nulane-motor",
+				},
+			}),
+			evidenceNote({
+				id: "note-kathmandu-motor",
+				sourceId: "cube-kathmandu-motor",
+				comparedEntity: "CUBE Kathmandu Hybrid SLX 2025",
+				comparisonAxis: "Motor and battery",
+				findingText: "Kathmandu uses a Bosch CX motor with a 600Wh battery.",
+				supportedKeyQuestion:
+					"How do the motor and battery specifications compare?",
+				sourceSupport: {
+					sourceId: "cube-kathmandu-motor",
+					reviewedSourceId: "cube-kathmandu-motor",
+				},
+			}),
+		],
+		synthesisClaims: [
+			synthesisClaim({
+				id: "claim-nulane-pricing",
+				statement:
+					"Nulane is listed at EUR 3,499 in the compared 2025 listing.",
+				planQuestion:
+					"What 2025 European pricing evidence exists for each bike?",
+				status: "accepted",
+				evidenceNoteId: "note-nulane-pricing",
+			}),
+			synthesisClaim({
+				id: "claim-kathmandu-pricing",
+				statement:
+					"Kathmandu is listed at EUR 3,699 in the compared 2025 listing.",
+				planQuestion:
+					"What 2025 European pricing evidence exists for each bike?",
+				status: "accepted",
+				evidenceNoteId: "note-kathmandu-pricing",
+			}),
+			synthesisClaim({
+				id: "claim-nulane-availability",
+				statement:
+					"Nulane is shown as available in Medium for European delivery.",
+				planQuestion:
+					"What availability and Medium frame-size evidence exists for each bike?",
+				status: "accepted",
+				evidenceNoteId: "note-nulane-availability",
+			}),
+			synthesisClaim({
+				id: "claim-kathmandu-availability",
+				statement:
+					"Kathmandu is shown as in stock in Medium for European delivery.",
+				planQuestion:
+					"What availability and Medium frame-size evidence exists for each bike?",
+				status: "accepted",
+				evidenceNoteId: "note-kathmandu-availability",
+			}),
+			synthesisClaim({
+				id: "claim-nulane-motor",
+				statement: "Nulane uses a Bosch SX motor with a 400Wh battery.",
+				planQuestion: "How do the motor and battery specifications compare?",
+				status: "accepted",
+				evidenceNoteId: "note-nulane-motor",
+			}),
+			synthesisClaim({
+				id: "claim-kathmandu-motor",
+				statement: "Kathmandu uses a Bosch CX motor with a 600Wh battery.",
+				planQuestion: "How do the motor and battery specifications compare?",
+				status: "accepted",
+				evidenceNoteId: "note-kathmandu-motor",
+			}),
+		],
+		reportArtifact: {
+			id: "artifact-nulane-kathmandu",
+			contentText: [
+				"# Research Report: Nulane 400X vs Kathmandu SLX",
+				"## Answer",
+				"Compared on the accepted evidence, Nulane looks lighter-duty and lower-priced while Kathmandu has the larger motor and battery; availability evidence is limited to Medium European listings.",
+				"## Comparison Matrix",
+				"| Axis | CUBE Nulane Hybrid C:62 SLX 400X 2025 | CUBE Kathmandu Hybrid SLX 2025 | Decision Meaning |",
+				"| --- | --- | --- | --- |",
+				"| Pricing | Nulane is listed at EUR 3,499 in the compared 2025 listing. [1] | Kathmandu is listed at EUR 3,699 in the compared 2025 listing. [2] | Kathmandu carries the higher listed price in the reviewed evidence. |",
+				"| Availability | Nulane is shown as available in Medium for European delivery. [3] | Kathmandu is shown as in stock in Medium for European delivery. [4] | Both availability claims are listing-bound and should be treated as time-sensitive. |",
+				"| Motor and battery | Nulane uses a Bosch SX motor with a 400Wh battery. [5] | Kathmandu uses a Bosch CX motor with a 600Wh battery. [6] | Kathmandu is the stronger touring-oriented support package. |",
+				"## Source Ledger Snapshot",
+				"### Cited Sources",
+				"- Cube Nulane 400X official European listing - https://cube.example.test/nulane-400x",
+				"- Cube Kathmandu SLX official European listing - https://cube.example.test/kathmandu-slx",
+				"- Cube Nulane 400X availability listing - https://retailer.example.test/nulane-medium",
+				"- Cube Kathmandu SLX availability listing - https://retailer.example.test/kathmandu-medium",
+				"- Cube Nulane 400X motor specification - https://cube.example.test/nulane-400x/specs",
+				"- Cube Kathmandu SLX motor specification - https://cube.example.test/kathmandu-slx/specs",
+				"### Topic-relevant Reviewed Sources",
+				"- No sources recorded.",
+				"### Rejected/Off-topic Reviewed Sources",
+				"- No sources recorded.",
+			].join("\n"),
+			metadata: {
+				deepResearchReport: true,
+				documentRole: "research_report",
+			},
+		},
+		expectedComparisonGrid: [
+			{
+				comparedEntity: "CUBE Nulane Hybrid C:62 SLX 400X 2025",
+				comparisonAxis: "Pricing",
+				expectedText:
+					"Nulane is listed at EUR 3,499 in the compared 2025 listing.",
+			},
+			{
+				comparedEntity: "CUBE Kathmandu Hybrid SLX 2025",
+				comparisonAxis: "Pricing",
+				expectedText:
+					"Kathmandu is listed at EUR 3,699 in the compared 2025 listing.",
+			},
+			{
+				comparedEntity: "CUBE Nulane Hybrid C:62 SLX 400X 2025",
+				comparisonAxis: "Availability",
+				expectedText:
+					"Nulane is shown as available in Medium for European delivery.",
+			},
+			{
+				comparedEntity: "CUBE Kathmandu Hybrid SLX 2025",
+				comparisonAxis: "Availability",
+				expectedText:
+					"Kathmandu is shown as in stock in Medium for European delivery.",
+			},
+			{
+				comparedEntity: "CUBE Nulane Hybrid C:62 SLX 400X 2025",
+				comparisonAxis: "Motor and battery",
+				expectedText: "Nulane uses a Bosch SX motor with a 400Wh battery.",
+			},
+			{
+				comparedEntity: "CUBE Kathmandu Hybrid SLX 2025",
+				comparisonAxis: "Motor and battery",
+				expectedText: "Kathmandu uses a Bosch CX motor with a 600Wh battery.",
+			},
+		],
+	},
 	crashResumeHungarianHardSearch: {
 		id: "crash-resume-hungarian-hard-search",
 		title: "Crash resume with Hungarian hard-search output",
@@ -519,6 +1019,8 @@ export async function evaluateDeepResearchRun(
 	}
 	evaluateComparisonCoverage(run, dimensions.comparisonCoverage);
 	evaluateSearchPolicyFit(run, dimensions.searchPolicyFit);
+	evaluateReportAnswerQuality(run, dimensions.readableSynthesis);
+	evaluateSourceLedgerQuality(run, dimensions);
 	if (run.resumeTrace && !hasDurableCrashResumeTrace(run.resumeTrace)) {
 		failDimension(
 			dimensions.durableResume,
@@ -614,15 +1116,17 @@ function evaluateComparisonCoverage(
 			"Persisted report artifact text is required to evaluate comparison coverage.",
 		);
 	}
+	evaluateComparisonMatrixShape(run, dimension);
 	const acceptedClaimByEvidenceNoteId = new Set(
 		run.synthesisClaims
-			.filter((claim) => claim.status === "accepted" || claim.status === "limited")
+			.filter(
+				(claim) => claim.status === "accepted" || claim.status === "limited",
+			)
 			.flatMap((claim) =>
 				claim.evidenceLinks
 					.filter(
 						(link) =>
-							link.relation === "support" ||
-							link.relation === "qualification",
+							link.relation === "support" || link.relation === "qualification",
 					)
 					.map((link) => link.evidenceNoteId),
 			),
@@ -648,6 +1152,126 @@ function evaluateComparisonCoverage(
 	}
 }
 
+function evaluateComparisonMatrixShape(
+	run: DeepResearchEvaluationRun,
+	dimension: DeepResearchEvaluationDimensionResult,
+) {
+	const matrices = extractComparisonMatrices(reportTextForEvaluation(run));
+	if (matrices.length === 0) return;
+	const expectedEntities = uniqueNormalizedValues(
+		expectedComparisonCells(run).map((cell) => cell.comparedEntity),
+	);
+	for (const matrix of matrices) {
+		if (expectedEntities.length > 0) {
+			const unexpectedColumns = matrix.entityColumns.filter(
+				(column) =>
+					!expectedEntities.some((entity) => termsMatch(column, entity)),
+			);
+			if (unexpectedColumns.length > 0) {
+				failDimension(
+					dimension,
+					"Comparison matrix columns must be compared entities, not constraints or axes.",
+				);
+			}
+		}
+		if (
+			matrix.entityCells.length > 0 &&
+			matrix.entityCells.every(isNotEstablishedCell)
+		) {
+			failDimension(
+				dimension,
+				"Comparison matrix must not be entirely empty or Not established.",
+			);
+		}
+	}
+}
+
+function evaluateReportAnswerQuality(
+	run: DeepResearchEvaluationRun,
+	dimension: DeepResearchEvaluationDimensionResult,
+) {
+	if (run.plan.reportIntent !== "comparison") return;
+	if (run.plan.researchLanguage === "hu") return;
+	const reportText = reportTextForEvaluation(run);
+	if (!reportText) return;
+	if (/\bevidence limitation memo\b/iu.test(reportText)) return;
+	const answerText =
+		extractMarkdownSectionText(reportText, "Answer") ||
+		extractMarkdownSectionText(reportText, "Executive Summary");
+	if (
+		!answerText ||
+		(!hasComparativeConclusionOrLimitation(answerText) &&
+			countMentionedComparedEntities(
+				answerText,
+				run.plan.comparedEntities ?? [],
+			) < 2)
+	) {
+		failDimension(
+			dimension,
+			"Comparison reports must include an answer section with a comparative conclusion or explicit limitation.",
+		);
+	}
+}
+
+function evaluateSourceLedgerQuality(
+	run: DeepResearchEvaluationRun,
+	dimensions: Record<
+		DeepResearchEvaluationDimension,
+		DeepResearchEvaluationDimensionResult
+	>,
+) {
+	const reportText = reportTextForEvaluation(run);
+	if (!reportText) return;
+	const ledger = extractSourceLedgerSections(reportText);
+	if (
+		ledger.cited.length === 0 &&
+		ledger.topicRelevant.length === 0 &&
+		ledger.rejectedOrOffTopic.length === 0
+	) {
+		return;
+	}
+	const acceptedReviewedSources = run.reviewedSources.filter(
+		(source) => source.topicRelevant !== false,
+	);
+	const rejectedOrOffTopicSources = run.reviewedSources.filter(
+		(source) => source.topicRelevant === false,
+	);
+	const unrelatedCitedLines = ledger.cited.filter(
+		(line) =>
+			!acceptedReviewedSources.some((source) =>
+				sourceLineMatchesReviewedSource(line, source),
+			),
+	);
+	if (unrelatedCitedLines.length > 0) {
+		failDimension(
+			dimensions.citationSupport,
+			"Cited sources must come from topic-relevant reviewed sources.",
+		);
+	}
+	const offTopicTopicRelevantLines = ledger.topicRelevant.filter((line) =>
+		rejectedOrOffTopicSources.some((source) =>
+			sourceLineMatchesReviewedSource(line, source),
+		),
+	);
+	if (offTopicTopicRelevantLines.length > 0) {
+		failDimension(
+			dimensions.sourceRelevance,
+			"Source ledger topic-relevant section must not include rejected or off-topic sources.",
+		);
+	}
+	const acceptedRejectedLines = ledger.rejectedOrOffTopic.filter((line) =>
+		acceptedReviewedSources.some((source) =>
+			sourceLineMatchesReviewedSource(line, source),
+		),
+	);
+	if (acceptedRejectedLines.length > 0) {
+		failDimension(
+			dimensions.citationSupport,
+			"Source ledger rejected/off-topic section must not include accepted reviewed sources.",
+		);
+	}
+}
+
 function expectedComparisonCells(
 	run: DeepResearchEvaluationRun,
 ): DeepResearchExpectedComparisonCell[] {
@@ -669,7 +1293,9 @@ function evaluateSearchPolicyFit(
 ) {
 	const requests = run.discoveryRequests ?? [];
 	if (requests.length === 0) return;
-	const missingPolicyRequests = requests.filter((request) => !request.sourcePolicy);
+	const missingPolicyRequests = requests.filter(
+		(request) => !request.sourcePolicy,
+	);
 	if (missingPolicyRequests.length > 0) {
 		failDimension(
 			dimension,
@@ -849,8 +1475,176 @@ function normalizeComparableText(value: string): string {
 		.toLowerCase();
 }
 
+function extractMarkdownSectionText(markdown: string, heading: string): string {
+	const lines = markdown.split(/\r?\n/);
+	const chunks: string[] = [];
+	let inSection = false;
+	for (const line of lines) {
+		const match = line.match(/^(#{2,6})\s+(.+)$/);
+		if (match) {
+			if (inSection) break;
+			inSection =
+				normalizeComparableText(match[2] ?? "") ===
+				normalizeComparableText(heading);
+			continue;
+		}
+		if (inSection) chunks.push(line.trim());
+	}
+	return chunks.join(" ").trim();
+}
+
+function hasComparativeConclusionOrLimitation(value: string): boolean {
+	const normalized = normalizeComparableText(value);
+	return /\b(compare|compared|comparison|differ|difference|higher|lower|larger|smaller|stronger|weaker|better|worse|choose|recommend|decision|limited|limitation|insufficient|not enough|not established|unresolved)\b/u.test(
+		normalized,
+	);
+}
+
+function countMentionedComparedEntities(
+	value: string,
+	comparedEntities: string[],
+): number {
+	const normalized = normalizeComparableText(value);
+	return uniqueNormalizedValues(comparedEntities).filter((entity) =>
+		normalized.includes(normalizeComparableText(entity)),
+	).length;
+}
+
+function uniqueNormalizedValues(values: string[]): string[] {
+	const seen = new Set<string>();
+	const uniqueValues: string[] = [];
+	for (const value of values) {
+		const normalized = normalizeComparableText(value);
+		if (!normalized || seen.has(normalized)) continue;
+		seen.add(normalized);
+		uniqueValues.push(value);
+	}
+	return uniqueValues;
+}
+
 function termsMatch(left: string | null | undefined, right: string): boolean {
 	return normalizeComparableText(left ?? "") === normalizeComparableText(right);
+}
+
+type SourceLedgerSections = {
+	cited: string[];
+	topicRelevant: string[];
+	rejectedOrOffTopic: string[];
+};
+
+function extractSourceLedgerSections(markdown: string): SourceLedgerSections {
+	const sections: SourceLedgerSections = {
+		cited: [],
+		topicRelevant: [],
+		rejectedOrOffTopic: [],
+	};
+	let currentSection: keyof SourceLedgerSections | null = null;
+	for (const line of markdown.split(/\r?\n/)) {
+		const heading = line.match(/^#{2,6}\s+(.+)$/);
+		if (heading) {
+			const normalized = normalizeSourceLedgerHeading(heading[1] ?? "");
+			if (normalized === "cited sources") currentSection = "cited";
+			else if (normalized === "topic relevant reviewed sources") {
+				currentSection = "topicRelevant";
+			} else if (normalized === "rejected off topic reviewed sources") {
+				currentSection = "rejectedOrOffTopic";
+			} else currentSection = null;
+			continue;
+		}
+		if (!currentSection) continue;
+		const bullet = line.match(/^-\s+(.+)$/);
+		if (!bullet) continue;
+		const value = bullet[1]?.trim() ?? "";
+		if (!value || /^no sources recorded\.?$/iu.test(value)) continue;
+		sections[currentSection].push(value);
+	}
+	return sections;
+}
+
+function normalizeSourceLedgerHeading(value: string): string {
+	return normalizeComparableText(value)
+		.replace(/[^a-z0-9]+/g, " ")
+		.trim();
+}
+
+function sourceLineMatchesReviewedSource(
+	line: string,
+	source: ReviewedCoverageSource,
+): boolean {
+	const normalizedLine = normalizeComparableText(line);
+	const values = [source.title, source.canonicalUrl, source.url].filter(
+		(value): value is string => Boolean(value),
+	);
+	return values.some((value) => {
+		const normalizedValue = normalizeComparableText(value);
+		return (
+			normalizedValue.length > 0 && normalizedLine.includes(normalizedValue)
+		);
+	});
+}
+
+type ParsedComparisonMatrix = {
+	entityColumns: string[];
+	entityCells: string[];
+};
+
+function extractComparisonMatrices(markdown: string): ParsedComparisonMatrix[] {
+	const lines = markdown.split(/\r?\n/);
+	const matrices: ParsedComparisonMatrix[] = [];
+	for (let index = 0; index < lines.length; index += 1) {
+		const headerCells = splitMarkdownTableRow(lines[index]);
+		if (!isComparisonMatrixHeader(headerCells)) continue;
+		const decisionColumnIndex = findDecisionColumnIndex(headerCells);
+		const entityColumns = headerCells.slice(1, decisionColumnIndex);
+		const entityCells: string[] = [];
+		for (let rowIndex = index + 1; rowIndex < lines.length; rowIndex += 1) {
+			const rowCells = splitMarkdownTableRow(lines[rowIndex]);
+			if (rowCells.length === 0) break;
+			if (isMarkdownSeparatorRow(rowCells)) continue;
+			entityCells.push(...rowCells.slice(1, decisionColumnIndex));
+		}
+		matrices.push({ entityColumns, entityCells });
+	}
+	return matrices;
+}
+
+function splitMarkdownTableRow(line: string | undefined): string[] {
+	const value = line?.trim() ?? "";
+	if (!value.startsWith("|") || !value.endsWith("|")) return [];
+	return value
+		.slice(1, -1)
+		.split("|")
+		.map((cell) => cell.trim());
+}
+
+function isComparisonMatrixHeader(cells: string[]): boolean {
+	return (
+		cells.length >= 4 &&
+		normalizeComparableText(cells[0] ?? "") === "axis" &&
+		findDecisionColumnIndex(cells) > 1
+	);
+}
+
+function findDecisionColumnIndex(cells: string[]): number {
+	const index = cells.findIndex((cell) =>
+		/\b(decision|meaning|implication)\b/u.test(normalizeComparableText(cell)),
+	);
+	return index === -1 ? cells.length : index;
+}
+
+function isMarkdownSeparatorRow(cells: string[]): boolean {
+	return cells.every((cell) => /^:?-{3,}:?$/u.test(cell));
+}
+
+function isNotEstablishedCell(cell: string): boolean {
+	const normalized = normalizeComparableText(cell);
+	return (
+		normalized.length === 0 ||
+		normalized === "not established" ||
+		normalized === "not established." ||
+		normalized === "n/a" ||
+		normalized === "-"
+	);
 }
 
 function hasDurableCrashResumeTrace(
@@ -923,6 +1717,11 @@ function reviewedSource(
 		keyFindings: overrides.keyFindings ?? [],
 		qualityScore: overrides.qualityScore ?? 75,
 		topicRelevant: overrides.topicRelevant ?? true,
+		reviewedAt: overrides.reviewedAt,
+		publishedAt: overrides.publishedAt ?? overrides.reviewedAt,
+		sourceQualitySignals: overrides.sourceQualitySignals,
+		comparedEntity: overrides.comparedEntity,
+		comparisonAxis: overrides.comparisonAxis,
 	};
 }
 

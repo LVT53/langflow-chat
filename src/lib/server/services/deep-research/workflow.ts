@@ -1,50 +1,39 @@
 import { and, eq } from "drizzle-orm";
+import { getConfig } from "$lib/server/config-store";
 import { db } from "$lib/server/db";
 import { deepResearchJobs } from "$lib/server/db/schema";
-import { getConfig } from "$lib/server/config-store";
 import type {
+	DeepResearchEvidenceNote,
 	DeepResearchJob,
+	DeepResearchPassCheckpoint,
+	DeepResearchPassDecision,
 	DeepResearchSource,
+	DeepResearchSynthesisClaim,
 	DeepResearchTask,
 	DeepResearchTaskOutput,
 } from "$lib/types";
+import type { CoverageGap, ResearchCoverageAssessment } from "./coverage";
 import { assessResearchCoverage } from "./coverage";
+import {
+	buildDeepResearchForeignKeyDiagnostics,
+	formatDeepResearchDiagnosticsJson,
+	isSqliteForeignKeyConstraintError,
+} from "./diagnostics";
 import { runPublicWebDiscoveryPass } from "./discovery";
-import {
-	completeDeepResearchJobWithEvidenceLimitationMemo,
-	completeDeepResearchJobWithAuditedReport,
-	listConversationDeepResearchJobs,
-} from "./index";
-import type { ResearchPlan } from "./planning";
-import {
-	isSourceTopicRelevantToPlan,
-	type PersistedReviewedResearchSourceNotes,
-	type SourceReviewer,
-	triageAndReviewSources,
-} from "./source-review";
-import {
-	listResearchSources,
-	markResearchSourceRejected,
-	markResearchSourceReviewed,
-} from "./sources";
-import {
-	buildSynthesisNotes,
-	type CompletedResearchTaskOutput,
-	type ResearchSourceReference,
-} from "./synthesis";
-import {
-	buildSynthesisNotesWithLlm,
-	executeResearchTaskWithLlm,
-	reviewSourceWithLlm,
-} from "./llm-steps";
 import {
 	buildSourceReviewEvidenceNotes,
 	listDeepResearchEvidenceNotes,
 } from "./evidence-notes";
 import {
-	listDeepResearchSynthesisClaims,
-	saveDeepResearchSynthesisClaimsFromNotes,
-} from "./synthesis-claims";
+	completeDeepResearchJobWithAuditedReport,
+	completeDeepResearchJobWithEvidenceLimitationMemo,
+	listConversationDeepResearchJobs,
+} from "./index";
+import {
+	buildSynthesisNotesWithLlm,
+	executeResearchTaskWithLlm,
+	reviewSourceWithLlm,
+} from "./llm-steps";
 import {
 	completeResearchPassCheckpoint,
 	listResearchCoverageGaps,
@@ -53,6 +42,33 @@ import {
 	saveCoverageGapsForPass,
 	upsertResearchPassCheckpoint,
 } from "./pass-state";
+import type { ResearchPlan } from "./planning";
+import {
+	completeResearchResumePoint,
+	getResearchResumePoint,
+	upsertResearchResumePoint,
+} from "./resume-points";
+import {
+	isSourceTopicRelevantToPlan,
+	type PersistedReviewedResearchSourceNotes,
+	type SourceReviewer,
+	triageAndReviewSources,
+} from "./source-review";
+import {
+	isAcceptedReviewedResearchSource,
+	listResearchSources,
+	markResearchSourceRejected,
+	markResearchSourceReviewed,
+} from "./sources";
+import type {
+	buildSynthesisNotes,
+	CompletedResearchTaskOutput,
+	ResearchSourceReference,
+} from "./synthesis";
+import {
+	listDeepResearchSynthesisClaims,
+	saveDeepResearchSynthesisClaimsFromNotes,
+} from "./synthesis-claims";
 import {
 	claimResearchTasks,
 	completeResearchTask,
@@ -66,21 +82,6 @@ import {
 	saveResearchTimelineEvent,
 	saveResearchTimelineEventOnce,
 } from "./timeline";
-import {
-	completeResearchResumePoint,
-	getResearchResumePoint,
-	upsertResearchResumePoint,
-} from "./resume-points";
-import {
-	buildDeepResearchForeignKeyDiagnostics,
-	formatDeepResearchDiagnosticsJson,
-	isSqliteForeignKeyConstraintError,
-} from "./diagnostics";
-import type { ResearchCoverageAssessment, CoverageGap } from "./coverage";
-import type {
-	DeepResearchPassCheckpoint,
-	DeepResearchPassDecision,
-} from "$lib/types";
 
 export type RunDeepResearchWorkflowStepInput = {
 	userId: string;
@@ -250,6 +251,9 @@ async function runResearchTasksStep(
 		jobId: jobRow.id,
 	});
 	const reviewedSources = sources.filter((source) => source.reviewedAt);
+	const acceptedReviewedSources = sources.filter(
+		isAcceptedReviewedResearchSource,
+	);
 
 	const workflowRunningTasks = passTasks.filter(
 		(task) =>
@@ -319,7 +323,7 @@ async function runResearchTasksStep(
 					job,
 					approvedPlan: approvedPlan as ResearchPlan,
 					task,
-					reviewedSources,
+					reviewedSources: acceptedReviewedSources,
 					allSources: sources,
 					now,
 				});
@@ -475,7 +479,7 @@ async function runResearchTasksStep(
 		completedPassTasks,
 		completedTasks,
 		taskLimitations,
-		reviewedSources,
+		reviewedSources: acceptedReviewedSources,
 		sources,
 		now,
 	});
@@ -531,10 +535,12 @@ async function runResearchTasksStep(
 			),
 		);
 
-	const sourceRefsById = buildResearchSourceReferenceMap(reviewedSources);
+	const sourceRefsById = buildResearchSourceReferenceMap(
+		acceptedReviewedSources,
+	);
 	const synthesisInput = {
 		jobId: jobRow.id,
-		reviewedSources: reviewedSources.map(mapReviewedSourceForSynthesis),
+		reviewedSources: acceptedReviewedSources.map(mapReviewedSourceForSynthesis),
 		completedTasks: completedTasks.map((task) =>
 			mapCompletedResearchTaskForSynthesis(task, sourceRefsById),
 		),
@@ -550,7 +556,7 @@ async function runResearchTasksStep(
 		jobRow,
 		approvedPlan: approvedPlan as ResearchPlan,
 		passNumber,
-		reviewedSources,
+		reviewedSources: acceptedReviewedSources,
 		allSources: sources,
 		taskLimitations,
 		now,
@@ -562,7 +568,7 @@ async function runResearchTasksStep(
 			jobRow,
 			approvedPlan: approvedPlan as ResearchPlan,
 			currentPassNumber: passNumber,
-			reviewedSources,
+			reviewedSources: acceptedReviewedSources,
 			sources,
 			now,
 			dependencies,
@@ -629,6 +635,9 @@ async function runSynthesisResumeStep(
 		jobId: jobRow.id,
 	});
 	const reviewedSources = sources.filter((source) => source.reviewedAt);
+	const acceptedReviewedSources = sources.filter(
+		isAcceptedReviewedResearchSource,
+	);
 	const synthesisResumeKey = `synthesis:${jobRow.id}:${passNumber}`;
 	const existingSynthesis = await getResearchResumePoint({
 		userId: jobRow.userId,
@@ -649,10 +658,12 @@ async function runSynthesisResumeStep(
 		},
 		now,
 	});
-	const sourceRefsById = buildResearchSourceReferenceMap(reviewedSources);
+	const sourceRefsById = buildResearchSourceReferenceMap(
+		acceptedReviewedSources,
+	);
 	const synthesisInput = {
 		jobId: jobRow.id,
-		reviewedSources: reviewedSources.map(mapReviewedSourceForSynthesis),
+		reviewedSources: acceptedReviewedSources.map(mapReviewedSourceForSynthesis),
 		completedTasks: completedTasks.map((task) =>
 			mapCompletedResearchTaskForSynthesis(task, sourceRefsById),
 		),
@@ -695,7 +706,7 @@ async function runSynthesisResumeStep(
 		jobRow,
 		approvedPlan: approvedPlan as ResearchPlan,
 		passNumber,
-		reviewedSources,
+		reviewedSources: acceptedReviewedSources,
 		allSources: sources,
 		taskLimitations,
 		now,
@@ -707,7 +718,7 @@ async function runSynthesisResumeStep(
 			jobRow,
 			approvedPlan: approvedPlan as ResearchPlan,
 			currentPassNumber: passNumber,
-			reviewedSources,
+			reviewedSources: acceptedReviewedSources,
 			sources,
 			now,
 			dependencies,
@@ -751,8 +762,37 @@ async function assessReportEligibilityAfterSynthesis(input: {
 			jobId: input.jobRow.id,
 		}),
 	]);
+	const publicationGate = assessReportPublicationGate({
+		approvedPlan: input.approvedPlan,
+		reviewedSources: input.reviewedSources,
+		allSources: input.allSources,
+		evidenceNotes,
+		synthesisClaims,
+	});
+	const hasClaimReadinessIssue =
+		hasReportBlockingClaimReadinessIssue(synthesisClaims);
+	if (!publicationGate.eligible && publicationGate.forceMemo) {
+		return completeCoverageExhaustedWithEvidenceLimitationMemo({
+			jobRow: input.jobRow,
+			now: input.now,
+			limitations: [...input.taskLimitations, ...publicationGate.limitations],
+			sourceCounts: sourceCountsFromResearchSources(input.allSources),
+			dependencies: input.dependencies,
+		});
+	}
 	if (evidenceNotes.length === 0) return null;
-	if (!hasReportBlockingClaimReadinessIssue(synthesisClaims)) return null;
+	if (!hasClaimReadinessIssue) {
+		if (!publicationGate.eligible) {
+			return completeCoverageExhaustedWithEvidenceLimitationMemo({
+				jobRow: input.jobRow,
+				now: input.now,
+				limitations: [...input.taskLimitations, ...publicationGate.limitations],
+				sourceCounts: sourceCountsFromResearchSources(input.allSources),
+				dependencies: input.dependencies,
+			});
+		}
+		return null;
+	}
 	const completedRepairPasses = await countCompletedRepairResearchPasses({
 		userId: input.jobRow.userId,
 		jobId: input.jobRow.id,
@@ -781,7 +821,7 @@ async function assessReportEligibilityAfterSynthesis(input: {
 			sourceReviews: Math.max(
 				0,
 				input.approvedPlan.researchBudget.sourceReviewCeiling -
-					input.reviewedSources.length,
+					sourceCountsFromResearchSources(input.allSources).reviewed,
 			),
 			synthesisPasses: Math.max(
 				0,
@@ -813,6 +853,7 @@ async function assessReportEligibilityAfterSynthesis(input: {
 			now: input.now,
 			limitations: [
 				...input.taskLimitations,
+				...publicationGate.limitations,
 				...coverageAssessment.reportLimitations.map(
 					(limitation) => limitation.limitation,
 				),
@@ -922,6 +963,241 @@ function hasReportBlockingClaimReadinessIssue(
 	const centralClaims = synthesisClaims.filter((claim) => claim.central);
 	if (!centralClaims.some(isReportReadyCentralClaim)) return true;
 	return false;
+}
+
+type ReportPublicationGateResult = {
+	eligible: boolean;
+	forceMemo: boolean;
+	limitations: string[];
+};
+
+function assessReportPublicationGate(input: {
+	approvedPlan: ResearchPlan;
+	reviewedSources: DeepResearchSource[];
+	allSources: DeepResearchSource[];
+	evidenceNotes: DeepResearchEvidenceNote[];
+	synthesisClaims: DeepResearchSynthesisClaim[];
+}): ReportPublicationGateResult {
+	const usefulClaims = input.synthesisClaims.filter(isUsefulReportClaim);
+	const acceptedReviewedSourceCount = input.reviewedSources.length;
+	const rejectedOrOffTopicReviewedCount = input.allSources.filter(
+		(source) => source.reviewedAt && !isAcceptedReviewedResearchSource(source),
+	).length;
+	const scopeSummary = `Reviewed scope included ${acceptedReviewedSourceCount} accepted reviewed source${acceptedReviewedSourceCount === 1 ? "" : "s"} and ${rejectedOrOffTopicReviewedCount} rejected or off-topic reviewed source${rejectedOrOffTopicReviewedCount === 1 ? "" : "s"}.`;
+
+	if (input.approvedPlan.reportIntent !== "comparison") {
+		if (usefulClaims.length > 0) {
+			return { eligible: true, forceMemo: false, limitations: [] };
+		}
+		return {
+			eligible: false,
+			forceMemo: false,
+			limitations: [
+				scopeSummary,
+				"No accepted or limited Synthesis Claim had useful supporting evidence for the approved Research Plan.",
+				"Next research direction: collect stronger topic-relevant evidence and produce at least one supported central claim before publication.",
+			],
+		};
+	}
+
+	const comparisonGate = assessComparisonReportPublicationGate({
+		approvedPlan: input.approvedPlan,
+		evidenceNotes: input.evidenceNotes,
+		synthesisClaims: input.synthesisClaims,
+	});
+	if (comparisonGate.eligible) {
+		return { eligible: true, forceMemo: false, limitations: [] };
+	}
+
+	return {
+		eligible: false,
+		forceMemo: comparisonGate.hasUsefulCells,
+		limitations: [scopeSummary, ...comparisonGate.limitations],
+	};
+}
+
+function isUsefulReportClaim(claim: DeepResearchSynthesisClaim): boolean {
+	return (
+		(claim.status === "accepted" || claim.status === "limited") &&
+		claim.evidenceLinks.some(
+			(link) =>
+				link.relation === "support" || link.relation === "qualification",
+		) &&
+		!claim.evidenceLinks.some(
+			(link) => link.relation === "contradiction" && link.material,
+		)
+	);
+}
+
+function assessComparisonReportPublicationGate(input: {
+	approvedPlan: ResearchPlan;
+	evidenceNotes: DeepResearchEvidenceNote[];
+	synthesisClaims: DeepResearchSynthesisClaim[];
+}): { eligible: boolean; hasUsefulCells: boolean; limitations: string[] } {
+	const usefulCells = buildUsefulComparisonCells(input);
+	const plannedEntities = uniqueNormalizedLabels(
+		input.approvedPlan.comparedEntities ?? [],
+	);
+	const evidenceEntities = uniqueNormalizedLabels(
+		usefulCells.map((cell) => cell.entity),
+	);
+	const entities =
+		plannedEntities.length > 0 ? plannedEntities : evidenceEntities;
+	const plannedAxes = uniqueNormalizedLabels(
+		input.approvedPlan.comparisonAxes ?? [],
+	);
+	const evidenceAxes = uniqueNormalizedLabels(
+		usefulCells.map((cell) => cell.axis),
+	);
+	const axes = plannedAxes.length > 0 ? plannedAxes : evidenceAxes;
+	const limitations: string[] = [];
+
+	if (entities.length < 2) {
+		limitations.push(
+			"Unresolved comparison gap: the approved comparison did not have useful supported evidence for at least two compared entities.",
+		);
+	}
+	if (axes.length === 0) {
+		limitations.push(
+			"Unresolved comparison gap: the approved comparison did not have any useful supported central axis evidence.",
+		);
+	}
+
+	const usefulCellKeys = new Set(
+		usefulCells.map((cell) => comparisonCellKey(cell.entity, cell.axis)),
+	);
+	const missingEntityLabels = entities
+		.filter(
+			(entity) =>
+				!axes.some((axis) =>
+					usefulCellKeys.has(comparisonCellKey(entity, axis)),
+				),
+		)
+		.map((entity) => entity.label);
+	for (const entity of missingEntityLabels) {
+		limitations.push(
+			`Unresolved entity gap: ${entity} has no useful supported comparison cell for the approved plan.`,
+		);
+	}
+
+	const supportedAxisLabels = axes
+		.filter((axis) =>
+			entities.some((entity) =>
+				usefulCellKeys.has(comparisonCellKey(entity, axis)),
+			),
+		)
+		.map((axis) => axis.label);
+	const requiredAxisCount =
+		axes.length <= 1 ? axes.length : Math.min(2, axes.length);
+	if (supportedAxisLabels.length < requiredAxisCount) {
+		limitations.push(
+			`Unresolved axis gap: only ${supportedAxisLabels.length} of ${requiredAxisCount} required central comparison axis${requiredAxisCount === 1 ? "" : "es"} had useful supported evidence.`,
+		);
+	}
+
+	const totalPlannedCells = entities.length * axes.length;
+	const usefulPlannedCellCount = [...usefulCellKeys].filter((key) => {
+		const [entityKey, axisKey] = key.split("|", 2);
+		return (
+			entities.some((entity) => entity.key === entityKey) &&
+			axes.some((axis) => axis.key === axisKey)
+		);
+	}).length;
+	if (totalPlannedCells > 0 && usefulPlannedCellCount === 0) {
+		limitations.push(
+			"All comparison matrix cells were not established from useful accepted or limited evidence.",
+		);
+	} else if (
+		totalPlannedCells >= 4 &&
+		usefulPlannedCellCount / totalPlannedCells < 0.5
+	) {
+		limitations.push(
+			`Mostly empty comparison matrix: ${usefulPlannedCellCount} of ${totalPlannedCells} planned entity-axis cells had useful accepted or limited evidence.`,
+		);
+	}
+
+	if (limitations.length > 0) {
+		const targetEntities =
+			missingEntityLabels.length > 0
+				? missingEntityLabels.join(", ")
+				: entities.map((entity) => entity.label).join(", ");
+		const targetAxes =
+			axes.length > 0
+				? axes.map((axis) => axis.label).join(", ")
+				: "the central comparison axes";
+		limitations.push(
+			`Next research direction: run targeted source discovery for ${targetEntities} on ${targetAxes}, then synthesize supported cells before publishing a comparison report.`,
+		);
+	}
+
+	return {
+		eligible: limitations.length === 0,
+		hasUsefulCells: usefulCells.length > 0,
+		limitations,
+	};
+}
+
+function buildUsefulComparisonCells(input: {
+	evidenceNotes: DeepResearchEvidenceNote[];
+	synthesisClaims: DeepResearchSynthesisClaim[];
+}): Array<{ entity: string; axis: string }> {
+	const evidenceById = new Map(
+		input.evidenceNotes.map((note) => [note.id, note]),
+	);
+	const cells: Array<{ entity: string; axis: string }> = [];
+	for (const claim of input.synthesisClaims) {
+		if (!isUsefulReportClaim(claim)) continue;
+		for (const link of claim.evidenceLinks) {
+			if (link.relation !== "support" && link.relation !== "qualification") {
+				continue;
+			}
+			const note = evidenceById.get(link.evidenceNoteId);
+			const entity = normalizeWorkflowText(note?.comparedEntity ?? "");
+			const axis = normalizeWorkflowText(note?.comparisonAxis ?? "");
+			if (!entity || !axis) continue;
+			cells.push({ entity, axis });
+		}
+	}
+	return cells;
+}
+
+function uniqueNormalizedLabels(values: string[]) {
+	const labels: Array<{ key: string; label: string }> = [];
+	const seen = new Set<string>();
+	for (const value of values) {
+		const label = normalizeWorkflowText(value);
+		const key = normalizeComparisonLabelKey(label);
+		if (!label || !key || seen.has(key)) continue;
+		seen.add(key);
+		labels.push({ key, label });
+	}
+	return labels;
+}
+
+function comparisonCellKey(
+	entity: string | { key: string },
+	axis: string | { key: string },
+): string {
+	const entityKey =
+		typeof entity === "string"
+			? normalizeComparisonLabelKey(entity)
+			: entity.key;
+	const axisKey =
+		typeof axis === "string" ? normalizeComparisonLabelKey(axis) : axis.key;
+	return `${entityKey}|${axisKey}`;
+}
+
+function normalizeComparisonLabelKey(value: string): string {
+	return normalizeWorkflowText(value)
+		.toLowerCase()
+		.normalize("NFD")
+		.replace(/\p{Diacritic}/gu, "")
+		.replace(/[^a-z0-9]+/g, " ")
+		.trim();
+}
+
+function normalizeWorkflowText(value: string): string {
+	return value.replace(/\s+/g, " ").trim();
 }
 
 function isReportReadyCentralClaim(
@@ -1193,7 +1469,7 @@ async function runSourceReviewStep(
 										openedContentLength: notes.openedContentLength,
 									});
 
-							if (!notes.rejectedReason) {
+							if (isAcceptedReviewedResearchSource(reviewedSource)) {
 								await buildSourceReviewEvidenceNotes({
 									userId: jobRow.userId,
 									jobId: jobRow.id,
@@ -1219,6 +1495,7 @@ async function runSourceReviewStep(
 							return {
 								...notes,
 								id: reviewedSource.id,
+								reviewedAt: reviewedSource.reviewedAt ?? now.toISOString(),
 								createdAt: reviewedSource.reviewedAt ?? now.toISOString(),
 							};
 						},
@@ -1238,6 +1515,9 @@ async function runSourceReviewStep(
 		});
 	}
 	const reviewedSources = sources.filter((source) => source.reviewedAt);
+	const acceptedReviewedSources = sources.filter(
+		isAcceptedReviewedResearchSource,
+	);
 	if (reviewWarnings.length > 0) {
 		await saveResearchTimelineEvent({
 			jobId: jobRow.id,
@@ -1290,7 +1570,7 @@ async function runSourceReviewStep(
 		jobId: jobRow.id,
 		conversationId: jobRow.conversationId,
 		plan: approvedPlan as ResearchPlan,
-		reviewedSources: reviewedSources.map((source) =>
+		reviewedSources: acceptedReviewedSources.map((source) =>
 			mapReviewedSourceForCoverage(source, approvedPlan as ResearchPlan),
 		),
 		signals: {
@@ -1321,7 +1601,7 @@ async function runSourceReviewStep(
 	const passDecisionState = await persistSourceReviewPassDecision({
 		jobRow,
 		passNumber: 1,
-		reviewedSources,
+		reviewedSources: acceptedReviewedSources,
 		sources,
 		coverageAssessment,
 		now,
@@ -1356,7 +1636,7 @@ async function runSourceReviewStep(
 				conversationId: jobRow.conversationId,
 				passNumber: 2,
 				searchIntent: "Targeted follow-up for pass 1 Coverage Gaps",
-				reviewedSourceIds: reviewedSources.map((source) => source.id),
+				reviewedSourceIds: acceptedReviewedSources.map((source) => source.id),
 				now,
 			});
 			await (
@@ -1403,18 +1683,14 @@ async function runSourceReviewStep(
 					}
 				: null;
 		}
-		if (reviewedSources.length === 0) {
+		if (acceptedReviewedSources.length === 0) {
 			return completeCoverageExhaustedWithEvidenceLimitationMemo({
 				jobRow,
 				now,
 				limitations: coverageAssessment.reportLimitations.map(
 					(limitation) => limitation.limitation,
 				),
-				sourceCounts: {
-					discovered: sources.length,
-					reviewed: 0,
-					cited: sources.filter((source) => source.citedAt).length,
-				},
+				sourceCounts: sourceCountsFromResearchSources(sources),
 				dependencies,
 			});
 		}
@@ -1444,7 +1720,7 @@ async function runSourceReviewStep(
 		return completeSourceReviewReport({
 			jobRow,
 			now,
-			reviewedSources,
+			reviewedSources: acceptedReviewedSources,
 			limitations: coverageAssessment.reportLimitations.map(
 				(limitation) => limitation.limitation,
 			),
@@ -1457,7 +1733,7 @@ async function runSourceReviewStep(
 			jobRow,
 			approvedPlan: approvedPlan as ResearchPlan,
 			currentPassNumber: 1,
-			reviewedSources,
+			reviewedSources: acceptedReviewedSources,
 			sources,
 			now,
 			dependencies,
@@ -1467,7 +1743,7 @@ async function runSourceReviewStep(
 	return completeSourceReviewReport({
 		jobRow,
 		now,
-		reviewedSources,
+		reviewedSources: acceptedReviewedSources,
 		limitations: coverageAssessment.reportLimitations.map(
 			(limitation) => limitation.limitation,
 		),
@@ -2427,6 +2703,7 @@ function mapReviewedSourceForSynthesis(
 		},
 		rejectedReason: source.rejectedReason ?? null,
 		openedContentLength: source.openedContentLength ?? 0,
+		reviewedAt: source.reviewedAt,
 		createdAt: reviewedAt,
 	};
 }
@@ -2452,23 +2729,6 @@ function sourceSupportsQuestion(
 	if (questionTerms.length === 0) return false;
 	const overlap = questionTerms.filter((term) => text.includes(term)).length;
 	return overlap >= Math.min(2, questionTerms.length);
-}
-
-function modelReasoningConcurrencyLimit(plan: ResearchPlan): number {
-	const configured = plan.researchBudget.modelReasoningConcurrency;
-	const planLimit =
-		configured === undefined || !Number.isFinite(configured)
-			? 1
-			: Math.max(1, Math.floor(configured));
-	const config = getConfig();
-	return Math.max(
-		0,
-		Math.min(
-			planLimit,
-			Math.max(0, Math.floor(config.deepResearchUserReasoningConcurrency)),
-			Math.max(1, Math.floor(config.deepResearchGlobalReasoningConcurrency)),
-		),
-	);
 }
 
 function researchTaskConcurrencyLimit(plan: ResearchPlan): number {

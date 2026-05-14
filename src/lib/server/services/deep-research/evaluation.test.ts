@@ -2,8 +2,8 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
 	evaluateDeepResearchFixture,
-	evaluateGoldenDeepResearchFixtures,
 	evaluateDeepResearchRun,
+	evaluateGoldenDeepResearchFixtures,
 	goldenDeepResearchFixtures,
 } from "./evaluation";
 
@@ -94,8 +94,8 @@ describe("Deep Research evaluation harness", () => {
 					reportSection: "Range",
 					evidenceLinks: [
 						{
-							...goldenDeepResearchFixtures.sourceNoteDumpReport.synthesisClaims[0]
-								.evidenceLinks[0],
+							...goldenDeepResearchFixtures.sourceNoteDumpReport
+								.synthesisClaims[0].evidenceLinks[0],
 							id: "link-product-a-range",
 							claimId: "claim-product-a-range",
 							evidenceNoteId: "note-product-a-range",
@@ -109,8 +109,8 @@ describe("Deep Research evaluation harness", () => {
 					reportSection: "Motor support",
 					evidenceLinks: [
 						{
-							...goldenDeepResearchFixtures.sourceNoteDumpReport.synthesisClaims[1]
-								.evidenceLinks[0],
+							...goldenDeepResearchFixtures.sourceNoteDumpReport
+								.synthesisClaims[1].evidenceLinks[0],
 							id: "link-product-b-motor",
 							claimId: "claim-product-b-motor",
 							evidenceNoteId: "note-product-b-motor",
@@ -122,6 +122,8 @@ describe("Deep Research evaluation harness", () => {
 				id: "artifact-product-comparison",
 				contentText: [
 					"# Research Report: Compare Product A and Product B",
+					"## Answer",
+					"Compared on reviewed evidence, Product A has the established range fact while Product B has the established motor fact; remaining cells are explicit limitations.",
 					"## Comparison Matrix",
 					"| Axis | Product A | Product B | Decision Meaning |",
 					"| --- | --- | --- | --- |",
@@ -205,8 +207,8 @@ describe("Deep Research evaluation harness", () => {
 					statement: "Product A has a 400Wh battery for commuter range.",
 					evidenceLinks: [
 						{
-							...goldenDeepResearchFixtures.sourceNoteDumpReport.synthesisClaims[0]
-								.evidenceLinks[0],
+							...goldenDeepResearchFixtures.sourceNoteDumpReport
+								.synthesisClaims[0].evidenceLinks[0],
 							id: "link-product-a-range",
 							claimId: "claim-product-a-range",
 							evidenceNoteId: "note-product-a-range",
@@ -232,6 +234,71 @@ describe("Deep Research evaluation harness", () => {
 		expect(result.dimensions.searchPolicyFit.passed).toBe(false);
 		expect(result.dimensions.searchPolicyFit.reasons).toContain(
 			"Discovery requests used a source policy that did not fit the approved research plan.",
+		);
+	});
+
+	it("rejects CUBE 2025/2026 reports that cite unrelated sources and publish an empty matrix", async () => {
+		const result = await evaluateDeepResearchFixture(
+			goldenDeepResearchFixtures.cubeModelYearUnrelatedSources,
+		);
+
+		expect(result.accepted).toBe(false);
+		expect(result.dimensions.sourceRelevance.passed).toBe(false);
+		expect(result.dimensions.comparisonCoverage.passed).toBe(false);
+		expect(result.dimensions.citationSupport.passed).toBe(false);
+		expect(result.dimensions.comparisonCoverage.reasons).toContain(
+			"Comparison matrix must not be entirely empty or Not established.",
+		);
+		expect(result.dimensions.citationSupport.reasons).toContain(
+			"Cited sources must come from topic-relevant reviewed sources.",
+		);
+		expect(result.dimensions.sourceRelevance.reasons).toContain(
+			"Source ledger topic-relevant section must not include rejected or off-topic sources.",
+		);
+	});
+
+	it("accepts the Nulane/Kathmandu fixture when the matrix is product-only and evidence-backed", async () => {
+		const result = await evaluateDeepResearchFixture(
+			goldenDeepResearchFixtures.nulaneKathmanduComparison,
+		);
+
+		expect(result.accepted).toBe(true);
+		expect(result.dimensions.comparisonCoverage.passed).toBe(true);
+		expect(result.dimensions.searchPolicyFit.passed).toBe(true);
+		expect(result.dimensions.citationSupport.passed).toBe(true);
+		expect(result.dimensions.readableSynthesis.passed).toBe(true);
+	});
+
+	it("rejects Nulane/Kathmandu reports that turn constraints into matrix columns", async () => {
+		const result = await evaluateDeepResearchFixture({
+			...goldenDeepResearchFixtures.nulaneKathmanduComparison,
+			id: "nulane-kathmandu-malformed-columns",
+			reportArtifact: {
+				id: "artifact-nulane-kathmandu-malformed",
+				contentText: [
+					"# Research Report: Nulane 400X vs Kathmandu SLX",
+					"## Answer",
+					"The available evidence supports a limited comparison, but the matrix is malformed.",
+					"## Comparison Matrix",
+					"| Axis | CUBE Nulane Hybrid C:62 SLX 400X 2025 | CUBE Kathmandu Hybrid SLX 2025 | pricing | availability | Europe | Medium frame size | model year | Decision Meaning |",
+					"| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+					"| Pricing | Nulane is listed at EUR 3,499 in the compared 2025 listing. [1] | Kathmandu is listed at EUR 3,699 in the compared 2025 listing. [2] | Not established | Not established | Not established | Not established | Not established | Price evidence is limited to reviewed listings. |",
+					"## Source Ledger Snapshot",
+					"### Cited Sources",
+					"- Cube Nulane official specification - https://cube.example.test/nulane-400x",
+					"- Cube Kathmandu official specification - https://cube.example.test/kathmandu-slx",
+					"### Topic-relevant Reviewed Sources",
+					"- No sources recorded.",
+					"### Rejected/Off-topic Reviewed Sources",
+					"- No sources recorded.",
+				].join("\n"),
+			},
+		});
+
+		expect(result.accepted).toBe(false);
+		expect(result.dimensions.comparisonCoverage.passed).toBe(false);
+		expect(result.dimensions.comparisonCoverage.reasons).toContain(
+			"Comparison matrix columns must be compared entities, not constraints or axes.",
 		);
 	});
 
@@ -335,12 +402,16 @@ describe("Deep Research evaluation harness", () => {
 			"off-topic-authority-weak-notes",
 			"claim-support-and-conflict",
 			"source-note-dump-report",
+			"cube-model-year-unrelated-sources",
+			"nulane-kathmandu-comparison",
 			"crash-resume-hungarian-hard-search",
 		]);
 		expect(results.map((result) => result.accepted)).toEqual([
 			false,
 			false,
 			false,
+			false,
+			true,
 			true,
 		]);
 		expect(Object.keys(results[0].dimensions).sort()).toEqual([

@@ -2,15 +2,16 @@ import { randomUUID } from "node:crypto";
 import { and, asc, eq } from "drizzle-orm";
 import { deepResearchCitationAuditVerdicts } from "$lib/server/db/schema";
 import type {
-	DeepResearchCitationAuditVerdict as PersistedDeepResearchCitationAuditVerdict,
 	DeepResearchClaimType,
 	DeepResearchEvidenceNote,
 	DeepResearchSourceQualitySignals,
 	DeepResearchSourceStatus,
 	DeepResearchSynthesisClaim,
+	DeepResearchCitationAuditVerdict as PersistedDeepResearchCitationAuditVerdict,
 } from "$lib/types";
 import { listDeepResearchEvidenceNotes } from "./evidence-notes";
 import { classifyDeepResearchClaimType } from "./source-quality";
+import { isAcceptedReviewedResearchSource } from "./sources";
 import { listDeepResearchSynthesisClaims } from "./synthesis-claims";
 
 export type DeepResearchReportClaim = {
@@ -41,6 +42,8 @@ export type CitationAuditSource = {
 	citedAt: string | null;
 	reviewedNote?: string | null;
 	citationNote?: string | null;
+	rejectedReason?: string | null;
+	topicRelevant?: boolean | null;
 	snippet?: string | null;
 	sourceText?: string | null;
 	supportedKeyQuestions?: string[];
@@ -752,8 +755,8 @@ function normalizeReviewerEvidenceNoteIds(input: {
 		}
 	}
 	return uniqueValues(
-		input.evidenceNoteIds.flatMap((evidenceNoteId) =>
-			aliases.get(evidenceNoteId) ?? [],
+		input.evidenceNoteIds.flatMap(
+			(evidenceNoteId) => aliases.get(evidenceNoteId) ?? [],
 		),
 	);
 }
@@ -764,9 +767,7 @@ function sourceIdsFromEvidenceSupport(
 	return [
 		sourceSupport.sourceId,
 		sourceSupport.reviewedSourceId,
-		...(Array.isArray(sourceSupport.sourceIds)
-			? sourceSupport.sourceIds
-			: []),
+		...(Array.isArray(sourceSupport.sourceIds) ? sourceSupport.sourceIds : []),
 	].filter((value): value is string => typeof value === "string");
 }
 
@@ -833,7 +834,9 @@ function evidenceNoteQualitySignalsFitClaim(
 
 function isReviewedCitedSource(source: CitationAuditSource): boolean {
 	return (
-		source.status === "cited" && Boolean(source.reviewedAt && source.citedAt)
+		source.status === "cited" &&
+		Boolean(source.citedAt) &&
+		isAcceptedReviewedResearchSource(source)
 	);
 }
 

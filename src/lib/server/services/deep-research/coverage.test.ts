@@ -194,6 +194,60 @@ describe("assessResearchCoverage", () => {
 		);
 	});
 
+	it("creates targeted Cube entity-axis gaps instead of passing broad key-question coverage for one-sided evidence", () => {
+		const assessment = assessResearchCoverage({
+			jobId: "job-cube-one-sided-gap",
+			conversationId: "conversation-cube-one-sided-gap",
+			plan: {
+				...standardPlan,
+				reportIntent: "comparison",
+				comparedEntities: ["Cube Nulane 400X", "Cube Kathmandu SLX"],
+				comparisonAxes: ["pricing"],
+				keyQuestions: [
+					"How do Cube Nulane 400X and Cube Kathmandu SLX compare on pricing?",
+				],
+			},
+			reviewedSources: [
+				reviewedSource({
+					id: "nulane-pricing-official",
+					canonicalUrl: "https://cube.example/nulane-400x/pricing",
+					supportedKeyQuestions: [
+						"How do Cube Nulane 400X and Cube Kathmandu SLX compare on pricing?",
+					],
+					comparedEntity: "Cube Nulane 400X",
+					comparisonAxis: "pricing",
+				}),
+				reviewedSource({
+					id: "nulane-pricing-dealer",
+					canonicalUrl: "https://dealer.example/nulane-400x/pricing",
+					supportedKeyQuestions: [
+						"How do Cube Nulane 400X and Cube Kathmandu SLX compare on pricing?",
+					],
+					comparedEntity: "Cube Nulane 400X",
+					comparisonAxis: "pricing",
+				}),
+			],
+			remainingBudget: {
+				sourceReviews: 6,
+				synthesisPasses: 1,
+			},
+		});
+
+		expect(assessment.status).toBe("insufficient");
+		expect(assessment.coverageGaps).toEqual([
+			expect.objectContaining({
+				keyQuestion:
+					"How do Cube Nulane 400X and Cube Kathmandu SLX compare on pricing?",
+				comparedEntity: "Cube Kathmandu SLX",
+				comparisonAxis: "pricing",
+				reason: "insufficient_reviewed_sources",
+				reviewedSourceCount: 0,
+				recommendedNextAction:
+					"Review topic-relevant sources for Cube Kathmandu SLX on pricing.",
+			}),
+		]);
+	});
+
 	it("does not pass downloaded-report coverage from high-count unrelated reviewed sources", () => {
 		const unrelatedSources = Array.from({ length: 12 }, (_, index) =>
 			reviewedSource({

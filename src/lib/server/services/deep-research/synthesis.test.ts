@@ -23,6 +23,7 @@ describe("Deep Research synthesis notes", () => {
 					],
 					extractedText:
 						"The agency report states adoption increased across regulated providers in 2025.",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
 					createdAt: "2026-05-05T12:00:00.000Z",
 				},
 			],
@@ -70,6 +71,7 @@ describe("Deep Research synthesis notes", () => {
 					],
 					extractedText:
 						"Model X officially includes 16 GB memory and 1 TB storage.",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
 					createdAt: "2026-05-05T12:00:00.000Z",
 				},
 			],
@@ -102,6 +104,7 @@ describe("Deep Research synthesis notes", () => {
 					summary: "Official data says battery costs decreased in 2025.",
 					keyFindings: ["Battery costs decreased in 2025."],
 					extractedText: "Battery costs decreased in 2025.",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
 					createdAt: "2026-05-05T12:00:00.000Z",
 				},
 				{
@@ -117,6 +120,7 @@ describe("Deep Research synthesis notes", () => {
 					summary: "Market tracker says battery costs increased in 2025.",
 					keyFindings: ["Battery costs increased in 2025."],
 					extractedText: "Battery costs increased in 2025.",
+					reviewedAt: "2026-05-05T12:01:00.000Z",
 					createdAt: "2026-05-05T12:01:00.000Z",
 				},
 			],
@@ -209,6 +213,7 @@ describe("Deep Research synthesis notes", () => {
 					summary: "Raw source note.",
 					keyFindings: ["Raw source-level finding."],
 					extractedText: "Raw source note.",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
 					createdAt: "2026-05-05T12:00:00.000Z",
 				},
 			],
@@ -260,11 +265,10 @@ describe("Deep Research synthesis notes", () => {
 					supportedKeyQuestions: [
 						"How do Cube Kathmandu and Cube Nulane specifications differ?",
 					],
-					extractedClaims: [
-						"Volkswagen EV prices dropped in Hungary.",
-					],
+					extractedClaims: ["Volkswagen EV prices dropped in Hungary."],
 					rejectedReason: null,
 					openedContentLength: 740,
+					reviewedAt: "2026-05-05T12:00:00.000Z",
 					createdAt: "2026-05-05T12:00:00.000Z",
 				},
 			],
@@ -287,5 +291,35 @@ describe("Deep Research synthesis notes", () => {
 				sourceRefs: [],
 			},
 		]);
+	});
+
+	it("does not let unreviewed source notes become accepted findings", async () => {
+		const result = await buildSynthesisNotes({
+			jobId: "job-unreviewed",
+			reviewedSources: [
+				{
+					id: "source-without-review-time",
+					jobId: "job-unreviewed",
+					discoveredSourceId: "source-without-review-time",
+					canonicalUrl: "https://agency.gov.example/report",
+					title: "Agency report",
+					duplicateSourceIds: [],
+					authorityScore: 80,
+					qualityScore: 80,
+					reviewScore: 160,
+					summary: "Official data shows adoption increased.",
+					keyFindings: ["Adoption increased across regulated providers."],
+					extractedText: "Adoption increased across regulated providers.",
+					relevanceScore: 95,
+					topicRelevant: true,
+					rejectedReason: null,
+					createdAt: "2026-05-05T12:00:00.000Z",
+				},
+			],
+			completedTasks: [],
+		});
+
+		expect(result.supportedFindings).toEqual([]);
+		expect(result.findings).toEqual([]);
 	});
 });

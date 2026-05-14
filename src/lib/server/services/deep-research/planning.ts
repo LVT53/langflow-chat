@@ -685,12 +685,27 @@ function normalizePlanComparisonMetadata(
 	}
 
 	const inferred = inferComparisonMetadata(fallbackText);
+	const providedComparedEntities = normalizeTextList(
+		plan.comparedEntities ?? [],
+	);
+	const axisCandidates = normalizeTextList(
+		[...(plan.comparisonAxes ?? []), ...inferred.axes].map(cleanComparisonAxis),
+	);
+	const repairedProvidedMetadata = repairProvidedComparisonMetadata(
+		providedComparedEntities,
+		axisCandidates,
+	);
 	const comparedEntities = normalizeTextList(
-		plan.comparedEntities?.length ? plan.comparedEntities : inferred.entities,
+		repairedProvidedMetadata.entities.length
+			? repairedProvidedMetadata.entities
+			: inferred.entities,
 	).slice(0, 6);
 	const comparisonAxes = normalizeTextList(
-		plan.comparisonAxes?.length ? plan.comparisonAxes : inferred.axes,
-	).slice(0, 8);
+		[
+			...(plan.comparisonAxes?.length ? plan.comparisonAxes : inferred.axes),
+			...repairedProvidedMetadata.axes,
+		].map(cleanComparisonAxis),
+	).slice(0, 12);
 
 	if (comparedEntities.length >= 2) {
 		plan.comparedEntities = comparedEntities;
@@ -702,6 +717,59 @@ function normalizePlanComparisonMetadata(
 	} else {
 		delete plan.comparisonAxes;
 	}
+}
+
+function repairProvidedComparisonMetadata(
+	entities: string[],
+	axisCandidates: string[],
+): {
+	entities: string[];
+	axes: string[];
+} {
+	const cleanedEntities: string[] = [];
+	const recoveredAxes: string[] = [];
+	const axisCandidateKeys = new Set(axisCandidates.map(comparisonMetadataKey));
+	for (const entity of entities.map(normalizeKnownProductSpelling)) {
+		if (isComparisonConstraintOrAxisTerm(entity, axisCandidateKeys)) {
+			const axis = axisFromComparedEntityReject(entity);
+			if (axis) recoveredAxes.push(axis);
+			continue;
+		}
+		cleanedEntities.push(entity);
+	}
+	return {
+		entities: applySharedKnownBrand(normalizeTextList(cleanedEntities)),
+		axes: normalizeTextList(recoveredAxes),
+	};
+}
+
+function isComparisonConstraintOrAxisTerm(
+	value: string,
+	axisCandidateKeys: Set<string>,
+): boolean {
+	const normalized = value.toLocaleLowerCase();
+	if (axisCandidateKeys.has(comparisonMetadataKey(value))) return true;
+	return (
+		normalized === "focusing" ||
+		normalized === "focused" ||
+		normalized === "europe" ||
+		/\b(?:pricing|price|availability|medium frame size|frame size|model year|specs?|specifications?|weight|motor|battery|motor\/battery|drivetrain|brakes?|geometry|accessories)\b/iu.test(
+			normalized,
+		)
+	);
+}
+
+function comparisonMetadataKey(value: string): string {
+	return cleanComparisonAxis(value)
+		.toLocaleLowerCase()
+		.replace(/[^a-z0-9]+/g, " ")
+		.trim();
+}
+
+function axisFromComparedEntityReject(value: string): string | null {
+	const normalized = cleanComparisonAxis(value);
+	if (/^(?:focusing|focused|europe)$/iu.test(normalized)) return null;
+	return normalized;
 }
 
 function inferComparisonMetadata(value: string): {
@@ -728,15 +796,19 @@ function inferComparisonMetadata(value: string): {
 		};
 	}
 	const entityMatch = normalized.match(
-		/\b(?:compare|comparison of|versus|vs\.?)\s+(.+?)(?:\s+(?:for|on|across|by|regarding|in terms of)\s+|[.!?]?$)/iu,
+		/\b(?:compare|comparison of|versus|vs\.?)\s+(.+?)(?:,\s*(?:focusing|focused)\s+on\s+|\s+(?:for|on|across|by|regarding|in terms of)\s+|[.!?]?$)/iu,
 	);
 	const axisMatch = normalized.match(
-		/\b(?:for|on|across|by|regarding|in terms of)\s+(.+?)[.!?]?$/iu,
+		/\b(?:focusing\s+on|focused\s+on|for|on|across|by|regarding|in terms of)\s+(.+?)[.!?]?$/iu,
 	);
 	return {
-		entities: entityMatch ? splitComparisonList(entityMatch[1]) : [],
+		entities: entityMatch
+			? applySharedKnownBrand(splitComparisonList(entityMatch[1]))
+			: [],
 		axes: axisMatch
-			? splitComparisonList(axisMatch[1]).map(lowercaseFirst)
+			? splitComparisonList(axisMatch[1])
+					.map(cleanComparisonAxis)
+					.map(lowercaseFirst)
 			: [],
 	};
 }
@@ -756,7 +828,24 @@ function splitComparisonList(value: string): string[] {
 						"",
 					),
 			),
-	);
+	).map(normalizeKnownProductSpelling);
+}
+
+function applySharedKnownBrand(entities: string[]): string[] {
+	const firstBrand = entities[0]?.match(/^([A-Z][\p{L}\p{N}&.-]+)\s+/u)?.[1];
+	if (!firstBrand || !isKnownProductBrand(firstBrand)) return entities;
+	return entities.map((entity) => prefixBrand(entity, firstBrand));
+}
+
+function isKnownProductBrand(value: string): boolean {
+	return /^cube$/iu.test(value);
+}
+
+function cleanComparisonAxis(value: string): string {
+	return value
+		.replace(/\bavailability\s+in\s+Europe\b/iu, "availability Europe")
+		.replace(/^2026\s+model\s+year$/iu, "model year")
+		.trim();
 }
 
 function prefixBrand(entity: string, brand: string): string {

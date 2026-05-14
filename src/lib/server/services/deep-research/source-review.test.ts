@@ -97,7 +97,8 @@ describe("Deep Research source triage and review", () => {
 					id: "forum-thread",
 					url: "https://forum.example.test/cube-kathmandu-owner-thread",
 					title: "Owner thread: Cube Kathmandu impressions",
-					snippet: "Forum posts with owner impressions and conflicting details.",
+					snippet:
+						"Forum posts with owner impressions and conflicting details.",
 				},
 			],
 			reviewLimit: 1,
@@ -147,6 +148,7 @@ describe("Deep Research source triage and review", () => {
 						return {
 							...notes,
 							id: "reviewed-1",
+							reviewedAt: "2026-05-05T12:00:00.000Z",
 							createdAt: "2026-05-05T12:00:00.000Z",
 						};
 					},
@@ -172,6 +174,7 @@ describe("Deep Research source triage and review", () => {
 				id: "reviewed-1",
 				discoveredSourceId: "primary-source",
 				canonicalUrl: "https://agency.gov.example/report?id=42",
+				reviewedAt: "2026-05-05T12:00:00.000Z",
 			}),
 		]);
 	});
@@ -224,6 +227,7 @@ describe("Deep Research source triage and review", () => {
 					saveReviewedSourceNotes: async (notes) => ({
 						...notes,
 						id: `reviewed-${notes.discoveredSourceId}`,
+						reviewedAt: "2026-05-05T12:00:00.000Z",
 						createdAt: "2026-05-05T12:00:00.000Z",
 					}),
 				},
@@ -264,7 +268,9 @@ describe("Deep Research source triage and review", () => {
 						keyFindings: ["Model X has 16 GB memory and 1 TB storage."],
 						extractedText: source.sourceText,
 						relevanceScore: 95,
-						supportedKeyQuestions: ["What are the official Model X specifications?"],
+						supportedKeyQuestions: [
+							"What are the official Model X specifications?",
+						],
 					}),
 				},
 				repository: {
@@ -273,6 +279,7 @@ describe("Deep Research source triage and review", () => {
 						return {
 							...notes,
 							id: "reviewed-vendor-specs",
+							reviewedAt: "2026-05-05T12:00:00.000Z",
 							createdAt: "2026-05-05T12:00:00.000Z",
 						};
 					},
@@ -338,6 +345,7 @@ describe("Deep Research source triage and review", () => {
 						return {
 							...notes,
 							id: "reviewed-copilot-privacy",
+							reviewedAt: "2026-05-05T12:00:00.000Z",
 							createdAt: "2026-05-05T12:00:00.000Z",
 						};
 					},
@@ -354,6 +362,194 @@ describe("Deep Research source triage and review", () => {
 				comparisonAxis: "privacy",
 			}),
 		]);
+	});
+
+	it("rejects generic comparison sources that only match loose anchors instead of actual entity-axis support", async () => {
+		const savedNotes: Array<{
+			discoveredSourceId: string;
+			comparedEntity?: string | null;
+			comparisonAxis?: string | null;
+			rejectedReason: string | null;
+		}> = [];
+		const keyQuestions = [
+			"How do Cube Nulane 400X and Cube Kathmandu SLX compare on 2026 model year, pricing, drivetrain, and brakes?",
+		];
+
+		const result = await triageAndReviewSources(
+			{
+				jobId: "job-cube-generic-source-review",
+				planGoal:
+					"Compare Cube Nulane 400X and Cube Kathmandu SLX for 2026 model year, pricing, availability in Europe, Medium frame size, specs, weight, motor/battery, drivetrain, brakes, geometry, and accessories.",
+				keyQuestions,
+				discoveredSources: [
+					{
+						id: "cube-400x-year-generic",
+						url: "https://cars.example/2026-model-year-400x-pricing",
+						title: "Cube 400X 2026 model year pricing and availability",
+						snippet:
+							"General 2026 model year pricing and availability in Europe, with no Cube bicycle product support.",
+						sourceText:
+							"Cube 400X 2026 model year pricing and availability in Europe. This generic car-market article discusses model-year availability and price timing.",
+						intendedComparedEntity: "Cube Nulane 400X",
+						intendedComparisonAxis: "2026 model year",
+					},
+					{
+						id: "generic-drivetrain-guide",
+						url: "https://bike.example/generic-drivetrain-guide",
+						title: "Cube drivetrain guide for city bikes",
+						snippet:
+							"Generic drivetrain terminology for city bikes, brakes, and accessories.",
+						sourceText:
+							"Cube drivetrain guide explaining chain, cassette, brakes, geometry, and accessories for bikes generally. It does not document Nulane 400X or Kathmandu SLX.",
+						intendedComparedEntity: "Cube Kathmandu SLX",
+						intendedComparisonAxis: "drivetrain",
+					},
+				],
+				reviewLimit: 2,
+			},
+			{
+				reviewer: {
+					reviewSource: async (source) => ({
+						summary: `Reviewed ${source.title}`,
+						keyFindings: ["The source mentions one loose comparison term."],
+						extractedText: source.sourceText,
+						relevanceScore: 95,
+						supportedKeyQuestions: keyQuestions,
+						extractedClaims: [`Claim from ${source.title}`],
+					}),
+				},
+				repository: {
+					saveReviewedSourceNotes: async (notes) => {
+						savedNotes.push({
+							discoveredSourceId: notes.discoveredSourceId,
+							comparedEntity: notes.comparedEntity,
+							comparisonAxis: notes.comparisonAxis,
+							rejectedReason: notes.rejectedReason,
+						});
+						return {
+							...notes,
+							id: `reviewed-${notes.discoveredSourceId}`,
+							reviewedAt: "2026-05-05T12:00:00.000Z",
+							createdAt: "2026-05-05T12:00:00.000Z",
+						};
+					},
+				},
+			},
+		);
+
+		expect(result.reviewedSources).toEqual([]);
+		expect(savedNotes).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					discoveredSourceId: "cube-400x-year-generic",
+					comparedEntity: null,
+					comparisonAxis: null,
+					rejectedReason:
+						"Rejected because the source does not support the intended comparison entity and axis.",
+				}),
+				expect.objectContaining({
+					discoveredSourceId: "generic-drivetrain-guide",
+					comparedEntity: null,
+					comparisonAxis: null,
+					rejectedReason:
+						"Rejected because the source does not support the intended comparison entity and axis.",
+				}),
+			]),
+		);
+	});
+
+	it("rejects unrelated software sources that only match generic compliance axes", async () => {
+		const savedNotes: Array<{
+			discoveredSourceId: string;
+			comparedEntity?: string | null;
+			comparisonAxis?: string | null;
+			rejectedReason: string | null;
+		}> = [];
+		const keyQuestions = [
+			"How do Acme Analytics Pro and Acme Analytics Enterprise compare on SOC 2, data residency, SSO, and audit logs?",
+		];
+
+		const result = await triageAndReviewSources(
+			{
+				jobId: "job-saas-generic-source-review",
+				planGoal:
+					"Compare Acme Analytics Pro and Acme Analytics Enterprise for SOC 2, data residency, SSO, and audit logs.",
+				keyQuestions,
+				discoveredSources: [
+					{
+						id: "generic-soc2-guide",
+						url: "https://compliance.example/generic-soc2-guide",
+						title: "Generic SOC 2 checklist for SaaS vendors",
+						snippet:
+							"SOC 2 audit controls, SSO, audit logs, and data residency terms.",
+						sourceText:
+							"SOC 2 audit controls, SSO, audit logs, and data residency terms for SaaS vendors generally. This page does not document Acme Analytics Pro or Acme Analytics Enterprise.",
+						intendedComparedEntity: "Acme Analytics Pro",
+						intendedComparisonAxis: "SOC 2",
+					},
+					{
+						id: "other-vendor-data-residency",
+						url: "https://other-vendor.example/data-residency",
+						title: "OtherVendor data residency documentation",
+						snippet:
+							"OtherVendor supports EU data residency and enterprise SSO.",
+						sourceText:
+							"OtherVendor supports EU data residency, SSO, and audit logs. It does not describe Acme Analytics Enterprise.",
+						intendedComparedEntity: "Acme Analytics Enterprise",
+						intendedComparisonAxis: "data residency",
+					},
+				],
+				reviewLimit: 2,
+			},
+			{
+				reviewer: {
+					reviewSource: async (source) => ({
+						summary: `Reviewed ${source.title}`,
+						keyFindings: ["The source mentions a generic compliance axis."],
+						extractedText: source.sourceText,
+						relevanceScore: 95,
+						supportedKeyQuestions: keyQuestions,
+						extractedClaims: [`Claim from ${source.title}`],
+					}),
+				},
+				repository: {
+					saveReviewedSourceNotes: async (notes) => {
+						savedNotes.push({
+							discoveredSourceId: notes.discoveredSourceId,
+							comparedEntity: notes.comparedEntity,
+							comparisonAxis: notes.comparisonAxis,
+							rejectedReason: notes.rejectedReason,
+						});
+						return {
+							...notes,
+							id: `reviewed-${notes.discoveredSourceId}`,
+							reviewedAt: "2026-05-05T12:00:00.000Z",
+							createdAt: "2026-05-05T12:00:00.000Z",
+						};
+					},
+				},
+			},
+		);
+
+		expect(result.reviewedSources).toEqual([]);
+		expect(savedNotes).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					discoveredSourceId: "generic-soc2-guide",
+					comparedEntity: null,
+					comparisonAxis: null,
+					rejectedReason:
+						"Rejected because the source does not support the intended comparison entity and axis.",
+				}),
+				expect.objectContaining({
+					discoveredSourceId: "other-vendor-data-residency",
+					comparedEntity: null,
+					comparisonAxis: null,
+					rejectedReason:
+						"Rejected because the source does not support the intended comparison entity and axis.",
+				}),
+			]),
+		);
 	});
 
 	it("rejects off-topic sources even when the reviewer returns strong key-question support", async () => {
@@ -418,6 +614,7 @@ describe("Deep Research source triage and review", () => {
 						return {
 							...notes,
 							id: `reviewed-${notes.discoveredSourceId}`,
+							reviewedAt: "2026-05-05T12:00:00.000Z",
 							createdAt: "2026-05-05T12:00:00.000Z",
 						};
 					},
@@ -425,9 +622,9 @@ describe("Deep Research source triage and review", () => {
 			},
 		);
 
-		expect(result.reviewedSources.map((source) => source.discoveredSourceId)).toEqual([
-			"cube-bike-comparison",
-		]);
+		expect(
+			result.reviewedSources.map((source) => source.discoveredSourceId),
+		).toEqual(["cube-bike-comparison"]);
 		expect(result.reviewedCount).toBe(1);
 		expect(savedNotes).toEqual(
 			expect.arrayContaining([

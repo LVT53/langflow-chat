@@ -6,6 +6,7 @@ import type {
 } from "$lib/types";
 import type { ResearchPlan } from "./planning";
 import {
+	isComparisonMatrixEntirelyNotEstablished,
 	renderAuditedResearchReportMarkdown,
 	writeEvidenceLimitationMemo,
 	writeResearchReport,
@@ -236,6 +237,31 @@ describe("Deep Research report writer", () => {
 		]);
 	});
 
+	it.each([
+		["focused", "Focused Deep Research"],
+		["standard", "Standard Deep Research"],
+		["max", "Max Deep Research"],
+	] as const)("preserves %s depth in Evidence Limitation Memo methodology", (depth, expectedLabel) => {
+		const memo = writeEvidenceLimitationMemo({
+			jobId: `job-${depth}-memo-depth`,
+			plan: {
+				...basePlan,
+				depth,
+			},
+			reviewedScope: {
+				discoveredCount: 1,
+				reviewedCount: 1,
+				topicRelevantCount: 0,
+				rejectedOrOffTopicCount: 1,
+			},
+			limitations: ["The approved scope lacked enough useful evidence."],
+		});
+
+		expect(memo.markdown).toContain(
+			`Review scope followed the approved ${expectedLabel} plan.`,
+		);
+	});
+
 	it("renders Hungarian Evidence Limitation Memo labels and recovery actions", () => {
 		const memo = writeEvidenceLimitationMemo({
 			jobId: "job-hu-weak-evidence",
@@ -296,6 +322,7 @@ describe("Deep Research report writer", () => {
 				{
 					id: "source-rejected",
 					status: "discovered",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
 					title: "Rejected vendor page",
 					url: "https://vendor.example.com/off-topic",
 					rejectedReason:
@@ -360,6 +387,8 @@ describe("Deep Research report writer", () => {
 					id: "source-1",
 					reviewedSourceId: "reviewed-1",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "AI coding security documentation",
 					url: "https://docs.example.com/ai-coding/security",
 				},
@@ -386,8 +415,38 @@ describe("Deep Research report writer", () => {
 				id: "source-1",
 				citationNumber: 1,
 				status: "cited",
+				reviewedAt: "2026-05-05T12:00:00.000Z",
+				citedAt: "2026-05-05T12:10:00.000Z",
 			}),
 		]);
+	});
+
+	it("does not render rejected or off-topic sources as final cited sources", () => {
+		const report = writeResearchReport({
+			jobId: "job-rejected-final-source",
+			plan: basePlan,
+			synthesisNotes: baseSynthesisNotes,
+			sources: [
+				{
+					id: "source-1",
+					reviewedSourceId: "reviewed-1",
+					status: "cited",
+					title: "Unrelated EV pricing page",
+					url: "https://cars.example.test/volkswagen-ev-prices",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
+					rejectedReason:
+						"Rejected because the source is off-topic for the approved Research Plan.",
+					topicRelevant: false,
+				},
+			],
+		});
+
+		expect(report.sources).toEqual([]);
+		expect(report.markdown).not.toContain("[1]");
+		expect(report.markdown).not.toContain(
+			"https://cars.example.test/volkswagen-ev-prices",
+		);
 	});
 
 	it("assembles a structured Report Core from accepted and limited Synthesis Claims", () => {
@@ -402,6 +461,8 @@ describe("Deep Research report writer", () => {
 					id: "source-1",
 					reviewedSourceId: "reviewed-1",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "AI coding security documentation",
 					url: "https://docs.example.com/ai-coding/security",
 				},
@@ -409,6 +470,8 @@ describe("Deep Research report writer", () => {
 					id: "source-2",
 					reviewedSourceId: "reviewed-2",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "AI coding pricing documentation",
 					url: "https://docs.example.com/ai-coding/pricing",
 				},
@@ -468,6 +531,8 @@ describe("Deep Research report writer", () => {
 					id: "source-1",
 					reviewedSourceId: "reviewed-1",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "AI coding security documentation",
 					url: "https://docs.example.com/ai-coding/security",
 				},
@@ -668,6 +733,8 @@ describe("Deep Research report writer", () => {
 					id: "source-kathmandu-spec",
 					reviewedSourceId: "reviewed-kathmandu-spec",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "Kathmandu official specifications",
 					url: "https://cube.example.test/kathmandu/specs",
 				},
@@ -675,6 +742,8 @@ describe("Deep Research report writer", () => {
 					id: "source-nuride-review",
 					reviewedSourceId: "reviewed-nuride-review",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "Nuride independent review",
 					url: "https://reviews.example.test/nuride",
 				},
@@ -682,6 +751,8 @@ describe("Deep Research report writer", () => {
 					id: "source-kathmandu-price",
 					reviewedSourceId: "reviewed-kathmandu-price",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "Kathmandu archived vendor price",
 					url: "https://vendor.example.test/kathmandu-price",
 				},
@@ -689,6 +760,8 @@ describe("Deep Research report writer", () => {
 					id: "source-nuride-owner",
 					reviewedSourceId: "reviewed-nuride-owner",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "Nuride owner ride report",
 					url: "https://owners.example.test/nuride-comfort",
 				},
@@ -696,6 +769,8 @@ describe("Deep Research report writer", () => {
 					id: "source-kathmandu-warranty",
 					reviewedSourceId: "reviewed-kathmandu-warranty",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "Kathmandu vendor warranty page",
 					url: "https://vendor.example.test/kathmandu-warranty",
 				},
@@ -800,6 +875,8 @@ describe("Deep Research report writer", () => {
 					id: "source-linked-workflow",
 					reviewedSourceId: "reviewed-linked-workflow",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "Assistant A repository workflow documentation",
 					url: "https://assistant-a.example.test/workflow",
 				},
@@ -891,6 +968,8 @@ describe("Deep Research report writer", () => {
 					id: "source-assistant-a-workflow",
 					reviewedSourceId: "reviewed-assistant-a-workflow",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "Assistant A repository workflow documentation",
 					url: "https://assistant-a.example.test/workflow",
 				},
@@ -898,6 +977,8 @@ describe("Deep Research report writer", () => {
 					id: "source-assistant-b-workflow",
 					reviewedSourceId: "reviewed-assistant-b-workflow",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "Assistant B indexing documentation",
 					url: "https://assistant-b.example.test/indexing",
 				},
@@ -943,6 +1024,83 @@ describe("Deep Research report writer", () => {
 		expect(auditedMarkdown).not.toContain(
 			"Assistant B indexing documentation - https://assistant-b.example.test/indexing",
 		);
+	});
+
+	it("detects an all-Not established comparison matrix as report-ineligible", () => {
+		const comparisonPlan: ResearchPlan = {
+			...basePlan,
+			goal: "Compare two AI coding assistants for repository workflow.",
+			reportIntent: "comparison",
+			comparedEntities: ["Assistant A", "Assistant B"],
+			comparisonAxes: ["Repository workflow"],
+			reportShape: ["Comparison Matrix", "Decision Implications"],
+		};
+		const assistantAEvidence: DeepResearchEvidenceNote = {
+			...evidenceNotes[0],
+			id: "evidence-assistant-a-established-cell",
+			sourceId: "source-assistant-a-established-cell",
+			comparedEntity: "Assistant A",
+			comparisonAxis: "Repository workflow",
+			findingText:
+				"Assistant A supports repository-aware workflow with permission controls.",
+			sourceSupport: {
+				sourceId: "source-assistant-a-established-cell",
+				reviewedSourceId: "reviewed-assistant-a-established-cell",
+			},
+		};
+		const assistantAClaim: DeepResearchSynthesisClaim = {
+			...acceptedClaim,
+			id: "claim-assistant-a-established-cell",
+			statement: assistantAEvidence.findingText,
+			reportSection: assistantAEvidence.comparisonAxis,
+			evidenceLinks: [
+				{
+					...acceptedClaim.evidenceLinks[0],
+					id: "link-assistant-a-established-cell",
+					claimId: "claim-assistant-a-established-cell",
+					evidenceNoteId: assistantAEvidence.id,
+				},
+			],
+		};
+		const report = writeResearchReport({
+			jobId: "job-all-not-established-utility",
+			plan: comparisonPlan,
+			synthesisNotes: baseSynthesisNotes,
+			synthesisClaims: [assistantAClaim],
+			evidenceNotes: [assistantAEvidence],
+			sources: [
+				{
+					id: "source-assistant-a-established-cell",
+					reviewedSourceId: "reviewed-assistant-a-established-cell",
+					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
+					title: "Assistant A repository workflow documentation",
+					url: "https://assistant-a.example.test/workflow",
+				},
+			],
+		});
+		const matrix = report.structuredReport.sections.find(
+			(section) => section.heading === "Comparison Matrix",
+		)?.comparisonMatrix;
+		expect(matrix).toBeDefined();
+		if (!matrix) throw new Error("Expected comparison matrix in report.");
+		expect(isComparisonMatrixEntirelyNotEstablished(matrix)).toBe(false);
+
+		const allNotEstablishedMatrix = {
+			...matrix,
+			cells: matrix.cells.map((cell) => ({
+				...cell,
+				text: "Not established",
+				claimIds: [],
+				evidenceLinkIds: [],
+				sourceIds: [],
+			})),
+		};
+
+		expect(
+			isComparisonMatrixEntirelyNotEstablished(allNotEstablishedMatrix),
+		).toBe(true);
 	});
 
 	it("renders repaired audited matrix cells with narrowed citations", () => {
@@ -993,6 +1151,8 @@ describe("Deep Research report writer", () => {
 					id: "source-broad-citation-doc",
 					reviewedSourceId: "reviewed-broad-citation-doc",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "Assistant A broad citation marketing page",
 					url: "https://assistant-a.example.test/marketing-citations",
 				},
@@ -1000,6 +1160,8 @@ describe("Deep Research report writer", () => {
 					id: "source-narrow-citation-doc",
 					reviewedSourceId: "reviewed-narrow-citation-doc",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "Assistant A citation audit documentation",
 					url: "https://assistant-a.example.test/citation-audit",
 				},
@@ -1107,6 +1269,8 @@ describe("Deep Research report writer", () => {
 					id: "source-product-a",
 					reviewedSourceId: "reviewed-product-a",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "Product A official specifications",
 					url: "https://product.example.test/a",
 				},
@@ -1114,6 +1278,8 @@ describe("Deep Research report writer", () => {
 					id: "source-product-b",
 					reviewedSourceId: "reviewed-product-b",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "Product B official specifications",
 					url: "https://product.example.test/b",
 				},
@@ -1129,6 +1295,352 @@ describe("Deep Research report writer", () => {
 		expect(report.markdown).not.toContain(
 			"## Comparison Matrix\n- Product A has a 400Wh battery",
 		);
+	});
+
+	it("renders Nulane/Kathmandu comparison columns from validated products and binds central axis evidence", () => {
+		const nulaneEntity = "CUBE Nulane Hybrid C:62 SLX 400X 2025";
+		const kathmanduEntity = "CUBE Kathmandu Hybrid SLX 2025";
+		const bikeEvidence = [
+			{
+				entity: nulaneEntity,
+				axis: "Pricing",
+				finding: "Nulane is listed at EUR 3,499 in the compared 2025 listing.",
+				claimType: "price_availability" as const,
+			},
+			{
+				entity: kathmanduEntity,
+				axis: "availability Europe",
+				finding: "Kathmandu is shown as in stock for European delivery.",
+				claimType: "price_availability" as const,
+			},
+			{
+				entity: kathmanduEntity,
+				axis: "stock status",
+				finding: "Kathmandu stock status lists Medium frame availability.",
+				claimType: "price_availability" as const,
+			},
+			{
+				entity: nulaneEntity,
+				axis: "Motor and battery",
+				finding: "Nulane uses a Bosch SX motor with a 400Wh battery.",
+				claimType: acceptedClaim.claimType,
+			},
+			{
+				entity: kathmanduEntity,
+				axis: "Motor and battery",
+				finding: "Kathmandu uses a Bosch CX motor with a 600Wh battery.",
+				claimType: acceptedClaim.claimType,
+			},
+			{
+				entity: nulaneEntity,
+				axis: "Drivetrain",
+				finding: "Nulane uses a Shimano GRX 1x12 drivetrain.",
+				claimType: acceptedClaim.claimType,
+			},
+			{
+				entity: kathmanduEntity,
+				axis: "Brakes",
+				finding: "Kathmandu has Shimano hydraulic disc brakes.",
+				claimType: acceptedClaim.claimType,
+			},
+			{
+				entity: nulaneEntity,
+				axis: "Geometry",
+				finding: "Nulane geometry is road-oriented with a longer reach.",
+				claimType: acceptedClaim.claimType,
+			},
+			{
+				entity: kathmanduEntity,
+				axis: "Accessories",
+				finding:
+					"Kathmandu includes integrated rack, lights, fenders, and kickstand accessories.",
+				claimType: acceptedClaim.claimType,
+			},
+			{
+				entity: nulaneEntity,
+				axis: "Weight",
+				finding: "Nulane claimed weight is under 18 kg.",
+				claimType: acceptedClaim.claimType,
+			},
+			{
+				entity: kathmanduEntity,
+				axis: "Medium frame size",
+				finding: "Kathmandu is listed in Medium frame size.",
+				claimType: acceptedClaim.claimType,
+			},
+		].map((item, index) => ({
+			...evidenceNotes[0],
+			id: `evidence-bike-${index + 1}`,
+			sourceId: `source-bike-${index + 1}`,
+			comparedEntity: item.entity,
+			comparisonAxis: item.axis,
+			findingText: item.finding,
+			sourceSupport: {
+				sourceId: `source-bike-${index + 1}`,
+				reviewedSourceId: `reviewed-bike-${index + 1}`,
+			},
+			sourceQualitySignals: {
+				sourceType:
+					item.claimType === "price_availability"
+						? "vendor_marketing"
+						: "official_vendor",
+				independence:
+					item.claimType === "price_availability" ? "affiliated" : "primary",
+				freshness:
+					item.claimType === "price_availability" ? "dated" : "current",
+				directness: "direct",
+				extractionConfidence: "high",
+				claimFit: "strong",
+			},
+			claimType: item.claimType,
+		}));
+		const bikeClaims: DeepResearchSynthesisClaim[] = bikeEvidence.map(
+			(note, index) => ({
+				...acceptedClaim,
+				id: `claim-bike-${index + 1}`,
+				statement: note.findingText,
+				claimType: note.claimType,
+				reportSection: note.comparisonAxis,
+				evidenceLinks: [
+					{
+						...acceptedClaim.evidenceLinks[0],
+						id: `link-bike-${index + 1}`,
+						claimId: `claim-bike-${index + 1}`,
+						evidenceNoteId: note.id,
+					},
+				],
+			}),
+		);
+
+		const report = writeResearchReport({
+			jobId: "job-bike-comparison-binding",
+			plan: {
+				...basePlan,
+				goal: "Compare the Nulane 400X and Kathmandu SLX Cube 2025 bikes.",
+				reportIntent: "comparison",
+				comparedEntities: [
+					nulaneEntity,
+					kathmanduEntity,
+					"pricing",
+					"availability",
+					"Europe",
+					"Medium frame size",
+					"model year",
+				],
+				comparisonAxes: [
+					"Pricing",
+					"availability Europe",
+					"availability in Europe",
+					"stock status",
+					"Motor and battery",
+					"Drivetrain",
+					"Brakes",
+					"Geometry",
+					"Accessories",
+					"Weight",
+					"Medium frame size",
+				],
+				reportShape: ["Comparison Matrix", "Decision Implications"],
+			},
+			synthesisNotes: baseSynthesisNotes,
+			synthesisClaims: bikeClaims,
+			evidenceNotes: bikeEvidence,
+			sources: bikeEvidence.map((note, index) => ({
+				id: note.sourceId ?? `source-bike-${index + 1}`,
+				reviewedSourceId: note.sourceSupport.reviewedSourceId as string,
+				status: "cited",
+				reviewedAt: "2026-05-05T12:00:00.000Z",
+				citedAt: "2026-05-05T12:10:00.000Z",
+				title: `Bike evidence source ${index + 1}`,
+				url: `https://bikes.example.test/source-${index + 1}`,
+			})),
+		});
+
+		const matrixSection = report.markdown.slice(
+			report.markdown.indexOf("## Comparison Matrix"),
+			report.markdown.indexOf("## Decision Implications"),
+		);
+		const header = matrixSection
+			.split("\n")
+			.find((line) => line.startsWith("| Axis |"));
+
+		expect(header).toBe(
+			`| Axis | ${nulaneEntity} | ${kathmanduEntity} | Decision Meaning |`,
+		);
+		for (const invalidColumn of [
+			"pricing",
+			"availability",
+			"Europe",
+			"Medium frame size",
+			"model year",
+		]) {
+			expect(header).not.toContain(`| ${invalidColumn} |`);
+		}
+		expect(
+			matrixSection.match(/^\| Availability \/ stock status \|/gm),
+		).toHaveLength(1);
+		expect(
+			matrixSection
+				.split("\n")
+				.filter(
+					(line) =>
+						line.startsWith("| ") &&
+						!line.startsWith("| Axis |") &&
+						!line.startsWith("| --- |"),
+				),
+		).toHaveLength(9);
+		expect(matrixSection).not.toContain("| availability Europe |");
+		expect(matrixSection).not.toContain("| availability in Europe |");
+		expect(matrixSection).not.toContain("| stock status |");
+		for (const fact of [
+			"Nulane is listed at EUR 3,499",
+			"Kathmandu is shown as in stock for European delivery.",
+			"Kathmandu stock status lists Medium frame availability.",
+			"Nulane uses a Bosch SX motor with a 400Wh battery.",
+			"Kathmandu uses a Bosch CX motor with a 600Wh battery.",
+			"Nulane uses a Shimano GRX 1x12 drivetrain.",
+			"Kathmandu has Shimano hydraulic disc brakes.",
+			"Nulane geometry is road-oriented with a longer reach.",
+			"Kathmandu includes integrated rack, lights, fenders, and kickstand accessories.",
+			"Nulane claimed weight is under 18 kg.",
+			"Kathmandu is listed in Medium frame size.",
+		]) {
+			expect(matrixSection).toContain(fact);
+		}
+	});
+
+	it("renders software comparison columns from validated products and generic compliance evidence", () => {
+		const proEntity = "Acme Analytics Pro";
+		const enterpriseEntity = "Acme Analytics Enterprise";
+		const softwareEvidence = [
+			{
+				entity: proEntity,
+				axis: "Pricing",
+				finding: "Acme Analytics Pro is listed at USD 49 per user monthly.",
+				claimType: "price_availability" as const,
+			},
+			{
+				entity: enterpriseEntity,
+				axis: "Pricing",
+				finding: "Acme Analytics Enterprise uses annual contract pricing.",
+				claimType: "price_availability" as const,
+			},
+			{
+				entity: proEntity,
+				axis: "SOC 2",
+				finding: "Acme Analytics Pro inherits the vendor SOC 2 Type II report.",
+				claimType: "general" as const,
+			},
+			{
+				entity: enterpriseEntity,
+				axis: "data residency",
+				finding: "Acme Analytics Enterprise adds EU data residency controls.",
+				claimType: "general" as const,
+			},
+			{
+				entity: enterpriseEntity,
+				axis: "SSO",
+				finding: "Acme Analytics Enterprise includes SAML SSO.",
+				claimType: "general" as const,
+			},
+			{
+				entity: proEntity,
+				axis: "audit logs",
+				finding: "Acme Analytics Pro retains audit logs for 30 days.",
+				claimType: "general" as const,
+			},
+		].map((item, index) => ({
+			...evidenceNotes[0],
+			id: `evidence-software-${index + 1}`,
+			sourceId: `source-software-${index + 1}`,
+			comparedEntity: item.entity,
+			comparisonAxis: item.axis,
+			findingText: item.finding,
+			sourceSupport: {
+				sourceId: `source-software-${index + 1}`,
+				reviewedSourceId: `reviewed-software-${index + 1}`,
+			},
+			claimType: item.claimType,
+		}));
+		const softwareClaims: DeepResearchSynthesisClaim[] = softwareEvidence.map(
+			(note, index) => ({
+				...acceptedClaim,
+				id: `claim-software-${index + 1}`,
+				statement: note.findingText,
+				claimType: note.claimType,
+				reportSection: note.comparisonAxis,
+				evidenceLinks: [
+					{
+						...acceptedClaim.evidenceLinks[0],
+						id: `link-software-${index + 1}`,
+						claimId: `claim-software-${index + 1}`,
+						evidenceNoteId: note.id,
+					},
+				],
+			}),
+		);
+
+		const report = writeResearchReport({
+			jobId: "job-software-comparison-binding",
+			plan: {
+				...basePlan,
+				goal: "Compare Acme Analytics Pro and Acme Analytics Enterprise.",
+				reportIntent: "comparison",
+				comparedEntities: [
+					proEntity,
+					enterpriseEntity,
+					"pricing",
+					"SOC 2",
+					"data residency",
+					"SSO",
+					"audit logs",
+				],
+				comparisonAxes: [
+					"Pricing",
+					"SOC 2",
+					"data residency",
+					"SSO",
+					"audit logs",
+				],
+				reportShape: ["Comparison Matrix", "Decision Implications"],
+			},
+			synthesisNotes: baseSynthesisNotes,
+			synthesisClaims: softwareClaims,
+			evidenceNotes: softwareEvidence,
+			sources: softwareEvidence.map((note, index) => ({
+				id: note.sourceId ?? `source-software-${index + 1}`,
+				reviewedSourceId: note.sourceSupport.reviewedSourceId as string,
+				status: "cited",
+				reviewedAt: "2026-05-05T12:00:00.000Z",
+				citedAt: "2026-05-05T12:10:00.000Z",
+				title: `Software evidence source ${index + 1}`,
+				url: `https://software.example.test/source-${index + 1}`,
+			})),
+		});
+
+		const matrixSection = report.markdown.slice(
+			report.markdown.indexOf("## Comparison Matrix"),
+			report.markdown.indexOf("## Decision Implications"),
+		);
+		const header = matrixSection
+			.split("\n")
+			.find((line) => line.startsWith("| Axis |"));
+
+		expect(header).toBe(
+			`| Axis | ${proEntity} | ${enterpriseEntity} | Decision Meaning |`,
+		);
+		for (const invalidColumn of [
+			"pricing",
+			"SOC 2",
+			"data residency",
+			"SSO",
+			"audit logs",
+		]) {
+			expect(header).not.toContain(`| ${invalidColumn} |`);
+		}
+		for (const fact of softwareEvidence.map((note) => note.findingText)) {
+			expect(matrixSection).toContain(fact);
+		}
 	});
 
 	it("classifies Comparison Matrix fallback sections as comparison tables during audited rendering", () => {
@@ -1177,6 +1689,8 @@ describe("Deep Research report writer", () => {
 					id: "source-assistant-a-export",
 					reviewedSourceId: "reviewed-assistant-a-export",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "Assistant A export documentation",
 					url: "https://assistant-a.example.test/export",
 				},
@@ -1243,6 +1757,8 @@ describe("Deep Research report writer", () => {
 					id: "source-1",
 					reviewedSourceId: "reviewed-1",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "AI coding security documentation",
 					url: "https://docs.example.com/ai-coding/security",
 				},
@@ -1295,6 +1811,8 @@ describe("Deep Research report writer", () => {
 					id: "source-1",
 					reviewedSourceId: "reviewed-1",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "AI coding security documentation",
 					url: "https://docs.example.com/ai-coding/security",
 				},
@@ -1346,19 +1864,24 @@ describe("Deep Research report writer", () => {
 	});
 
 	it("includes sources for audited matrix claims beyond the summary cap", () => {
-		const entities = Array.from({ length: 8 }, (_, index) => `Product ${index + 1}`);
-		const evidence = entities.map<DeepResearchEvidenceNote>((entity, index) => ({
-			...evidenceNotes[0],
-			id: `evidence-product-${index + 1}`,
-			sourceId: `source-product-${index + 1}`,
-			comparedEntity: entity,
-			comparisonAxis: "Battery",
-			findingText: `${entity} has verified battery evidence.`,
-			sourceSupport: {
+		const entities = Array.from(
+			{ length: 8 },
+			(_, index) => `Product ${index + 1}`,
+		);
+		const evidence = entities.map<DeepResearchEvidenceNote>(
+			(entity, index) => ({
+				...evidenceNotes[0],
+				id: `evidence-product-${index + 1}`,
 				sourceId: `source-product-${index + 1}`,
-				reviewedSourceId: `reviewed-product-${index + 1}`,
-			},
-		}));
+				comparedEntity: entity,
+				comparisonAxis: "Battery",
+				findingText: `${entity} has verified battery evidence.`,
+				sourceSupport: {
+					sourceId: `source-product-${index + 1}`,
+					reviewedSourceId: `reviewed-product-${index + 1}`,
+				},
+			}),
+		);
 		const claims = evidence.map<DeepResearchSynthesisClaim>((note, index) => ({
 			...acceptedClaim,
 			id: `claim-product-${index + 1}`,
@@ -1377,6 +1900,8 @@ describe("Deep Research report writer", () => {
 			id: `source-product-${index + 1}`,
 			reviewedSourceId: `reviewed-product-${index + 1}`,
 			status: "cited" as const,
+			reviewedAt: "2026-05-05T12:00:00.000Z",
+			citedAt: "2026-05-05T12:10:00.000Z",
 			title: `${entity} documentation`,
 			url: `https://products.example.test/${index + 1}`,
 		}));
@@ -1488,6 +2013,8 @@ describe("Deep Research report writer", () => {
 					id: "source-option-a",
 					reviewedSourceId: "reviewed-option-a",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "Option A documentation",
 					url: "https://example.test/option-a",
 				},
@@ -1495,6 +2022,8 @@ describe("Deep Research report writer", () => {
 					id: "source-option-b",
 					reviewedSourceId: "reviewed-option-b",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "Option B rollout guide",
 					url: "https://example.test/option-b",
 				},
@@ -1597,6 +2126,8 @@ describe("Deep Research report writer", () => {
 					id: "source-deploy-log",
 					reviewedSourceId: "reviewed-deploy-log",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "Deployment log",
 					url: "https://example.test/deploy-log",
 				},
@@ -1604,6 +2135,8 @@ describe("Deep Research report writer", () => {
 					id: "source-db-metrics",
 					reviewedSourceId: "reviewed-db-metrics",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "Database metrics",
 					url: "https://example.test/db-metrics",
 				},
@@ -1713,6 +2246,8 @@ describe("Deep Research report writer", () => {
 						id: `source-${reportIntent}-alpha`,
 						reviewedSourceId: `reviewed-${reportIntent}-alpha`,
 						status: "cited",
+						reviewedAt: "2026-05-05T12:00:00.000Z",
+						citedAt: "2026-05-05T12:10:00.000Z",
 						title: "Alpha pricing page",
 						url: "https://example.test/alpha",
 					},
@@ -1720,6 +2255,8 @@ describe("Deep Research report writer", () => {
 						id: `source-${reportIntent}-beta`,
 						reviewedSourceId: `reviewed-${reportIntent}-beta`,
 						status: "cited",
+						reviewedAt: "2026-05-05T12:00:00.000Z",
+						citedAt: "2026-05-05T12:10:00.000Z",
 						title: "Beta availability page",
 						url: "https://example.test/beta",
 					},
@@ -1838,6 +2375,8 @@ describe("Deep Research report writer", () => {
 					id: "source-consensus",
 					reviewedSourceId: "reviewed-consensus",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "Vendor documentation",
 					url: "https://example.test/vendor-docs",
 				},
@@ -1845,6 +2384,8 @@ describe("Deep Research report writer", () => {
 					id: "source-conflict",
 					reviewedSourceId: "reviewed-conflict",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "Owner reliability thread",
 					url: "https://example.test/owner-thread",
 				},
@@ -1892,6 +2433,8 @@ describe("Deep Research report writer", () => {
 					id: "source-1",
 					reviewedSourceId: "reviewed-1",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "AI coding security documentation",
 					url: "https://docs.example.com/ai-coding/security",
 					citationNote: "Supports a central report claim.",
@@ -1899,6 +2442,7 @@ describe("Deep Research report writer", () => {
 				{
 					id: "source-reviewed",
 					status: "reviewed",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
 					title: "Repository workflow background",
 					url: "https://analysis.example.com/repository-workflow",
 					reviewedNote: "Topic-relevant background for the approved scope.",
@@ -1907,6 +2451,7 @@ describe("Deep Research report writer", () => {
 				{
 					id: "source-rejected",
 					status: "discovered",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
 					title: "Unrelated pricing roundup",
 					url: "https://noise.example.com/pricing",
 					rejectedReason:
@@ -2000,6 +2545,8 @@ describe("Deep Research report writer", () => {
 						id: "source-1",
 						reviewedSourceId: "reviewed-1",
 						status: "cited",
+						reviewedAt: "2026-05-05T12:00:00.000Z",
+						citedAt: "2026-05-05T12:10:00.000Z",
 						title: "AI coding security documentation",
 						url: "https://docs.example.com/ai-coding/security",
 					},
@@ -2035,6 +2582,8 @@ describe("Deep Research report writer", () => {
 					id: "source-1",
 					reviewedSourceId: "reviewed-1",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "AI coding security documentation",
 					url: "https://docs.example.com/ai-coding/security",
 				},
@@ -2074,6 +2623,8 @@ describe("Deep Research report writer", () => {
 					id: "source-1",
 					reviewedSourceId: "reviewed-1",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "AI coding security documentation",
 					url: "https://docs.example.com/ai-coding/security",
 				},
@@ -2119,6 +2670,8 @@ describe("Deep Research report writer", () => {
 					id: "source-1",
 					reviewedSourceId: "reviewed-1",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "AI coding security documentation",
 					url: "https://docs.example.com/ai-coding/security",
 				},
@@ -2156,6 +2709,8 @@ describe("Deep Research report writer", () => {
 					id: "source-1",
 					reviewedSourceId: "reviewed-1",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "AI coding security documentation",
 					url: "https://docs.example.com/ai-coding/security",
 				},
@@ -2214,6 +2769,8 @@ describe("Deep Research report writer", () => {
 					id: "source-1",
 					reviewedSourceId: "reviewed-1",
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: "AI coding security documentation",
 					url: "https://docs.example.com/ai-coding/security",
 				},
@@ -2266,6 +2823,8 @@ describe("Deep Research report writer", () => {
 				id: `source-${index + 1}`,
 				reviewedSourceId: finding.sourceRefs[0].reviewedSourceId,
 				status: "cited",
+				reviewedAt: "2026-05-05T12:00:00.000Z",
+				citedAt: "2026-05-05T12:10:00.000Z",
 				title: `Source ${index + 1}`,
 				url: `https://docs.example.com/source-${index + 1}`,
 			})),
@@ -2343,6 +2902,8 @@ describe("Deep Research report writer", () => {
 				id: note.sourceId,
 				reviewedSourceId: note.sourceSupport.reviewedSourceId,
 				status: "cited",
+				reviewedAt: "2026-05-05T12:00:00.000Z",
+				citedAt: "2026-05-05T12:10:00.000Z",
 				title: `Market scan source ${index + 1}`,
 				url: `https://market-scan.example.test/source-${index + 1}`,
 			})),
@@ -2399,6 +2960,8 @@ describe("Deep Research report writer", () => {
 					id: `source-${index + 1}`,
 					reviewedSourceId: finding.sourceRefs[0].reviewedSourceId,
 					status: "cited",
+					reviewedAt: "2026-05-05T12:00:00.000Z",
+					citedAt: "2026-05-05T12:10:00.000Z",
 					title: finding.statement,
 					url: finding.sourceRefs[0].canonicalUrl,
 				})),
