@@ -99,11 +99,11 @@
 			<button type="button" class="skill-draft-card__primary" disabled={busy} onclick={() => onSave?.(draft.id)}>
 				{$t('skillDrafts.save')}
 			</button>
-			<button type="button" disabled={busy} onclick={() => onDismiss?.(draft.id)}>
+			<button type="button" class="skill-draft-card__secondary" disabled={busy} onclick={() => onDismiss?.(draft.id)}>
 				{$t('skillDrafts.dismiss')}
 			</button>
 			{#if canPublishSystem}
-				<button type="button" disabled={busy} onclick={() => onPublish?.(draft.id)}>
+				<button type="button" class="skill-draft-card__secondary" disabled={busy} onclick={() => onPublish?.(draft.id)}>
 					{$t('skillDrafts.publish')}
 				</button>
 			{/if}
@@ -212,6 +212,13 @@
 		font-size: 0.84rem;
 		font-weight: 600;
 		color: var(--text-primary);
+		cursor: pointer;
+		transition:
+			background-color var(--duration-standard) var(--ease-out),
+			border-color var(--duration-standard) var(--ease-out),
+			box-shadow var(--duration-standard) var(--ease-out),
+			color var(--duration-standard) var(--ease-out),
+			transform var(--duration-standard) var(--ease-out);
 	}
 
 	button:disabled {
@@ -222,7 +229,40 @@
 	.skill-draft-card__primary {
 		border-color: var(--accent);
 		background: var(--accent);
-		color: var(--accent-contrast);
+		color: var(--accent-contrast, #ffffff);
+	}
+
+	.skill-draft-card__secondary {
+		border-color: color-mix(in srgb, var(--border-default) 82%, transparent 18%);
+		background: color-mix(in srgb, var(--surface-page) 78%, var(--surface-elevated) 22%);
+		color: var(--text-primary);
+	}
+
+	button:hover:not(:disabled),
+	button:focus-visible:not(:disabled) {
+		transform: translateY(-1px);
+	}
+
+	.skill-draft-card__primary:hover:not(:disabled),
+	.skill-draft-card__primary:focus-visible:not(:disabled) {
+		border-color: var(--accent-hover);
+		background: var(--accent-hover);
+	}
+
+	.skill-draft-card__secondary:hover:not(:disabled),
+	.skill-draft-card__secondary:focus-visible:not(:disabled) {
+		border-color: color-mix(in srgb, var(--accent) 42%, var(--border-default) 58%);
+		background: color-mix(in srgb, var(--accent) 12%, var(--surface-elevated) 88%);
+		color: var(--accent);
+	}
+
+	button:focus-visible {
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus-ring) 36%, transparent 64%);
+		outline: none;
+	}
+
+	button:active:not(:disabled) {
+		transform: translateY(0);
 	}
 
 	@media (max-width: 520px) {
@@ -249,6 +289,12 @@
 		button {
 			width: 100%;
 			min-height: 38px;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		button {
+			transition: none;
 		}
 	}
 </style>

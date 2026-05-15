@@ -1445,11 +1445,18 @@ async function emitDraftChange(force = false) {
 		{/if}
 
 		{#if composerCommandRegistryEnabled && pendingSkill}
-			<ul class="linked-source-chips" aria-label={$t('pendingSkill.chipsLabel')}>
-				<li class="linked-source-chip">
-					<span>{pendingSkill.displayName}</span>
+			<ul class="pending-skill-chips" aria-label={$t('pendingSkill.chipsLabel')}>
+				<li class="pending-skill-chip">
+					<span class="pending-skill-chip__marker" aria-hidden="true"></span>
+					<span class="pending-skill-chip__copy">
+						<span class="pending-skill-chip__label">
+							{pendingSkill.ownership === 'system' ? $t('pendingSkill.system') : $t('pendingSkill.user')}
+						</span>
+						<span class="pending-skill-chip__name">{pendingSkill.displayName}</span>
+					</span>
 					<button
 						type="button"
+						class="pending-skill-chip__remove"
 						aria-label={$t('pendingSkill.removeA11y', { name: pendingSkill.displayName })}
 						onclick={removePendingSkill}
 					>
@@ -1755,15 +1762,126 @@ async function emitDraftChange(force = false) {
 	.linked-source-chip button {
 		width: 1.3rem;
 		height: 1.3rem;
+		display: inline-grid;
+		place-items: center;
 		border: 0;
 		border-radius: 999px;
 		background: transparent;
 		color: var(--text-muted);
+		cursor: pointer;
+		transition:
+			background-color var(--duration-standard) var(--ease-out),
+			color var(--duration-standard) var(--ease-out),
+			transform var(--duration-standard) var(--ease-out);
 	}
 
 	.linked-source-chip button:hover {
 		background: color-mix(in srgb, var(--border-default) 48%, transparent 52%);
 		color: var(--text-primary);
+		transform: translateY(-1px);
+	}
+
+	.linked-source-chip button:focus-visible {
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus-ring) 40%, transparent 60%);
+		outline: none;
+	}
+
+	.pending-skill-chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		margin: 0;
+		padding: 0.25rem 1rem 0.55rem;
+		list-style: none;
+	}
+
+	.pending-skill-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.55rem;
+		min-width: 0;
+		max-width: 100%;
+		border: 1px solid color-mix(in srgb, var(--accent) 36%, var(--border-default) 64%);
+		border-radius: 999px;
+		background: color-mix(in srgb, var(--accent) 13%, var(--surface-overlay) 87%);
+		box-shadow: 0 1px 0 color-mix(in srgb, var(--surface-overlay) 86%, transparent 14%) inset;
+		padding: 0.28rem 0.38rem 0.28rem 0.42rem;
+		color: var(--text-primary);
+	}
+
+	.pending-skill-chip__marker {
+		width: 0.55rem;
+		height: 0.55rem;
+		flex: 0 0 auto;
+		border-radius: 999px;
+		background: var(--accent);
+		box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 16%, transparent 84%);
+	}
+
+	.pending-skill-chip__copy {
+		display: inline-grid;
+		grid-auto-flow: column;
+		align-items: baseline;
+		gap: 0.35rem;
+		min-width: 0;
+	}
+
+	.pending-skill-chip__label {
+		color: var(--accent);
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 0.68rem;
+		font-weight: 700;
+		line-height: 1;
+		text-transform: uppercase;
+	}
+
+	.pending-skill-chip__name {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		font-size: 0.78rem;
+		font-weight: 600;
+	}
+
+	.pending-skill-chip__remove {
+		width: 1.45rem;
+		height: 1.45rem;
+		display: inline-grid;
+		place-items: center;
+		flex: 0 0 auto;
+		border: 0;
+		border-radius: 999px;
+		background: color-mix(in srgb, var(--surface-page) 64%, transparent 36%);
+		color: var(--text-muted);
+		cursor: pointer;
+		transition:
+			background-color var(--duration-standard) var(--ease-out),
+			color var(--duration-standard) var(--ease-out),
+			transform var(--duration-standard) var(--ease-out);
+	}
+
+	.pending-skill-chip__remove:hover,
+	.pending-skill-chip__remove:focus-visible {
+		background: color-mix(in srgb, var(--accent) 18%, var(--surface-page) 82%);
+		color: var(--accent);
+		transform: translateY(-1px);
+	}
+
+	.pending-skill-chip__remove:focus-visible {
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus-ring) 40%, transparent 60%);
+		outline: none;
+	}
+
+	:global(.dark) .pending-skill-chip {
+		background: color-mix(in srgb, var(--accent) 16%, var(--surface-overlay) 84%);
+		box-shadow:
+			0 1px 0 color-mix(in srgb, white 6%, transparent 94%) inset,
+			0 0 0 1px color-mix(in srgb, var(--accent) 8%, transparent 92%);
+	}
+
+	:global(.dark) .pending-skill-chip__remove {
+		background: color-mix(in srgb, var(--surface-elevated) 64%, transparent 36%);
 	}
 
 	.command-tray {

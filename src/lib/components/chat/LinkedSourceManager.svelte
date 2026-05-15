@@ -117,12 +117,15 @@
 		gap: 10px;
 		max-height: min(360px, calc(100vh - 160px));
 		overflow: hidden;
-		border: 1px solid var(--color-border, #d8dee8);
+		border: 1px solid color-mix(in srgb, var(--border-default) 82%, var(--accent) 18%);
 		border-radius: 12px;
-		background: var(--color-surface-elevated, #fff);
-		box-shadow: 0 18px 42px rgb(15 23 42 / 0.18);
+		background: color-mix(in srgb, var(--surface-overlay) 94%, var(--surface-page) 6%);
+		box-shadow:
+			0 18px 42px rgb(15 23 42 / 0.2),
+			0 1px 0 color-mix(in srgb, white 32%, transparent 68%) inset;
 		padding: 12px;
-		color: var(--color-text-primary, #101828);
+		color: var(--text-primary);
+		animation: sourceManagerIn 140ms cubic-bezier(0.22, 1, 0.36, 1);
 	}
 
 	.source-manager:focus {
@@ -141,29 +144,39 @@
 		margin: 0;
 		font-size: 14px;
 		font-weight: 650;
+		color: var(--text-primary);
 	}
 
 	.source-manager__header p,
 	.source-manager__empty,
 	.source-manager__meta {
 		margin: 0;
-		color: var(--color-text-muted, #667085);
+		color: var(--text-muted);
 		font-size: 12px;
 	}
 
 	.source-manager__icon-button,
 	.source-manager__secondary {
-		border: 1px solid var(--color-border, #d8dee8);
+		border: 1px solid color-mix(in srgb, var(--border-default) 82%, transparent 18%);
 		border-radius: 8px;
-		background: transparent;
-		color: var(--color-text-primary, #101828);
+		background: color-mix(in srgb, var(--surface-elevated) 72%, transparent 28%);
+		color: var(--text-primary);
 		font-size: 12px;
 		font-weight: 600;
+		cursor: pointer;
+		transition:
+			background-color var(--duration-standard) var(--ease-out),
+			border-color var(--duration-standard) var(--ease-out),
+			box-shadow var(--duration-standard) var(--ease-out),
+			color var(--duration-standard) var(--ease-out),
+			transform var(--duration-standard) var(--ease-out);
 	}
 
 	.source-manager__icon-button {
 		width: 30px;
 		height: 30px;
+		display: inline-grid;
+		place-items: center;
 	}
 
 	.source-manager__secondary {
@@ -172,8 +185,29 @@
 
 	.source-manager__secondary:disabled {
 		cursor: not-allowed;
-		color: var(--color-text-muted, #667085);
+		color: var(--text-muted);
 		opacity: 0.55;
+	}
+
+	.source-manager__icon-button:hover,
+	.source-manager__icon-button:focus-visible,
+	.source-manager__secondary:hover:not(:disabled),
+	.source-manager__secondary:focus-visible:not(:disabled) {
+		border-color: color-mix(in srgb, var(--accent) 42%, var(--border-default) 58%);
+		background: color-mix(in srgb, var(--accent) 12%, var(--surface-elevated) 88%);
+		color: var(--accent);
+		transform: translateY(-1px);
+	}
+
+	.source-manager__icon-button:focus-visible,
+	.source-manager__secondary:focus-visible {
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus-ring) 36%, transparent 64%);
+		outline: none;
+	}
+
+	.source-manager__icon-button:active,
+	.source-manager__secondary:active:not(:disabled) {
+		transform: translateY(0);
 	}
 
 	.source-manager__list {
@@ -192,8 +226,9 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 10px;
-		border: 1px solid var(--color-border-subtle, #e6e9ef);
+		border: 1px solid color-mix(in srgb, var(--border-default) 72%, transparent 28%);
 		border-radius: 8px;
+		background: color-mix(in srgb, var(--surface-page) 74%, var(--surface-elevated) 26%);
 		padding: 8px;
 	}
 
@@ -212,10 +247,33 @@
 	}
 
 	.source-manager__empty {
-		border: 1px dashed var(--color-border, #d8dee8);
+		border: 1px dashed color-mix(in srgb, var(--border-default) 78%, var(--accent) 22%);
 		border-radius: 8px;
+		background: color-mix(in srgb, var(--surface-page) 70%, transparent 30%);
 		padding: 14px;
 		text-align: center;
+	}
+
+	:global(.dark) .source-manager {
+		background: color-mix(in srgb, var(--surface-overlay) 92%, #111 8%);
+		box-shadow:
+			0 20px 46px rgb(0 0 0 / 0.46),
+			0 1px 0 color-mix(in srgb, white 8%, transparent 92%) inset;
+	}
+
+	:global(.dark) .source-manager__row {
+		background: color-mix(in srgb, var(--surface-page) 60%, var(--surface-elevated) 40%);
+	}
+
+	@keyframes sourceManagerIn {
+		from {
+			opacity: 0;
+			transform: translateY(0.4rem);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
 	}
 
 	@media (max-width: 640px) {
@@ -239,6 +297,15 @@
 
 		.source-manager__secondary {
 			min-height: 36px;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.source-manager,
+		.source-manager__icon-button,
+		.source-manager__secondary {
+			animation: none;
+			transition: none;
 		}
 	}
 </style>
