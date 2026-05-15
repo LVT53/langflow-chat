@@ -23,7 +23,10 @@ import type {
 	ForkEvidenceSnapshot,
 	MessageSourceForks,
 	MessageEvidenceSummary,
+	Artifact,
 } from "$lib/types";
+import { queueArtifactSemanticEmbeddingRefresh } from "./semantic-embedding-refresh";
+import { reconcileStaleFileProductionJobs } from "./file-production";
 
 type CreateConversationForkParams = {
 	userId: string;
@@ -44,6 +47,29 @@ type PersistedMessageMetadata = Record<string, unknown> & {
 };
 
 type JsonRecord = Record<string, unknown>;
+type ForkQueryExecutor = {
+	select: typeof db.select;
+};
+type SourceConversationRow = typeof conversations.$inferSelect;
+type SourceMessageRow = typeof messages.$inferSelect;
+type GeneratedFileCopyPlan = {
+	sourceFile: typeof chatGeneratedFiles.$inferSelect;
+	copiedFileId: string;
+	storagePath: string;
+};
+type GeneratedWorkSnapshotResult = {
+	copiedArtifactIdBySourceId: Map<string, string>;
+	copiedArtifacts: Artifact[];
+};
+
+const MAX_FORK_SEQUENCE_ATTEMPTS = 5;
+
+class ForkSequenceCollisionRetry extends Error {
+	constructor() {
+		super("Fork sequence collision");
+		this.name = "ForkSequenceCollisionRetry";
+	}
+}
 
 export class ConversationForkError extends Error {
 	constructor(
@@ -54,7 +80,8 @@ export class ConversationForkError extends Error {
 			| "stopped_source_message"
 			| "required_artifact_unavailable"
 			| "required_artifact_unauthorized"
-			| "required_generated_work_unavailable",
+			| "required_generated_work_unavailable"
+			| "fork_sequence_conflict",
 		message: string,
 		public status = 400,
 	) {
@@ -125,6 +152,190 @@ function parseJsonRecord(value: string | null): JsonRecord {
 	}
 }
 
+function mapArtifactForSemanticRefresh(
+	row: typeof artifacts.$inferSelect,
+	metadata: JsonRecord | null,
+): Artifact {
+	return {
+		id: row.id,
+		userId: row.userId,
+		type: row.type as Artifact["type"],
+		retrievalClass: row.retrievalClass as Artifact["retrievalClass"],
+		name: row.name,
+		mimeType: row.mimeType,
+		extension: row.extension,
+		sizeBytes: row.sizeBytes,
+		conversationId: row.conversationId,
+		storagePath: row.storagePath,
+		contentText: row.contentText,
+		summary: row.summary,
+		metadata,
+		createdAt: row.createdAt.getTime(),
+		updatedAt: row.updatedAt.getTime(),
+	};
+}
+
+function validateForkSourceSnapshot(params: {
+	sourceConversation: SourceConversationRow | null;
+	sourceMessages: SourceMessageRow[];
+	sourceMessageId: string;
+}): {
+	sourceConversation: SourceConversationRow;
+	sourceMessagesToCopy: SourceMessageRow[];
+	forkPointMessage: SourceMessageRow;
+} {
+	if (!params.sourceConversation) {
+		throw new ConversationForkError(
+			"source_conversation_not_found",
+			"Source conversation not found",
+			404,
+		);
+	}
+
+	const forkPointIndex = params.sourceMessages.findIndex(
+		(message) => message.id === params.sourceMessageId,
+	);
+	const forkPointMessage =
+		forkPointIndex >= 0 ? params.sourceMessages[forkPointIndex] : null;
+
+	if (!forkPointMessage || forkPointMessage.role !== "assistant") {
+		throw new ConversationForkError(
+			"invalid_source_message",
+			"Forks can only be created from a persisted assistant response",
+		);
+	}
+	if (forkPointMessage.content.trim().length === 0) {
+		throw new ConversationForkError(
+			"empty_source_message",
+			"Forks require a non-empty assistant response",
+		);
+	}
+	if (parseMetadata(forkPointMessage.metadataJson).wasStopped === true) {
+		throw new ConversationForkError(
+			"stopped_source_message",
+			"Stopped assistant responses cannot be forked",
+		);
+	}
+
+	return {
+		sourceConversation: params.sourceConversation,
+		sourceMessagesToCopy: params.sourceMessages.slice(0, forkPointIndex + 1),
+		forkPointMessage,
+	};
+}
+
+function readForkSourceSnapshot(
+	executor: ForkQueryExecutor,
+	params: CreateConversationForkParams,
+): {
+	sourceConversation: SourceConversationRow;
+	sourceMessagesToCopy: SourceMessageRow[];
+	forkPointMessage: SourceMessageRow;
+} {
+	const sourceConversation = executor
+		.select()
+		.from(conversations)
+		.where(
+			and(
+				eq(conversations.id, params.sourceConversationId),
+				eq(conversations.userId, params.userId),
+			),
+		)
+		.limit(1)
+		.get();
+
+	const sourceMessages = sourceConversation
+		? executor
+				.select()
+				.from(messages)
+				.where(eq(messages.conversationId, sourceConversation.id))
+				.orderBy(asc(messages.createdAt), asc(messages.id))
+				.all()
+		: [];
+
+	return validateForkSourceSnapshot({
+		sourceConversation: sourceConversation ?? null,
+		sourceMessages,
+		sourceMessageId: params.sourceMessageId,
+	});
+}
+
+function cleanupStagedFiles(stagedFilePaths: string[]): void {
+	for (const stagedFilePath of stagedFilePaths) {
+		try {
+			rmSync(stagedFilePath, { force: true });
+		} catch {
+			// File cleanup is best-effort after a rolled-back fork.
+		}
+	}
+}
+
+function isForkSequenceUniqueConstraintError(error: unknown): boolean {
+	if (!error || typeof error !== "object") return false;
+	const errorWithCode = error as { code?: unknown; message?: unknown };
+	const code = typeof errorWithCode.code === "string" ? errorWithCode.code : "";
+	const message =
+		typeof errorWithCode.message === "string" ? errorWithCode.message : "";
+	if (!code.includes("SQLITE_CONSTRAINT") && !/unique/i.test(message)) {
+		return false;
+	}
+	return (
+		message.includes("conversation_forks_user_source_assistant_sequence_unique_idx") ||
+		(message.includes("conversation_forks.user_id") &&
+			message.includes("conversation_forks.source_assistant_message_id_snapshot") &&
+			message.includes("conversation_forks.fork_sequence"))
+	);
+}
+
+function prepareGeneratedFileCopyPlan(params: {
+	userId: string;
+	sourceConversationId: string;
+	forkConversationId: string;
+	sourceMessageIds: string[];
+	stagedFilePaths: string[];
+}): GeneratedFileCopyPlan[] {
+	if (params.sourceMessageIds.length === 0) return [];
+
+	const sourceFiles = db
+		.select()
+		.from(chatGeneratedFiles)
+		.where(
+			and(
+				eq(chatGeneratedFiles.userId, params.userId),
+				eq(chatGeneratedFiles.conversationId, params.sourceConversationId),
+				inArray(chatGeneratedFiles.assistantMessageId, params.sourceMessageIds),
+			),
+		)
+		.orderBy(asc(chatGeneratedFiles.createdAt), asc(chatGeneratedFiles.id))
+		.all();
+
+	return sourceFiles.map((sourceFile) => {
+		const copiedFileId = randomUUID();
+		const storagePath = join(
+			params.forkConversationId,
+			`${copiedFileId}.${getFileExtension(sourceFile.filename)}`,
+		);
+		const sourceFullPath = join(getChatFilesDir(), sourceFile.storagePath);
+		const targetFullPath = join(getChatFilesDir(), storagePath);
+		try {
+			mkdirSync(dirname(targetFullPath), { recursive: true });
+			copyFileSync(sourceFullPath, targetFullPath);
+			params.stagedFilePaths.push(targetFullPath);
+		} catch {
+			throw new ConversationForkError(
+				"required_generated_work_unavailable",
+				"Fork source includes generated work whose binary storage is no longer available",
+				409,
+			);
+		}
+		return {
+			sourceFile,
+			copiedFileId,
+			storagePath,
+		};
+	});
+}
+
 function copyMetadata(
 	sourceMessage: typeof messages.$inferSelect,
 	snapshotCreatedAt: Date,
@@ -139,6 +350,13 @@ function copyMetadata(
 			sourceCreatedAt: sourceMessage.createdAt.toISOString(),
 		},
 	};
+	delete next.skillQuestion;
+	delete next.pendingSkillNoteIntents;
+	delete next.skillDrafts;
+	delete next.skillControl;
+	delete next.honchoContext;
+	delete next.honchoSnapshot;
+	delete next.evidenceStatus;
 	const evidenceSummary =
 		sourceMetadata.evidenceSummary &&
 		Array.isArray(sourceMetadata.evidenceSummary.groups)
@@ -183,6 +401,14 @@ function isDurableDocumentArtifactType(type: string): boolean {
 	return type === "source_document" || type === "normalized_document";
 }
 
+function isGeneratedOutputArtifactType(type: string): boolean {
+	return type === "generated_output";
+}
+
+function isTerminalFileProductionStatus(status: string): boolean {
+	return status === "succeeded" || status === "failed" || status === "cancelled";
+}
+
 function getChatFilesDir(): string {
 	return join(process.cwd(), "data", "chat-files");
 }
@@ -209,6 +435,7 @@ function copyDurableDocumentLinks(params: {
 	forkConversationId: string;
 	sourceMessageIds: string[];
 	copiedMessageIdBySourceId: Map<string, string>;
+	copiedGeneratedArtifactIds: Set<string>;
 	forkPointCreatedAt: Date;
 	now: Date;
 }): void {
@@ -253,8 +480,23 @@ function copyDurableDocumentLinks(params: {
 				403,
 			);
 		}
-		if (!isDurableDocumentArtifactType(row.artifact.type)) continue;
-		linksToCopy.push(row.link);
+		if (isDurableDocumentArtifactType(row.artifact.type)) {
+			linksToCopy.push(row.link);
+			continue;
+		}
+		if (isGeneratedOutputArtifactType(row.artifact.type)) {
+			if (params.copiedGeneratedArtifactIds.has(row.artifact.id)) continue;
+			throw new ConversationForkError(
+				"required_generated_work_unavailable",
+				"Fork source includes generated work that cannot be snapshotted",
+				409,
+			);
+		}
+		throw new ConversationForkError(
+			"required_artifact_unavailable",
+			`Fork source includes a visible ${row.artifact.type} attachment that cannot be preserved`,
+			409,
+		);
 	}
 
 	if (linksToCopy.length === 0) return;
@@ -285,45 +527,21 @@ function copyGeneratedWorkSnapshot(params: {
 	forkConversationId: string;
 	sourceMessageIds: string[];
 	copiedMessageIdBySourceId: Map<string, string>;
+	forkPointCreatedAt: Date;
 	now: Date;
-	stagedFilePaths: string[];
-}): void {
-	if (params.sourceMessageIds.length === 0) return;
-
-	const sourceFiles = params.tx
-		.select()
-		.from(chatGeneratedFiles)
-		.where(
-			and(
-				eq(chatGeneratedFiles.userId, params.userId),
-				eq(chatGeneratedFiles.conversationId, params.sourceConversationId),
-				inArray(chatGeneratedFiles.assistantMessageId, params.sourceMessageIds),
-			),
-		)
-		.orderBy(asc(chatGeneratedFiles.createdAt), asc(chatGeneratedFiles.id))
-		.all();
+	fileCopyPlans: GeneratedFileCopyPlan[];
+}): GeneratedWorkSnapshotResult {
+	if (params.sourceMessageIds.length === 0) {
+		return {
+			copiedArtifactIdBySourceId: new Map(),
+			copiedArtifacts: [],
+		};
+	}
 
 	const copiedFileIdBySourceId = new Map<string, string>();
-	for (const sourceFile of sourceFiles) {
-		const copiedFileId = randomUUID();
-		const storagePath = join(
-			params.forkConversationId,
-			`${copiedFileId}.${getFileExtension(sourceFile.filename)}`,
-		);
-		const sourceFullPath = join(getChatFilesDir(), sourceFile.storagePath);
-		const targetFullPath = join(getChatFilesDir(), storagePath);
-		try {
-			mkdirSync(dirname(targetFullPath), { recursive: true });
-			copyFileSync(sourceFullPath, targetFullPath);
-			params.stagedFilePaths.push(targetFullPath);
-		} catch {
-			throw new ConversationForkError(
-				"required_generated_work_unavailable",
-				"Fork source includes generated work whose binary storage is no longer available",
-				409,
-			);
-		}
-
+	const sourceFiles = params.fileCopyPlans.map((plan) => plan.sourceFile);
+	for (const plan of params.fileCopyPlans) {
+		const { sourceFile, copiedFileId, storagePath } = plan;
 		params.tx
 			.insert(chatGeneratedFiles)
 			.values({
@@ -355,6 +573,16 @@ function copyGeneratedWorkSnapshot(params: {
 		)
 		.orderBy(asc(fileProductionJobs.createdAt), asc(fileProductionJobs.id))
 		.all();
+	const nonTerminalJob = sourceJobs.find(
+		(job) => !isTerminalFileProductionStatus(job.status),
+	);
+	if (nonTerminalJob) {
+		throw new ConversationForkError(
+			"required_generated_work_unavailable",
+			"Fork source includes generated work that is still queued or running",
+			409,
+		);
+	}
 	const copiedJobIdBySourceId = new Map<string, string>();
 	const sourceJobFileLinks =
 		sourceJobs.length > 0
@@ -423,6 +651,7 @@ function copyGeneratedWorkSnapshot(params: {
 
 	const sourceFileIds = new Set(sourceFiles.map((file) => file.id));
 	const sourceMessageIds = new Set(params.sourceMessageIds);
+	const copiedArtifactIdBySourceId = new Map<string, string>();
 	const sourceGeneratedArtifacts = params.tx
 		.select()
 		.from(artifacts)
@@ -457,9 +686,14 @@ function copyGeneratedWorkSnapshot(params: {
 			);
 		});
 
-	if (sourceGeneratedArtifacts.length === 0) return;
+	if (sourceGeneratedArtifacts.length === 0) {
+		return {
+			copiedArtifactIdBySourceId,
+			copiedArtifacts: [],
+		};
+	}
 
-	const copiedArtifactIdBySourceId = new Map<string, string>();
+	const copiedArtifacts: Artifact[] = [];
 	for (const sourceArtifact of sourceGeneratedArtifacts) {
 		const sourceMetadata = parseJsonRecord(sourceArtifact.metadataJson);
 		const sourceOriginalChatFileId =
@@ -482,6 +716,13 @@ function copyGeneratedWorkSnapshot(params: {
 			throw new ConversationForkError(
 				"required_generated_work_unavailable",
 				"Fork source includes generated work whose file metadata is no longer available",
+				409,
+			);
+		}
+		if (sourceArtifact.storagePath && !copiedChatFileId) {
+			throw new ConversationForkError(
+				"required_generated_work_unavailable",
+				"Fork source includes binary generated work that cannot be copied",
 				409,
 			);
 		}
@@ -521,7 +762,7 @@ function copyGeneratedWorkSnapshot(params: {
 			nextMetadata.assistantMessageId = copiedAssistantMessageId;
 		}
 
-		params.tx
+		const [copiedArtifact] = params.tx
 			.insert(artifacts)
 			.values({
 				id: copiedArtifactId,
@@ -534,14 +775,20 @@ function copyGeneratedWorkSnapshot(params: {
 				extension: sourceArtifact.extension,
 				sizeBytes: sourceArtifact.sizeBytes,
 				binaryHash: sourceArtifact.binaryHash,
-				storagePath: sourceArtifact.storagePath,
+				storagePath: copiedChatFileId ? null : sourceArtifact.storagePath,
 				contentText: sourceArtifact.contentText,
 				summary: sourceArtifact.summary,
 				metadataJson: JSON.stringify(nextMetadata),
 				createdAt: sourceArtifact.createdAt,
 				updatedAt: sourceArtifact.updatedAt,
 			})
-			.run();
+			.returning()
+			.all();
+		if (copiedArtifact) {
+			copiedArtifacts.push(
+				mapArtifactForSemanticRefresh(copiedArtifact, nextMetadata),
+			);
+		}
 	}
 
 	const sourceChunks = params.tx
@@ -579,6 +826,16 @@ function copyGeneratedWorkSnapshot(params: {
 		if (link.linkType === "supersedes") return [];
 		const copiedArtifactId = copiedArtifactIdBySourceId.get(link.artifactId);
 		if (!copiedArtifactId) return [];
+		if (link.messageId && !params.copiedMessageIdBySourceId.has(link.messageId)) {
+			return [];
+		}
+		if (
+			link.messageId === null &&
+			link.linkType === "attached_to_conversation" &&
+			!isConversationLevelLinkVisibleAtFork(link, params.forkPointCreatedAt)
+		) {
+			return [];
+		}
 		const copiedRelatedArtifactId = link.relatedArtifactId
 			? copiedArtifactIdBySourceId.get(link.relatedArtifactId)
 			: null;
@@ -597,7 +854,7 @@ function copyGeneratedWorkSnapshot(params: {
 					(canKeepDurableRelatedArtifact ? link.relatedArtifactId : null),
 				conversationId: params.forkConversationId,
 				messageId: link.messageId
-					? (params.copiedMessageIdBySourceId.get(link.messageId) ?? null)
+					? params.copiedMessageIdBySourceId.get(link.messageId)
 					: null,
 				linkType: link.linkType,
 				createdAt: link.createdAt,
@@ -607,201 +864,221 @@ function copyGeneratedWorkSnapshot(params: {
 	if (linksToCopy.length > 0) {
 		params.tx.insert(artifactLinks).values(linksToCopy).run();
 	}
+
+	return {
+		copiedArtifactIdBySourceId,
+		copiedArtifacts,
+	};
 }
 
 export async function createConversationFork(
 	params: CreateConversationForkParams,
 ): Promise<ConversationForkResult> {
-	const stagedFilePaths: string[] = [];
-	try {
-		return db.transaction((tx) => {
-		const sourceConversation = tx
-			.select()
-			.from(conversations)
-			.where(
-				and(
-					eq(conversations.id, params.sourceConversationId),
-					eq(conversations.userId, params.userId),
-				),
-			)
-			.limit(1)
-			.get();
+	const preflight = readForkSourceSnapshot(db, params);
+	const preflightSourceMessageIds = preflight.sourceMessagesToCopy.map(
+		(message) => message.id,
+	);
+	await reconcileStaleFileProductionJobs({
+		userId: params.userId,
+		conversationId: preflight.sourceConversation.id,
+		assistantMessageIds: preflightSourceMessageIds,
+	});
 
-		if (!sourceConversation) {
-			throw new ConversationForkError(
-				"source_conversation_not_found",
-				"Source conversation not found",
-				404,
-			);
-		}
-
-		const sourceMessages = tx
-			.select()
-			.from(messages)
-			.where(eq(messages.conversationId, sourceConversation.id))
-			.orderBy(asc(messages.createdAt), asc(messages.id))
-			.all();
-		const forkPointIndex = sourceMessages.findIndex(
-			(message) => message.id === params.sourceMessageId,
-		);
-		const forkPointMessage =
-			forkPointIndex >= 0 ? sourceMessages[forkPointIndex] : null;
-
-		if (!forkPointMessage || forkPointMessage.role !== "assistant") {
-			throw new ConversationForkError(
-				"invalid_source_message",
-				"Forks can only be created from a persisted assistant response",
-			);
-		}
-		if (forkPointMessage.content.trim().length === 0) {
-			throw new ConversationForkError(
-				"empty_source_message",
-				"Forks require a non-empty assistant response",
-			);
-		}
-		if (parseMetadata(forkPointMessage.metadataJson).wasStopped === true) {
-			throw new ConversationForkError(
-				"stopped_source_message",
-				"Stopped assistant responses cannot be forked",
-			);
-		}
-
-		const forkSequence = getNextForkSequence(tx, forkPointMessage.id);
+	for (let attempt = 1; attempt <= MAX_FORK_SEQUENCE_ATTEMPTS; attempt += 1) {
+		const stagedFilePaths: string[] = [];
 		const forkConversationId = randomUUID();
-		const now = new Date();
-		const forkConversation = tx
-			.insert(conversations)
-			.values({
-				id: forkConversationId,
-				userId: params.userId,
-				title: `${sourceConversation.title} (fork ${forkSequence})`,
-				projectId: sourceConversation.projectId ?? null,
-				status: "open",
-				createdAt: now,
-				updatedAt: now,
-			})
-			.returning()
-			.get();
-
-		const sourceMessagesToCopy = sourceMessages.slice(0, forkPointIndex + 1);
-		const copiedMessages = tx
-			.insert(messages)
-			.values(
-				sourceMessagesToCopy.map((sourceMessage) => ({
-					id: randomUUID(),
-					conversationId: forkConversation.id,
-					role: sourceMessage.role,
-					content: sourceMessage.content,
-					thinking: sourceMessage.thinking,
-					toolCalls: sourceMessage.toolCalls,
-					metadataJson: JSON.stringify(copyMetadata(sourceMessage, now)),
-					createdAt: sourceMessage.createdAt,
-				})),
-			)
-			.returning()
-			.all();
-		const copiedForkPointMessage = copiedMessages[copiedMessages.length - 1];
-		if (!copiedForkPointMessage) {
-			throw new ConversationForkError(
-				"invalid_source_message",
-				"Fork source did not include copyable messages",
-			);
-		}
-		const copiedMessageIdBySourceId = new Map(
-			sourceMessagesToCopy.map((sourceMessage, index) => [
-				sourceMessage.id,
-				copiedMessages[index]?.id ?? "",
-			]),
-		);
-		copyDurableDocumentLinks({
-			tx,
-			userId: params.userId,
-			sourceConversationId: sourceConversation.id,
-			forkConversationId: forkConversation.id,
-			sourceMessageIds: sourceMessagesToCopy.map((message) => message.id),
-			copiedMessageIdBySourceId,
-			forkPointCreatedAt: forkPointMessage.createdAt,
-			now,
-		});
-		copyGeneratedWorkSnapshot({
-			tx,
-			userId: params.userId,
-			sourceConversationId: sourceConversation.id,
-			forkConversationId: forkConversation.id,
-			sourceMessageIds: sourceMessagesToCopy.map((message) => message.id),
-			copiedMessageIdBySourceId,
-			now,
-			stagedFilePaths,
-		});
-
-		const lineage = tx
-			.insert(conversationForks)
-			.values({
-				id: randomUUID(),
-				forkConversationId: forkConversation.id,
-				userId: params.userId,
-				sourceConversationId: sourceConversation.id,
-				sourceConversationIdSnapshot: sourceConversation.id,
-				sourceAssistantMessageId: forkPointMessage.id,
-				sourceAssistantMessageIdSnapshot: forkPointMessage.id,
-				copiedForkPointMessageId: copiedForkPointMessage.id,
-				sourceTitle: sourceConversation.title,
-				forkSequence,
-				createdAt: now,
-			})
-			.returning()
-			.get();
-
-		tx
-			.insert(memoryEvents)
-			.values({
-				id: randomUUID(),
-				eventKey: scopeMemoryEventKey(
-					params.userId,
-					`conversation_fork_created:${forkConversation.id}`,
-				),
-				userId: params.userId,
-				conversationId: forkConversation.id,
-				messageId: copiedForkPointMessage.id,
-				domain: "conversation",
-				eventType: "conversation_fork_created",
-				subjectId: forkConversation.id,
-				relatedId:
-					lineage.sourceConversationId ?? lineage.sourceConversationIdSnapshot,
-				observedAt: now,
-				payloadJson: JSON.stringify({
-					sourceConversationId:
-						lineage.sourceConversationId ??
-						lineage.sourceConversationIdSnapshot,
-					sourceAssistantMessageId:
-						lineage.sourceAssistantMessageId ??
-						lineage.sourceAssistantMessageIdSnapshot,
-					sourceTitle: lineage.sourceTitle,
-					forkSequence: lineage.forkSequence,
-					copiedForkPointMessageId: lineage.copiedForkPointMessageId,
-				}),
-				createdAt: now,
-			})
-			.onConflictDoNothing({
-				target: memoryEvents.eventKey,
-			})
-			.run();
-
-		return {
-			conversation: mapConversation(forkConversation),
-			forkOrigin: mapForkOrigin(lineage),
+		let transactionResult: {
+			result: ConversationForkResult;
+			copiedArtifacts: Artifact[];
 		};
-		});
-	} catch (error) {
-		for (const stagedFilePath of stagedFilePaths) {
-			try {
-				rmSync(stagedFilePath, { force: true });
-			} catch {
-				// File cleanup is best-effort after a rolled-back fork.
+
+		try {
+			const fileCopyPlans = prepareGeneratedFileCopyPlan({
+				userId: params.userId,
+				sourceConversationId: preflight.sourceConversation.id,
+				forkConversationId,
+				sourceMessageIds: preflightSourceMessageIds,
+				stagedFilePaths,
+			});
+
+			transactionResult = db.transaction((tx) => {
+				const {
+					sourceConversation,
+					sourceMessagesToCopy,
+					forkPointMessage,
+				} = readForkSourceSnapshot(tx as ForkQueryExecutor, params);
+				const sourceMessageIds = sourceMessagesToCopy.map((message) => message.id);
+				const forkSequence = getNextForkSequence(tx, forkPointMessage.id);
+				const now = new Date();
+				const forkConversation = tx
+					.insert(conversations)
+					.values({
+						id: forkConversationId,
+						userId: params.userId,
+						title: `${sourceConversation.title} (fork ${forkSequence})`,
+						projectId: sourceConversation.projectId ?? null,
+						status: "open",
+						createdAt: now,
+						updatedAt: now,
+					})
+					.returning()
+					.get();
+
+				const copiedMessages = tx
+					.insert(messages)
+					.values(
+						sourceMessagesToCopy.map((sourceMessage) => ({
+							id: randomUUID(),
+							conversationId: forkConversation.id,
+							role: sourceMessage.role,
+							content: sourceMessage.content,
+							thinking: sourceMessage.thinking,
+							toolCalls: sourceMessage.toolCalls,
+							metadataJson: JSON.stringify(copyMetadata(sourceMessage, now)),
+							createdAt: sourceMessage.createdAt,
+						})),
+					)
+					.returning()
+					.all();
+				const copiedForkPointMessage = copiedMessages[copiedMessages.length - 1];
+				if (!copiedForkPointMessage) {
+					throw new ConversationForkError(
+						"invalid_source_message",
+						"Fork source did not include copyable messages",
+					);
+				}
+				const copiedMessageIdBySourceId = new Map(
+					sourceMessagesToCopy.map((sourceMessage, index) => [
+						sourceMessage.id,
+						copiedMessages[index]?.id ?? "",
+					]),
+				);
+				const generatedSnapshot = copyGeneratedWorkSnapshot({
+					tx,
+					userId: params.userId,
+					sourceConversationId: sourceConversation.id,
+					forkConversationId: forkConversation.id,
+					sourceMessageIds,
+					copiedMessageIdBySourceId,
+					forkPointCreatedAt: forkPointMessage.createdAt,
+					now,
+					fileCopyPlans,
+				});
+				copyDurableDocumentLinks({
+					tx,
+					userId: params.userId,
+					sourceConversationId: sourceConversation.id,
+					forkConversationId: forkConversation.id,
+					sourceMessageIds,
+					copiedMessageIdBySourceId,
+					copiedGeneratedArtifactIds: new Set(
+						generatedSnapshot.copiedArtifactIdBySourceId.keys(),
+					),
+					forkPointCreatedAt: forkPointMessage.createdAt,
+					now,
+				});
+
+				const lineage = tx
+					.insert(conversationForks)
+					.values({
+						id: randomUUID(),
+						forkConversationId: forkConversation.id,
+						userId: params.userId,
+						sourceConversationId: sourceConversation.id,
+						sourceConversationIdSnapshot: sourceConversation.id,
+						sourceAssistantMessageId: forkPointMessage.id,
+						sourceAssistantMessageIdSnapshot: forkPointMessage.id,
+						copiedForkPointMessageId: copiedForkPointMessage.id,
+						sourceTitle: sourceConversation.title,
+						forkSequence,
+						createdAt: now,
+					})
+					.onConflictDoNothing({
+						target: [
+							conversationForks.userId,
+							conversationForks.sourceAssistantMessageIdSnapshot,
+							conversationForks.forkSequence,
+						],
+					})
+					.returning()
+					.get();
+				if (!lineage) {
+					throw new ForkSequenceCollisionRetry();
+				}
+
+				tx
+					.insert(memoryEvents)
+					.values({
+						id: randomUUID(),
+						eventKey: scopeMemoryEventKey(
+							params.userId,
+							`conversation_fork_created:${forkConversation.id}`,
+						),
+						userId: params.userId,
+						conversationId: forkConversation.id,
+						messageId: copiedForkPointMessage.id,
+						domain: "conversation",
+						eventType: "conversation_fork_created",
+						subjectId: forkConversation.id,
+						relatedId:
+							lineage.sourceConversationId ??
+							lineage.sourceConversationIdSnapshot,
+						observedAt: now,
+						payloadJson: JSON.stringify({
+							sourceConversationId:
+								lineage.sourceConversationId ??
+								lineage.sourceConversationIdSnapshot,
+							sourceAssistantMessageId:
+								lineage.sourceAssistantMessageId ??
+								lineage.sourceAssistantMessageIdSnapshot,
+							sourceTitle: lineage.sourceTitle,
+							forkSequence: lineage.forkSequence,
+							copiedForkPointMessageId: lineage.copiedForkPointMessageId,
+						}),
+						createdAt: now,
+					})
+					.onConflictDoNothing({
+						target: memoryEvents.eventKey,
+					})
+					.run();
+
+				return {
+					result: {
+						conversation: mapConversation(forkConversation),
+						forkOrigin: mapForkOrigin(lineage),
+					},
+					copiedArtifacts: generatedSnapshot.copiedArtifacts,
+				};
+			});
+		} catch (error) {
+			cleanupStagedFiles(stagedFilePaths);
+			if (
+				error instanceof ForkSequenceCollisionRetry ||
+				isForkSequenceUniqueConstraintError(error)
+			) {
+				if (attempt < MAX_FORK_SEQUENCE_ATTEMPTS) {
+					continue;
+				}
+				throw new ConversationForkError(
+					"fork_sequence_conflict",
+					"Could not allocate a fork sequence after retrying concurrent fork creation",
+					409,
+				);
 			}
+			throw error;
 		}
-		throw error;
+
+		for (const copiedArtifact of transactionResult.copiedArtifacts) {
+			queueArtifactSemanticEmbeddingRefresh(copiedArtifact);
+		}
+		return transactionResult.result;
 	}
+
+	throw new ConversationForkError(
+		"fork_sequence_conflict",
+		"Could not allocate a fork sequence after retrying concurrent fork creation",
+		409,
+	);
 }
 
 export async function getConversationForkOrigin(

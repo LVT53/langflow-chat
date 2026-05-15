@@ -86,4 +86,30 @@ describe('i18n composer and skills namespaces', () => {
 		expect(keys.hu).toEqual(keys.en);
 		expect(keys.en.length).toBeGreaterThan(0);
 	});
+
+	it('localizes every conversation fork creation failure code', () => {
+		const keys = collectDictionaryKeys();
+		const expectedForkErrorKeys = [
+			'fork.errors.emptySourceMessage',
+			'fork.errors.invalidSourceMessage',
+			'fork.errors.requiredArtifactUnauthorized',
+			'fork.errors.requiredArtifactUnavailable',
+			'fork.errors.requiredGeneratedWorkUnavailable',
+			'fork.errors.sequenceConflict',
+			'fork.errors.sourceConversationNotFound',
+			'fork.errors.stoppedSourceMessage',
+		];
+
+		for (const key of expectedForkErrorKeys) {
+			expect(keys.en).toContain(key);
+			expect(keys.hu).toContain(key);
+		}
+	});
+
+	it('localizes the inherited Skill Draft copy guard', () => {
+		const keys = collectDictionaryKeys();
+
+		expect(keys.en).toContain('skillDrafts.inheritedCopyBlocked');
+		expect(keys.hu).toContain('skillDrafts.inheritedCopyBlocked');
+	});
 });
