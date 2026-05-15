@@ -173,12 +173,12 @@
 			title={$t('sidebar.newChatInProject')}
 		>
 			{#if creatingConversation}
-				<svg class="project-action-spinner" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+				<svg class="project-action-spinner" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
 					<path d="M21 12a9 9 0 0 1-9 9"/>
 					<path d="M3 12a9 9 0 0 1 9-9"/>
 				</svg>
 			{:else}
-				<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+				<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
 					<path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v8z"/>
 					<path d="M12 8v6"/><path d="M9 11h6"/>
 				</svg>
@@ -193,7 +193,7 @@
 			onclick={toggleMenu}
 			aria-label={$t('sidebar.projectOptions')}
 		>
-			<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+			<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 				<circle cx="12" cy="12" r="1" /><circle cx="12" cy="5" r="1" /><circle cx="12" cy="19" r="1" />
 			</svg>
 		</button>
@@ -262,14 +262,14 @@
 
 <style>
 	.project-row-actions {
-		height: 26px;
+		height: 28px;
 	}
 
 	.project-row-action-button {
-		height: 26px;
-		min-height: 26px;
-		width: 24px;
-		min-width: 24px;
+		height: 28px;
+		min-height: 28px;
+		width: 28px;
+		min-width: 28px;
 		padding: 0;
 	}
 
