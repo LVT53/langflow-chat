@@ -38,7 +38,10 @@ describe("SkillSessionPanel", () => {
 			onDismiss,
 		});
 
-		expect(getByRole("region", { name: "Skill session" })).toBeInTheDocument();
+		const panel = getByRole("region", { name: "Skill session" });
+		expect(panel).toBeInTheDocument();
+		expect(panel).toHaveClass("skill-session-panel");
+		expect(panel.querySelector(".skill-session-panel__status")).toHaveTextContent("Active");
 		expect(getByText("Meeting critic")).toBeInTheDocument();
 		expect(getByText("Active")).toBeInTheDocument();
 		expect(getByText("Selected sources only · Private notes")).toBeInTheDocument();

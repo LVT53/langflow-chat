@@ -1,5 +1,6 @@
 <script lang='ts'>
 	import { onMount, onDestroy } from 'svelte';
+	import type { Snippet } from 'svelte';
 	import { browser } from '$app/environment';
 	import ErrorMessage from '$lib/components/chat/ErrorMessage.svelte';
 	import MessageInput from '$lib/components/chat/MessageInput.svelte';
@@ -56,6 +57,7 @@
 		onPersonalityChange,
 		thinkingMode,
 		onThinkingModeChange,
+		children,
 	}: {
 		sendError: string | null;
 		onRetry: () => void;
@@ -102,6 +104,7 @@
 		onPersonalityChange?: ((id: string | null) => void) | undefined;
 		thinkingMode?: ThinkingMode;
 		onThinkingModeChange?: ((mode: ThinkingMode) => void) | undefined;
+		children?: Snippet;
 	} = $props();
 
 	// Dynamic keyboard detection using visualViewport API
@@ -163,6 +166,8 @@
 		{#if sendError}
 			<ErrorMessage error={sendError} onRetry={onRetry} onClose={onErrorClose} />
 		{/if}
+
+		{@render children?.()}
 
 		<MessageInput
 			{onSend}

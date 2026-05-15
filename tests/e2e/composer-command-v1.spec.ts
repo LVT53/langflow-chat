@@ -232,11 +232,21 @@ test.describe('Composer Command V1', () => {
 		const capture: { streamBody?: Record<string, unknown> } = {};
 
 		await login(page);
+		const themeResponse = await page.evaluate(async () => {
+			const result = await fetch('/api/settings/preferences', {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ theme: 'dark' }),
+			});
+			return { ok: result.ok, status: result.status };
+		});
+		expect(themeResponse.ok, `Failed to switch test user to dark mode: ${themeResponse.status}`).toBe(true);
 		await setComposerCommandRegistry(page, true);
 		await mockComposerCommandRoutes(page, capture);
 		const conversationId = await createEmptyConversation(page);
 		await page.goto(`/chat/${conversationId}`, { waitUntil: 'domcontentloaded' });
 		await page.waitForLoadState('networkidle');
+		await expect.poll(() => page.locator('html').evaluate((element) => element.classList.contains('dark'))).toBe(true);
 		await expect(page.getByTestId('message-input')).toBeVisible();
 
 		const input = page.getByTestId('message-input');
@@ -244,16 +254,29 @@ test.describe('Composer Command V1', () => {
 		await typeComposerCommand(page, '$interview');
 		await page.getByRole('option', { name: /Interview coach/i }).click();
 		await expect(page.getByRole('button', { name: 'Remove pending skill Interview coach' })).toBeVisible();
+		const pendingSkill = page.getByRole('list', { name: 'Pending skill' });
+		await expect(pendingSkill.locator('.pending-skill-chip')).toBeVisible();
+		await expect(pendingSkill.locator('.linked-source-chip')).toHaveCount(0);
 
 		await typeComposerCommand(page, '/document');
 		await page.getByRole('option', { name: /\/document/i }).click();
 		const picker = page.getByRole('dialog', { name: 'Link Library documents' });
 		await expect(picker).toBeVisible();
+		await expect.poll(() => picker.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe('rgb(255, 255, 255)');
 		await picker.getByRole('checkbox', { name: 'Alpha source.md' }).check();
 		await picker.getByRole('checkbox', { name: 'Beta source.pdf' }).check();
 		await page.getByRole('button', { name: 'Link selected documents' }).click();
 		await expect(page.getByText('Alpha source.md')).toBeVisible();
 		await expect(page.getByText('Beta source.pdf')).toBeVisible();
+
+		await typeComposerCommand(page, '/source');
+		await page.getByRole('option', { name: /\/source/i }).click();
+		const sourceManager = page.getByRole('dialog', { name: 'Sources' });
+		await expect(sourceManager).toBeVisible();
+		await expect
+			.poll(() => sourceManager.evaluate((element) => getComputedStyle(element).backgroundColor))
+			.not.toBe('rgb(255, 255, 255)');
+		await sourceManager.getByRole('button', { name: 'Close sources' }).click();
 
 		await typeComposerCommand(page, '/thinking');
 		await page.getByRole('option', { name: /\/thinking/i }).click();
@@ -274,6 +297,16 @@ test.describe('Composer Command V1', () => {
 		await expect(page.getByTestId('assistant-message').first()).toContainText('Mixed command response', {
 			timeout: 15000,
 		});
+		const activeSkill = page.getByRole('region', { name: 'Skill session' });
+		await expect(activeSkill).toContainText('Interview coach');
+		await expect(activeSkill).toContainText('Active');
+		const panelBox = await activeSkill.boundingBox();
+		const composerBox = await page.locator('.message-composer').boundingBox();
+		if (!panelBox || !composerBox) {
+			throw new Error('Active skill panel or composer box was not measurable.');
+		}
+		expect(panelBox.width).toBeLessThan(composerBox.width);
+		expect(panelBox.y + panelBox.height).toBeLessThanOrEqual(composerBox.y + 4);
 		await expect.poll(() => capture.streamBody).toBeTruthy();
 		expect(capture.streamBody).toMatchObject({
 			message: 'Use every selected composer command in normal chat.',
@@ -339,9 +372,10 @@ test.describe('Composer Command V1', () => {
 
 		const trayBox = await tray.boundingBox();
 		const composerBox = await page.locator('.message-composer').boundingBox();
-		expect(trayBox).not.toBeNull();
-		expect(composerBox).not.toBeNull();
-		expect(trayBox!.y + trayBox!.height).toBeLessThanOrEqual(composerBox!.y + 4);
+		if (!trayBox || !composerBox) {
+			throw new Error('Command tray or composer box was not measurable.');
+		}
+		expect(trayBox.y + trayBox.height).toBeLessThanOrEqual(composerBox.y + 4);
 
 		await page.keyboard.press('Escape');
 		await expect(tray).toBeHidden();

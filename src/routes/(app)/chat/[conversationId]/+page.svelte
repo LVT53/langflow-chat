@@ -2280,16 +2280,6 @@ function handleDrop(event: DragEvent) {
 				{/if}
 			</div>
 
-			{#if activeSkillSession}
-				<SkillSessionPanel
-					session={activeSkillSession}
-					busy={skillSessionBusy}
-					error={skillSessionError}
-					onFinish={() => endCurrentSkillSession("ended")}
-					onDismiss={() => endCurrentSkillSession("dismissed")}
-				/>
-			{/if}
-
 			<ChatComposerPanel
 				{sendError}
 				onRetry={handleRetry}
@@ -2328,8 +2318,18 @@ function handleDrop(event: DragEvent) {
 				onSteer={handleSteering}
 				onManageEvidence={openEvidenceManager}
 				onUploadReady={handleUploadReady}
-			onUploadFiles={handleUploadFiles}
-			/>
+				onUploadFiles={handleUploadFiles}
+			>
+				{#if activeSkillSession}
+					<SkillSessionPanel
+						session={activeSkillSession}
+						busy={skillSessionBusy}
+						error={skillSessionError}
+						onFinish={() => endCurrentSkillSession("ended")}
+						onDismiss={() => endCurrentSkillSession("dismissed")}
+					/>
+				{/if}
+			</ChatComposerPanel>
 		</div>
 
 		<DocumentWorkspace

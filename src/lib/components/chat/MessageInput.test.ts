@@ -629,6 +629,10 @@ describe('MessageInput', () => {
 
 		expect(input.value).toBe('Please  this answer');
 		expect(getByText('Interview coach')).toBeInTheDocument();
+		const pendingSkillList = getByRole('list', { name: 'Pending skill' });
+		expect(within(pendingSkillList).getByText('Skill')).toBeInTheDocument();
+		expect(pendingSkillList.querySelector('.pending-skill-chip')).not.toBeNull();
+		expect(pendingSkillList.querySelector('.linked-source-chip')).toBeNull();
 		expect(draftSpy).toHaveBeenLastCalledWith(
 			expect.objectContaining({
 				pendingSkill: expect.objectContaining({
@@ -703,6 +707,9 @@ describe('MessageInput', () => {
 		});
 
 		expect(getByText('Interview coach')).toBeInTheDocument();
+		const pendingSkillList = getByRole('list', { name: 'Pending skill' });
+		expect(within(pendingSkillList).getByText('Skill')).toBeInTheDocument();
+		expect(pendingSkillList.querySelector('.pending-skill-chip')).not.toBeNull();
 		expect(
 			getByRole('button', { name: 'Remove pending skill Interview coach' })
 		).toBeInTheDocument();

@@ -33,7 +33,7 @@
 			<p class="skill-session-panel__eyebrow">{$t("skillSessions.activeLabel")}</p>
 			<h2>{session.skillDisplayName}</h2>
 		</div>
-		<span class:paused={session.status === "paused"}>{statusLabel}</span>
+		<span class="skill-session-panel__status" class:paused={session.status === "paused"}>{statusLabel}</span>
 	</div>
 
 	<p class="skill-session-panel__next">
@@ -65,11 +65,33 @@
 
 <style>
 	.skill-session-panel {
-		border: 1px solid var(--border, #d7dde7);
+		position: relative;
+		z-index: 2;
+		width: min(90%, 44rem);
+		margin: 0 auto;
+		border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border-default) 72%);
 		border-radius: 8px;
+		background:
+			linear-gradient(
+				135deg,
+				color-mix(in srgb, var(--accent) 9%, var(--surface-overlay) 91%),
+				color-mix(in srgb, var(--surface-elevated) 90%, var(--surface-page) 10%)
+			);
+		box-shadow:
+			0 10px 24px color-mix(in srgb, var(--accent) 12%, transparent 88%),
+			0 1px 0 color-mix(in srgb, var(--surface-overlay) 86%, transparent 14%) inset;
 		padding: 0.875rem 1rem;
-		background: var(--surface, #ffffff);
-		color: var(--text, #101828);
+		color: var(--text-primary);
+		backdrop-filter: blur(14px);
+	}
+
+	.skill-session-panel::before {
+		position: absolute;
+		inset: 0 auto 0 0;
+		width: 3px;
+		border-radius: 8px 0 0 8px;
+		background: var(--accent);
+		content: "";
 	}
 
 	.skill-session-panel__main {
@@ -83,29 +105,32 @@
 	.skill-session-panel__meta {
 		margin: 0;
 		font-size: 0.75rem;
-		color: var(--muted-text, #667085);
+		color: var(--text-muted);
 	}
 
 	h2 {
 		margin: 0.125rem 0 0;
 		font-size: 0.95rem;
+		font-weight: 650;
 		line-height: 1.25;
 		overflow-wrap: anywhere;
 	}
 
-	span {
+	.skill-session-panel__status {
 		border-radius: 999px;
-		background: #ecfdf3;
-		color: #027a48;
+		border: 1px solid color-mix(in srgb, var(--success) 28%, transparent 72%);
+		background: color-mix(in srgb, var(--success) 14%, var(--surface-elevated) 86%);
+		color: var(--success);
 		font-size: 0.75rem;
 		font-weight: 600;
 		padding: 0.2rem 0.55rem;
 		white-space: nowrap;
 	}
 
-	span.paused {
-		background: #fff7ed;
-		color: #c2410c;
+	.skill-session-panel__status.paused {
+		border-color: color-mix(in srgb, var(--accent) 30%, transparent 70%);
+		background: color-mix(in srgb, var(--accent) 14%, var(--surface-elevated) 86%);
+		color: var(--accent);
 	}
 
 	.skill-session-panel__next {
@@ -116,15 +141,15 @@
 	.skill-session-panel__error {
 		margin: 0.65rem 0 0;
 		font-size: 0.8125rem;
-		color: #b42318;
+		color: var(--danger);
 	}
 
 	.skill-session-panel__note-failure {
 		margin: 0.65rem 0 0;
-		border-left: 3px solid #f97316;
+		border-left: 3px solid var(--accent);
 		padding-left: 0.55rem;
 		font-size: 0.8125rem;
-		color: #9a3412;
+		color: color-mix(in srgb, var(--accent) 72%, var(--text-primary) 28%);
 	}
 
 	.skill-session-panel__actions {
@@ -135,20 +160,50 @@
 	}
 
 	button {
-		border: 1px solid #1f2937;
-		border-radius: 6px;
-		background: #1f2937;
+		border: 1px solid var(--accent);
+		border-radius: 8px;
+		background: var(--accent);
 		color: white;
 		font: inherit;
 		font-size: 0.8125rem;
 		font-weight: 600;
 		padding: 0.4rem 0.7rem;
 		cursor: pointer;
+		transition:
+			background-color var(--duration-standard) var(--ease-out),
+			border-color var(--duration-standard) var(--ease-out),
+			box-shadow var(--duration-standard) var(--ease-out),
+			color var(--duration-standard) var(--ease-out),
+			transform var(--duration-standard) var(--ease-out);
 	}
 
 	button.secondary {
-		background: transparent;
-		color: #1f2937;
+		border-color: color-mix(in srgb, var(--border-default) 82%, transparent 18%);
+		background: color-mix(in srgb, var(--surface-overlay) 58%, transparent 42%);
+		color: var(--text-primary);
+	}
+
+	button:hover:not(:disabled),
+	button:focus-visible:not(:disabled) {
+		background: var(--accent-hover);
+		border-color: var(--accent-hover);
+		transform: translateY(-1px);
+	}
+
+	button.secondary:hover:not(:disabled),
+	button.secondary:focus-visible:not(:disabled) {
+		background: color-mix(in srgb, var(--accent) 12%, var(--surface-overlay) 88%);
+		border-color: color-mix(in srgb, var(--accent) 45%, var(--border-default) 55%);
+		color: var(--accent);
+	}
+
+	button:focus-visible {
+		box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus-ring) 38%, transparent 62%);
+		outline: none;
+	}
+
+	button:active:not(:disabled) {
+		transform: translateY(0);
 	}
 
 	button:disabled {
@@ -156,8 +211,21 @@
 		opacity: 0.65;
 	}
 
+	:global(.dark) .skill-session-panel {
+		background:
+			linear-gradient(
+				135deg,
+				color-mix(in srgb, var(--accent) 14%, var(--surface-overlay) 86%),
+				color-mix(in srgb, var(--surface-elevated) 82%, #111 18%)
+			);
+		box-shadow:
+			0 16px 34px rgba(0, 0, 0, 0.34),
+			0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent 90%);
+	}
+
 	@media (max-width: 640px) {
 		.skill-session-panel {
+			width: calc(100% - 0.5rem);
 			padding: 0.7rem 0.75rem;
 		}
 

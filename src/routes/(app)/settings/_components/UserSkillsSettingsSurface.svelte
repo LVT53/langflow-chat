@@ -338,7 +338,7 @@
 								</button>
 								<button
 									class="btn-ghost text-sm"
-									style="color: var(--color-danger);"
+									style="color: var(--danger);"
 									type="button"
 									disabled={deletingId === skill.id}
 									aria-label={$t("skills.deleteA11y", { name: skill.displayName })}
@@ -396,8 +396,8 @@
 	}
 
 	.skill-status-disabled {
-		border-color: var(--text-tertiary);
-		color: var(--text-tertiary);
+		border-color: color-mix(in srgb, var(--text-muted) 72%, transparent 28%);
+		color: var(--text-muted);
 	}
 
 	.skill-warning {

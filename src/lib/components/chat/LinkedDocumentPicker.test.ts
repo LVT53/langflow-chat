@@ -45,6 +45,7 @@ describe('LinkedDocumentPicker', () => {
 		expect(screen.queryByText('Annual report.pdf')).toBeNull();
 		const option = screen.getByRole('checkbox', { name: /Budget notes.md/i });
 		await fireEvent.click(option);
+		expect(option.closest('label')).toHaveClass('selected');
 		await fireEvent.click(screen.getByRole('button', { name: 'Link selected documents' }));
 
 		expect(apply).toHaveBeenCalledWith([
@@ -76,6 +77,7 @@ describe('LinkedDocumentPicker', () => {
 		});
 
 		const selectedRegion = screen.getByRole('list', { name: 'Selected linked documents' });
+		expect(selectedRegion.querySelector('.linked-document-picker__selected-chip')).not.toBeNull();
 		await fireEvent.click(
 			within(selectedRegion).getByRole('button', { name: 'Remove Annual report.pdf' })
 		);

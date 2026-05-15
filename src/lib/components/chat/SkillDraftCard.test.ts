@@ -46,6 +46,15 @@ describe("SkillDraftCard", () => {
 		expect(screen.getByText("Current conversation")).toBeInTheDocument();
 		expect(screen.getByText("Can write private Skill Notes.")).toBeInTheDocument();
 		expect(screen.getByText("Can use broad current-conversation context.")).toBeInTheDocument();
+		expect(screen.getByRole("button", { name: "Save private skill" })).toHaveClass(
+			"skill-draft-card__primary",
+		);
+		expect(screen.getByRole("button", { name: "Dismiss draft" })).toHaveClass(
+			"skill-draft-card__secondary",
+		);
+		expect(screen.getByRole("button", { name: "Publish system skill" })).toHaveClass(
+			"skill-draft-card__secondary",
+		);
 
 		await fireEvent.click(screen.getByRole("button", { name: "Save private skill" }));
 		await fireEvent.click(screen.getByRole("button", { name: "Dismiss draft" }));
