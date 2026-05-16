@@ -21,6 +21,7 @@ let {
 	contextDebug = null,
 	fileProductionJobs = [],
 	deepResearchJobs = [],
+	hasActiveSkillSession = false,
 	forkOrigin = null,
 	forkingMessageId = null,
 	readOnly = false,
@@ -49,6 +50,7 @@ let {
 	contextDebug?: ContextDebugState | null;
 	fileProductionJobs?: FileProductionJob[];
 	deepResearchJobs?: DeepResearchJob[];
+	hasActiveSkillSession?: boolean;
 	forkOrigin?: ConversationForkOrigin | null;
 	forkingMessageId?: string | null;
 	readOnly?: boolean;
@@ -371,7 +373,11 @@ async function alignToBottomAfterRender() {
 					/>
 				{/each}
 			{/each}
-			<div class="scroll-clearance" aria-hidden="true"></div>
+			<div
+				class="scroll-clearance"
+				class:scroll-clearance-active-skill={hasActiveSkillSession}
+				aria-hidden="true"
+			></div>
 		{/if}
 	</div>
 </div>
@@ -388,6 +394,10 @@ async function alignToBottomAfterRender() {
 		   overlaying the bottom of the scroll area. */
 		height: 10.5rem;
 		flex: 0 0 auto;
+	}
+
+	.scroll-clearance-active-skill {
+		height: 13.75rem;
 	}
 
 	.conversation-empty-state {

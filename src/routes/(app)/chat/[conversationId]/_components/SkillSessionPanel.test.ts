@@ -48,8 +48,8 @@ describe("SkillSessionPanel", () => {
 		expect(queryByText("Selected sources only · Private notes")).not.toBeInTheDocument();
 		expect(queryByText("Expected next action: continue the chat with this skill active.")).not.toBeInTheDocument();
 
-		await fireEvent.click(getByRole("button", { name: "Finish" }));
-		await fireEvent.click(getByRole("button", { name: "Dismiss" }));
+		await fireEvent.click(getByRole("button", { name: "Mark done" }));
+		await fireEvent.click(getByRole("button", { name: "Stop skill" }));
 
 		expect(onFinish).toHaveBeenCalledOnce();
 		expect(onDismiss).toHaveBeenCalledOnce();

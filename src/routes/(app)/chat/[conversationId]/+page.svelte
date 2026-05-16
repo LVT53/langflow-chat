@@ -2399,6 +2399,7 @@ function handleDrop(event: DragEvent) {
 						{contextDebug}
 						{fileProductionJobs}
 						{deepResearchJobs}
+						hasActiveSkillSession={Boolean(activeSkillSession)}
 						{forkOrigin}
 						{forkOpening}
 						{forkingMessageId}

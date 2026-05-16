@@ -19,6 +19,7 @@
 		contextDebug,
 		fileProductionJobs = [],
 		deepResearchJobs = [],
+		hasActiveSkillSession = false,
 		forkOrigin = null,
 		forkOpening = false,
 		forkingMessageId = null,
@@ -48,6 +49,7 @@
 		contextDebug: ContextDebugState | null;
 		fileProductionJobs?: FileProductionJob[];
 		deepResearchJobs?: DeepResearchJob[];
+		hasActiveSkillSession?: boolean;
 		forkOrigin?: ConversationForkOrigin | null;
 		forkOpening?: boolean;
 		forkingMessageId?: string | null;
@@ -93,6 +95,7 @@
 		{contextDebug}
 		{fileProductionJobs}
 		{deepResearchJobs}
+		{hasActiveSkillSession}
 		{forkOrigin}
 		{forkingMessageId}
 		{readOnly}
