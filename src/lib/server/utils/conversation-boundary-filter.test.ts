@@ -37,6 +37,40 @@ describe('conversation-boundary-filter', () => {
 			expect(result).toBe(true);
 		});
 
+		it('cross-conversation artifact with strong semantic confidence is eligible despite weak lexical match', () => {
+			const result = isCrossConversationArtifactEligible({
+				artifactConversationId: 'conv-2',
+				currentConversationId: 'conv-1',
+				matchScore: 0,
+				semanticScore: 0.82,
+				explicitlyRequested: false,
+			});
+			expect(result).toBe(true);
+		});
+
+		it('cross-conversation artifact with strong rerank confidence is eligible despite weak lexical match', () => {
+			const result = isCrossConversationArtifactEligible({
+				artifactConversationId: 'conv-2',
+				currentConversationId: 'conv-1',
+				matchScore: 0,
+				rerankScore: 0.84,
+				explicitlyRequested: false,
+			});
+			expect(result).toBe(true);
+		});
+
+		it('cross-conversation artifact with only weak lexical and semantic noise is not eligible', () => {
+			const result = isCrossConversationArtifactEligible({
+				artifactConversationId: 'conv-2',
+				currentConversationId: 'conv-1',
+				matchScore: 1,
+				semanticScore: 0.42,
+				rerankScore: 0.38,
+				explicitlyRequested: false,
+			});
+			expect(result).toBe(false);
+		});
+
 		it('cross-conversation artifact with matchScore=0 but explicitlyRequested=true is eligible', () => {
 			const result = isCrossConversationArtifactEligible({
 				artifactConversationId: 'conv-2',

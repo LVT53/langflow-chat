@@ -14,6 +14,22 @@ _Avoid_: prompt, evidence, memory dump, active context
 The subset of **Available Context** actually sent to the model for a specific **Normal Chat** turn.
 _Avoid_: available context, all memory, workspace state
 
+**Memory Access**:
+AlfyAI's ability to use durable user, conversation, project, document, and research context through Honcho-led memory and app-supplied historical context retrieval.
+_Avoid_: local persona engine, memory replacement, transcript dump
+
+**Context Access**:
+The production capability that lets AlfyAI discover, select, and use relevant memory, history, project, document, and research context without requiring low-level manual setup from the user.
+_Avoid_: tool collection, retrieval demo, manual context setup
+
+**Memory Context Tool**:
+The model-facing retrieval tool for asking AlfyAI what durable memory or historical context is relevant to the current turn.
+_Avoid_: project-only tool, persona-memory tool, transcript search tool
+
+**Baseline Memory Profile**:
+A compact Honcho-led personalization profile available to an ordinary chat turn before the model decides whether to retrieve deeper memory.
+_Avoid_: newest memories, raw conclusion list, local persona summary
+
 **Context Sources**:
 The user-facing surface that shows documents, attachments, memory, prior turns, generated work, and other sources AlfyAI is considering or carrying forward.
 _Avoid_: evidence manager, manual retrieval setup, budget manager
@@ -553,6 +569,21 @@ _Avoid_: uploaded attachment, file copy, hidden retrieval hint
 - **Context Selection** is the source of truth for promoting **Available Context** into **Prompt Context**.
 - **Context Selection** considers conversation, memory, attachment, workspace, task, generated-file, generated-document, and retrieval signals together.
 - Individual subsystems may supply **Available Context** and **Context Signals**, but should not independently force large text into **Prompt Context**.
+- **Memory Access** should extend Honcho-led memory rather than replace it with a parallel local persona-memory system.
+- **Memory Access** may make historic chat details available for retrieval, but historic chats become **Prompt Context** only through **Context Selection** or an explicit model-facing retrieval result.
+- A **Memory Context Tool** should consolidate project, persona, and history retrieval so model-facing memory access does not fragment into overlapping tools.
+- Replacing a project-only memory retrieval tool with the **Memory Context Tool** should remove the old model-facing tool rather than keep overlapping compatibility surfaces.
+- **Memory Access** sizing should scale with the configured model and runtime capacity; small fixed counts are operational guardrails, not the product definition of what AlfyAI can remember.
+- A **Memory Context Tool** should preserve breadth with lightweight summaries before spending large budget on deep conversation or memory detail.
+- When **Memory Access** omits matching memories or historical context because of a limit, the result should disclose the applied limit and omitted count.
+- Historic chat recall through a **Memory Context Tool** should start from existing conversation summaries and bounded message search before adding new persistent memory structures.
+- A **Baseline Memory Profile** should come from Honcho-led synthesis rather than a newest-N raw conclusion list.
+- Deeper persona recall belongs in the **Memory Context Tool**, while the **Baseline Memory Profile** gives every normal chat turn enough personalization to start well.
+- A **Baseline Memory Profile** is **Protected Context** but not unlimited; it should shrink under genuine budget pressure before it disappears.
+- For a small trusted deployment with large-context models, **Baseline Memory Profile** defaults should be generous rather than cost-minimized.
+- **Baseline Memory Profile** budget should derive from model-scaled context with a generous floor and configurable ceiling, rather than from a small fixed token cap.
+- The first **Memory Context Tool** should cover project, persona, and history retrieval; it should not become a universal document search replacement in the same slice.
+- **Context Access** v1 should make memory and document context reliable together; fixing memory retrieval while leaving Knowledge Library document selection dependent on exact filenames or manual `/document` selection is not a production-quality slice.
 - **Max Model Context** should be derived from provider/model metadata when available.
 - Explicit admin **Max Model Context** values override derived provider/model defaults.
 - Third-party API connections should use the context length configured in admin model settings.
@@ -593,6 +624,9 @@ _Avoid_: uploaded attachment, file copy, hidden retrieval hint
 - A **Strong Context Signal** should be deterministic and source-identity-backed.
 - LLMs and rerankers may rank candidates and judge relevance, but they should not independently promote a source into active carry-forward context.
 - The TEI reranker may strengthen evidence ordering and source relevance when combined with deterministic source identity or continuity signals.
+- A semantically strong Library Document match may enter one-turn **Prompt Context** and **Message Evidence** without exact filename wording or manual `/document` selection.
+- A semantically strong one-turn Library Document match does not become an active carried-forward **Context Source** unless the user follows up, opens it, pins it, explicitly selects it, or gives another strong source-continuity signal.
+- Cross-conversation Library Document eligibility should consider semantic and rerank confidence, not only lexical token overlap.
 - Opening a Library Document creates a **Weak Context Signal** by default.
 - Opening a Library Document becomes a **Strong Context Signal** only when paired with document-directed user wording, explicit selection, pinning, or another source-continuity action.
 - Passive workspace state alone should not promote a document into **Prompt Context**.
@@ -625,6 +659,8 @@ _Avoid_: uploaded attachment, file copy, hidden retrieval hint
 - Attached items should use model-scaled **Context Budget** before being reduced to **Excerpt Context**.
 - Large attached items may receive **Excerpt Context** only when the model-scaled budget is genuinely pressured or the user asks a narrowly targeted question.
 - Multiple attached items should preserve breadth unless the user explicitly asks for exhaustive joint analysis.
+- Automatically selected Library Documents should use intent-based depth: weak matches receive **Reference Context**, strong answer-seeking matches receive meaningful **Excerpt Context**, and document-shaped tasks receive **Task Context** when budget allows.
+- Direct attachments, `/document` selections, explicit document titles, and current workspace focus paired with document-directed wording should receive near-full or structured full content when they fit within the model-scaled **Context Budget**.
 - **Context Limitation** should appear only when partial context materially affects trust in the answer.
 - Routine answers should not narrate context-selection mechanics.
 - High-impact judgments, exhaustive review requests, and whole-document claims require a **Context Limitation** when AlfyAI used only selected context.

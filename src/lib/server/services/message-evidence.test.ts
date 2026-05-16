@@ -1,36 +1,36 @@
-import { describe, expect, it, vi } from 'vitest';
-import { buildAssistantEvidenceSummary } from './message-evidence';
+import { describe, expect, it, vi } from "vitest";
+import { buildAssistantEvidenceSummary } from "./message-evidence";
 
-vi.mock('./knowledge', () => ({
+vi.mock("./knowledge", () => ({
 	getArtifactsForUser: vi.fn(async () => []),
 }));
 
-vi.mock('./tei-reranker', () => ({
+vi.mock("./tei-reranker", () => ({
 	canUseTeiReranker: vi.fn(() => false),
 	rerankItems: vi.fn(async () => null),
 }));
 
-vi.mock('./evidence-family', () => ({
+vi.mock("./evidence-family", () => ({
 	resolveArtifactFamilyKeys: vi.fn(async () => new Map()),
 }));
 
-describe('buildAssistantEvidenceSummary', () => {
-	it('references promoted sibling context only when its trace section entered prompt context', async () => {
+describe("buildAssistantEvidenceSummary", () => {
+	it("references promoted sibling context only when its trace section entered prompt context", async () => {
 		const included = await buildAssistantEvidenceSummary({
-			userId: 'user-1',
-			message: 'what font options did we discuss in this project?',
+			userId: "user-1",
+			message: "what font options did we discuss in this project?",
 			taskState: null,
 			contextTraceSections: [
 				{
-					name: 'Project Folder Sibling Context',
-					source: 'memory',
+					name: "Project Folder Sibling Context",
+					source: "memory",
 					body: 'Title: "Font options"',
-					inclusionLevel: 'legacy_full',
-					itemIds: ['conversation:conv-fonts'],
-					itemTitles: ['Font options'],
+					inclusionLevel: "legacy_full",
+					itemIds: ["conversation:conv-fonts"],
+					itemTitles: ["Font options"],
 					signalReasons: [
-						'project_folder_sibling:query_match',
-						'project_folder_sibling_score:24',
+						"project_folder_sibling:query_match",
+						"project_folder_sibling_score:24",
 					],
 				},
 			],
@@ -38,33 +38,34 @@ describe('buildAssistantEvidenceSummary', () => {
 
 		expect(included?.groups).toEqual([
 			expect.objectContaining({
-				sourceType: 'memory',
+				sourceType: "memory",
 				items: [
 					expect.objectContaining({
-						id: 'conversation:conv-fonts',
-						title: 'Font options',
-						sourceType: 'memory',
-						status: 'reference',
-						description: 'Promoted from the same Project Folder for this query.',
-						channels: ['memory'],
+						id: "conversation:conv-fonts",
+						title: "Font options",
+						sourceType: "memory",
+						status: "reference",
+						description:
+							"Promoted from the same Project Folder for this query.",
+						channels: ["memory"],
 					}),
 				],
 			}),
 		]);
 
 		const omitted = await buildAssistantEvidenceSummary({
-			userId: 'user-1',
-			message: 'what font options did we discuss in this project?',
+			userId: "user-1",
+			message: "what font options did we discuss in this project?",
 			taskState: null,
 			contextTraceSections: [
 				{
-					name: 'Project Folder Sibling Context',
-					source: 'memory',
+					name: "Project Folder Sibling Context",
+					source: "memory",
 					body: 'Title: "Font options"',
-					inclusionLevel: 'omitted',
-					itemIds: ['conversation:conv-fonts'],
-					itemTitles: ['Font options'],
-					signalReasons: ['project_folder_sibling:query_match'],
+					inclusionLevel: "omitted",
+					itemIds: ["conversation:conv-fonts"],
+					itemTitles: ["Font options"],
+					signalReasons: ["project_folder_sibling:query_match"],
 				},
 			],
 		});
@@ -72,23 +73,51 @@ describe('buildAssistantEvidenceSummary', () => {
 		expect(omitted).toBeNull();
 	});
 
-	it('includes project_context memory candidates from completed tool calls', async () => {
+	it("includes memory_context project, persona, and history candidates from completed tool calls", async () => {
 		const summary = await buildAssistantEvidenceSummary({
-			userId: 'user-1',
-			message: 'use the pricing context from the project tool',
+			userId: "user-1",
+			message: "use the pricing context from the project tool",
 			taskState: null,
 			toolCalls: [
 				{
-					name: 'project_context',
-					input: { mode: 'detail', siblingConversationId: 'conv-pricing' },
-					status: 'done',
-					sourceType: 'memory',
+					name: "memory_context",
+					input: { mode: "project", siblingConversationId: "conv-pricing" },
+					status: "done",
+					sourceType: "memory",
 					candidates: [
 						{
-							id: 'project-context-detail:conv-pricing',
-							title: 'Pricing',
-							snippet: 'Stable pricing brief. user: Recent user message assistant: Recent assistant message',
-							sourceType: 'memory',
+							id: "memory-context:project:conv-pricing",
+							title: "Pricing project",
+							snippet:
+								"Stable pricing brief. user: Recent user message assistant: Recent assistant message",
+							sourceType: "memory",
+						},
+						{
+							id: "memory-context:persona:user-1",
+							title: "Honcho persona recall",
+							snippet: "The user prefers concise answers.",
+							sourceType: "memory",
+						},
+						{
+							id: "memory-context:history:conv-cycling",
+							title: "Cycling history",
+							snippet: "Older non-project cycling discussion.",
+							sourceType: "memory",
+						},
+					],
+				},
+				{
+					name: "memory_context",
+					input: { mode: "history", query: "draft" },
+					status: "running",
+					sourceType: "memory",
+					candidates: [
+						{
+							id: "memory-context:history:running",
+							title: "Running history lookup",
+							snippet:
+								"This incomplete lookup should not be persisted as evidence.",
+							sourceType: "memory",
 						},
 					],
 				},
@@ -97,18 +126,118 @@ describe('buildAssistantEvidenceSummary', () => {
 
 		expect(summary?.groups).toEqual([
 			expect.objectContaining({
-				sourceType: 'memory',
+				sourceType: "memory",
 				items: [
 					expect.objectContaining({
-						id: 'project-context-detail:conv-pricing',
-						title: 'Pricing',
-						sourceType: 'memory',
-						status: 'reference',
-						description: 'Stable pricing brief. user: Recent user message assistant: Recent assistant message',
-						channels: ['memory'],
+						id: "memory-context:project:conv-pricing",
+						title: "Pricing project",
+						sourceType: "memory",
+						status: "reference",
+						description:
+							"Stable pricing brief. user: Recent user message assistant: Recent assistant message",
+						channels: ["memory"],
+					}),
+					expect.objectContaining({
+						id: "memory-context:persona:user-1",
+						title: "Honcho persona recall",
+						sourceType: "memory",
+						status: "reference",
+						description: "The user prefers concise answers.",
+						channels: ["memory"],
+					}),
+					expect.objectContaining({
+						id: "memory-context:history:conv-cycling",
+						title: "Cycling history",
+						sourceType: "memory",
+						status: "reference",
+						description: "Older non-project cycling discussion.",
+						channels: ["memory"],
 					}),
 				],
 			}),
 		]);
+		expect(JSON.stringify(summary)).not.toContain("Running history lookup");
+	});
+
+	it("carries memory_context applied limits and omitted counts on memory evidence items", async () => {
+		const summary = await buildAssistantEvidenceSummary({
+			userId: "user-1",
+			message: "use memory_context history",
+			taskState: null,
+			toolCalls: [
+				{
+					name: "memory_context",
+					input: { mode: "history", query: "bike" },
+					status: "done",
+					sourceType: "memory",
+					metadata: {
+						mode: "history",
+						appliedMaxHistoryConversations: 3,
+						omittedConversationCount: 2,
+					},
+					candidates: [
+						{
+							id: "memory-context:history:conv-bike",
+							title: "Bike planning",
+							snippet: "Discussed commute setup and tire width.",
+							sourceType: "memory",
+						},
+					],
+				},
+			],
+		});
+
+		expect(summary?.groups).toEqual([
+			expect.objectContaining({
+				sourceType: "memory",
+				items: [
+					expect.objectContaining({
+						id: "memory-context:history:conv-bike",
+						title: "Bike planning",
+						sourceType: "memory",
+						status: "reference",
+						metadata: {
+							mode: "history",
+							appliedMaxHistoryConversations: 3,
+							omittedConversationCount: 2,
+						},
+					}),
+				],
+			}),
+		]);
+	});
+
+	it("ignores running web and tool calls when building evidence internally", async () => {
+		const summary = await buildAssistantEvidenceSummary({
+			userId: "user-1",
+			message: "show me current launch pricing",
+			taskState: null,
+			toolCalls: [
+				{
+					name: "web_search",
+					input: { query: "current launch pricing" },
+					status: "running",
+					sourceType: "web",
+					candidates: [
+						{
+							id: "web-running",
+							title: "Incomplete web result",
+							url: "https://example.com/incomplete",
+							snippet: "This result is not final.",
+							sourceType: "web",
+						},
+					],
+				},
+				{
+					name: "custom_tool",
+					input: { topic: "pricing" },
+					status: "running",
+					sourceType: "tool",
+					outputSummary: "Partial tool output",
+				},
+			],
+		});
+
+		expect(summary).toBeNull();
 	});
 });

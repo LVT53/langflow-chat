@@ -788,6 +788,7 @@ export interface ToolCallEntry {
 	outputSummary?: string | null;
 	sourceType?: EvidenceSourceType | null;
 	candidates?: ToolEvidenceCandidate[];
+	metadata?: Record<string, string | number | boolean | null>;
 }
 
 export type ThinkingSegment =
@@ -800,6 +801,7 @@ export type ThinkingSegment =
 			outputSummary?: string | null;
 			sourceType?: EvidenceSourceType | null;
 			candidates?: ToolEvidenceCandidate[];
+			metadata?: Record<string, string | number | boolean | null>;
 	  };
 
 export type MessageEvidenceStatus = "selected" | "rejected" | "reference";
@@ -824,6 +826,7 @@ export interface MessageEvidenceItem {
 	reason?: string | null;
 	currentTurnAttachment?: boolean;
 	channels?: EvidenceChannel[];
+	metadata?: Record<string, string | number | boolean | null>;
 }
 
 export interface MessageEvidenceGroup {

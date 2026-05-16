@@ -9,11 +9,13 @@ import type {
 	ConversationContextStatus,
 	EvidenceSourceType,
 	LinkedContextSource,
+	ToolCallEntry,
 } from "$lib/types";
 import type {
 	ProjectFolderReferenceContext,
 	ProjectReferenceContext,
 } from "$lib/server/services/task-state/continuity";
+import type { LegacyContextTraceSectionInput } from "./context-trace";
 
 export type BuildContextSourcesStateInput = {
 	userId: string;
@@ -25,6 +27,8 @@ export type BuildContextSourcesStateInput = {
 	activeWorkingSet?: ArtifactSummary[];
 	projectReference?: ProjectReferenceContext | null;
 	projectFolderReference?: ProjectFolderReferenceContext | null;
+	contextTraceSections?: LegacyContextTraceSectionInput[];
+	toolCalls?: ToolCallEntry[];
 	now?: Date;
 };
 
@@ -49,18 +53,25 @@ export function buildContextSourcesState(
 			kind: "task_evidence",
 			state: "inferred",
 			evidence: input.contextDebug?.selectedEvidence ?? [],
+			contextTraceSections: input.contextTraceSections ?? [],
 		}),
 		buildEvidenceGroup({
 			kind: "pinned",
 			state: "pinned",
 			evidence: input.contextDebug?.pinnedEvidence ?? [],
+			contextTraceSections: input.contextTraceSections ?? [],
 		}),
 		buildEvidenceGroup({
 			kind: "excluded",
 			state: "excluded",
 			evidence: input.contextDebug?.excludedEvidence ?? [],
+			contextTraceSections: input.contextTraceSections ?? [],
 		}),
-		buildMemoryGroup(input.contextDebug),
+		buildMemoryGroup({
+			contextDebug: input.contextDebug,
+			contextTraceSections: input.contextTraceSections ?? [],
+			toolCalls: input.toolCalls ?? [],
+		}),
 		buildForkHistoryGroup(input.contextDebug),
 		buildProjectReferenceGroup(
 			input.projectReference ??
@@ -80,7 +91,9 @@ export function buildContextSourcesState(
 		input.contextStatus?.compactionApplied ||
 			(input.contextStatus && input.contextStatus.compactionMode !== "none"),
 	);
-	const reduced = compacted;
+	const traceReduced = (input.contextTraceSections ?? []).some(isReducedTraceSection);
+	const toolReduced = (input.toolCalls ?? []).some(isReducedMemoryContextToolCall);
+	const reduced = compacted || traceReduced || toolReduced;
 
 	return {
 		conversationId: input.conversationId,
@@ -102,7 +115,7 @@ export function buildContextSourcesState(
 			...group,
 			items: group.items.map((item) => ({
 				...item,
-				reduced,
+				reduced: item.reduced ?? reduced,
 				compacted,
 			})),
 		})),
@@ -193,17 +206,30 @@ function buildEvidenceGroup(input: {
 	kind: ContextSourceGroupKind;
 	state: ContextSourceItemState;
 	evidence: ContextDebugEvidenceItem[];
+	contextTraceSections: LegacyContextTraceSectionInput[];
 }): ContextSourceGroup | null {
 	if (input.evidence.length === 0) return null;
-	const items = input.evidence.map((item) => ({
-		id: `${input.kind}:${item.artifactId}`,
-		artifactId: item.artifactId,
-		title: item.name,
-		state: input.state,
-		sourceType: item.sourceType,
-		artifactType: item.artifactType,
-		reason: item.reason,
-	}));
+	const items = input.evidence.map((item) => {
+		const traceSection = findTraceSectionForItem(
+			input.contextTraceSections,
+			item.artifactId,
+		);
+		return {
+			id: `${input.kind}:${item.artifactId}`,
+			artifactId: item.artifactId,
+			title: item.name,
+			state: input.state,
+			sourceType: item.sourceType,
+			artifactType: item.artifactType,
+			reason: item.reason,
+			...(traceSection
+				? {
+						reduced: isReducedTraceSection(traceSection),
+						metadata: traceMetadata(traceSection),
+					}
+				: {}),
+		};
+	});
 	return {
 		kind: input.kind,
 		state: input.state,
@@ -212,24 +238,131 @@ function buildEvidenceGroup(input: {
 	};
 }
 
-function buildMemoryGroup(
-	contextDebug: ContextDebugState | null | undefined,
-): ContextSourceGroup | null {
-	if (!contextDebug?.honcho) return null;
+function buildMemoryGroup(params: {
+	contextDebug: ContextDebugState | null | undefined;
+	contextTraceSections: LegacyContextTraceSectionInput[];
+	toolCalls: ToolCallEntry[];
+}): ContextSourceGroup | null {
+	const { contextDebug, contextTraceSections, toolCalls } = params;
+	const items: ContextSourceGroup["items"] = [];
+	if (contextDebug?.honcho) {
+		items.push({
+			id: "memory:honcho",
+			title: "Session memory",
+			state: "inferred",
+			sourceType: "memory",
+			reason: contextDebug.honcho.source,
+		});
+	}
+
+	const baselineMemoryProfile = contextTraceSections.find(
+		(section) =>
+			section.name === "Baseline Memory Profile" && section.source === "memory",
+	);
+	if (baselineMemoryProfile) {
+		const inclusionLevel =
+			baselineMemoryProfile.inclusionLevel ??
+			(baselineMemoryProfile.trimmed ? "legacy_truncated" : "legacy_full");
+		items.push({
+			id: "memory:baseline-memory-profile",
+			title: "Baseline Memory Profile",
+			state: "inferred",
+			sourceType: "memory",
+			reason: baselineMemoryProfile.signalReasons?.join(", ") || null,
+			reduced: isReducedTraceSection(baselineMemoryProfile),
+			metadata: {
+				inclusionLevel,
+				omitted: inclusionLevel === "omitted",
+				protected: baselineMemoryProfile.protected ?? false,
+				trimmed: baselineMemoryProfile.trimmed ?? false,
+			},
+		});
+	}
+
+	for (const toolCall of toolCalls) {
+		if (!isMemoryContextToolCall(toolCall)) continue;
+		const metadata = toolCall.metadata ?? {};
+		const mode =
+			typeof metadata.mode === "string"
+				? metadata.mode
+				: typeof toolCall.input.mode === "string"
+					? toolCall.input.mode
+					: "project";
+		items.push({
+			id: `memory:memory_context:${mode}`,
+			title: `memory_context ${mode}`,
+			state: "inferred",
+			sourceType: "memory",
+			reason: "memory_context_tool",
+			reduced: hasPositiveOmittedCount(metadata),
+			metadata,
+		});
+	}
+
+	if (items.length === 0) return null;
 	return {
 		kind: "memory",
 		state: "inferred",
-		totalCount: 1,
-		items: [
-			{
-				id: "memory:honcho",
-				title: "Session memory",
-				state: "inferred",
-				sourceType: "memory",
-				reason: contextDebug.honcho.source,
-			},
-		],
+		totalCount: items.length,
+		items,
 	};
+}
+
+function isReducedTraceSection(
+	section: LegacyContextTraceSectionInput,
+): boolean {
+	return (
+		section.inclusionLevel === "omitted" ||
+		section.inclusionLevel === "legacy_truncated" ||
+		section.trimmed === true
+	);
+}
+
+function traceMetadata(
+	section: LegacyContextTraceSectionInput,
+): Record<string, string | number | boolean | null> {
+	const inclusionLevel =
+		section.inclusionLevel ??
+		(section.trimmed ? "legacy_truncated" : "legacy_full");
+	return {
+		inclusionLevel,
+		omitted: inclusionLevel === "omitted",
+		trimmed: section.trimmed ?? false,
+	};
+}
+
+function findTraceSectionForItem(
+	contextTraceSections: LegacyContextTraceSectionInput[],
+	itemId: string,
+): LegacyContextTraceSectionInput | null {
+	return (
+		contextTraceSections.find((section) => section.itemIds?.includes(itemId)) ??
+		null
+	);
+}
+
+function isMemoryContextToolCall(toolCall: ToolCallEntry): boolean {
+	return (
+		toolCall.status === "done" &&
+		toolCall.name === "memory_context" &&
+		(toolCall.sourceType === "memory" || toolCall.sourceType == null)
+	);
+}
+
+function isReducedMemoryContextToolCall(toolCall: ToolCallEntry): boolean {
+	return isMemoryContextToolCall(toolCall) && hasPositiveOmittedCount(toolCall.metadata);
+}
+
+function hasPositiveOmittedCount(
+	metadata: ToolCallEntry["metadata"] | undefined,
+): boolean {
+	if (!metadata) return false;
+	return Object.entries(metadata).some(
+		([key, value]) =>
+			key.toLowerCase().includes("omitted") &&
+			typeof value === "number" &&
+			value > 0,
+	);
 }
 
 function buildProjectReferenceGroup(

@@ -3,17 +3,24 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const nodeSource = () =>
-	readFileSync(resolve(process.cwd(), "langflow_nodes/project_context_tool.py"), "utf8");
+	readFileSync(
+		resolve(process.cwd(), "langflow_nodes/project_context_tool.py"),
+		"utf8",
+	);
 
-describe("Langflow Project Context tool node", () => {
-	it("exposes project_context summary and detail fields as the model-facing tool contract", () => {
+describe("Langflow Memory Context tool node", () => {
+	it("exposes memory_context project, persona, and history fields as the model-facing tool contract", () => {
 		const source = nodeSource();
 
-		expect(source).toContain('display_name = "Project Context"');
-		expect(source).toContain('name = "project_context"');
-		expect(source).toContain('method="project_context"');
-		expect(source).toContain("def project_context(self) -> Data:");
-		expect(source).toContain("/api/tools/project-context");
+		expect(source).toContain('display_name = "Memory Context"');
+		expect(source).toContain('name = "memory_context"');
+		expect(source).toContain('method="memory_context"');
+		expect(source).toContain("def memory_context(self) -> Data:");
+		expect(source).toContain("/api/tools/memory-context");
+		expect(source).toContain('options=["project", "persona", "history"]');
+		expect(source).not.toContain('name = "project_context"');
+		expect(source).not.toContain('method="project_context"');
+		expect(source).not.toContain("/api/tools/project-context");
 
 		for (const field of [
 			"mode",
@@ -21,6 +28,9 @@ describe("Langflow Project Context tool node", () => {
 			"maxSiblings",
 			"siblingConversationId",
 			"maxMessages",
+			"maxHistoryConversations",
+			"historyConversationId",
+			"selectedConversationId",
 			"includeEvidenceCandidates",
 		]) {
 			expect(source).toContain(`name="${field}"`);
@@ -47,10 +57,17 @@ describe("Langflow Project Context tool node", () => {
 
 		expect(source).toContain('"TOOL_START"');
 		expect(source).toContain('"TOOL_END"');
-		expect(source).toContain('"name": "project_context"');
+		expect(source).toContain('"name": "memory_context"');
+		expect(source).not.toContain('"name": "project_context"');
 		expect(source).toContain('"sourceType": "memory"');
 		expect(source).toContain('"candidates": evidence_candidates');
-		expect(source).toContain("candidate_limit = max_messages if payload.get(\"mode\") == \"detail\" else max_siblings");
+		expect(source).toContain('"metadata": metadata');
+		expect(source).toContain('"appliedMaxHistoryConversations"');
+		expect(source).toContain('"omittedConversationCount"');
+		expect(source).toContain('mode == "history" and not is_detail');
+		expect(source).toContain("candidate_limit = max_history_conversations");
+		expect(source).toContain("candidate_limit = max_messages");
+		expect(source).toContain("candidate_limit = max_siblings");
 		expect(source).toContain("evidence_candidates[:candidate_limit]");
 	});
 });

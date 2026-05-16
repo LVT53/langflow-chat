@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+	deriveBaselineMemoryProfileBudget,
 	deriveCurrentTurnAttachmentBudget,
+	deriveDocumentContextDepthBudget,
 	deriveExplicitSourceSetBudget,
 	deriveModelContextBudget,
 	deriveSessionHistoryBudget,
@@ -141,5 +143,86 @@ describe("deriveModelContextBudget", () => {
 			totalBudget: 585_000,
 			recentTurnCount: 32,
 		});
+	});
+
+	it("derives baseline memory profile budget with a generous floor and ceiling", () => {
+		expect(
+			deriveBaselineMemoryProfileBudget({
+				contextBudget: { targetConstructedContext: 40_000 },
+			}),
+		).toEqual({ totalBudget: 8_000 });
+
+		expect(
+			deriveBaselineMemoryProfileBudget({
+				contextBudget: { targetConstructedContext: 250_000 },
+			}),
+		).toEqual({ totalBudget: 8_000 });
+
+		expect(
+			deriveBaselineMemoryProfileBudget({
+				contextBudget: { targetConstructedContext: 1_000_000 },
+			}),
+		).toEqual({ totalBudget: 20_000 });
+	});
+
+	it("scales document depth from intent and preserves breadth across model sizes", () => {
+		const smallContext = deriveModelContextBudget({ maxModelContext: 32_000 });
+		const mediumContext = deriveModelContextBudget({
+			maxModelContext: 250_000,
+		});
+		const largeContext = deriveModelContextBudget({
+			maxModelContext: 1_000_000,
+		});
+
+		expect(
+			deriveDocumentContextDepthBudget({
+				contextBudget: smallContext,
+				documentCount: 1,
+				intent: "reference",
+			}),
+		).toMatchObject({
+			depth: "reference",
+			perArtifactLimit: 2,
+			useFullContent: false,
+		});
+
+		const answerDepth = deriveDocumentContextDepthBudget({
+			contextBudget: mediumContext,
+			documentCount: 1,
+			intent: "answer",
+		});
+		expect(answerDepth).toMatchObject({
+			depth: "excerpt",
+			perArtifactLimit: 4,
+			useFullContent: false,
+		});
+		expect(answerDepth.perArtifactCharBudget).toBeGreaterThan(1_400);
+
+		const taskDepth = deriveDocumentContextDepthBudget({
+			contextBudget: largeContext,
+			documentCount: 1,
+			intent: "task",
+		});
+		expect(taskDepth).toMatchObject({
+			depth: "task",
+			perArtifactLimit: 8,
+			useFullContent: true,
+		});
+		expect(taskDepth.perArtifactCharBudget).toBeGreaterThan(12_000);
+
+		const broadTaskDepth = deriveDocumentContextDepthBudget({
+			contextBudget: largeContext,
+			documentCount: 12,
+			intent: "task",
+		});
+		expect(broadTaskDepth.depth).toBe("task");
+		expect(broadTaskDepth.perArtifactLimit).toBe(8);
+		expect(broadTaskDepth.totalBudget).toBeGreaterThan(
+			taskDepth.perArtifactCharBudget,
+		);
+		expect(broadTaskDepth.perArtifactCharBudget).toBeLessThan(
+			taskDepth.perArtifactCharBudget,
+		);
+		expect(broadTaskDepth.perArtifactCharBudget).toBeGreaterThan(1_400);
 	});
 });

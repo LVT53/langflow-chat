@@ -318,13 +318,16 @@ export function runChatStreamOrchestrator(
 					if (streamId)
 						appendToStreamBuffer(streamId, "thinking", { text: reasoning });
 				},
-				onToolCall: (name, input, status, outputSummary) => {
+				onToolCall: (name, input, status, outputSummary, details) => {
 					if (streamId) {
 						appendToStreamBuffer(streamId, "tool_call", {
 							name,
 							input,
 							status,
 							outputSummary,
+							sourceType: details?.sourceType,
+							candidates: details?.candidates,
+							metadata: details?.metadata,
 						});
 					}
 				},

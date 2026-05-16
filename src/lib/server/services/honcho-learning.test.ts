@@ -12,6 +12,9 @@ const mockPrepareTaskContext = vi.hoisted(() =>
 		excludedArtifactIds: [],
 	}))
 );
+const mockGetPromptArtifactSnippets = vi.hoisted(() =>
+	vi.fn(async () => new Map<string, string>())
+);
 const mockSerializeBudgetedAttachments = vi.hoisted(() =>
 	vi.fn(({ artifacts }: { artifacts: Array<{ id: string; name: string; contentText?: string | null }> }) => ({
 		body: artifacts
@@ -27,6 +30,7 @@ const mockSerializeBudgetedAttachments = vi.hoisted(() =>
 		mode: 'excerpt',
 	}))
 );
+const mockSerializeWorkingSetArtifacts = vi.hoisted(() => vi.fn(() => 'Serialized evidence'));
 const mockResolvePromptAttachmentArtifacts = vi.hoisted(() =>
 	vi.fn(async () => ({
 		displayArtifacts: [],
@@ -126,6 +130,10 @@ const mockSelectRecentRoleTurns = vi.hoisted(() =>
 const mockSelectPromptSessionTurns = vi.hoisted(() =>
 	vi.fn(({ turns }: { turns: unknown[] }) => turns)
 );
+const mockExtractSerializedAttachmentBody = vi.hoisted(() =>
+	vi.fn(() => null as string | null)
+);
+const mockHasMeaningfulAttachmentText = vi.hoisted(() => vi.fn(() => false));
 const mockSerializeBudgetedRoleTurns = vi.hoisted(() =>
 	vi.fn(
 		({
@@ -342,16 +350,26 @@ vi.mock('$lib/server/utils/text', () => ({
 }));
 
 vi.mock('$lib/server/utils/prompt-context', () => ({
-	serializePeerContext: vi.fn((context: unknown) => 'serialized peer context'),
+	serializePeerContext: vi.fn(
+		(context: { representation?: string | null; peerCard?: string[] | null }) =>
+			[
+				context.representation?.trim() || null,
+				context.peerCard?.length
+					? `Peer card:\n- ${context.peerCard.join('\n- ')}`
+					: null,
+			]
+				.filter((value): value is string => Boolean(value))
+				.join('\n\n')
+	),
 	serializeArtifacts: vi.fn(() => []),
 	serializeBudgetedAttachments: mockSerializeBudgetedAttachments,
 	serializeBudgetedRoleTurns: mockSerializeBudgetedRoleTurns,
 	serializeRoleMessages: vi.fn(() => []),
-	serializeWorkingSetArtifacts: vi.fn(() => []),
+	serializeWorkingSetArtifacts: mockSerializeWorkingSetArtifacts,
 	dedupeById: vi.fn((items: unknown[]) => items),
 	buildContextSection: vi.fn(() => ({ type: 'text', content: '' })),
 	compactContextSections: mockCompactContextSections,
-	extractSerializedAttachmentBody: vi.fn(() => null),
+	extractSerializedAttachmentBody: mockExtractSerializedAttachmentBody,
 	rerankHistoricalSections: vi.fn(async ({ sections }: { sections: unknown[] }) => sections),
 	selectRecentRoleTurns: mockSelectRecentRoleTurns,
 	selectPromptSessionTurns: mockSelectPromptSessionTurns,
@@ -394,7 +412,7 @@ vi.mock('$lib/server/services/task-state', () => ({
 	getContextDebugState: vi.fn(async () => null),
 	getProjectFolderReferenceContext: mockGetProjectFolderReferenceContext,
 	getProjectReferenceContext: mockGetProjectReferenceContext,
-	getPromptArtifactSnippets: vi.fn(async () => new Map()),
+	getPromptArtifactSnippets: mockGetPromptArtifactSnippets,
 	prepareTaskContext: mockPrepareTaskContext,
 	selectProjectFolderSiblingPromotion: mockSelectProjectFolderSiblingPromotion,
 }));
@@ -412,7 +430,7 @@ vi.mock('$lib/server/services/tei-embedder', () => ({
 
 // Mock attachment-trace
 vi.mock('$lib/server/services/attachment-trace', () => ({
-	hasMeaningfulAttachmentText: vi.fn(() => false),
+	hasMeaningfulAttachmentText: mockHasMeaningfulAttachmentText,
 	logAttachmentTrace: vi.fn(),
 	summarizeAttachmentTraceText: vi.fn(() => ''),
 }));
@@ -486,6 +504,8 @@ function renderSectionsInCompactionMock() {
 beforeEach(() => {
 	mockConfig.honchoEnabled = true;
 	mockConfig.honchoIdentityNamespace = 'test-namespace';
+	mockConfig.honchoContextWaitMs = 3000;
+	mockConfig.honchoPersonaContextWaitMs = 1500;
 	mockHonchoPeerVersion.value = 0;
 });
 
@@ -619,6 +639,8 @@ describe('honcho learning - buildConstructedContext', () => {
 		mockSelectProjectFolderSiblingPromotion.mockResolvedValue(null);
 		mockGetConversationForkOrigin.mockResolvedValue(null);
 		mockListMessages.mockResolvedValue([]);
+		mockExtractSerializedAttachmentBody.mockReturnValue(null);
+		mockHasMeaningfulAttachmentText.mockReturnValue(false);
 		mockGetLatestHonchoMetadata.mockResolvedValue({
 			honchoContext: null,
 			honchoSnapshot: null,
@@ -950,6 +972,389 @@ describe('honcho learning - buildConstructedContext', () => {
 		);
 	});
 
+	it('uses excerpt-depth snippets for strong answer-seeking document questions', async () => {
+		const selectedDocument = {
+			id: 'policy-doc',
+			userId: 'user-1',
+			type: 'source_document' as const,
+			retrievalClass: 'durable' as const,
+			name: 'Retention Policy',
+			mimeType: 'text/plain',
+			sizeBytes: 80_000,
+			conversationId: null,
+			summary: 'Policy summary',
+			contentText: null,
+			extension: 'txt',
+			storagePath: null,
+			metadata: null,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		};
+		mockPrepareTaskContext.mockResolvedValueOnce({
+			taskState: null,
+			routingStage: 'deterministic',
+			routingConfidence: 0,
+			verificationStatus: 'skipped',
+			selectedArtifacts: [selectedDocument],
+			pinnedArtifactIds: [],
+			excludedArtifactIds: [],
+		});
+		const { buildConstructedContext } = await import('./honcho');
+
+		await buildConstructedContext({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			message: 'According to the retention policy, when does deletion happen?',
+			contextLimits: {
+				maxModelContext: 250_000,
+				compactionUiThreshold: 200_000,
+				targetConstructedContext: 225_000,
+			},
+		});
+
+		expect(mockGetPromptArtifactSnippets).toHaveBeenCalledWith(
+			expect.objectContaining({
+				artifacts: [selectedDocument],
+				perArtifactLimit: 4,
+				useFullContent: false,
+			})
+		);
+		const snippetRequest = mockGetPromptArtifactSnippets.mock.calls[0]?.[0];
+		expect(snippetRequest?.perArtifactCharBudget).toBeGreaterThan(1_400);
+	});
+
+	it('marks task-shaped document context depth in the trace metadata', async () => {
+		const selectedDocument = {
+			id: 'review-doc',
+			userId: 'user-1',
+			type: 'source_document' as const,
+			retrievalClass: 'durable' as const,
+			name: 'Contract Review Notes',
+			mimeType: 'text/plain',
+			sizeBytes: 120_000,
+			conversationId: null,
+			summary: 'Contract review notes',
+			contentText: null,
+			extension: 'txt',
+			storagePath: null,
+			metadata: null,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		};
+		mockPrepareTaskContext.mockResolvedValueOnce({
+			taskState: null,
+			routingStage: 'deterministic',
+			routingConfidence: 0,
+			verificationStatus: 'skipped',
+			selectedArtifacts: [selectedDocument],
+			pinnedArtifactIds: [],
+			excludedArtifactIds: [],
+		});
+		mockGetPromptArtifactSnippets.mockResolvedValueOnce(
+			new Map([[selectedDocument.id, 'Large task-context excerpt']])
+		);
+		renderSectionsInCompactionMock();
+		const { buildConstructedContext } = await import('./honcho');
+
+		const result = await buildConstructedContext({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			message: 'Review the contract document and extract the risky clauses.',
+			contextLimits: {
+				maxModelContext: 1_000_000,
+				compactionUiThreshold: 800_000,
+				targetConstructedContext: 900_000,
+			},
+		});
+
+		expect(mockGetPromptArtifactSnippets).toHaveBeenCalledWith(
+			expect.objectContaining({
+				artifacts: [selectedDocument],
+				perArtifactLimit: 8,
+				useFullContent: true,
+			})
+		);
+		expect(result.contextTraceSections).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					name: 'Retrieved Evidence',
+					signalReasons: expect.arrayContaining([
+						'document_context_depth:task',
+						'document_context_intent:task',
+					]),
+				}),
+			])
+		);
+	});
+
+	it('caps integrated retrieved-evidence serialization to the document depth total budget', async () => {
+		const selectedDocuments = Array.from({ length: 3 }, (_, index) => ({
+			id: `depth-doc-${index + 1}`,
+			userId: 'user-1',
+			type: 'source_document' as const,
+			retrievalClass: 'durable' as const,
+			name: `Depth Budget Document ${index + 1}`,
+			mimeType: 'text/plain',
+			sizeBytes: 120_000,
+			conversationId: null,
+			summary: `Depth budget document ${index + 1}`,
+			contentText: null,
+			extension: 'txt',
+			storagePath: null,
+			metadata: null,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		}));
+		mockPrepareTaskContext.mockResolvedValueOnce({
+			taskState: null,
+			routingStage: 'deterministic',
+			routingConfidence: 0,
+			verificationStatus: 'skipped',
+			selectedArtifacts: selectedDocuments,
+			pinnedArtifactIds: [],
+			excludedArtifactIds: [],
+		});
+		mockGetPromptArtifactSnippets.mockResolvedValueOnce(
+			new Map(selectedDocuments.map((document) => [document.id, 'Very long document excerpt. '.repeat(2000)]))
+		);
+		renderSectionsInCompactionMock();
+		const { buildConstructedContext } = await import('./honcho');
+
+		await buildConstructedContext({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			message: 'Review these documents and extract the risky clauses.',
+			contextLimits: {
+				maxModelContext: 20_000,
+				compactionUiThreshold: 16_000,
+				targetConstructedContext: 12_000,
+			},
+		});
+
+		const snippetRequest = mockGetPromptArtifactSnippets.mock.calls[0]?.[0];
+		const serializeRequest = mockSerializeWorkingSetArtifacts.mock.calls[0]?.[0];
+		expect(snippetRequest).toEqual(
+			expect.objectContaining({
+				artifacts: selectedDocuments,
+				totalCharBudget: expect.any(Number),
+			})
+		);
+		expect(serializeRequest).toEqual(
+			expect.objectContaining({
+				artifacts: selectedDocuments,
+				totalBudget: expect.any(Number),
+			})
+		);
+		expect(serializeRequest.totalBudget).toBeLessThanOrEqual(snippetRequest.totalCharBudget);
+	});
+
+	it('keeps weak document matches at reference depth', async () => {
+		const selectedDocument = {
+			id: 'weak-doc',
+			userId: 'user-1',
+			type: 'source_document' as const,
+			retrievalClass: 'durable' as const,
+			name: 'Old Notes',
+			mimeType: 'text/plain',
+			sizeBytes: 40_000,
+			conversationId: null,
+			summary: 'Old notes summary',
+			contentText: null,
+			extension: 'txt',
+			storagePath: null,
+			metadata: null,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		};
+		mockPrepareTaskContext.mockResolvedValueOnce({
+			taskState: null,
+			routingStage: 'deterministic',
+			routingConfidence: 0,
+			verificationStatus: 'skipped',
+			selectedArtifacts: [selectedDocument],
+			pinnedArtifactIds: [],
+			excludedArtifactIds: [],
+		});
+		const { buildConstructedContext } = await import('./honcho');
+
+		await buildConstructedContext({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			message: 'Continue.',
+			contextLimits: {
+				maxModelContext: 250_000,
+				compactionUiThreshold: 200_000,
+				targetConstructedContext: 225_000,
+			},
+		});
+
+		expect(mockGetPromptArtifactSnippets).toHaveBeenCalledWith(
+			expect.objectContaining({
+				artifacts: [selectedDocument],
+				perArtifactLimit: 2,
+				perArtifactCharBudget: 1_400,
+				useFullContent: false,
+			})
+		);
+	});
+
+	it('preserves breadth before depth for broad multi-document tasks', async () => {
+		const selectedDocuments = Array.from({ length: 12 }, (_, index) => ({
+			id: `comparison-doc-${index}`,
+			userId: 'user-1',
+			type: 'source_document' as const,
+			retrievalClass: 'durable' as const,
+			name: `Comparison Document ${index + 1}`,
+			mimeType: 'text/plain',
+			sizeBytes: 100_000,
+			conversationId: null,
+			summary: `Comparison summary ${index + 1}`,
+			contentText: null,
+			extension: 'txt',
+			storagePath: null,
+			metadata: null,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		}));
+		mockPrepareTaskContext.mockResolvedValueOnce({
+			taskState: null,
+			routingStage: 'deterministic',
+			routingConfidence: 0,
+			verificationStatus: 'skipped',
+			selectedArtifacts: selectedDocuments,
+			pinnedArtifactIds: [],
+			excludedArtifactIds: [],
+		});
+		const { buildConstructedContext } = await import('./honcho');
+
+		await buildConstructedContext({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			message: 'Compare these documents and summarize the differences.',
+			contextLimits: {
+				maxModelContext: 1_000_000,
+				compactionUiThreshold: 800_000,
+				targetConstructedContext: 900_000,
+			},
+		});
+
+		const snippetRequest = mockGetPromptArtifactSnippets.mock.calls[0]?.[0];
+		expect(snippetRequest?.artifacts).toHaveLength(12);
+		expect(snippetRequest?.perArtifactLimit).toBe(8);
+		expect(snippetRequest?.perArtifactCharBudget).toBeGreaterThan(1_400);
+		expect(snippetRequest?.perArtifactCharBudget).toBeLessThan(100_000);
+	});
+
+	it('keeps explicitly referenced linked sources at direct task depth', async () => {
+		const linkedPromptArtifact = {
+			id: 'normalized-linked-source',
+			userId: 'user-1',
+			type: 'normalized_document' as const,
+			retrievalClass: 'durable' as const,
+			name: 'linked-brief.pdf',
+			mimeType: 'text/plain',
+			sizeBytes: 95_000,
+			conversationId: 'conv-1',
+			summary: 'Linked brief summary',
+			contentText: 'Extracted linked source body.',
+			extension: 'txt',
+			storagePath: null,
+			metadata: null,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		};
+		mockListConversationSourceArtifactIds.mockResolvedValueOnce(['linked-source']);
+		mockResolvePromptAttachmentArtifacts.mockImplementationOnce(async () => ({
+			displayArtifacts: [],
+			promptArtifacts: [],
+			items: [],
+			unresolvedItems: [],
+		}));
+		mockResolvePromptAttachmentArtifacts.mockImplementationOnce(async () => ({
+			displayArtifacts: [],
+			promptArtifacts: [linkedPromptArtifact],
+			items: [],
+			unresolvedItems: [],
+		}));
+		const { buildConstructedContext } = await import('./honcho');
+
+		await buildConstructedContext({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			message: 'Summarize that linked source brief again.',
+			contextLimits: {
+				maxModelContext: 1_000_000,
+				compactionUiThreshold: 800_000,
+				targetConstructedContext: 900_000,
+			},
+		});
+
+		expect(mockGetPromptArtifactSnippets).toHaveBeenCalledWith(
+			expect.objectContaining({
+				artifacts: [linkedPromptArtifact],
+				perArtifactLimit: 8,
+				useFullContent: true,
+			})
+		);
+		expect(mockSerializeBudgetedAttachments).toHaveBeenCalledWith(
+			expect.objectContaining({
+				artifacts: [linkedPromptArtifact],
+				taskPerAttachmentBudget: expect.any(Number),
+			})
+		);
+	});
+
+	it('keeps direct current attachments at task depth when the turn asks to use them', async () => {
+		const attachmentArtifact = {
+			id: 'current-attachment',
+			userId: 'user-1',
+			type: 'normalized_document' as const,
+			retrievalClass: 'durable' as const,
+			name: 'current-attachment.pdf',
+			mimeType: 'text/plain',
+			sizeBytes: 140_000,
+			conversationId: 'conv-1',
+			summary: 'Current attachment summary',
+			contentText: 'Readable current attachment body.',
+			extension: 'txt',
+			storagePath: null,
+			metadata: null,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		};
+		mockResolvePromptAttachmentArtifacts.mockResolvedValueOnce({
+			displayArtifacts: [],
+			promptArtifacts: [attachmentArtifact],
+			items: [],
+			unresolvedItems: [],
+		});
+		mockExtractSerializedAttachmentBody.mockReturnValueOnce('Readable current attachment body.');
+		mockHasMeaningfulAttachmentText.mockReturnValueOnce(true);
+		const { buildConstructedContext } = await import('./honcho');
+
+		await buildConstructedContext({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			message: 'Summarize this attached document.',
+			attachmentIds: ['current-attachment'],
+			contextLimits: {
+				maxModelContext: 1_000_000,
+				compactionUiThreshold: 800_000,
+				targetConstructedContext: 900_000,
+			},
+		});
+
+		expect(mockGetPromptArtifactSnippets).toHaveBeenCalledWith(
+			expect.objectContaining({
+				artifacts: [attachmentArtifact],
+				perArtifactLimit: 8,
+				useFullContent: true,
+			})
+		);
+		const attachmentSerialization = mockSerializeBudgetedAttachments.mock.calls[0]?.[0];
+		expect(attachmentSerialization.taskPerAttachmentBudget).toBeGreaterThan(2_400);
+	});
+
 	it('resolves previous conversation attachments to prompt-ready source content', async () => {
 		mockListConversationSourceArtifactIds.mockResolvedValue(['source-1']);
 		mockResolvePromptAttachmentArtifacts.mockImplementation(async (_userId, artifactIds) => {
@@ -1129,6 +1534,119 @@ describe('honcho learning - buildConstructedContext', () => {
 			copiedForkPointMessageId: 'fork-assistant-1',
 		});
 	});
+
+	it('uses a Honcho-synthesized Baseline Memory Profile instead of raw newest conclusions', async () => {
+		mockConfig.honchoEnabled = true;
+		mockPeerContext.mockResolvedValueOnce({
+			representation: 'Synthesized baseline profile: prefers concise technical answers.',
+			peerCard: ['Works on AlfyAI context access'],
+		});
+		mockScopeList.mockResolvedValue({
+			toArray: async () => [
+				{
+					id: 'raw-newest-1',
+					content: 'RAW NEWEST CONCLUSION SHOULD NOT BE DUMPED',
+					sessionId: 'conv-1',
+					createdAt: new Date().toISOString(),
+				},
+			],
+		});
+		renderSectionsInCompactionMock();
+		const { buildConstructedContext } = await import('./honcho');
+
+		const result = await buildConstructedContext({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			message: 'Normal chat turn before tool use.',
+		});
+
+		expect(result.inputValue).toContain('## Baseline Memory Profile');
+		expect(result.inputValue).toContain(
+			'Synthesized baseline profile: prefers concise technical answers.'
+		);
+		expect(result.inputValue).toContain('- Works on AlfyAI context access');
+		expect(result.inputValue).not.toContain('## User Memory');
+		expect(result.inputValue).not.toContain('RAW NEWEST CONCLUSION SHOULD NOT BE DUMPED');
+		expect(result.contextTraceSections).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					name: 'Baseline Memory Profile',
+					source: 'memory',
+					protected: true,
+					signalReasons: ['honcho_baseline_profile:live'],
+				}),
+			])
+		);
+	});
+
+	it('omits baseline memory profile gracefully when Honcho profile synthesis fails', async () => {
+		mockConfig.honchoEnabled = true;
+		mockPeerContext.mockRejectedValueOnce(new Error('honcho profile unavailable'));
+		mockScopeList.mockResolvedValue({
+			toArray: async () => [
+				{
+					id: 'raw-fallback-1',
+					content: 'RAW FALLBACK CONCLUSION SHOULD NOT BE DUMPED',
+					sessionId: 'conv-1',
+					createdAt: new Date().toISOString(),
+				},
+			],
+		});
+		renderSectionsInCompactionMock();
+		const { buildConstructedContext } = await import('./honcho');
+
+		const result = await buildConstructedContext({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			message: 'Normal chat turn when Honcho profile fails.',
+		});
+
+		expect(result.inputValue).toContain('## Current User Message');
+		expect(result.inputValue).not.toContain('## Baseline Memory Profile');
+		expect(result.inputValue).not.toContain('## User Memory');
+		expect(result.inputValue).not.toContain('RAW FALLBACK CONCLUSION SHOULD NOT BE DUMPED');
+		expect(result.contextTraceSections).not.toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					name: 'Baseline Memory Profile',
+				}),
+			])
+		);
+	});
+
+	it('omits baseline memory profile gracefully when Honcho profile synthesis times out', async () => {
+		mockConfig.honchoEnabled = true;
+		mockConfig.honchoPersonaContextWaitMs = 1;
+		mockPeerContext.mockImplementationOnce(
+			() =>
+				new Promise(() => {
+					// Intentionally unresolved to exercise the timeout fallback.
+				})
+		);
+		mockScopeList.mockResolvedValue({
+			toArray: async () => [
+				{
+					id: 'raw-timeout-1',
+					content: 'RAW TIMEOUT CONCLUSION SHOULD NOT BE DUMPED',
+					sessionId: 'conv-1',
+					createdAt: new Date().toISOString(),
+				},
+			],
+		});
+		renderSectionsInCompactionMock();
+		const { buildConstructedContext } = await import('./honcho');
+
+		const result = await buildConstructedContext({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			message: 'Normal chat turn when Honcho profile times out.',
+		});
+
+		expect(result.inputValue).toContain('## Current User Message');
+		expect(result.inputValue).not.toContain('## Baseline Memory Profile');
+		expect(result.inputValue).not.toContain('## User Memory');
+		expect(result.inputValue).not.toContain('RAW TIMEOUT CONCLUSION SHOULD NOT BE DUMPED');
+	});
 });
 
 describe('honcho learning - syncArtifactToHoncho', () => {
@@ -1305,15 +1823,22 @@ describe('honcho learning - getPeerContext', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		vi.resetModules();
+		mockScopeList.mockResolvedValue({ toArray: async () => [] });
+		mockPeerContext.mockResolvedValue({
+			representation: 'User peer context for testing',
+			peerCard: null,
+		});
 	});
 
 	it('builds context from mocked peer conclusions', async () => {
-		mockScopeList.mockResolvedValueOnce({
-			toArray: async () => [
-				{ id: 'conclusion-1', content: 'User prefers concise responses', sessionId: 'conv-1', createdAt: new Date().toISOString() },
-				{ id: 'conclusion-2', content: 'Working on a Python project', sessionId: 'conv-1', createdAt: new Date().toISOString() },
-			],
-		});
+		mockScopeList
+			.mockResolvedValueOnce({
+				toArray: async () => [
+					{ id: 'conclusion-1', content: 'User prefers concise responses', sessionId: 'conv-1', createdAt: new Date().toISOString() },
+					{ id: 'conclusion-2', content: 'Working on a Python project', sessionId: 'conv-1', createdAt: new Date().toISOString() },
+				],
+			})
+			.mockResolvedValueOnce({ toArray: async () => [] });
 
 		const { listPersonaMemories } = await import('./honcho');
 		const records = await listPersonaMemories('user-1');
@@ -1370,8 +1895,11 @@ describe('honcho learning - getPeerContext', () => {
 		expect(records).toHaveLength(0);
 	});
 
-	it('returns no peer context for an empty scoped Honcho memory set', async () => {
-		mockScopeList.mockResolvedValue({ toArray: async () => [] });
+	it('returns no peer context for an empty Honcho baseline representation', async () => {
+		mockPeerContext.mockResolvedValueOnce({
+			representation: null,
+			peerCard: null,
+		});
 
 		const { getPeerContext } = await import('./honcho');
 		const context = await getPeerContext('user-1', 'Test User');
@@ -1380,35 +1908,18 @@ describe('honcho learning - getPeerContext', () => {
 		expect(mockPeerChat).not.toHaveBeenCalled();
 	});
 
-	it('builds peer context only from scoped conclusions without peer.chat', async () => {
-		mockScopeList
-			.mockResolvedValueOnce({
-				toArray: async () => [
-					{
-						id: 'self-1',
-						content: 'user-1 prefers concise responses',
-						sessionId: 'conv-1',
-						createdAt: new Date().toISOString(),
-					},
-				],
-			})
-			.mockResolvedValueOnce({
-				toArray: async () => [
-					{
-						id: 'about-1',
-						content: 'Assistant observed that the user is preparing a report',
-						sessionId: 'conv-1',
-						createdAt: new Date().toISOString(),
-					},
-				],
-			});
+	it('builds peer context from Honcho baseline representation without peer.chat', async () => {
+		mockPeerContext.mockResolvedValueOnce({
+			representation: 'user-1 prefers concise responses and is preparing a report',
+			peerCard: ['Works in short implementation slices'],
+		});
 
 		const { getPeerContext } = await import('./honcho');
 		const context = await getPeerContext('user-1', 'Test User');
 
-		expect(context).toContain('Scoped user memory');
 		expect(context).toContain('Test User prefers concise responses');
 		expect(context).toContain('preparing a report');
+		expect(context).toContain('- Works in short implementation slices');
 		expect(context).not.toContain('user-1');
 		expect(mockPeerChat).not.toHaveBeenCalled();
 	});

@@ -590,6 +590,8 @@ export async function findRelevantKnowledgeArtifacts(params: {
 						artifactConversationId: entry.artifact.conversationId,
 						currentConversationId,
 						matchScore: entry.lexicalScore,
+						semanticScore: entry.semanticScore,
+						rerankScore: entry.rerankScore,
 						explicitlyRequested,
 						minMatchScore,
 					});

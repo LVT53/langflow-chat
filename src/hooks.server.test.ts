@@ -158,13 +158,13 @@ describe("hooks.server.ts", () => {
 		expect(event.locals.user).toBeNull();
 	});
 
-	it("allows the signed project context tool route without a browser session", async () => {
+	it("allows the signed memory context tool route without a browser session", async () => {
 		const { handle } = await import("./hooks.server");
 		const resolve = vi.fn(async () => new Response("ok"));
 		const event = {
 			cookies: { get: vi.fn(() => undefined) },
 			locals: {},
-			url: new URL("http://localhost/api/tools/project-context"),
+			url: new URL("http://localhost/api/tools/memory-context"),
 		} as any;
 
 		await handle({ event, resolve });

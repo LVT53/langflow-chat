@@ -7,6 +7,9 @@ export interface ReconnectBuffer {
 		input: Record<string, unknown>;
 		status: "running" | "done";
 		outputSummary?: string | null;
+		sourceType?: import("$lib/types").EvidenceSourceType | null;
+		candidates?: import("$lib/types").ToolEvidenceCandidate[];
+		metadata?: Record<string, string | number | boolean | null>;
 	}>;
 }
 
@@ -88,6 +91,9 @@ export function doReconnect(targetStreamId: string, deps: ReconnectDeps): void {
 							input: toolCall.input,
 							status: toolCall.status,
 							outputSummary: toolCall.outputSummary,
+							sourceType: toolCall.sourceType,
+							candidates: toolCall.candidates,
+							metadata: toolCall.metadata,
 						})}\n\n`,
 					);
 				}

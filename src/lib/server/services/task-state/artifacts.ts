@@ -14,8 +14,15 @@ import { mapArtifactChunk } from "./mappers";
 
 /** Maximum characters for full content retrieval to prevent unbounded content */
 const FULL_CONTENT_MAX_CHARS = 100_000;
+const CHUNK_RERANK_MAX_CANDIDATES = 48;
+const FULL_CONTENT_TRUNCATION_NOTICE_CHARS = 20;
 
 export { syncArtifactChunks } from "./chunk-sync";
+
+type RankedChunkEntry = {
+  chunk: ArtifactChunk;
+  score: number;
+};
 
 export function formatTaskStateForPrompt(taskState: TaskState): string {
   const sections = [
@@ -91,10 +98,16 @@ export async function getPromptArtifactSnippets(params: {
   query: string;
   perArtifactLimit?: number;
   perArtifactCharBudget?: number;
+  totalCharBudget?: number;
   useFullContent?: boolean;
 }): Promise<Map<string, string>> {
   const perArtifactLimit = params.perArtifactLimit ?? 2;
   const perArtifactCharBudget = params.perArtifactCharBudget ?? 1400;
+  let remainingTotalCharBudget =
+    typeof params.totalCharBudget === "number" &&
+    Number.isFinite(params.totalCharBudget)
+      ? Math.max(0, Math.floor(params.totalCharBudget))
+      : null;
   const artifactIds = params.artifacts.map((artifact) => artifact.id);
   const chunkRows = await listArtifactChunksForArtifacts(
     params.userId,
@@ -109,24 +122,52 @@ export async function getPromptArtifactSnippets(params: {
   }
 
   const snippets = new Map<string, string>();
+  const setBudgetedSnippet = (artifactId: string, text: string) => {
+    const availableBudget =
+      remainingTotalCharBudget === null
+        ? perArtifactCharBudget
+        : Math.min(perArtifactCharBudget, remainingTotalCharBudget);
+    const snippet =
+      availableBudget > 0 ? clipText(text, availableBudget) : "";
+    snippets.set(artifactId, snippet);
+    if (remainingTotalCharBudget !== null) {
+      remainingTotalCharBudget = Math.max(
+        0,
+        remainingTotalCharBudget - snippet.length,
+      );
+    }
+  };
 
   for (const artifact of params.artifacts) {
+    if (remainingTotalCharBudget === 0) {
+      snippets.set(artifact.id, "");
+      continue;
+    }
+
     const chunks = chunksByArtifactId.get(artifact.id) ?? [];
 
     if (chunks.length === 0 || params.useFullContent) {
       if (params.useFullContent && artifact.contentText) {
+        const fullContentBudget =
+          remainingTotalCharBudget === null
+            ? perArtifactCharBudget
+            : Math.min(perArtifactCharBudget, remainingTotalCharBudget);
+        const fullContentReadBudget = Math.max(
+          0,
+          fullContentBudget - FULL_CONTENT_TRUNCATION_NOTICE_CHARS,
+        );
         const fullContent = await getFullArtifactContent(
           artifact.id,
-          FULL_CONTENT_MAX_CHARS,
+          Math.min(FULL_CONTENT_MAX_CHARS, fullContentReadBudget),
         );
         if (fullContent) {
-          snippets.set(artifact.id, fullContent);
+          setBudgetedSnippet(artifact.id, fullContent);
           continue;
         }
       }
       const fallback =
         artifact.contentText ?? artifact.summary ?? artifact.name;
-      snippets.set(artifact.id, clipText(fallback, perArtifactCharBudget));
+      setBudgetedSnippet(artifact.id, fallback);
       continue;
     }
 
@@ -152,9 +193,10 @@ export async function getPromptArtifactSnippets(params: {
       chosen = ranked.slice(0, 1);
     }
 
-    const rerankCandidates = ranked
-      .filter((entry) => entry.score > 0)
-      .slice(0, Math.max(perArtifactLimit, Math.min(6, ranked.length)));
+    const rerankCandidates = selectChunkRerankCandidates(
+      ranked,
+      perArtifactLimit,
+    );
     if (
       canUseTeiReranker() &&
       params.query.trim() &&
@@ -172,7 +214,7 @@ export async function getPromptArtifactSnippets(params: {
             ]
               .filter((value): value is string => Boolean(value))
               .join("\n\n"),
-          maxTexts: Math.max(perArtifactLimit, Math.min(6, ranked.length)),
+          maxTexts: rerankCandidates.length,
         });
 
         if (
@@ -197,10 +239,55 @@ export async function getPromptArtifactSnippets(params: {
         ),
       )
       .join("\n\n");
-    snippets.set(artifact.id, clipText(combined, perArtifactCharBudget));
+    setBudgetedSnippet(artifact.id, combined);
   }
 
   return snippets;
+}
+
+function selectChunkRerankCandidates(
+  ranked: RankedChunkEntry[],
+  perArtifactLimit: number,
+): RankedChunkEntry[] {
+  if (ranked.length <= CHUNK_RERANK_MAX_CANDIDATES) return ranked;
+
+  const candidateLimit = Math.max(
+    perArtifactLimit,
+    CHUNK_RERANK_MAX_CANDIDATES,
+  );
+  const selected: RankedChunkEntry[] = [];
+  const seen = new Set<string>();
+  const add = (entry: RankedChunkEntry | undefined) => {
+    if (!entry || seen.has(entry.chunk.id)) return;
+    seen.add(entry.chunk.id);
+    selected.push(entry);
+  };
+
+  const topLexicalCount = Math.ceil(candidateLimit * 0.6);
+  for (const entry of ranked.slice(0, topLexicalCount)) {
+    add(entry);
+  }
+
+  const byDocumentOrder = [...ranked].sort(
+    (left, right) => left.chunk.chunkIndex - right.chunk.chunkIndex,
+  );
+  const remainingSlots = candidateLimit - selected.length;
+  if (remainingSlots > 0) {
+    const denominator = Math.max(1, remainingSlots - 1);
+    for (let index = 0; index < remainingSlots; index += 1) {
+      const chunkIndex = Math.round(
+        (index * (byDocumentOrder.length - 1)) / denominator,
+      );
+      add(byDocumentOrder[chunkIndex]);
+    }
+  }
+
+  for (const entry of ranked) {
+    if (selected.length >= candidateLimit) break;
+    add(entry);
+  }
+
+  return selected;
 }
 
 export async function summarizeHistoricalContext(params: {

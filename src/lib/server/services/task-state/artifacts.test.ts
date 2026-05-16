@@ -7,6 +7,8 @@ const mockSelect = vi.fn();
 const mockFrom = vi.fn();
 const mockWhere = vi.fn();
 const mockOrderBy = vi.fn();
+const mockLimit = vi.fn();
+const mockGet = vi.fn();
 
 vi.mock('$lib/server/db', () => ({
   db: {
@@ -69,7 +71,12 @@ describe('artifacts', () => {
     });
     mockWhere.mockReturnValue({
       orderBy: mockOrderBy,
+      limit: mockLimit,
     });
+    mockLimit.mockReturnValue({
+      get: mockGet,
+    });
+    mockGet.mockResolvedValue(null);
     mockOrderBy.mockResolvedValue([]);
 
     mockDelete.mockReturnValue({
@@ -646,6 +653,119 @@ describe('artifacts', () => {
       const result = snippets.get(artifact.id);
       expect(result).toBeDefined();
       expect(result!.length).toBeLessThanOrEqual(100);
+    });
+
+    it('uses the reranker to recover a semantic passage when lexical chunk scores are weak', async () => {
+      const reranker = await import('../tei-reranker');
+      vi.mocked(reranker.canUseTeiReranker).mockReturnValueOnce(true);
+      vi.mocked(reranker.rerankItems).mockImplementationOnce(async ({ items }: { items: any[] }) => ({
+        confidence: 94,
+        items: items
+          .filter((entry) => entry.chunk.chunkIndex === 7)
+          .map((item) => ({ item, score: 94 })),
+      }));
+
+      const artifact: Artifact = {
+        id: 'semantic-passage-artifact',
+        userId: 'test-user',
+        type: 'normalized_document',
+        retrievalClass: 'durable',
+        name: 'Operations Handbook',
+        mimeType: 'text/plain',
+        sizeBytes: 60000,
+        conversationId: 'other-conversation',
+        summary: 'Support operations handbook',
+        contentText: null,
+        extension: 'txt',
+        storagePath: null,
+        metadata: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+      const chunkRows = Array.from({ length: 10 }, (_, index) => ({
+        id: `semantic-chunk-${index}`,
+        artifactId: artifact.id,
+        userId: 'test-user',
+        conversationId: 'other-conversation',
+        chunkIndex: index,
+        contentText:
+          index === 7
+            ? 'Chargeback propensity, refund anomaly clustering, and buyer-risk predictors.'
+            : `General onboarding appendix ${index}.`,
+        tokenEstimate: 12,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }));
+      mockOrderBy.mockResolvedValueOnce(chunkRows);
+
+      const snippets = await getPromptArtifactSnippets({
+        userId: 'test-user',
+        artifacts: [artifact],
+        query: 'Which cases are likely to become repayment disputes?',
+        perArtifactLimit: 1,
+        perArtifactCharBudget: 500,
+      });
+
+      expect(reranker.rerankItems).toHaveBeenCalledWith(
+        expect.objectContaining({
+          items: expect.arrayContaining([
+            expect.objectContaining({
+              chunk: expect.objectContaining({ chunkIndex: 7 }),
+            }),
+          ]),
+        }),
+      );
+      expect(snippets.get(artifact.id)).toContain('Chargeback propensity');
+      expect(snippets.get(artifact.id)).not.toContain('General onboarding appendix 0');
+    });
+
+    it('bounds full-content snippets to the per-artifact budget', async () => {
+      const longContent = 'Full content sentence. '.repeat(1000);
+      const artifact: Artifact = {
+        id: 'full-content-budget-artifact',
+        userId: 'test-user',
+        type: 'source_document',
+        retrievalClass: 'durable',
+        name: 'Large Full Content Document',
+        mimeType: 'text/plain',
+        sizeBytes: longContent.length,
+        conversationId: null,
+        summary: null,
+        contentText: longContent,
+        extension: 'txt',
+        storagePath: null,
+        metadata: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      mockOrderBy.mockResolvedValueOnce([
+        {
+          id: 'chunk-0',
+          artifactId: artifact.id,
+          userId: 'test-user',
+          conversationId: null,
+          chunkIndex: 0,
+          contentText: 'Chunk text should be bypassed for explicit full content.',
+          tokenEstimate: 15,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      ]);
+      mockGet.mockResolvedValueOnce({ contentText: longContent });
+
+      const snippets = await getPromptArtifactSnippets({
+        userId: 'test-user',
+        artifacts: [artifact],
+        query: 'summarize the full content document',
+        perArtifactCharBudget: 5_000,
+        useFullContent: true,
+      });
+
+      const result = snippets.get(artifact.id);
+      expect(result).toBeDefined();
+      expect(result?.length).toBeLessThanOrEqual(5_020);
+      expect(result).toContain('[truncated]');
     });
 
     it('handles multiple large artifacts in single call', async () => {

@@ -14,6 +14,7 @@ const {
 	mockBuildActiveDocumentState,
 	insertedProjectRows,
 	insertedLinkRows,
+	insertedEvidenceRows,
 	projectRows,
 	linkRows,
 	taskStateRows,
@@ -46,6 +47,7 @@ const {
 		})),
 		insertedProjectRows: [] as Array<Record<string, unknown>>,
 		insertedLinkRows: [] as Array<Record<string, unknown>>,
+		insertedEvidenceRows: [] as Array<Record<string, unknown>>,
 		projectRows: [] as Array<Record<string, unknown>>,
 		linkRows: [] as Array<Record<string, unknown>>,
 		taskStateRows: [] as Array<Record<string, unknown>>,
@@ -105,6 +107,10 @@ vi.mock('$lib/server/db', () => ({
 					insertedLinkRows.push({ ...values });
 					linkRows.push({ ...values });
 				}
+				if (table?.__name === 'task_state_evidence_links') {
+					const rows = Array.isArray(values) ? values : [values];
+					insertedEvidenceRows.push(...rows.map((row) => ({ ...row })));
+				}
 				return {
 					onConflictDoUpdate: vi.fn(async () => undefined),
 					onConflictDoNothing: vi.fn(async () => undefined),
@@ -130,6 +136,8 @@ vi.mock('$lib/server/db/schema', () => ({
 		title: { name: 'title' },
 		projectId: { name: 'projectId' },
 		updatedAt: { name: 'updatedAt' },
+		conversationId: { name: 'conversationId' },
+		artifactId: { name: 'artifactId' },
 	},
 	conversationTaskStates: {
 		__name: 'conversation_task_states',
@@ -183,6 +191,14 @@ vi.mock('$lib/server/db/schema', () => ({
 		content: { name: 'content' },
 		checkpointType: { name: 'checkpointType' },
 		userId: { name: 'userId' },
+		updatedAt: { name: 'updatedAt' },
+	},
+	taskStateEvidenceLinks: {
+		__name: 'task_state_evidence_links',
+		userId: { name: 'userId' },
+		taskId: { name: 'taskId' },
+		role: { name: 'role' },
+		origin: { name: 'origin' },
 		updatedAt: { name: 'updatedAt' },
 	},
 	artifacts: { id: Symbol('id') },
@@ -263,6 +279,7 @@ describe('task-state learning - project continuity signals', () => {
 		vi.resetModules();
 		insertedProjectRows.splice(0, insertedProjectRows.length);
 		insertedLinkRows.splice(0, insertedLinkRows.length);
+		insertedEvidenceRows.splice(0, insertedEvidenceRows.length);
 		projectRows.splice(0, projectRows.length);
 		linkRows.splice(0, linkRows.length);
 		mockRecordMemoryEvent.mockReset();
@@ -433,6 +450,13 @@ describe('task-state learning - project continuity signals', () => {
 });
 
 describe('task-state selected evidence policy', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.resetModules();
+		taskStateRows.splice(0, taskStateRows.length);
+		insertedEvidenceRows.splice(0, insertedEvidenceRows.length);
+	});
+
 	it('scales selected evidence from budget instead of the old small fixed caps', async () => {
 		const { deriveBudgetedSelectedEvidenceLimit } = await import('./task-state');
 		const candidates = Array.from({ length: 20 }, (_, index) => ({
@@ -464,9 +488,109 @@ describe('task-state selected evidence policy', () => {
 			}),
 		).toBe(64);
 	});
+
+	it('keeps one-turn relevant library documents selected even when lexical scoring is weak', async () => {
+		taskStateRows.push({
+			taskId: 'task-1',
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			status: 'active',
+			objective: 'Answer the current question',
+			confidence: 80,
+			locked: 1,
+			constraintsJson: '[]',
+			factsToPreserveJson: '[]',
+			decisionsJson: '[]',
+			openQuestionsJson: '[]',
+			activeArtifactIdsJson: '[]',
+			nextStepsJson: '[]',
+			lastCheckpointAt: null,
+			createdAt: new Date('2026-04-01T10:00:00Z'),
+			updatedAt: new Date('2026-04-01T10:00:00Z'),
+		});
+		const semanticDocument = {
+			id: 'doc-semantic',
+			userId: 'user-1',
+			type: 'normalized_document',
+			retrievalClass: 'durable',
+			name: 'Operations handbook',
+			mimeType: 'text/plain',
+			sizeBytes: 1024,
+			conversationId: 'conv-2',
+			summary: 'Internal support procedures',
+			metadata: null,
+			contentText: 'Escalation policy and support team operating procedures',
+			extension: 'txt',
+			storagePath: null,
+			createdAt: Date.parse('2026-04-01T10:00:00Z'),
+			updatedAt: Date.parse('2026-04-01T10:00:00Z'),
+		};
+
+		const { prepareTaskContext } = await import('./task-state');
+		const prepared = await prepareTaskContext({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			message: 'refund risk predictors',
+			currentAttachments: [],
+			workingSetArtifacts: [],
+			relevantArtifacts: [semanticDocument],
+		});
+
+		expect(prepared.selectedArtifacts.map((artifact) => artifact.id)).toContain('doc-semantic');
+	});
+
+	it('does not persist one-turn cross-conversation semantic documents as durable selected evidence', async () => {
+		taskStateRows.push({
+			taskId: 'task-1',
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			status: 'active',
+			objective: 'Answer the current question',
+			confidence: 80,
+			locked: 1,
+			constraintsJson: '[]',
+			factsToPreserveJson: '[]',
+			decisionsJson: '[]',
+			openQuestionsJson: '[]',
+			activeArtifactIdsJson: '[]',
+			nextStepsJson: '[]',
+			lastCheckpointAt: null,
+			createdAt: new Date('2026-04-01T10:00:00Z'),
+			updatedAt: new Date('2026-04-01T10:00:00Z'),
+		});
+		const semanticDocument = {
+			id: 'doc-semantic',
+			userId: 'user-1',
+			type: 'normalized_document',
+			retrievalClass: 'durable',
+			name: 'Operations handbook',
+			mimeType: 'text/plain',
+			sizeBytes: 1024,
+			conversationId: 'conv-2',
+			summary: 'Internal support procedures',
+			metadata: null,
+			contentText: 'Escalation policy and support team operating procedures',
+			extension: 'txt',
+			storagePath: null,
+			createdAt: Date.parse('2026-04-01T10:00:00Z'),
+			updatedAt: Date.parse('2026-04-01T10:00:00Z'),
+		};
+
+		const { prepareTaskContext } = await import('./task-state');
+		const prepared = await prepareTaskContext({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			message: 'refund risk predictors',
+			currentAttachments: [],
+			workingSetArtifacts: [],
+			relevantArtifacts: [semanticDocument],
+		});
+
+		expect(prepared.selectedArtifacts.map((artifact) => artifact.id)).toContain('doc-semantic');
+		expect(insertedEvidenceRows.map((row) => row.artifactId)).not.toContain('doc-semantic');
+	});
 });
 
-// Note: prepareTaskContext, selectTaskStateForTurn, listFocusContinuityItems, and listTaskMemoryItems
-// require complex DB mocking with specific data formats (nested vs flat row structures)
-// These tests are excluded due to mocking complexity. The project continuity signal tests
-// below provide core verification of the memory system behavior.
+// Note: selectTaskStateForTurn, listFocusContinuityItems, and listTaskMemoryItems
+// require complex DB mocking with specific data formats (nested vs flat row structures).
+// Most coverage here stays on exported policy helpers and narrow prepareTaskContext paths.

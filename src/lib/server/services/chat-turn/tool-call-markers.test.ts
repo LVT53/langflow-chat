@@ -50,20 +50,30 @@ describe("processToolCallMarkers", () => {
 		]);
 	});
 
-	it("parses project_context detail memory candidates", () => {
+	it("parses memory_context memory candidates across modes", () => {
 		const emitted: Array<{
 			name: string;
 			status: "running" | "done";
 			details?: StreamToolCallDetails;
 		}> = [];
 		const payload = JSON.stringify({
-			name: "project_context",
+			name: "memory_context",
 			sourceType: "memory",
 			candidates: [
 				{
-					id: "project-context-detail:conv-pricing",
-					title: "Pricing",
+					id: "memory-context:project:conv-pricing",
+					title: "Pricing project",
 					snippet: "Stable pricing brief.",
+				},
+				{
+					id: "memory-context:persona:user-1",
+					title: "Honcho persona recall",
+					snippet: "Prefers concise answers.",
+				},
+				{
+					id: "memory-context:history:conv-cycling",
+					title: "Cycling history",
+					snippet: "Older non-project cycling discussion.",
 				},
 			],
 		});
@@ -77,20 +87,76 @@ describe("processToolCallMarkers", () => {
 
 		expect(emitted).toEqual([
 			{
-				name: "project_context",
+				name: "memory_context",
 				status: "done",
 				details: {
 					outputSummary: null,
 					sourceType: "memory",
 					candidates: [
 						{
-							id: "project-context-detail:conv-pricing",
-							title: "Pricing",
+							id: "memory-context:project:conv-pricing",
+							title: "Pricing project",
 							url: null,
 							snippet: "Stable pricing brief.",
 							sourceType: "memory",
 						},
+						{
+							id: "memory-context:persona:user-1",
+							title: "Honcho persona recall",
+							url: null,
+							snippet: "Prefers concise answers.",
+							sourceType: "memory",
+						},
+						{
+							id: "memory-context:history:conv-cycling",
+							title: "Cycling history",
+							url: null,
+							snippet: "Older non-project cycling discussion.",
+							sourceType: "memory",
+						},
 					],
+				},
+			},
+		]);
+	});
+
+	it("parses scalar memory_context metadata from tool markers", () => {
+		const emitted: Array<{
+			name: string;
+			status: "running" | "done";
+			details?: StreamToolCallDetails;
+		}> = [];
+		const payload = JSON.stringify({
+			name: "memory_context",
+			sourceType: "memory",
+			metadata: {
+				mode: "history",
+				appliedMaxHistoryConversations: 3,
+				omittedConversationCount: 2,
+				nested: { ignored: true },
+			},
+		});
+
+		processToolCallMarkers(
+			`\u0002TOOL_END\u001f${payload}\u0003`,
+			(name, _input, status, details) => {
+				emitted.push({ name, status, details });
+			},
+		);
+
+		expect(emitted).toEqual([
+			{
+				name: "memory_context",
+				status: "done",
+				details: {
+					outputSummary: null,
+					sourceType: "memory",
+					candidates: [],
+					metadata: {
+						mode: "history",
+						appliedMaxHistoryConversations: 3,
+						omittedConversationCount: 2,
+					},
 				},
 			},
 		]);

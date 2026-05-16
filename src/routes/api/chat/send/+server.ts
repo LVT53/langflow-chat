@@ -318,6 +318,7 @@ export const POST: RequestHandler = async (event) => {
 			linkedSources: turn.linkedSources,
 			activeWorkingSet: turnState.activeWorkingSet,
 			projectReference,
+			contextTraceSections,
 		});
 
 		return json({

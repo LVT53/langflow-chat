@@ -7,11 +7,14 @@ import { artifacts, deepResearchJobs, messages } from "$lib/server/db/schema";
 import { and, count, desc, eq, inArray } from "drizzle-orm";
 import { clipNullableText, normalizeWhitespace } from "$lib/server/utils/text";
 import type { ToolEvidenceCandidate } from "$lib/types";
+import { getTargetConstructedContext } from "$lib/server/config-store";
 
-const DEFAULT_MAX_SIBLINGS = 5;
-const HARD_MAX_SIBLINGS = 5;
-const DEFAULT_MAX_MESSAGES = 6;
-const HARD_MAX_MESSAGES = 10;
+const MIN_MAX_SIBLINGS = 5;
+const OPERATIONAL_MAX_SIBLINGS = 64;
+const SIBLING_CONTEXT_TOKEN_STEP = 32_000;
+const MIN_MAX_MESSAGES = 10;
+const OPERATIONAL_MAX_MESSAGES = 96;
+const MESSAGE_CONTEXT_TOKEN_STEP = 16_000;
 const MESSAGE_CONTENT_MAX = 1_200;
 const DEEP_RESEARCH_RESULTS_PER_CONVERSATION = 3;
 const DEEP_RESEARCH_SUMMARY_MAX = 900;
@@ -112,18 +115,48 @@ export type GetProjectContextParams = {
 	includeEvidenceCandidates?: boolean;
 };
 
-function normalizeMaxSiblings(value: number | null | undefined): number {
-	if (typeof value !== "number" || !Number.isFinite(value)) {
-		return DEFAULT_MAX_SIBLINGS;
+function deriveMaxSiblingsCap(): number {
+	const targetConstructedContext = getTargetConstructedContext();
+	if (!Number.isFinite(targetConstructedContext) || targetConstructedContext <= 0) {
+		return MIN_MAX_SIBLINGS;
 	}
-	return Math.max(1, Math.min(HARD_MAX_SIBLINGS, Math.floor(value)));
+	return Math.max(
+		MIN_MAX_SIBLINGS,
+		Math.min(
+			OPERATIONAL_MAX_SIBLINGS,
+			Math.ceil(targetConstructedContext / SIBLING_CONTEXT_TOKEN_STEP),
+		),
+	);
+}
+
+function normalizeMaxSiblings(value: number | null | undefined): number {
+	const cap = deriveMaxSiblingsCap();
+	if (typeof value !== "number" || !Number.isFinite(value)) {
+		return cap;
+	}
+	return Math.max(1, Math.min(cap, Math.floor(value)));
 }
 
 function normalizeMaxMessages(value: number | null | undefined): number {
+	const cap = deriveMaxMessagesCap();
 	if (typeof value !== "number" || !Number.isFinite(value)) {
-		return DEFAULT_MAX_MESSAGES;
+		return cap;
 	}
-	return Math.max(1, Math.min(HARD_MAX_MESSAGES, Math.floor(value)));
+	return Math.max(1, Math.min(cap, Math.floor(value)));
+}
+
+function deriveMaxMessagesCap(): number {
+	const targetConstructedContext = getTargetConstructedContext();
+	if (!Number.isFinite(targetConstructedContext) || targetConstructedContext <= 0) {
+		return MIN_MAX_MESSAGES;
+	}
+	return Math.max(
+		MIN_MAX_MESSAGES,
+		Math.min(
+			OPERATIONAL_MAX_MESSAGES,
+			Math.ceil(targetConstructedContext / MESSAGE_CONTEXT_TOKEN_STEP),
+		),
+	);
 }
 
 function toTimestampMs(value: Date | number | null | undefined): number {

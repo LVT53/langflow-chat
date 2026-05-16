@@ -11,6 +11,14 @@ const { artifactRows, deepResearchRows, messageRows, queryLimits } = vi.hoisted(
 	queryLimits: [] as number[],
 }));
 
+const { targetConstructedContext } = vi.hoisted(() => ({
+	targetConstructedContext: { value: 250_000 },
+}));
+
+vi.mock("$lib/server/config-store", () => ({
+	getTargetConstructedContext: vi.fn(() => targetConstructedContext.value),
+}));
+
 type MockCondition =
 	| { operator: "eq" | "inArray"; field: string; value: unknown }
 	| MockCondition[]
@@ -178,6 +186,7 @@ describe("getProjectContext", () => {
 		deepResearchRows.splice(0, deepResearchRows.length);
 		messageRows.splice(0, messageRows.length);
 		queryLimits.splice(0, queryLimits.length);
+		targetConstructedContext.value = 250_000;
 	});
 
 	it("returns bounded project folder summary context without transcripts", async () => {
@@ -345,6 +354,70 @@ describe("getProjectContext", () => {
 			},
 		});
 	});
+
+	it("scales summary sibling limits above the old fixed cap for medium context windows", async () => {
+		targetConstructedContext.value = 250_000;
+		const entries = Array.from({ length: 12 }, (_, index) => ({
+			conversationId: `conv-${index + 2}`,
+			title: `Sibling ${index + 1}`,
+			objective: `Objective ${index + 1}`,
+			summary: `Summary ${index + 1}`,
+		}));
+		mockGetProjectReferenceContext.mockResolvedValue({
+			source: "project_folder",
+			projectId: "project-1",
+			projectName: "Launch Plan",
+			omittedSiblingCount: 4,
+			entries,
+		});
+
+		const result = await getProjectContext({
+			userId: "user-1",
+			conversationId: "conv-1",
+			mode: "summary",
+			maxSiblings: 999,
+		});
+
+		expect(result.audit.appliedMaxSiblings).toBe(8);
+		expect(result.siblings).toHaveLength(8);
+		expect(result.omittedSiblingCount).toBe(8);
+	});
+
+	it.each([
+		["small", 50_000, 5],
+		["large", 1_000_000, 32],
+	])(
+		"applies the %s-context summary sibling cap and reports omissions",
+		async (_label, targetContext, expectedLimit) => {
+			targetConstructedContext.value = targetContext;
+			const entries = Array.from({ length: 40 }, (_, index) => ({
+				conversationId: `conv-${index + 2}`,
+				title: `Sibling ${index + 1}`,
+				objective: `Objective ${index + 1}`,
+				summary: `Summary ${index + 1}`,
+			}));
+			mockGetProjectReferenceContext.mockResolvedValue({
+				source: "project_folder",
+				projectId: "project-1",
+				projectName: "Launch Plan",
+				omittedSiblingCount: 3,
+				entries,
+			});
+
+			const result = await getProjectContext({
+				userId: "user-1",
+				conversationId: "conv-1",
+				mode: "summary",
+				maxSiblings: 999,
+			});
+
+			expect(result.audit.appliedMaxSiblings).toBe(expectedLimit);
+			expect(result.siblings).toHaveLength(expectedLimit);
+			expect(result.omittedSiblingCount).toBe(
+				3 + entries.length - expectedLimit,
+			);
+		},
+	);
 
 	it("rejects unsupported modes clearly", async () => {
 		await expect(
@@ -560,6 +633,7 @@ describe("getProjectContext", () => {
 	});
 
 	it("clamps detail messages to the hard cap", async () => {
+		targetConstructedContext.value = 50_000;
 		mockGetProjectReferenceContext.mockResolvedValue({
 			source: "project_folder",
 			projectId: "project-1",
@@ -595,6 +669,84 @@ describe("getProjectContext", () => {
 		expect(result.selectedSibling?.messages).toHaveLength(10);
 		expect(result.selectedSibling?.omittedMessageCount).toBe(2);
 		expect(queryLimits).toEqual([10]);
+	});
+
+	it("scales detail message limits above the old fixed cap for medium context windows", async () => {
+		targetConstructedContext.value = 250_000;
+		mockGetProjectReferenceContext.mockResolvedValue({
+			source: "project_folder",
+			projectId: "project-1",
+			projectName: "Launch Plan",
+			omittedSiblingCount: 0,
+			entries: [
+				{
+					conversationId: "conv-2",
+					title: "Pricing",
+					objective: "Compare pricing options",
+					summary: "Stable pricing brief.",
+				},
+			],
+		});
+		for (let index = 0; index < 20; index += 1) {
+			messageRows.push({
+				conversationId: "conv-2",
+				role: index % 2 === 0 ? "user" : "assistant",
+				content: `Message ${index}`,
+				createdAt: new Date(2026, 4, 14, 10, index),
+			});
+		}
+
+		const result = await getProjectContext({
+			userId: "user-1",
+			conversationId: "conv-1",
+			mode: "detail",
+			siblingConversationId: "conv-2",
+			maxMessages: 999,
+		});
+
+		expect(result.audit.appliedMaxMessages).toBe(16);
+		expect(result.selectedSibling?.messages).toHaveLength(16);
+		expect(result.selectedSibling?.omittedMessageCount).toBe(4);
+		expect(queryLimits).toEqual([16]);
+	});
+
+	it("scales detail message limits for large context windows and reports omissions", async () => {
+		targetConstructedContext.value = 1_000_000;
+		mockGetProjectReferenceContext.mockResolvedValue({
+			source: "project_folder",
+			projectId: "project-1",
+			projectName: "Launch Plan",
+			omittedSiblingCount: 0,
+			entries: [
+				{
+					conversationId: "conv-2",
+					title: "Pricing",
+					objective: "Compare pricing options",
+					summary: "Stable pricing brief.",
+				},
+			],
+		});
+		for (let index = 0; index < 70; index += 1) {
+			messageRows.push({
+				conversationId: "conv-2",
+				role: index % 2 === 0 ? "user" : "assistant",
+				content: `Message ${index}`,
+				createdAt: new Date(2026, 4, 14, 11, index),
+			});
+		}
+
+		const result = await getProjectContext({
+			userId: "user-1",
+			conversationId: "conv-1",
+			mode: "detail",
+			siblingConversationId: "conv-2",
+			maxMessages: 999,
+		});
+
+		expect(result.audit.appliedMaxMessages).toBe(63);
+		expect(result.selectedSibling?.messages).toHaveLength(63);
+		expect(result.selectedSibling?.omittedMessageCount).toBe(7);
+		expect(queryLimits).toEqual([63]);
 	});
 
 	it("returns an explicit detail no-context result when no project context exists", async () => {

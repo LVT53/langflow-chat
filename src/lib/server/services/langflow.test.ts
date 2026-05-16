@@ -126,7 +126,7 @@ describe("buildOutboundSystemPrompt", () => {
 		vi.clearAllMocks();
 	});
 
-	it("keeps always-on date, unified file-production, project-context, and image-search guidance with custom prompts", () => {
+	it("keeps always-on date, unified file-production, memory-context, and image-search guidance with custom prompts", () => {
 		const prompt = buildOutboundSystemPrompt({
 			basePrompt: "Custom system prompt",
 			inputValue: "Create a downloadable PDF with photos of Amsterdam.",
@@ -160,11 +160,19 @@ describe("buildOutboundSystemPrompt", () => {
 		expect(prompt).toContain("Image search workflow");
 		expect(prompt).toContain("image_search");
 		expect(prompt).toContain("research_web");
-		expect(prompt).toContain("Project context workflow");
-		expect(prompt).toContain("project_context");
+		expect(prompt).toContain("Memory context workflow");
+		expect(prompt).toContain("memory_context");
+		expect(prompt).toContain("mode `project`");
+		expect(prompt).toContain("mode `persona`");
+		expect(prompt).toContain("mode `history`");
 		expect(prompt).toContain("not a last resort");
 		expect(prompt).toContain("siblingConversationId");
+		expect(prompt).toContain("historyConversationId");
+		expect(prompt).toContain("selectedConversationId");
+		expect(prompt).toContain("Honcho");
+		expect(prompt).toContain("older non-project conversations");
 		expect(prompt).toContain("memory/context");
+		expect(prompt).not.toContain("project_context");
 		expect(prompt).toContain("Exact web facts and prices");
 		expect(prompt).toContain("do not rely on search-result snippets alone");
 		expect(prompt).toContain(
@@ -423,7 +431,9 @@ describe("sendMessage provider routing", () => {
 
 		const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
 		const systemPrompt = body.tweaks["ModelNode-1"].system_prompt;
-		expect(body.input_value).toContain("## Current User Message\nTiny question?");
+		expect(body.input_value).toContain(
+			"## Current User Message\nTiny question?",
+		);
 		expect(body.input_value.length).toBeLessThan(oversizedContext.length);
 		expect(body.input_value).toContain("[truncated]");
 		expect(
@@ -509,7 +519,9 @@ describe("sendMessage provider routing", () => {
 				id: "user-1",
 			});
 
-			const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
+			const body = JSON.parse(
+				String(vi.mocked(fetch).mock.calls[0]?.[1]?.body),
+			);
 			const providerTweaks = body.tweaks["ModelNode-1"];
 			expect(providerTweaks.max_tokens).toBeLessThan(146_000);
 			expect(body.input_value).toContain("Important retained context.");
@@ -765,18 +777,28 @@ describe("sendMessage provider routing", () => {
 			thinkingMode: "off",
 		});
 
-		const firstBody = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
-		const secondBody = JSON.parse(String(vi.mocked(fetch).mock.calls[1]?.[1]?.body));
+		const firstBody = JSON.parse(
+			String(vi.mocked(fetch).mock.calls[0]?.[1]?.body),
+		);
+		const secondBody = JSON.parse(
+			String(vi.mocked(fetch).mock.calls[1]?.[1]?.body),
+		);
 		expect(firstBody.tweaks["ModelNode-1"]).toMatchObject({
 			enable_thinking: false,
 		});
-		expect(firstBody.tweaks["ModelNode-1"]).not.toHaveProperty("reasoning_effort");
+		expect(firstBody.tweaks["ModelNode-1"]).not.toHaveProperty(
+			"reasoning_effort",
+		);
 		expect(firstBody.tweaks["ModelNode-1"]).not.toHaveProperty("thinking_type");
 		expect(secondBody.tweaks["ModelNode-1"]).toMatchObject({
 			enable_thinking: false,
 		});
-		expect(secondBody.tweaks["ModelNode-1"]).not.toHaveProperty("reasoning_effort");
-		expect(secondBody.tweaks["ModelNode-1"]).not.toHaveProperty("thinking_type");
+		expect(secondBody.tweaks["ModelNode-1"]).not.toHaveProperty(
+			"reasoning_effort",
+		);
+		expect(secondBody.tweaks["ModelNode-1"]).not.toHaveProperty(
+			"thinking_type",
+		);
 	});
 
 	it("sends reasoning_effort none when Fireworks DeepSeek V4 auto-disables thinking", async () => {
@@ -809,8 +831,12 @@ describe("sendMessage provider routing", () => {
 			thinkingMode: "off",
 		});
 
-		const firstBody = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
-		const secondBody = JSON.parse(String(vi.mocked(fetch).mock.calls[1]?.[1]?.body));
+		const firstBody = JSON.parse(
+			String(vi.mocked(fetch).mock.calls[0]?.[1]?.body),
+		);
+		const secondBody = JSON.parse(
+			String(vi.mocked(fetch).mock.calls[1]?.[1]?.body),
+		);
 		expect(firstBody.tweaks["ModelNode-1"]).toMatchObject({
 			enable_thinking: false,
 			reasoning_effort: "none",
@@ -820,7 +846,9 @@ describe("sendMessage provider routing", () => {
 			enable_thinking: false,
 			reasoning_effort: "none",
 		});
-		expect(secondBody.tweaks["ModelNode-1"]).not.toHaveProperty("thinking_type");
+		expect(secondBody.tweaks["ModelNode-1"]).not.toHaveProperty(
+			"thinking_type",
+		);
 	});
 
 	it("sends reasoning_effort for Mistral Medium 3.5 even when thinking.type is configured", async () => {
@@ -959,7 +987,11 @@ describe("sendMessage provider routing", () => {
 	it("enables reasoning capture for complex built-in Qwen turns routed through the custom Langflow node", async () => {
 		mockConfig({ modelName: "qwen3-6-35b" });
 
-		await sendMessage("Diagnose why this streaming parser fails on split thinking tags.", "conv-1", "model1");
+		await sendMessage(
+			"Diagnose why this streaming parser fails on split thinking tags.",
+			"conv-1",
+			"model1",
+		);
 
 		const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
 		expect(body.tweaks).toMatchObject({
@@ -993,12 +1025,22 @@ describe("sendMessage provider routing", () => {
 		await sendMessage("Hello", "conv-1", "model1", undefined, {
 			thinkingMode: "on",
 		});
-		await sendMessage("Diagnose the parser failure", "conv-1", "model1", undefined, {
-			thinkingMode: "off",
-		});
+		await sendMessage(
+			"Diagnose the parser failure",
+			"conv-1",
+			"model1",
+			undefined,
+			{
+				thinkingMode: "off",
+			},
+		);
 
-		const firstBody = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
-		const secondBody = JSON.parse(String(vi.mocked(fetch).mock.calls[1]?.[1]?.body));
+		const firstBody = JSON.parse(
+			String(vi.mocked(fetch).mock.calls[0]?.[1]?.body),
+		);
+		const secondBody = JSON.parse(
+			String(vi.mocked(fetch).mock.calls[1]?.[1]?.body),
+		);
 		expect(firstBody.tweaks["ModelNode-1"]).toMatchObject({
 			enable_thinking: true,
 			thinking_type: "enabled",
@@ -1011,7 +1053,11 @@ describe("sendMessage provider routing", () => {
 
 	it("classifies thinking auto mode from message complexity", () => {
 		expect(shouldAutoEnableThinking("Hello")).toBe(false);
-		expect(shouldAutoEnableThinking("Diagnose why retry streaming fails after a reconnect.")).toBe(true);
+		expect(
+			shouldAutoEnableThinking(
+				"Diagnose why retry streaming fails after a reconnect.",
+			),
+		).toBe(true);
 		expect(
 			shouldAutoEnableThinking(
 				"Compare options A and B, explain the tradeoffs, then propose an implementation plan.",
@@ -1116,9 +1162,7 @@ describe("sendMessage provider routing", () => {
 			const backupBody = JSON.parse(
 				String(vi.mocked(fetch).mock.calls[1]?.[1]?.body),
 			);
-			expect(backupBody.tweaks["ModelNode-1"].model_name).toBe(
-				"backup-model",
-			);
+			expect(backupBody.tweaks["ModelNode-1"].model_name).toBe("backup-model");
 		} finally {
 			vi.useRealTimers();
 		}

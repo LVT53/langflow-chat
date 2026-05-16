@@ -909,6 +909,7 @@ function computeEvidenceScore(params: {
   recentlyRefinedArtifactIds: Set<string>;
   currentAttachmentIds: Set<string>;
   workingSetIds: Set<string>;
+  relevantArtifactIds: Set<string>;
   currentGeneratedOutputIds: Set<string>;
   hasCorrectionSignal?: boolean;
 }): number {
@@ -936,6 +937,7 @@ function computeEvidenceScore(params: {
   if (params.recentlyRefinedArtifactIds.has(params.artifact.id)) score += 28;
   if (params.currentAttachmentIds.has(params.artifact.id)) score += 100;
   if (params.workingSetIds.has(params.artifact.id)) score += 10;
+  if (params.relevantArtifactIds.has(params.artifact.id)) score += 80;
   if (params.pinnedIds.has(params.artifact.id)) score += 120;
   if (params.artifact.conversationId === params.taskState?.conversationId)
     score += 4;
@@ -950,6 +952,37 @@ function computeEvidenceScore(params: {
   });
 
   return score;
+}
+
+function shouldPersistSystemSelectedEvidenceLink(params: {
+  artifact: Artifact;
+  conversationId: string;
+  taskState: TaskState | null;
+  pinnedIds: Set<string>;
+  activeDocumentIds: Set<string>;
+  correctionTargetIds: Set<string>;
+  recentlyRefinedArtifactIds: Set<string>;
+  currentGeneratedOutputIds: Set<string>;
+  workingSetIds: Set<string>;
+  relevantArtifactIds: Set<string>;
+}): boolean {
+  if (params.pinnedIds.has(params.artifact.id)) return true;
+  if (params.activeDocumentIds.has(params.artifact.id)) return true;
+  if (params.correctionTargetIds.has(params.artifact.id)) return true;
+  if (params.recentlyRefinedArtifactIds.has(params.artifact.id)) return true;
+  if (params.currentGeneratedOutputIds.has(params.artifact.id)) return true;
+  if (params.workingSetIds.has(params.artifact.id)) return true;
+  if (params.taskState?.activeArtifactIds.includes(params.artifact.id)) {
+    return true;
+  }
+
+  const isCrossConversationRelevantArtifact =
+    params.relevantArtifactIds.has(params.artifact.id) &&
+    params.artifact.conversationId !== null &&
+    params.artifact.conversationId !== params.conversationId;
+  if (isCrossConversationRelevantArtifact) return false;
+
+  return true;
 }
 
 async function maybeRerankEvidence(params: {
@@ -1084,6 +1117,9 @@ export async function prepareTaskContext(params: {
   const workingSetIds = new Set(
     params.workingSetArtifacts.map((artifact) => artifact.id),
   );
+  const relevantArtifactIds = new Set(
+    params.relevantArtifacts.map((artifact) => artifact.id),
+  );
   const activeDocumentState = buildActiveDocumentState({
     artifacts: candidateArtifacts,
     message: params.message,
@@ -1112,6 +1148,7 @@ export async function prepareTaskContext(params: {
         recentlyRefinedArtifactIds: activeDocumentState.recentlyRefinedArtifactIds,
         currentAttachmentIds,
         workingSetIds,
+        relevantArtifactIds,
         currentGeneratedOutputIds,
         hasCorrectionSignal,
       }),
@@ -1177,6 +1214,20 @@ export async function prepareTaskContext(params: {
       taskId: taskState.taskId,
       selectedArtifacts: selectedArtifacts
         .filter((artifact) => !currentAttachmentIds.has(artifact.id))
+        .filter((artifact) =>
+          shouldPersistSystemSelectedEvidenceLink({
+            artifact,
+            conversationId: params.conversationId,
+            taskState,
+            pinnedIds,
+            activeDocumentIds,
+            correctionTargetIds: activeDocumentState.correctionTargetIds,
+            recentlyRefinedArtifactIds: activeDocumentState.recentlyRefinedArtifactIds,
+            currentGeneratedOutputIds,
+            workingSetIds,
+            relevantArtifactIds,
+          }),
+        )
         .map((artifact) => ({
           artifactId: artifact.id,
           confidence: routingConfidence,

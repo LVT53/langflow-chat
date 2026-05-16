@@ -1,4 +1,8 @@
 import { getConfig } from '$lib/server/config-store';
+import type {
+	EvidenceSourceType,
+	ToolEvidenceCandidate,
+} from '$lib/types';
 
 const STOP_REQUEST_TTL_MS = 30_000;
 
@@ -26,6 +30,9 @@ interface StreamTokenBuffer {
 		input: Record<string, unknown>;
 		status: 'running' | 'done';
 		outputSummary?: string | null;
+		sourceType?: EvidenceSourceType | null;
+		candidates?: ToolEvidenceCandidate[];
+		metadata?: Record<string, string | number | boolean | null>;
 	}>;
 	listeners: Set<(chunk: string) => void>;
 }
@@ -79,7 +86,16 @@ export function getOrCreateStreamBuffer(streamId: string, userMessage: string): 
 export function appendToStreamBuffer(
 	streamId: string,
 	event: 'token' | 'thinking' | 'tool_call',
-	data: { text?: string; name?: string; input?: Record<string, unknown>; status?: 'running' | 'done'; outputSummary?: string | null }
+	data: {
+		text?: string;
+		name?: string;
+		input?: Record<string, unknown>;
+		status?: 'running' | 'done';
+		outputSummary?: string | null;
+		sourceType?: EvidenceSourceType | null;
+		candidates?: ToolEvidenceCandidate[];
+		metadata?: Record<string, string | number | boolean | null>;
+	}
 ) {
 	const buffer = streamBuffers.get(streamId);
 	if (!buffer) return;
@@ -101,6 +117,9 @@ export function appendToStreamBuffer(
 				name: data.name,
 				input: data.input ?? {},
 				status: 'running',
+				sourceType: data.sourceType,
+				candidates: data.candidates,
+				metadata: data.metadata,
 			});
 		} else {
 			// Mark last matching tool_call as done
@@ -111,6 +130,9 @@ export function appendToStreamBuffer(
 						input: buffer.toolCalls[i].input,
 						status: 'done',
 						outputSummary: data.outputSummary ?? null,
+						sourceType: data.sourceType ?? buffer.toolCalls[i].sourceType,
+						candidates: data.candidates ?? buffer.toolCalls[i].candidates,
+						metadata: data.metadata,
 					};
 					break;
 				}

@@ -55,6 +55,7 @@ export type StreamToolCallDetails = {
 	outputSummary?: string | null;
 	sourceType?: EvidenceSourceType | null;
 	candidates?: ToolEvidenceCandidate[];
+	metadata?: Record<string, string | number | boolean | null>;
 };
 
 type Translate = (key: I18nKey) => string;
@@ -427,6 +428,7 @@ export function applyToolCallUpdateToMessageList(
 				outputSummary: params.details?.outputSummary ?? null,
 				sourceType: params.details?.sourceType ?? null,
 				candidates: params.details?.candidates,
+				metadata: params.details?.metadata,
 			};
 		}
 

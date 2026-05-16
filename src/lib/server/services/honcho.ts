@@ -16,6 +16,7 @@ import {
 	dedupeById,
 	extractSerializedAttachmentBody,
 	rerankHistoricalSections,
+	serializePeerContext,
 	serializeBudgetedAttachments,
 	serializeBudgetedRoleTurns,
 	serializeWorkingSetArtifacts,
@@ -30,7 +31,11 @@ import {
 	type ContextSelectionCandidate,
 } from './chat-turn/context-selection';
 import {
+	deriveBaselineMemoryProfileBudget,
 	deriveCurrentTurnAttachmentBudget,
+	deriveDocumentContextDepthBudget,
+	type DocumentContextDepthBudget,
+	type DocumentContextIntent,
 	deriveExplicitSourceSetBudget,
 	deriveModelContextBudget,
 	deriveSessionHistoryBudget,
@@ -109,6 +114,12 @@ const MIN_RELEVANT_KNOWLEDGE_ARTIFACTS = 6;
 const MAX_RELEVANT_KNOWLEDGE_ARTIFACTS = 64;
 const RELEVANT_KNOWLEDGE_ARTIFACT_TARGET_TOKEN_STEP = 32_768;
 const PROJECT_FOLDER_PROMPT_LABEL_MAX_CHARS = 160;
+const DOCUMENT_TASK_INTENT_RE =
+	/\b(summarize|summarise|summary|compare|extract|review|check|rewrite|revise|edit|analyze|analyse|translate|convert|outline)\b|what\s+does\s+(it|this|that|the\s+[\w\s-]{0,80}?(document|doc|file|pdf|policy|report|brief))\s+say\s+about/i;
+const DOCUMENT_ANSWER_INTENT_RE =
+	/\b(according to|based on|from the|from this|from that|what|when|where|who|why|how|which)\b/i;
+const DOCUMENT_REFERENCE_RE =
+	/\b(attachment|attached|source|document|doc|file|pdf|policy|report|brief|workspace|this|that|it)\b|\/document\b/i;
 
 // Authority note:
 // - Honcho is a semantic mirror/integration layer for sessions, peers, conclusions, and overview text
@@ -133,7 +144,10 @@ function inferContextTraceSourceForSection(
 ): ContextTraceSource {
 	const normalizedTitle = section.title.toLowerCase();
 	if (normalizedTitle.includes('attachment')) return 'attachment';
-	if (normalizedTitle.includes('user memory')) return 'memory';
+	if (
+		normalizedTitle.includes('user memory') ||
+		normalizedTitle.includes('baseline memory profile')
+	) return 'memory';
 	if (normalizedTitle.includes('session')) return 'session';
 	if (normalizedTitle.includes('task')) return 'task_state';
 	if (normalizedTitle.includes('evidence') || section.layer === 'working_set') {
@@ -150,12 +164,21 @@ function buildContextSelectionCandidates(params: {
 	attachmentContext?: BudgetedAttachmentContext | null;
 	carriedForwardAttachmentContext?: BudgetedAttachmentContext | null;
 	projectFolderSiblingPromotion?: ProjectFolderSiblingPromotionContext | null;
+	documentContextIntent?: DocumentContextIntent;
+	documentDepthBudget?: DocumentContextDepthBudget | null;
 	evidenceItems?: Array<{
 		id: string;
 		title: string;
 		pinned: boolean;
 	}>;
 }): ContextSelectionCandidate[] {
+	const documentContextSignalReasons =
+		params.documentDepthBudget && params.documentContextIntent
+			? buildDocumentContextSignalReasons({
+					intent: params.documentContextIntent,
+					budget: params.documentDepthBudget,
+				})
+			: [];
 	return params.sections.map((section) => {
 		const isAttachmentSection = section.title === 'Current Attachments';
 		const isCarriedForwardAttachmentSection = section.title === 'Attached Sources';
@@ -188,25 +211,49 @@ function buildContextSelectionCandidates(params: {
 				: attachmentItems.map((item) => item.title),
 			signalReasons:
 				isAttachmentSection && params.attachmentContext
-					? [`attachment_context:${params.attachmentContext.mode}`]
+					? [
+							`attachment_context:${params.attachmentContext.mode}`,
+							...documentContextSignalReasons,
+						]
 					: isCarriedForwardAttachmentSection &&
 						  params.carriedForwardAttachmentContext
 						? [
 								`attachment_context:${params.carriedForwardAttachmentContext.mode}`,
 								'attached_sources:carried_forward',
+								...documentContextSignalReasons,
 							]
-					: isEvidenceSection && evidenceItems.some((item) => item.pinned)
-						? ['pinned_evidence', 'working_set_context:budgeted']
-					: section.title === 'Honcho Session Context'
-						? ['recent_turn_context:budgeted']
-					: promotedSibling
+						: isEvidenceSection && evidenceItems.some((item) => item.pinned)
 						? [
+								'pinned_evidence',
+								'working_set_context:budgeted',
+								...documentContextSignalReasons,
+							]
+						: isEvidenceSection
+							? documentContextSignalReasons
+							: section.title === 'Honcho Session Context'
+								? ['recent_turn_context:budgeted']
+								: section.title === 'Baseline Memory Profile'
+									? ['honcho_baseline_profile:live']
+									: promotedSibling
+										? [
 								'project_folder_sibling:query_match',
 								`project_folder_sibling_score:${promotedSibling.score}`,
 							]
-					: [],
+										: [],
 		};
 	});
+}
+
+function buildDocumentContextSignalReasons(params: {
+	intent: DocumentContextIntent;
+	budget: DocumentContextDepthBudget;
+}): string[] {
+	return [
+		`document_context_depth:${params.budget.depth}`,
+		`document_context_intent:${params.intent}`,
+		`document_context_per_artifact_chars:${params.budget.perArtifactCharBudget}`,
+		params.budget.partial ? 'document_context_partial:true' : null,
+	].filter((value): value is string => Boolean(value));
 }
 
 function buildCurrentAttachmentSnippetMap(params: {
@@ -237,6 +284,36 @@ function buildProjectFolderPromptSection(label: string | null): PromptContextSec
 		layer: 'session',
 		protected: true,
 	};
+}
+
+function inferDocumentContextIntent(params: {
+	message: string;
+	documentFocused: boolean;
+	hasCurrentAttachments: boolean;
+	hasCarriedForwardAttachments: boolean;
+	hasActiveDocument: boolean;
+}): DocumentContextIntent {
+	const message = params.message.trim();
+	const hasTaskIntent = DOCUMENT_TASK_INTENT_RE.test(message);
+	const hasAnswerIntent = DOCUMENT_ANSWER_INTENT_RE.test(message);
+	const hasDocumentReference = DOCUMENT_REFERENCE_RE.test(message);
+	const explicitDocumentSelection =
+		params.hasCurrentAttachments ||
+		params.hasActiveDocument ||
+		/\/document\b/i.test(message) ||
+		(params.documentFocused && hasDocumentReference) ||
+		(params.hasCarriedForwardAttachments && hasDocumentReference);
+
+	if (explicitDocumentSelection && (hasTaskIntent || hasDocumentReference)) {
+		return 'direct';
+	}
+	if (hasTaskIntent || (params.documentFocused && hasDocumentReference)) {
+		return 'task';
+	}
+	if (hasAnswerIntent) {
+		return 'answer';
+	}
+	return 'reference';
 }
 
 function buildProjectAwarenessPromptSection(
@@ -855,31 +932,6 @@ function sanitizePersonaMemoryText(text: string, userId: string, userDisplayName
 	}
 
 	return sanitized.replace(/\s+/g, ' ').trim();
-}
-
-function serializePersonaMemoryRecordsForPrompt(
-	records: HonchoPersonaMemoryRecord[],
-	userId: string,
-	userDisplayName?: string | null
-): string | null {
-	const seen = new Set<string>();
-	const lines = records
-		.map((record) => sanitizePersonaMemoryText(record.content, userId, userDisplayName))
-		.filter((content) => {
-			const key = content.toLowerCase();
-			if (!content || seen.has(key)) return false;
-			seen.add(key);
-			return true;
-		})
-		.slice(0, 12)
-		.map((content) => `- ${content}`);
-
-	if (lines.length === 0) return null;
-
-	return truncateToTokenBudget(
-		['Scoped user memory from Honcho conclusions:', ...lines].join('\n'),
-		1400
-	);
 }
 
 export async function forgetPersonaMemory(userId: string, conclusionId: string): Promise<boolean> {
@@ -1621,13 +1673,26 @@ export async function buildConstructedContext(params: {
 	]) {
 		promptArtifacts.set(artifact.id, artifact);
 	}
+	const documentContextIntent = inferDocumentContextIntent({
+		message: params.message,
+		documentFocused,
+		hasCurrentAttachments: currentAttachments.length > 0,
+		hasCarriedForwardAttachments: carriedForwardAttachments.length > 0,
+		hasActiveDocument: Boolean(params.activeDocumentArtifactId),
+	});
+	const documentDepthBudget = deriveDocumentContextDepthBudget({
+		contextBudget: modelContextBudget,
+		documentCount: promptArtifacts.size,
+		intent: documentContextIntent,
+	});
 	const artifactSnippets = await getPromptArtifactSnippets({
 		userId: params.userId,
 		artifacts: Array.from(promptArtifacts.values()),
 		query: params.message,
-		perArtifactLimit: documentFocused ? 8 : 2,
-		perArtifactCharBudget: documentFocused ? 12000 : 1400,
-		useFullContent: true,
+		perArtifactLimit: documentDepthBudget.perArtifactLimit,
+		perArtifactCharBudget: documentDepthBudget.perArtifactCharBudget,
+		totalCharBudget: documentDepthBudget.totalBudget,
+		useFullContent: documentDepthBudget.useFullContent,
 	}).catch(() => new Map<string, string>());
 
 	const allTurns = selectRecentRoleTurns(
@@ -1756,14 +1821,8 @@ export async function buildConstructedContext(params: {
 
 	const carriedForwardAttachmentContext =
 		carriedForwardAttachments.length > 0
-			? serializeBudgetedAttachments({
-					artifacts: carriedForwardAttachments,
-					snippets: buildCurrentAttachmentSnippetMap({
-						artifacts: carriedForwardAttachments,
-						snippets: artifactSnippets,
-					}),
-					message: params.message,
-					...deriveExplicitSourceSetBudget({
+			? (() => {
+					const carriedForwardBudget = deriveExplicitSourceSetBudget({
 						contextBudget: modelContextBudget,
 						sourceCount: carriedForwardAttachments.length,
 						minTotalBudget: ATTACHMENT_PROMPT_TOKEN_BUDGET,
@@ -1771,8 +1830,19 @@ export async function buildConstructedContext(params: {
 							documentFocused
 								? ATTACHMENT_TASK_PER_ATTACHMENT_TOKEN_BUDGET
 								: ATTACHMENT_EXCERPT_PER_ATTACHMENT_TOKEN_BUDGET,
-					}),
-				})
+					});
+					return serializeBudgetedAttachments({
+						artifacts: carriedForwardAttachments,
+						snippets: buildCurrentAttachmentSnippetMap({
+							artifacts: carriedForwardAttachments,
+							snippets: artifactSnippets,
+						}),
+						message: params.message,
+						totalBudget: carriedForwardBudget.totalBudget,
+						taskPerAttachmentBudget: carriedForwardBudget.perSourceBudget,
+						excerptPerAttachmentBudget: carriedForwardBudget.perSourceBudget,
+					});
+				})()
 			: null;
 	if (carriedForwardAttachmentContext?.body) {
 		sections.push({
@@ -1793,14 +1863,22 @@ export async function buildConstructedContext(params: {
 				WORKING_SET_OUTPUT_TOKEN_BUDGET
 			),
 		});
+		const retrievedEvidenceBudget = Math.min(
+			evidenceBudget.totalBudget,
+			documentDepthBudget.totalBudget
+		);
+		const retrievedEvidencePerSourceBudget = Math.min(
+			evidenceBudget.perSourceBudget,
+			documentDepthBudget.perArtifactCharBudget
+		);
 		sections.push({
 			title: 'Retrieved Evidence',
 			body: serializeWorkingSetArtifacts({
 				artifacts: selectedEvidence,
 				snippets: artifactSnippets,
-				totalBudget: evidenceBudget.totalBudget,
-				documentBudget: evidenceBudget.perSourceBudget,
-				outputBudget: evidenceBudget.perSourceBudget,
+				totalBudget: retrievedEvidenceBudget,
+				documentBudget: retrievedEvidencePerSourceBudget,
+				outputBudget: retrievedEvidencePerSourceBudget,
 			}),
 			layer: 'working_set',
 			protected: selectedEvidence.some((artifact) => pinnedArtifactIds.has(artifact.id)),
@@ -1827,10 +1905,17 @@ export async function buildConstructedContext(params: {
 	}
 
 	if (peerContext.trim()) {
+		const baselineMemoryProfileBudget = deriveBaselineMemoryProfileBudget({
+			contextBudget: modelContextBudget,
+		});
 		sections.push({
-			title: 'User Memory',
-			body: truncateToTokenBudget(peerContext, 1400),
+			title: 'Baseline Memory Profile',
+			body: truncateToTokenBudget(
+				peerContext,
+				baselineMemoryProfileBudget.totalBudget
+			),
 			layer: 'session',
+			protected: true,
 			llmCompactible: true,
 		});
 	}
@@ -1883,6 +1968,8 @@ export async function buildConstructedContext(params: {
 			attachmentContext,
 			carriedForwardAttachmentContext,
 			projectFolderSiblingPromotion,
+			documentContextIntent,
+			documentDepthBudget,
 			evidenceItems: selectedEvidence.map((artifact) => ({
 				id: artifact.id,
 				title: artifact.name,
@@ -1985,7 +2072,13 @@ export async function getPeerContext(
 
 	try {
 		const response = await resolveWithTimeout(
-			listVisiblePersonaMemoryRecords(userId),
+			Promise.all([getUserPeer(userId), getAssistantPeer(userId)]).then(
+				async ([userPeer, assistantPeer]) =>
+					assistantPeer.context({
+						target: userPeer,
+						includeMostFrequent: true,
+					})
+			),
 			{
 				timeoutMs: Math.max(
 					1,
@@ -1997,8 +2090,11 @@ export async function getPeerContext(
 		);
 
 		let result: string | null = null;
-		if (Array.isArray(response.value)) {
-			result = serializePersonaMemoryRecordsForPrompt(response.value, userId, userDisplayName);
+		if (response.value) {
+			const serialized = serializePeerContext(response.value).trim();
+			result = serialized
+				? sanitizePersonaMemoryText(serialized, userId, userDisplayName)
+				: null;
 		} else if (response.error) {
 			console.error('[HONCHO] getPeerContext failed:', response.error);
 		}
@@ -2008,6 +2104,76 @@ export async function getPeerContext(
 	} catch (err) {
 		console.error('[HONCHO] getPeerContext failed:', err);
 		return null;
+	}
+}
+
+export type HonchoPersonaRecallResult = {
+	status: 'ok' | 'empty' | 'disabled' | 'error';
+	source: 'honcho_peer_chat' | 'none';
+	content: string | null;
+	error?: string;
+};
+
+export async function recallPersonaMemory(params: {
+	userId: string;
+	query: string;
+	userDisplayName?: string | null;
+	timeoutMs?: number;
+}): Promise<HonchoPersonaRecallResult> {
+	if (!isHonchoEnabled()) {
+		return { status: 'disabled', source: 'none', content: null };
+	}
+
+	const query = params.query.trim();
+	if (!query) {
+		return { status: 'empty', source: 'none', content: null };
+	}
+
+	try {
+		const response = await resolveWithTimeout(
+			getUserPeer(params.userId).then((peer) =>
+				peer.chat(query, { reasoningLevel: 'medium' }),
+			),
+			{
+				timeoutMs: Math.max(
+					1,
+					params.timeoutMs ?? getConfig().honchoPersonaContextWaitMs,
+				),
+				label: 'Honcho persona recall',
+				userId: params.userId,
+			},
+		);
+		if (response.error) {
+			console.error('[HONCHO] Persona recall failed:', response.error);
+			return {
+				status: 'error',
+				source: 'none',
+				content: null,
+				error:
+					response.error instanceof Error
+						? response.error.message
+						: 'Honcho persona recall failed',
+			};
+		}
+		const content =
+			typeof response.value === 'string' ? response.value.trim() : '';
+		if (!content) {
+			return { status: 'empty', source: 'honcho_peer_chat', content: null };
+		}
+		return {
+			status: 'ok',
+			source: 'honcho_peer_chat',
+			content,
+		};
+	} catch (error) {
+		console.error('[HONCHO] Persona recall failed:', error);
+		return {
+			status: 'error',
+			source: 'none',
+			content: null,
+			error:
+				error instanceof Error ? error.message : 'Honcho persona recall failed',
+		};
 	}
 }
 

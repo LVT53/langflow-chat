@@ -229,6 +229,226 @@ describe("buildContextSourcesState", () => {
 		);
 	});
 
+	it("exposes an omitted Baseline Memory Profile as reduced memory context", () => {
+		const state = buildContextSourcesState({
+			userId: "user-1",
+			conversationId: "conv-1",
+			contextTraceSections: [
+				{
+					name: "Baseline Memory Profile",
+					source: "memory",
+					body: "",
+					inclusionLevel: "omitted",
+					signalReasons: ["honcho_baseline_profile:live"],
+					protected: true,
+					trimmed: false,
+				},
+			],
+			now: new Date("2026-05-05T10:00:00.000Z"),
+		});
+
+		expect(state.reduced).toBe(true);
+		expect(state.compacted).toBe(false);
+		expect(state.groups).toEqual([
+			expect.objectContaining({
+				kind: "memory",
+				state: "inferred",
+				totalCount: 1,
+				items: [
+					expect.objectContaining({
+						id: "memory:baseline-memory-profile",
+						title: "Baseline Memory Profile",
+						state: "inferred",
+						sourceType: "memory",
+						reason: "honcho_baseline_profile:live",
+						reduced: true,
+						compacted: false,
+						metadata: {
+							inclusionLevel: "omitted",
+							omitted: true,
+							protected: true,
+							trimmed: false,
+						},
+					}),
+				],
+			}),
+		]);
+	});
+
+	it("exposes memory_context applied limits and omitted counts when tool audit metadata is available", () => {
+		const state = buildContextSourcesState({
+			userId: "user-1",
+			conversationId: "conv-1",
+			toolCalls: [
+				{
+					name: "memory_context",
+					input: { mode: "history", query: "bike" },
+					status: "done",
+					sourceType: "memory",
+					metadata: {
+						mode: "history",
+						appliedMaxHistoryConversations: 3,
+						omittedConversationCount: 2,
+						appliedMaxMessages: 10,
+						omittedMessageCount: 4,
+					},
+				},
+			],
+			now: new Date("2026-05-05T10:00:00.000Z"),
+		});
+
+		expect(state.reduced).toBe(true);
+		expect(state.groups).toEqual([
+			expect.objectContaining({
+				kind: "memory",
+				items: [
+					expect.objectContaining({
+						id: "memory:memory_context:history",
+						title: "memory_context history",
+						sourceType: "memory",
+						reason: "memory_context_tool",
+						reduced: true,
+						metadata: {
+							mode: "history",
+							appliedMaxHistoryConversations: 3,
+							omittedConversationCount: 2,
+							appliedMaxMessages: 10,
+							omittedMessageCount: 4,
+						},
+					}),
+				],
+			}),
+		]);
+	});
+
+	it("marks selected document evidence as reduced when its trace section was truncated", () => {
+		const contextDebug: ContextDebugState = {
+			activeTaskId: null,
+			activeTaskObjective: null,
+			taskLocked: false,
+			routingStage: "deterministic",
+			routingConfidence: 1,
+			verificationStatus: "skipped",
+			selectedEvidence: [
+				{
+					artifactId: "doc-1",
+					name: "Planning brief",
+					artifactType: "document",
+					sourceType: "document",
+					role: "selected",
+					origin: "system",
+					confidence: 0.9,
+					reason: "matched request",
+				},
+			],
+			selectedEvidenceBySource: [{ sourceType: "document", count: 1 }],
+			pinnedEvidence: [],
+			excludedEvidence: [],
+			honcho: null,
+		};
+
+		const state = buildContextSourcesState({
+			userId: "user-1",
+			conversationId: "conv-1",
+			contextDebug,
+			contextTraceSections: [
+				{
+					name: "Retrieved Evidence",
+					source: "document",
+					body: "truncated excerpt",
+					inclusionLevel: "legacy_truncated",
+					itemIds: ["doc-1"],
+					itemTitles: ["Planning brief"],
+					signalReasons: ["working_set_context:budgeted"],
+					protected: false,
+					trimmed: true,
+				},
+			],
+			now: new Date("2026-05-05T10:00:00.000Z"),
+		});
+
+		expect(state.reduced).toBe(true);
+		expect(state.groups).toEqual([
+			expect.objectContaining({
+				kind: "task_evidence",
+				items: [
+					expect.objectContaining({
+						artifactId: "doc-1",
+						title: "Planning brief",
+						reduced: true,
+						metadata: {
+							inclusionLevel: "legacy_truncated",
+							omitted: false,
+							trimmed: true,
+						},
+					}),
+				],
+			}),
+		]);
+	});
+
+	it("does not mark many available memories or documents as reduced without omission evidence", () => {
+		const contextDebug: ContextDebugState = {
+			activeTaskId: null,
+			activeTaskObjective: null,
+			taskLocked: false,
+			routingStage: "deterministic",
+			routingConfidence: 1,
+			verificationStatus: "skipped",
+			selectedEvidence: Array.from({ length: 12 }, (_, index) => ({
+				artifactId: `doc-${index}`,
+				name: `Document ${index}`,
+				artifactType: "document" as const,
+				sourceType: "document" as const,
+				role: "selected" as const,
+				origin: "system" as const,
+				confidence: 0.8,
+				reason: "matched request",
+			})),
+			selectedEvidenceBySource: [{ sourceType: "document", count: 12 }],
+			pinnedEvidence: [],
+			excludedEvidence: [],
+			honcho: {
+				source: "live",
+				waitedMs: 20,
+				queuePendingWorkUnits: 0,
+				queueInProgressWorkUnits: 0,
+				fallbackReason: null,
+				snapshotCreatedAt: null,
+			},
+		};
+
+		const state = buildContextSourcesState({
+			userId: "user-1",
+			conversationId: "conv-1",
+			contextDebug,
+			activeWorkingSet: Array.from({ length: 24 }, (_, index) =>
+				artifact(`work-${index}`, `Available document ${index}`),
+			),
+			toolCalls: [
+				{
+					name: "memory_context",
+					input: { mode: "history", query: "bike" },
+					status: "done",
+					sourceType: "memory",
+					metadata: {
+						mode: "history",
+						appliedMaxHistoryConversations: 8,
+						omittedConversationCount: 0,
+					},
+				},
+			],
+			now: new Date("2026-05-05T10:00:00.000Z"),
+		});
+
+		expect(state.reduced).toBe(false);
+		expect(state.groups.flatMap((group) => group.items)).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ reduced: false, compacted: false }),
+			]),
+		);
+	});
+
 	it("summarizes active, pinned, excluded, reduced, and compacted context sources", () => {
 		const contextStatus: ConversationContextStatus = {
 			conversationId: "conv-1",

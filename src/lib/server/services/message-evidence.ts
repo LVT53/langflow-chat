@@ -10,19 +10,19 @@ import type {
 	TaskState,
 	ToolCallEntry,
 	ToolEvidenceCandidate,
-} from '$lib/types';
-import type { LegacyContextTraceSectionInput } from './chat-turn/context-trace';
-import { getArtifactsForUser } from './knowledge';
-import { canUseTeiReranker, rerankItems } from './tei-reranker';
-import { resolveArtifactFamilyKeys } from './evidence-family';
-import { RERANK_CONFIDENCE_MIN } from '$lib/server/utils/constants';
-import { clipText } from '$lib/server/utils/text';
+} from "$lib/types";
+import type { LegacyContextTraceSectionInput } from "./chat-turn/context-trace";
+import { getArtifactsForUser } from "./knowledge";
+import { canUseTeiReranker, rerankItems } from "./tei-reranker";
+import { resolveArtifactFamilyKeys } from "./evidence-family";
+import { RERANK_CONFIDENCE_MIN } from "$lib/server/utils/constants";
+import { clipText } from "$lib/server/utils/text";
 
 const GROUP_LABELS: Record<EvidenceSourceType, string> = {
-	web: 'Web Search',
-	document: 'Retrieved Documents',
-	memory: 'Memory',
-	tool: 'Tool Outputs',
+	web: "Web Search",
+	document: "Retrieved Documents",
+	memory: "Memory",
+	tool: "Tool Outputs",
 };
 
 const GROUP_ORDER: Record<EvidenceSourceType, number> = {
@@ -32,8 +32,21 @@ const GROUP_ORDER: Record<EvidenceSourceType, number> = {
 	memory: 3,
 };
 
+function memoryContextMetadata(
+	tool: ToolCallEntry,
+): Record<string, string | number | boolean | null> | undefined {
+	if (
+		tool.name !== "memory_context" ||
+		tool.status !== "done" ||
+		(tool.sourceType !== "memory" && tool.sourceType != null)
+	) {
+		return undefined;
+	}
+	return tool.metadata;
+}
+
 function sanitizeUrl(value: unknown): string | null {
-	if (typeof value !== 'string' || !value.trim()) return null;
+	if (typeof value !== "string" || !value.trim()) return null;
 	try {
 		return new URL(value).toString();
 	} catch {
@@ -41,15 +54,17 @@ function sanitizeUrl(value: unknown): string | null {
 	}
 }
 
-function uniqueByCanonicalId<T extends { canonicalId?: string; id: string }>(items: T[]): T[] {
+function uniqueByCanonicalId<T extends { canonicalId?: string; id: string }>(
+	items: T[],
+): T[] {
 	return Array.from(
-		new Map(items.map((item) => [item.canonicalId ?? item.id, item])).values()
+		new Map(items.map((item) => [item.canonicalId ?? item.id, item])).values(),
 	);
 }
 
 function canonicalKeyForCandidate(
 	sourceType: EvidenceSourceType,
-	candidate: { id: string; title: string; url?: string | null }
+	candidate: { id: string; title: string; url?: string | null },
 ): string {
 	const sanitizedUrl = sanitizeUrl(candidate.url);
 	if (sanitizedUrl) return `${sourceType}:url:${sanitizedUrl}`;
@@ -58,7 +73,7 @@ function canonicalKeyForCandidate(
 
 function mergeChannels(
 	left: EvidenceChannel[] | undefined,
-	right: EvidenceChannel[] | undefined
+	right: EvidenceChannel[] | undefined,
 ): EvidenceChannel[] {
 	return Array.from(new Set([...(left ?? []), ...(right ?? [])]));
 }
@@ -73,51 +88,52 @@ function buildMemoryGroup(params: {
 
 	if (contextStatus?.taskStateApplied) {
 		items.push({
-			id: 'task-state',
-			title: 'Task state',
-			sourceType: 'memory',
-			status: 'reference',
-			description: 'Structured objective, constraints, decisions, and next steps carried into this turn.',
+			id: "task-state",
+			title: "Task state",
+			sourceType: "memory",
+			status: "reference",
+			description:
+				"Structured objective, constraints, decisions, and next steps carried into this turn.",
 		});
 	}
 
 	if ((contextStatus?.recentTurnCount ?? 0) > 0) {
 		items.push({
-			id: 'recent-turns',
+			id: "recent-turns",
 			title: `Recent turns (${contextStatus?.recentTurnCount ?? 0})`,
-			sourceType: 'memory',
-			status: 'reference',
-			description: 'Recent dialogue used for continuity.',
+			sourceType: "memory",
+			status: "reference",
+			description: "Recent dialogue used for continuity.",
 		});
 	}
 
-	if (contextStatus?.layersUsed.includes('session')) {
+	if (contextStatus?.layersUsed.includes("session")) {
 		items.push({
-			id: 'session-memory',
-			title: 'Session memory',
-			sourceType: 'memory',
-			status: 'reference',
+			id: "session-memory",
+			title: "Session memory",
+			sourceType: "memory",
+			status: "reference",
 			description: contextStatus.summary
 				? clipText(contextStatus.summary, 180)
-				: 'Session summary and recalled context were included.',
+				: "Session summary and recalled context were included.",
 		});
 	}
 
-	if (contextStatus?.layersUsed.includes('capsule')) {
+	if (contextStatus?.layersUsed.includes("capsule")) {
 		items.push({
-			id: 'workflow-memory',
-			title: 'Prior workflows',
-			sourceType: 'memory',
-			status: 'reference',
-			description: 'Relevant workflow capsules were included for continuity.',
+			id: "workflow-memory",
+			title: "Prior workflows",
+			sourceType: "memory",
+			status: "reference",
+			description: "Relevant workflow capsules were included for continuity.",
 		});
 	}
 
 	for (const section of params.contextTraceSections ?? []) {
 		if (
-			section.name !== 'Project Folder Sibling Context' ||
-			section.source !== 'memory' ||
-			section.inclusionLevel === 'omitted'
+			section.name !== "Project Folder Sibling Context" ||
+			section.source !== "memory" ||
+			section.inclusionLevel === "omitted"
 		) {
 			continue;
 		}
@@ -128,36 +144,41 @@ function buildMemoryGroup(params: {
 			id: itemId,
 			canonicalId: `memory:${itemId}`,
 			title: itemTitle,
-			sourceType: 'memory',
-			status: 'reference',
-			description: 'Promoted from the same Project Folder for this query.',
-			reason: section.signalReasons?.join(', ') || null,
-			channels: ['memory'],
+			sourceType: "memory",
+			status: "reference",
+			description: "Promoted from the same Project Folder for this query.",
+			reason: section.signalReasons?.join(", ") || null,
+			channels: ["memory"],
 		});
 	}
 
 	const memoryToolCandidates = uniqueByCanonicalId(
 		(params.toolCalls ?? []).flatMap((tool) =>
-			(tool.candidates ?? [])
-				.filter((candidate) => candidate.sourceType === 'memory')
-				.map((candidate) => ({
-					id: candidate.id,
-					canonicalId: canonicalKeyForCandidate('memory', candidate),
-					title: candidate.title,
-					sourceType: 'memory' as const,
-					status: 'reference' as const,
-					description: candidate.snippet ? clipText(candidate.snippet, 180) : null,
-					url: sanitizeUrl(candidate.url),
-					channels: ['memory'] as EvidenceChannel[],
-				}))
-		)
+			tool.status === "done"
+				? (tool.candidates ?? [])
+						.filter((candidate) => candidate.sourceType === "memory")
+						.map((candidate) => ({
+							id: candidate.id,
+							canonicalId: canonicalKeyForCandidate("memory", candidate),
+							title: candidate.title,
+							sourceType: "memory" as const,
+							status: "reference" as const,
+							description: candidate.snippet
+								? clipText(candidate.snippet, 180)
+								: null,
+							url: sanitizeUrl(candidate.url),
+							channels: ["memory"] as EvidenceChannel[],
+							metadata: memoryContextMetadata(tool),
+						}))
+				: [],
+		),
 	);
 	items.push(...memoryToolCandidates);
 
 	if (items.length === 0) return null;
 
 	return {
-		sourceType: 'memory',
+		sourceType: "memory",
 		label: GROUP_LABELS.memory,
 		reranked: false,
 		items,
@@ -171,28 +192,37 @@ async function buildArtifactGroups(params: {
 }): Promise<MessageEvidenceGroup[]> {
 	const selectedEvidence = params.contextDebug?.selectedEvidence ?? [];
 	const currentAttachments = params.currentAttachments ?? [];
-	if (selectedEvidence.length === 0 && currentAttachments.length === 0) return [];
+	if (selectedEvidence.length === 0 && currentAttachments.length === 0)
+		return [];
 
 	const artifactIds = Array.from(
 		new Set([
 			...selectedEvidence.map((evidence) => evidence.artifactId),
 			...currentAttachments.map((artifact) => artifact.id),
-		])
+		]),
 	);
 	const artifactRows =
 		params.userId && artifactIds.length > 0
 			? await getArtifactsForUser(params.userId, artifactIds).catch(() => [])
 			: [];
-	const artifactMap = new Map(artifactRows.map((artifact) => [artifact.id, artifact]));
+	const artifactMap = new Map(
+		artifactRows.map((artifact) => [artifact.id, artifact]),
+	);
 	const familyKeys =
 		params.userId && artifactRows.length > 0
-			? await resolveArtifactFamilyKeys(params.userId, artifactRows).catch(() => new Map<string, string>())
+			? await resolveArtifactFamilyKeys(params.userId, artifactRows).catch(
+					() => new Map<string, string>(),
+				)
 			: new Map<string, string>();
 
-	const grouped = new Map<EvidenceSourceType, Map<string, MessageEvidenceItem>>();
+	const grouped = new Map<
+		EvidenceSourceType,
+		Map<string, MessageEvidenceItem>
+	>();
 
 	const upsertItem = (item: MessageEvidenceItem) => {
-		const byCanonical = grouped.get(item.sourceType) ?? new Map<string, MessageEvidenceItem>();
+		const byCanonical =
+			grouped.get(item.sourceType) ?? new Map<string, MessageEvidenceItem>();
 		const canonicalId = item.canonicalId ?? item.id;
 		const existing = byCanonical.get(canonicalId);
 		if (!existing) {
@@ -204,36 +234,43 @@ async function buildArtifactGroups(params: {
 		byCanonical.set(canonicalId, {
 			...existing,
 			id: existing.id,
-			title: existing.title.length >= item.title.length ? existing.title : item.title,
+			title:
+				existing.title.length >= item.title.length
+					? existing.title
+					: item.title,
 			status:
-				existing.status === 'selected' || item.status === 'selected'
-					? 'selected'
-					: existing.status === 'reference' || item.status === 'reference'
-						? 'reference'
-						: 'rejected',
+				existing.status === "selected" || item.status === "selected"
+					? "selected"
+					: existing.status === "reference" || item.status === "reference"
+						? "reference"
+						: "rejected",
 			description: existing.description ?? item.description ?? null,
 			artifactId: existing.artifactId ?? item.artifactId ?? null,
-			confidence: Math.max(existing.confidence ?? 0, item.confidence ?? 0) || undefined,
+			confidence:
+				Math.max(existing.confidence ?? 0, item.confidence ?? 0) || undefined,
 			reason: existing.reason ?? item.reason ?? null,
-			currentTurnAttachment: Boolean(existing.currentTurnAttachment && item.currentTurnAttachment),
+			currentTurnAttachment: Boolean(
+				existing.currentTurnAttachment && item.currentTurnAttachment,
+			),
 			channels: mergeChannels(existing.channels, item.channels),
 		});
 	};
 
 	for (const attachment of currentAttachments) {
 		const artifact = artifactMap.get(attachment.id);
-		const canonicalId = familyKeys.get(attachment.id) ?? `document:${attachment.id}`;
-		const channels: EvidenceChannel[] = ['attached'];
+		const canonicalId =
+			familyKeys.get(attachment.id) ?? `document:${attachment.id}`;
+		const channels: EvidenceChannel[] = ["attached"];
 		upsertItem({
 			id: attachment.id,
 			canonicalId,
 			title: attachment.name,
-			sourceType: 'document',
-			status: 'selected',
+			sourceType: "document",
+			status: "selected",
 			artifactId: attachment.id,
 			description: attachment.summary
 				? `Included automatically for this turn. ${clipText(attachment.summary, 180)}`
-				: 'Included automatically for this turn.',
+				: "Included automatically for this turn.",
 			currentTurnAttachment: true,
 			channels,
 		});
@@ -246,22 +283,23 @@ async function buildArtifactGroups(params: {
 		const artifact = artifactMap.get(evidence.artifactId);
 		const canonicalId =
 			artifact && params.userId
-				? familyKeys.get(evidence.artifactId) ?? `${evidence.sourceType}:${evidence.artifactId}`
+				? (familyKeys.get(evidence.artifactId) ??
+					`${evidence.sourceType}:${evidence.artifactId}`)
 				: `${evidence.sourceType}:${evidence.artifactId}`;
 		const baseChannels: EvidenceChannel[] =
-			evidence.sourceType === 'document'
-				? ['retrieved']
-				: evidence.sourceType === 'tool'
-					? ['tool']
-					: evidence.sourceType === 'web'
-						? ['web']
-						: ['memory'];
+			evidence.sourceType === "document"
+				? ["retrieved"]
+				: evidence.sourceType === "tool"
+					? ["tool"]
+					: evidence.sourceType === "web"
+						? ["web"]
+						: ["memory"];
 		upsertItem({
 			id: evidence.artifactId,
 			canonicalId,
 			title: evidence.name,
 			sourceType: evidence.sourceType,
-			status: 'selected',
+			status: "selected",
 			artifactId: evidence.artifactId,
 			confidence: evidence.confidence,
 			reason: evidence.reason,
@@ -275,17 +313,19 @@ async function buildArtifactGroups(params: {
 		.map(([sourceType, items]) => ({
 			sourceType,
 			label: GROUP_LABELS[sourceType],
-			reranked: params.contextDebug?.routingStage === 'evidence_rerank',
+			reranked: params.contextDebug?.routingStage === "evidence_rerank",
 			confidence: params.contextDebug?.routingConfidence,
 			items: Array.from(items.values())
 				.map((item) => ({
 					...item,
 					currentTurnAttachment:
-						item.currentTurnAttachment === true && (item.channels?.length ?? 0) === 1,
+						item.currentTurnAttachment === true &&
+						(item.channels?.length ?? 0) === 1,
 				}))
 				.sort(
 					(a, b) =>
-						(b.confidence ?? 0) - (a.confidence ?? 0) || a.title.localeCompare(b.title)
+						(b.confidence ?? 0) - (a.confidence ?? 0) ||
+						a.title.localeCompare(b.title),
 				),
 		}))
 		.filter((group) => group.items.length > 0);
@@ -294,10 +334,14 @@ async function buildArtifactGroups(params: {
 function getToolCallSourceType(tool: ToolCallEntry): EvidenceSourceType {
 	if (tool.sourceType) return tool.sourceType;
 	const toolName = tool.name.toLowerCase();
-	if (toolName.includes('search') || toolName.includes('tavily') || toolName.includes('searx')) {
-		return 'web';
+	if (
+		toolName.includes("search") ||
+		toolName.includes("tavily") ||
+		toolName.includes("searx")
+	) {
+		return "web";
 	}
-	return 'tool';
+	return "tool";
 }
 
 async function buildRerankedToolGroup(params: {
@@ -315,12 +359,14 @@ async function buildRerankedToolGroup(params: {
 					canonicalId: canonicalKeyForCandidate(params.sourceType, candidate),
 					title: candidate.title,
 					sourceType: params.sourceType,
-					status: 'reference' as const,
+					status: "reference" as const,
 					description: candidate.snippet ?? null,
 					url: sanitizeUrl(candidate.url),
-					channels: [params.sourceType === 'web' ? 'web' : 'tool'] as EvidenceChannel[],
-				}))
-		)
+					channels: [
+						params.sourceType === "web" ? "web" : "tool",
+					] as EvidenceChannel[],
+				})),
+		),
 	);
 
 	const referenceItems =
@@ -332,9 +378,13 @@ async function buildRerankedToolGroup(params: {
 						canonicalId: `${params.sourceType}:tool:${tool.name}-${index}`,
 						title: tool.name,
 						sourceType: params.sourceType,
-						status: 'reference' as const,
-						description: tool.outputSummary ? clipText(tool.outputSummary, 180) : null,
-						channels: [params.sourceType === 'web' ? 'web' : 'tool'] as EvidenceChannel[],
+						status: "reference" as const,
+						description: tool.outputSummary
+							? clipText(tool.outputSummary, 180)
+							: null,
+						channels: [
+							params.sourceType === "web" ? "web" : "tool",
+						] as EvidenceChannel[],
 					}))
 			: [];
 
@@ -347,14 +397,22 @@ async function buildRerankedToolGroup(params: {
 			sourceType: params.sourceType,
 			label: GROUP_LABELS[params.sourceType],
 			reranked: false,
-			items: candidateItems.length > 0 ? candidateItems.map((item) => ({ ...item, status: 'selected' })) : referenceItems,
+			items:
+				candidateItems.length > 0
+					? candidateItems.map((item) => ({ ...item, status: "selected" }))
+					: referenceItems,
 		};
 	}
 
 	// Adaptive selection: web search often returns 10–20 results; keeping only 3
 	// discards too much signal before the reranker even runs.
-	const defaultKeepCount = Math.min(candidateItems.length, Math.max(3, Math.ceil(candidateItems.length / 2)));
-	let selectedIds = new Set(candidateItems.slice(0, defaultKeepCount).map((item) => item.id));
+	const defaultKeepCount = Math.min(
+		candidateItems.length,
+		Math.max(3, Math.ceil(candidateItems.length / 2)),
+	);
+	let selectedIds = new Set(
+		candidateItems.slice(0, defaultKeepCount).map((item) => item.id),
+	);
 	let confidence = 0;
 	let reranked = false;
 
@@ -370,7 +428,7 @@ async function buildRerankedToolGroup(params: {
 			if (params.message?.trim()) {
 				rerankQueryParts.push(params.message.trim());
 			}
-			const rerankQuery = rerankQueryParts.join('\n\n');
+			const rerankQuery = rerankQueryParts.join("\n\n");
 
 			const rerankedResponse = await rerankItems({
 				query: rerankQuery,
@@ -382,7 +440,7 @@ async function buildRerankedToolGroup(params: {
 						candidate.url ?? null,
 					]
 						.filter((value): value is string => Boolean(value))
-						.join('\n'),
+						.join("\n"),
 				maxTexts: Math.min(16, candidateItems.length),
 			});
 
@@ -391,14 +449,17 @@ async function buildRerankedToolGroup(params: {
 				// absolute confidence often discards good relative rankings.
 				// Use a lower floor for web evidence so the reranker’s ordering
 				// is trusted when it produces any meaningful spread.
-				const confidenceFloor = params.sourceType === 'web' ? 40 : RERANK_CONFIDENCE_MIN;
+				const confidenceFloor =
+					params.sourceType === "web" ? 40 : RERANK_CONFIDENCE_MIN;
 				if (rerankedResponse.confidence >= confidenceFloor) {
 					const rerankKeepCount = Math.min(
 						rerankedResponse.items.length,
-						Math.max(3, Math.ceil(rerankedResponse.items.length / 2))
+						Math.max(3, Math.ceil(rerankedResponse.items.length / 2)),
 					);
 					const nextSelectedIds = new Set(
-						rerankedResponse.items.slice(0, rerankKeepCount).map(({ item }) => item.id)
+						rerankedResponse.items
+							.slice(0, rerankKeepCount)
+							.map(({ item }) => item.id),
 					);
 					if (nextSelectedIds.size > 0) {
 						selectedIds = nextSelectedIds;
@@ -408,19 +469,24 @@ async function buildRerankedToolGroup(params: {
 				}
 			}
 		} catch (error) {
-			console.error('[MESSAGE_EVIDENCE] Tool reranker failed:', error);
+			console.error("[MESSAGE_EVIDENCE] Tool reranker failed:", error);
 		}
 	}
 
 	const items = candidateItems
 		.map((candidate) => ({
 			...candidate,
-			status: selectedIds.has(candidate.id) ? ('selected' as const) : ('rejected' as const),
-			confidence: selectedIds.has(candidate.id) ? confidence || undefined : undefined,
+			status: selectedIds.has(candidate.id)
+				? ("selected" as const)
+				: ("rejected" as const),
+			confidence: selectedIds.has(candidate.id)
+				? confidence || undefined
+				: undefined,
 		}))
 		.sort((a, b) => {
-			if (a.status !== b.status) return a.status === 'selected' ? -1 : 1;
-			if ((b.confidence ?? 0) !== (a.confidence ?? 0)) return (b.confidence ?? 0) - (a.confidence ?? 0);
+			if (a.status !== b.status) return a.status === "selected" ? -1 : 1;
+			if ((b.confidence ?? 0) !== (a.confidence ?? 0))
+				return (b.confidence ?? 0) - (a.confidence ?? 0);
 			return a.title.localeCompare(b.title);
 		});
 
@@ -444,6 +510,7 @@ export async function buildAssistantEvidenceSummary(params: {
 	currentAttachments?: ArtifactSummary[];
 }): Promise<MessageEvidenceSummary | null> {
 	const toolCalls = params.toolCalls ?? [];
+	const completedToolCalls = toolCalls.filter((tool) => tool.status === "done");
 	const groups = [
 		...(await buildArtifactGroups({
 			userId: params.userId,
@@ -453,28 +520,35 @@ export async function buildAssistantEvidenceSummary(params: {
 		buildMemoryGroup({
 			contextStatus: params.contextStatus,
 			contextTraceSections: params.contextTraceSections,
-			toolCalls,
+			toolCalls: completedToolCalls,
 		}),
 		await buildRerankedToolGroup({
-			sourceType: 'web',
+			sourceType: "web",
 			message: params.message,
 			taskState: params.taskState,
-			toolCalls,
+			toolCalls: completedToolCalls,
 		}),
 		await buildRerankedToolGroup({
-			sourceType: 'tool',
+			sourceType: "tool",
 			message: params.message,
 			taskState: params.taskState,
-			toolCalls,
+			toolCalls: completedToolCalls,
 		}),
-	].filter((group): group is MessageEvidenceGroup => Boolean(group) && group.items.length > 0);
+	].filter(
+		(group): group is MessageEvidenceGroup =>
+			Boolean(group) && group.items.length > 0,
+	);
 
 	if (groups.length === 0) return null;
 
-	groups.sort((a, b) => GROUP_ORDER[a.sourceType] - GROUP_ORDER[b.sourceType] || a.label.localeCompare(b.label));
+	groups.sort(
+		(a, b) =>
+			GROUP_ORDER[a.sourceType] - GROUP_ORDER[b.sourceType] ||
+			a.label.localeCompare(b.label),
+	);
 
 	return {
-		structuredWebSearch: groups.some((group) => group.sourceType === 'web'),
+		structuredWebSearch: groups.some((group) => group.sourceType === "web"),
 		groups,
 	};
 }

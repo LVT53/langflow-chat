@@ -24,7 +24,10 @@ export type ModelContextBudget = {
 };
 
 export type CurrentTurnAttachmentBudgetInput = {
-	contextBudget: Pick<ModelContextBudget, "coreBudget" | "targetConstructedContext">;
+	contextBudget: Pick<
+		ModelContextBudget,
+		"coreBudget" | "targetConstructedContext"
+	>;
 	attachmentCount: number;
 	minTotalBudget?: number;
 	minPerAttachmentBudget?: number;
@@ -37,7 +40,10 @@ export type CurrentTurnAttachmentBudget = {
 };
 
 export type ExplicitSourceSetBudgetInput = {
-	contextBudget: Pick<ModelContextBudget, "supportBudget" | "targetConstructedContext">;
+	contextBudget: Pick<
+		ModelContextBudget,
+		"supportBudget" | "targetConstructedContext"
+	>;
 	sourceCount: number;
 	minTotalBudget?: number;
 	minPerSourceBudget?: number;
@@ -46,6 +52,29 @@ export type ExplicitSourceSetBudgetInput = {
 export type ExplicitSourceSetBudget = {
 	totalBudget: number;
 	perSourceBudget: number;
+};
+
+export type DocumentContextIntent = "reference" | "answer" | "task" | "direct";
+
+export type DocumentContextDepth = "reference" | "excerpt" | "task";
+
+export type DocumentContextDepthBudgetInput = {
+	contextBudget: Pick<
+		ModelContextBudget,
+		"supportBudget" | "coreBudget" | "targetConstructedContext"
+	>;
+	documentCount: number;
+	intent: DocumentContextIntent;
+	minPerDocumentBudget?: number;
+};
+
+export type DocumentContextDepthBudget = {
+	depth: DocumentContextDepth;
+	totalBudget: number;
+	perArtifactLimit: number;
+	perArtifactCharBudget: number;
+	useFullContent: boolean;
+	partial: boolean;
 };
 
 export type SessionHistoryBudgetInput = {
@@ -59,6 +88,16 @@ export type SessionHistoryBudget = {
 	recentTurnCount: number;
 };
 
+export type BaselineMemoryProfileBudgetInput = {
+	contextBudget: Pick<ModelContextBudget, "targetConstructedContext">;
+	minTotalBudget?: number;
+	maxTotalBudget?: number;
+};
+
+export type BaselineMemoryProfileBudget = {
+	totalBudget: number;
+};
+
 const MIN_MODEL_CONTEXT_TOKENS = 1_000;
 const DEFAULT_MAX_MODEL_CONTEXT_TOKENS = 262_144;
 const TARGET_CONTEXT_RATIO = 0.9;
@@ -66,9 +105,22 @@ const COMPACTION_THRESHOLD_RATIO = 0.8;
 const RESERVED_CONTEXT_RATIO = 0.1;
 const CORE_CONTEXT_RATIO = 0.5;
 const SUPPORT_CONTEXT_RATIO = 0.35;
+const DOCUMENT_REFERENCE_TOTAL_RATIO = 0.18;
+const DOCUMENT_EXCERPT_TOTAL_RATIO = 0.45;
+const DOCUMENT_TASK_TOTAL_RATIO = 0.85;
+const DOCUMENT_DIRECT_CORE_RATIO = 0.65;
+const DOCUMENT_REFERENCE_MAX_PER_ARTIFACT_CHARS = 1_400;
+const DOCUMENT_EXCERPT_MIN_PER_ARTIFACT_CHARS = 4_000;
+const DOCUMENT_EXCERPT_MAX_PER_ARTIFACT_CHARS = 18_000;
+const DOCUMENT_TASK_MIN_PER_ARTIFACT_CHARS = 12_000;
+const DOCUMENT_TASK_MAX_PER_ARTIFACT_CHARS = 100_000;
+const DOCUMENT_FULL_CONTENT_MIN_CHARS = 20_000;
 const SESSION_HISTORY_TARGET_CONTEXT_RATIO = 0.65;
 const SESSION_HISTORY_TURN_TOKEN_TARGET = 4_000;
 const SESSION_HISTORY_MAX_RECENT_TURNS = 32;
+const BASELINE_MEMORY_PROFILE_TARGET_CONTEXT_RATIO = 0.02;
+const BASELINE_MEMORY_PROFILE_MIN_TOTAL_BUDGET = 8_000;
+const BASELINE_MEMORY_PROFILE_MAX_TOTAL_BUDGET = 32_000;
 
 export function deriveModelContextBudget(
 	input: ModelContextBudgetInput,
@@ -78,9 +130,7 @@ export function deriveModelContextBudget(
 		DEFAULT_MAX_MODEL_CONTEXT_TOKENS,
 	);
 	const configuredMaxTokens =
-		input.maxTokens == null
-			? null
-			: Math.max(1, Math.floor(input.maxTokens));
+		input.maxTokens == null ? null : Math.max(1, Math.floor(input.maxTokens));
 	const explicitTargetConstructedContext =
 		typeof input.targetConstructedContext === "number" &&
 		Number.isFinite(input.targetConstructedContext) &&
@@ -126,7 +176,10 @@ export function deriveModelContextBudget(
 	const reservedBudget = Math.floor(
 		targetConstructedContext * RESERVED_CONTEXT_RATIO,
 	);
-	const allocatableBudget = Math.max(0, targetConstructedContext - reservedBudget);
+	const allocatableBudget = Math.max(
+		0,
+		targetConstructedContext - reservedBudget,
+	);
 	const coreBudget = Math.floor(allocatableBudget * CORE_CONTEXT_RATIO);
 	const supportBudget = Math.floor(allocatableBudget * SUPPORT_CONTEXT_RATIO);
 	const awarenessBudget = Math.max(
@@ -143,11 +196,76 @@ export function deriveModelContextBudget(
 		configuredMaxTokens,
 		effectiveMaxTokens,
 		outputReserveClamped:
-			configuredMaxTokens !== null && effectiveMaxTokens !== configuredMaxTokens,
+			configuredMaxTokens !== null &&
+			effectiveMaxTokens !== configuredMaxTokens,
 		reservedBudget,
 		coreBudget,
 		supportBudget,
 		awarenessBudget,
+	};
+}
+
+export function deriveDocumentContextDepthBudget(
+	input: DocumentContextDepthBudgetInput,
+): DocumentContextDepthBudget {
+	const documentCount = Math.max(1, Math.floor(input.documentCount));
+	const minPerDocumentBudget = Math.max(
+		80,
+		Math.floor(input.minPerDocumentBudget ?? 80),
+	);
+	const depth = resolveDocumentDepth(input.intent);
+	const budgetRatio =
+		depth === "reference"
+			? DOCUMENT_REFERENCE_TOTAL_RATIO
+			: depth === "excerpt"
+				? DOCUMENT_EXCERPT_TOTAL_RATIO
+				: DOCUMENT_TASK_TOTAL_RATIO;
+	const supportScaledBudget = Math.floor(
+		input.contextBudget.supportBudget * budgetRatio,
+	);
+	const directCoreBudget =
+		input.intent === "direct"
+			? Math.floor(input.contextBudget.coreBudget * DOCUMENT_DIRECT_CORE_RATIO)
+			: 0;
+	const totalBudget = Math.min(
+		input.contextBudget.targetConstructedContext,
+		Math.max(
+			minPerDocumentBudget * documentCount,
+			supportScaledBudget,
+			directCoreBudget,
+		),
+	);
+	const fairShareBudget = Math.max(
+		minPerDocumentBudget,
+		Math.floor(totalBudget / documentCount),
+	);
+	const perArtifactCharBudget =
+		depth === "reference"
+			? Math.min(
+					DOCUMENT_REFERENCE_MAX_PER_ARTIFACT_CHARS,
+					Math.max(minPerDocumentBudget, fairShareBudget),
+				)
+			: depth === "excerpt"
+				? Math.min(
+						DOCUMENT_EXCERPT_MAX_PER_ARTIFACT_CHARS,
+						Math.max(DOCUMENT_EXCERPT_MIN_PER_ARTIFACT_CHARS, fairShareBudget),
+					)
+				: Math.min(
+						DOCUMENT_TASK_MAX_PER_ARTIFACT_CHARS,
+						Math.max(DOCUMENT_TASK_MIN_PER_ARTIFACT_CHARS, fairShareBudget),
+					);
+
+	return {
+		depth,
+		totalBudget,
+		perArtifactLimit: depth === "reference" ? 2 : depth === "excerpt" ? 4 : 8,
+		perArtifactCharBudget,
+		useFullContent:
+			depth === "task" &&
+			perArtifactCharBudget >= DOCUMENT_FULL_CONTENT_MIN_CHARS,
+		partial:
+			depth === "task" &&
+			perArtifactCharBudget < DOCUMENT_TASK_MAX_PER_ARTIFACT_CHARS,
 	};
 }
 
@@ -191,7 +309,10 @@ export function deriveExplicitSourceSetBudget(
 	);
 	const totalBudget = Math.min(
 		input.contextBudget.targetConstructedContext,
-		Math.max(minTotalBudget, Math.floor(input.contextBudget.supportBudget * 0.85)),
+		Math.max(
+			minTotalBudget,
+			Math.floor(input.contextBudget.supportBudget * 0.85),
+		),
 	);
 	const perSourceBudget = Math.max(
 		minPerSourceBudget,
@@ -234,6 +355,41 @@ export function deriveSessionHistoryBudget(
 		totalBudget,
 		recentTurnCount,
 	};
+}
+
+export function deriveBaselineMemoryProfileBudget(
+	input: BaselineMemoryProfileBudgetInput,
+): BaselineMemoryProfileBudget {
+	const minTotalBudget = Math.max(
+		0,
+		Math.floor(
+			input.minTotalBudget ?? BASELINE_MEMORY_PROFILE_MIN_TOTAL_BUDGET,
+		),
+	);
+	const maxTotalBudget = Math.max(
+		minTotalBudget,
+		Math.floor(
+			input.maxTotalBudget ?? BASELINE_MEMORY_PROFILE_MAX_TOTAL_BUDGET,
+		),
+	);
+	const modelScaledBudget = Math.max(
+		minTotalBudget,
+		Math.floor(
+			input.contextBudget.targetConstructedContext *
+				BASELINE_MEMORY_PROFILE_TARGET_CONTEXT_RATIO,
+		),
+	);
+	return {
+		totalBudget: Math.min(modelScaledBudget, maxTotalBudget),
+	};
+}
+
+function resolveDocumentDepth(
+	intent: DocumentContextIntent,
+): DocumentContextDepth {
+	if (intent === "reference") return "reference";
+	if (intent === "answer") return "excerpt";
+	return "task";
 }
 
 function normalizePositiveInteger(

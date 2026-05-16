@@ -11,6 +11,7 @@ export type StreamToolCallDetails = {
 	outputSummary?: string | null;
 	sourceType?: EvidenceSourceType | null;
 	candidates?: ToolEvidenceCandidate[];
+	metadata?: Record<string, string | number | boolean | null>;
 };
 
 type StreamToolCallPayload = {
@@ -19,6 +20,7 @@ type StreamToolCallPayload = {
 	outputSummary?: string;
 	sourceType?: string;
 	candidates?: unknown;
+	metadata?: unknown;
 };
 
 function normalizeEvidenceSourceType(
@@ -77,6 +79,26 @@ function normalizeToolCandidates(
 		);
 }
 
+function normalizeToolMetadata(
+	value: unknown,
+): Record<string, string | number | boolean | null> | undefined {
+	if (!value || typeof value !== "object" || Array.isArray(value)) {
+		return undefined;
+	}
+	const metadata: Record<string, string | number | boolean | null> = {};
+	for (const [key, entry] of Object.entries(value)) {
+		if (
+			typeof entry === "string" ||
+			typeof entry === "number" ||
+			typeof entry === "boolean" ||
+			entry === null
+		) {
+			metadata[key] = entry;
+		}
+	}
+	return Object.keys(metadata).length > 0 ? metadata : undefined;
+}
+
 /**
  * Process tool call marker sequences within a chunk, emitting parsed tool call
  * events and returning the chunk with markers stripped.
@@ -106,6 +128,7 @@ export function processToolCallMarkers(
 		try {
 			const parsed = JSON.parse(payload) as StreamToolCallPayload;
 			const sourceType = normalizeEvidenceSourceType(parsed.sourceType);
+			const metadata = normalizeToolMetadata(parsed.metadata);
 			emit(parsed.name ?? "tool", {}, "done", {
 				outputSummary:
 					typeof parsed.outputSummary === "string"
@@ -113,6 +136,7 @@ export function processToolCallMarkers(
 						: null,
 				sourceType,
 				candidates: normalizeToolCandidates(parsed.candidates, sourceType),
+				...(metadata ? { metadata } : {}),
 			});
 		} catch {
 			emit("tool", {}, "done");

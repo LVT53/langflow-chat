@@ -78,6 +78,7 @@ export type ServerStreamSegment =
 			outputSummary?: string | null;
 			sourceType?: EvidenceSourceType | null;
 			candidates?: ToolEvidenceCandidate[];
+			metadata?: Record<string, string | number | boolean | null>;
 	  };
 
 export const URL_LIST_TOOL_RECOVERY_APPENDIX = [
@@ -123,6 +124,7 @@ export function createServerChunkRuntime({
 		input: Record<string, unknown>,
 		status: "running" | "done",
 		outputSummary?: string | null,
+		details?: ImportedToolDetails,
 	) => void;
 	thinkingBatchMin?: number;
 	skillControlEnabled?: boolean;
@@ -275,7 +277,7 @@ export function createServerChunkRuntime({
 
 		flushInlineThinkingBuffer();
 		flushPendingThinking();
-		if (onToolCall) onToolCall(name, input, status, details?.outputSummary);
+		if (onToolCall) onToolCall(name, input, status, details?.outputSummary, details);
 		enqueueChunk(
 			`event: tool_call\ndata: ${JSON.stringify({
 				name,
@@ -284,6 +286,7 @@ export function createServerChunkRuntime({
 				outputSummary: details?.outputSummary,
 				sourceType: details?.sourceType,
 				candidates: details?.candidates,
+				metadata: details?.metadata,
 			})}\n\n`,
 		);
 
@@ -312,6 +315,7 @@ export function createServerChunkRuntime({
 					segment.outputSummary = details?.outputSummary ?? null;
 					segment.sourceType = details?.sourceType ?? null;
 					segment.candidates = details?.candidates;
+					segment.metadata = details?.metadata;
 					break;
 				}
 			}
@@ -326,6 +330,7 @@ export function createServerChunkRuntime({
 					outputSummary: details?.outputSummary ?? null,
 					sourceType: details?.sourceType ?? null,
 					candidates: details?.candidates,
+					metadata: details?.metadata,
 				};
 				break;
 			}

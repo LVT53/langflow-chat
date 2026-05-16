@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+	appendToStreamBuffer,
 	clearStreamBuffer,
 	getOrCreateStreamBuffer,
+	getStreamBuffer,
 	registerActiveChatStream,
 	requestActiveChatStreamStop,
 	unregisterActiveChatStream,
@@ -80,5 +82,53 @@ describe('active chat streams registry', () => {
 
 		clearStreamBuffer('stream-buffer');
 		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it('stores completed tool-call source metadata for reconnect replay', () => {
+		getOrCreateStreamBuffer('stream-tool-buffer', 'search this');
+
+		appendToStreamBuffer('stream-tool-buffer', 'tool_call', {
+			name: 'web_search',
+			input: { query: 'OpenAI news' },
+			status: 'running',
+		});
+		appendToStreamBuffer('stream-tool-buffer', 'tool_call', {
+			name: 'web_search',
+			status: 'done',
+			outputSummary: 'Found current sources',
+			sourceType: 'web',
+			candidates: [
+				{
+					id: 'src-1',
+					title: 'OpenAI',
+					url: 'https://openai.com/',
+					snippet: 'Official source',
+					sourceType: 'web',
+				},
+			],
+			metadata: { resultCount: 1 },
+		});
+
+		expect(getStreamBuffer('stream-tool-buffer')?.toolCalls).toEqual([
+			{
+				name: 'web_search',
+				input: { query: 'OpenAI news' },
+				status: 'done',
+				outputSummary: 'Found current sources',
+				sourceType: 'web',
+				candidates: [
+					{
+						id: 'src-1',
+						title: 'OpenAI',
+						url: 'https://openai.com/',
+						snippet: 'Official source',
+						sourceType: 'web',
+					},
+				],
+				metadata: { resultCount: 1 },
+			},
+		]);
+
+		clearStreamBuffer('stream-tool-buffer');
 	});
 });

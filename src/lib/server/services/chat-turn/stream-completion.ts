@@ -387,6 +387,9 @@ export async function completeStreamTurn(
 					[])
 				: (getPersistedArtifactSummaries(latestActiveWorkingSet) ?? []),
 			projectReference,
+			contextTraceSections:
+				latestContextTraceSections ?? initialContextTraceSections ?? [],
+			toolCalls: toolCallRecords.filter((tool) => tool.status === "done"),
 		});
 		const activeWorkingSet = persistedTurnState
 			? persistedTurnState.activeWorkingSet

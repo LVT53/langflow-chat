@@ -37,6 +37,7 @@ export interface StreamCallbacks {
 			outputSummary?: string | null;
 			sourceType?: import('$lib/types').EvidenceSourceType | null;
 			candidates?: import('$lib/types').ToolEvidenceCandidate[];
+			metadata?: Record<string, string | number | boolean | null>;
 		}
 	) => void;
 }
@@ -319,6 +320,7 @@ export function streamChat(
 								outputSummary: parsed.outputSummary,
 								sourceType: parsed.sourceType,
 								candidates: parsed.candidates,
+								metadata: parsed.metadata,
 							});
 						} catch {
 							/* noop */

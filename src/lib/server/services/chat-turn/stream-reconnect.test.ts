@@ -10,6 +10,15 @@ interface ReconnectBuffer {
 		input: Record<string, unknown>;
 		status: "running" | "done";
 		outputSummary?: string | null;
+		sourceType?: "web" | "document" | "memory" | "tool" | null;
+		candidates?: Array<{
+			id: string;
+			title: string;
+			url?: string | null;
+			snippet?: string | null;
+			sourceType: "web" | "document" | "memory" | "tool";
+		}>;
+		metadata?: Record<string, string | number | boolean | null>;
 	}>;
 }
 
@@ -139,6 +148,60 @@ describe("doReconnect", () => {
 			"test-stream",
 			expect.any(Function),
 		);
+	});
+
+	it("replays buffered tool_call details with live SSE metadata fields", () => {
+		getStreamBuffer.mockReturnValue(
+			makeBuffer({
+				toolCalls: [
+					{
+						name: "web_search",
+						input: { query: "OpenAI news" },
+						status: "done",
+						outputSummary: "Found current sources",
+						sourceType: "web",
+						candidates: [
+							{
+								id: "src-1",
+								title: "OpenAI",
+								url: "https://openai.com/",
+								snippet: "Official source",
+								sourceType: "web",
+							},
+						],
+						metadata: { resultCount: 1 },
+					},
+				],
+			}),
+		);
+
+		callDoReconnect();
+
+		const toolCallChunk = enqueueChunk.mock.calls
+			.map((call: string[]) => call[0])
+			.find((chunk: string) => chunk.startsWith("event: tool_call"));
+		expect(toolCallChunk).toBeDefined();
+		const payload = JSON.parse(
+			toolCallChunk?.match(/^data: (.*)$/m)?.[1] ?? "{}",
+		);
+
+		expect(payload).toEqual({
+			name: "web_search",
+			input: { query: "OpenAI news" },
+			status: "done",
+			outputSummary: "Found current sources",
+			sourceType: "web",
+			candidates: [
+				{
+					id: "src-1",
+					title: "OpenAI",
+					url: "https://openai.com/",
+					snippet: "Official source",
+					sourceType: "web",
+				},
+			],
+			metadata: { resultCount: 1 },
+		});
 	});
 
 	it("forwards live stream chunks to enqueueChunk", () => {
