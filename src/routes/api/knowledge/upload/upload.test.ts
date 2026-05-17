@@ -368,6 +368,54 @@ describe('POST /api/knowledge/upload', () => {
 		expect(data.error).toMatch(/BODY_SIZE_LIMIT/i);
 	});
 
+	it('rejects oversized multipart bodies before parsing them', async () => {
+		const formData = vi.fn();
+		const event = {
+			request: {
+				formData,
+				headers: {
+					get: vi.fn().mockReturnValue(String(102 * 1024 * 1024)),
+				},
+			},
+			locals: { user: { id: 'user-1', email: 'test@example.com' } },
+			params: {},
+			url: new URL('http://localhost/api/knowledge/upload'),
+			route: { id: '/api/knowledge/upload' },
+		} as any;
+
+		const response = await POST(event);
+		const data = await response.json();
+
+		expect(response.status).toBe(413);
+		expect(data.code).toBe('upload_body_too_large');
+		expect(data.error).toMatch(/BODY_SIZE_LIMIT/i);
+		expect(formData).not.toHaveBeenCalled();
+		expect(mockSaveUploadedArtifact).not.toHaveBeenCalled();
+	});
+
+	it('returns an explicit upload aborted error when multipart parsing is interrupted', async () => {
+		const event = {
+			request: {
+				formData: vi.fn().mockRejectedValue(new Error('aborted')),
+				headers: {
+					get: vi.fn().mockReturnValue('19021532'),
+				},
+			},
+			locals: { user: { id: 'user-1', email: 'test@example.com' } },
+			params: {},
+			url: new URL('http://localhost/api/knowledge/upload'),
+			route: { id: '/api/knowledge/upload' },
+		} as any;
+
+		const response = await POST(event);
+		const data = await response.json();
+
+		expect(response.status).toBe(400);
+		expect(data.code).toBe('upload_aborted');
+		expect(data.error).toMatch(/interrupted/i);
+		expect(mockSaveUploadedArtifact).not.toHaveBeenCalled();
+	});
+
 	it('uploads a conversation-scoped attachment', async () => {
 		const artifact = {
 			id: 'artifact-1',

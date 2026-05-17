@@ -6,7 +6,7 @@ import type {
 	KnowledgeUploadResponse,
 	WorkCapsule,
 } from '$lib/types';
-import { requestJson, requestVoid } from './http';
+import { requestJson, requestVoid, type FetchLike } from './http';
 import { _unwrapList } from './_utils';
 
 export type KnowledgeLibrary = {
@@ -41,6 +41,28 @@ type KnowledgeDeleteResult = {
 	message?: string;
 	error?: string;
 };
+
+const UPLOAD_INTERRUPTED_MESSAGE =
+	'Upload was interrupted before it completed. Try again; if it keeps happening, the server or reverse proxy may be closing large uploads before AlfyAI receives them.';
+
+function errorName(error: unknown): string {
+	return typeof error === 'object' && error !== null && 'name' in error && typeof (error as { name?: unknown }).name === 'string'
+		? (error as { name: string }).name
+		: '';
+}
+
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
+function isUploadTransportAbort(error: unknown): boolean {
+	const name = errorName(error);
+	const message = errorMessage(error);
+	return (
+		name === 'AbortError' ||
+		/\baborted\b|operation was aborted|failed to fetch|load failed|networkerror|network request failed|fetch failed/i.test(message)
+	);
+}
 
 export async function fetchKnowledgeLibrary(): Promise<KnowledgeLibrary> {
 	const payload = await requestJson<Partial<KnowledgeLibrary>>(
@@ -119,7 +141,8 @@ export async function deleteKnowledgeArtifact(id: string): Promise<KnowledgeDele
 
 export async function uploadKnowledgeAttachment(
 	file: File,
-	conversationId?: string | null
+	conversationId?: string | null,
+	fetchImpl: FetchLike = fetch
 ): Promise<KnowledgeUploadResponse> {
 	const formData = new FormData();
 	formData.append('file', file);
@@ -127,14 +150,22 @@ export async function uploadKnowledgeAttachment(
 		formData.append('conversationId', conversationId);
 	}
 
-	return requestJson<KnowledgeUploadResponse>(
-		'/api/knowledge/upload',
-		{
-			method: 'POST',
-			body: formData,
-		},
-		'Failed to upload attachment.'
-	);
+	try {
+		return await requestJson<KnowledgeUploadResponse>(
+			'/api/knowledge/upload',
+			{
+				method: 'POST',
+				body: formData,
+			},
+			'Failed to upload attachment.',
+			fetchImpl
+		);
+	} catch (error) {
+		if (isUploadTransportAbort(error)) {
+			throw new Error(UPLOAD_INTERRUPTED_MESSAGE);
+		}
+		throw error;
+	}
 }
 
 export async function recordDocumentWorkspaceOpen(artifactId: string): Promise<void> {

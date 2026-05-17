@@ -14,35 +14,105 @@ import {
 import { getConversation } from '$lib/server/services/conversations';
 import { getConfig } from '$lib/server/config-store';
 
+const MULTIPART_OVERHEAD_ALLOWANCE_BYTES = 1024 * 1024;
 const MAX_FILE_SIZE_MB = () => Math.round(getConfig().maxFileUploadSize / (1024 * 1024));
+
+function parseContentLength(value: string | null): number | null {
+	if (!value) return null;
+	const parsed = Number(value);
+	return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function uploadBodyLimitMessage() {
+	return `Upload exceeded the server request body size limit of ${MAX_FILE_SIZE_MB()}MB. Try uploading a smaller file or increase BODY_SIZE_LIMIT for this deployment.`;
+}
+
+function uploadInterruptedMessage() {
+	return 'Upload was interrupted before the server received the complete file. Try again; if it keeps happening, the server or reverse proxy may be closing large uploads before AlfyAI receives them.';
+}
+
+function errorStatus(error: unknown): number | null {
+	if (typeof error !== 'object' || error === null || !('status' in error)) return null;
+	const status = Number((error as { status?: unknown }).status);
+	return Number.isInteger(status) ? status : null;
+}
+
+function errorName(error: unknown): string | null {
+	if (typeof error !== 'object' || error === null || !('name' in error)) return null;
+	const name = (error as { name?: unknown }).name;
+	return typeof name === 'string' ? name : null;
+}
+
+function isBodySizeLimitError(error: unknown, message: string) {
+	return (
+		errorStatus(error) === 413 ||
+		/body size exceeded|content-length of .* exceeds limit|payload too large/i.test(message)
+	);
+}
+
+function isUploadAbortError(error: unknown, message: string) {
+	return errorName(error) === 'AbortError' || /\baborted\b|operation was aborted|client prematurely closed/i.test(message);
+}
 
 export const POST: RequestHandler = async (event) => {
 	requireAuth(event);
 	const user = event.locals.user!;
 	const traceId = createAttachmentTraceId('upload');
+	const contentLength = parseContentLength(event.request.headers.get('content-length'));
+	const maxBodySize = getConfig().maxFileUploadSize + MULTIPART_OVERHEAD_ALLOWANCE_BYTES;
+
+	if (contentLength !== null && contentLength > maxBodySize) {
+		console.warn('[KNOWLEDGE] Multipart upload exceeded app body allowance before parsing:', {
+			userId: user.id,
+			contentLength,
+			maxBodySize,
+		});
+		return json(
+			{
+				error: uploadBodyLimitMessage(),
+				code: 'upload_body_too_large',
+				errorKey: 'knowledge.uploadBodyTooLarge',
+			},
+			{ status: 413 }
+		);
+	}
 
 	let formData: FormData;
 	try {
 		formData = await event.request.formData();
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		const contentLength = event.request.headers.get('content-length');
 		console.error('[KNOWLEDGE] Failed to parse multipart upload:', {
 			userId: user.id,
 			contentLength,
+			name: errorName(error),
+			status: errorStatus(error),
 			message,
 		});
 
-		if (message.toLowerCase().includes('request body size exceeded')) {
+		if (isBodySizeLimitError(error, message)) {
 			return json(
 				{
-					error: `Upload exceeded the server request body size limit of ${MAX_FILE_SIZE_MB()}MB. Try uploading a smaller file or increase BODY_SIZE_LIMIT for this deployment.`,
+					error: uploadBodyLimitMessage(),
+					code: 'upload_body_too_large',
+					errorKey: 'knowledge.uploadBodyTooLarge',
 				},
 				{ status: 413 }
 			);
 		}
 
-		return json({ error: 'Invalid form data' }, { status: 400 });
+		if (isUploadAbortError(error, message)) {
+			return json(
+				{
+					error: uploadInterruptedMessage(),
+					code: 'upload_aborted',
+					errorKey: 'knowledge.uploadAborted',
+				},
+				{ status: 400 }
+			);
+		}
+
+		return json({ error: 'Invalid form data', code: 'invalid_form_data' }, { status: 400 });
 	}
 
 	const file = formData.get('file');

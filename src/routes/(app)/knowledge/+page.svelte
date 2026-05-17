@@ -273,9 +273,11 @@
 		await refreshKnowledgeLibrary();
 
 		if (failures.length > 0) {
+			const failureDetails = failures.slice(0, 3).join(' ');
+			const remainingFailures = failures.length > 3 ? ` ${failures.length - 3} more failed.` : '';
 			manageError = failures.length === files.length
-				? `Failed to upload ${files.length} file${files.length === 1 ? '' : 's'}.`
-				: `${failures.length} file${failures.length === 1 ? '' : 's'} failed to upload.`;
+				? `Failed to upload ${files.length} file${files.length === 1 ? '' : 's'}: ${failureDetails}${remainingFailures}`
+				: `${failures.length} file${failures.length === 1 ? '' : 's'} failed to upload: ${failureDetails}${remainingFailures}`;
 		}
 	}
 
