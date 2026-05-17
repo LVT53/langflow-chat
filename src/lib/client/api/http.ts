@@ -3,13 +3,15 @@ export type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promis
 export class ApiError extends Error {
 	readonly code?: string;
 	readonly errorKey?: string;
+	readonly fieldErrors?: Record<string, string>;
 	readonly status: number;
 
-	constructor(message: string, options: { code?: string; errorKey?: string; status: number }) {
+	constructor(message: string, options: { code?: string; errorKey?: string; fieldErrors?: Record<string, string>; status: number }) {
 		super(message);
 		this.name = 'ApiError';
 		this.code = options.code;
 		this.errorKey = options.errorKey;
+		this.fieldErrors = options.fieldErrors;
 		this.status = options.status;
 	}
 }
@@ -29,7 +31,7 @@ function performRequest(
 async function readErrorPayload(
 	response: Response,
 	fallback: string
-): Promise<{ message: string; code?: string; errorKey?: string }> {
+): Promise<{ message: string; code?: string; errorKey?: string; fieldErrors?: Record<string, string> }> {
 	const text = await response.text().catch(() => '');
 	if (!text) return { message: fallback };
 
@@ -43,10 +45,15 @@ async function readErrorPayload(
 			const errorKey = typeof parsed.errorKey === 'string' && parsed.errorKey.trim()
 				? parsed.errorKey
 				: undefined;
+			const fieldErrors = isRecord(parsed.fieldErrors)
+				? Object.fromEntries(
+						Object.entries(parsed.fieldErrors).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+					)
+				: undefined;
 			if (typeof message === 'string' && message.trim()) {
-				return { message, code, errorKey };
+				return { message, code, errorKey, fieldErrors };
 			}
-			if (code || errorKey) return { message: fallback, code, errorKey };
+			if (code || errorKey || fieldErrors) return { message: fallback, code, errorKey, fieldErrors };
 		}
 	} catch {
 		// Fall back to raw text below.
@@ -67,6 +74,7 @@ export async function requestJson<T>(
 		throw new ApiError(error.message, {
 			code: error.code,
 			errorKey: error.errorKey,
+			fieldErrors: error.fieldErrors,
 			status: response.status,
 		});
 	}
@@ -90,6 +98,7 @@ export async function requestVoid(
 		throw new ApiError(error.message, {
 			code: error.code,
 			errorKey: error.errorKey,
+			fieldErrors: error.fieldErrors,
 			status: response.status,
 		});
 	}

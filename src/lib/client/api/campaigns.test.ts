@@ -14,6 +14,7 @@ import {
 	seedFirstRunCampaign,
 	updateAdminCampaign,
 } from './campaigns';
+import { ApiError } from './http';
 
 describe('campaign client API', () => {
 	it('wraps the admin campaign authoring contract', async () => {
@@ -197,5 +198,28 @@ describe('campaign client API', () => {
 				}),
 			],
 		]);
+	});
+
+	it('preserves publish validation field errors', async () => {
+		const fetchImpl = vi.fn().mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					error: 'Campaign is not ready to publish.',
+					fieldErrors: {
+						'slides.slide-1.desktopCropAssetId': 'Desktop crop asset is required.',
+					},
+				}),
+				{ status: 400, headers: { 'Content-Type': 'application/json' } },
+			),
+		);
+
+		await expect(publishAdminCampaign('campaign-1', fetchImpl)).rejects.toMatchObject({
+			name: 'ApiError',
+			message: 'Campaign is not ready to publish.',
+			status: 400,
+			fieldErrors: {
+				'slides.slide-1.desktopCropAssetId': 'Desktop crop asset is required.',
+			},
+		} satisfies Partial<ApiError>);
 	});
 });

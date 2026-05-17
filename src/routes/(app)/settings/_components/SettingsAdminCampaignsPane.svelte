@@ -26,6 +26,7 @@
 		type CampaignAssetVariant,
 		type CampaignAssetCropGeometry,
 	} from '$lib/client/api/campaign-assets';
+	import { ApiError } from '$lib/client/api/http';
 	import { t } from '$lib/i18n';
 
 	type EditableSlide = CampaignSlide & {
@@ -178,6 +179,10 @@
 		successMessage = '';
 	}
 
+	function validationErrorsFromFieldErrors(fieldErrors: Record<string, string>): CampaignValidationIssue[] {
+		return Object.entries(fieldErrors).map(([path, message]) => ({ path, message }));
+	}
+
 	async function loadCampaigns(preferredId: string | null = selectedCampaignId) {
 		loading = true;
 		errorMessage = '';
@@ -290,16 +295,23 @@
 		}));
 	}
 
+	function campaignPayload() {
+		if (!draft) return null;
+		return {
+			name: draft.name.trim() || null,
+			type: draft.type,
+			releaseVersion: draft.releaseVersion.trim() || null,
+			slides: slidePayload(),
+		};
+	}
+
 	async function saveDraft() {
 		if (!draft || !isDraftEditable) return;
 		saving = true;
 		try {
-			const campaign = await updateAdminCampaign(draft.id, {
-				name: draft.name.trim() || null,
-				type: draft.type,
-				releaseVersion: draft.releaseVersion.trim() || null,
-				slides: slidePayload(),
-			});
+			const payload = campaignPayload();
+			if (!payload) return;
+			const campaign = await updateAdminCampaign(draft.id, payload);
 			draft = draftFromCampaign({ ...campaign, validationErrors: campaign.validationErrors ?? draft.validationErrors });
 			campaigns = campaigns.map((item) => (item.id === campaign.id ? { ...item, ...campaign } : item));
 			showSuccess($t('admin.campaigns.messages.saved'));
@@ -346,11 +358,17 @@
 		if (!draft || !isDraftEditable) return;
 		actionLoading = true;
 		try {
-			const campaign = await publishAdminCampaign(draft.id);
-			draft = draftFromCampaign(campaign);
+			const payload = campaignPayload();
+			if (!payload) return;
+			const saved = await updateAdminCampaign(draft.id, payload);
+			const campaign = await publishAdminCampaign(saved.id);
+			draft = draftFromCampaign({ ...campaign, validationErrors: campaign.validationErrors ?? [] });
 			campaigns = campaigns.map((item) => (item.id === campaign.id ? { ...item, ...campaign } : item));
 			showSuccess($t('admin.campaigns.messages.published'));
 		} catch (error) {
+			if (error instanceof ApiError && error.fieldErrors && draft) {
+				draft.validationErrors = validationErrorsFromFieldErrors(error.fieldErrors);
+			}
 			showError(error, $t('admin.campaigns.errors.publish'));
 		} finally {
 			actionLoading = false;

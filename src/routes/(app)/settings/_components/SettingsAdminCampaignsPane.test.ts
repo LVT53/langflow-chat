@@ -24,14 +24,17 @@ import {
 	deleteAdminCampaignDraft,
 	fetchAdminCampaign,
 	fetchAdminCampaigns,
+	publishAdminCampaign,
 	updateAdminCampaign,
 } from '$lib/client/api/campaigns';
 import { uploadCampaignAssetSource } from '$lib/client/api/campaign-assets';
+import { ApiError } from '$lib/client/api/http';
 
 const mockArchiveAdminCampaign = archiveAdminCampaign as ReturnType<typeof vi.fn>;
 const mockDeleteAdminCampaignDraft = deleteAdminCampaignDraft as ReturnType<typeof vi.fn>;
 const mockFetchAdminCampaigns = fetchAdminCampaigns as ReturnType<typeof vi.fn>;
 const mockFetchAdminCampaign = fetchAdminCampaign as ReturnType<typeof vi.fn>;
+const mockPublishAdminCampaign = publishAdminCampaign as ReturnType<typeof vi.fn>;
 const mockUpdateAdminCampaign = updateAdminCampaign as ReturnType<typeof vi.fn>;
 const mockUploadCampaignAssetSource = uploadCampaignAssetSource as ReturnType<typeof vi.fn>;
 
@@ -100,6 +103,7 @@ describe('SettingsAdminCampaignsPane', () => {
 		}));
 		mockDeleteAdminCampaignDraft.mockResolvedValue(undefined);
 		mockArchiveAdminCampaign.mockResolvedValue({ id: 'campaign-1', status: 'archived' });
+		mockPublishAdminCampaign.mockResolvedValue({ id: 'campaign-1', status: 'published', slides: [] });
 		vi.spyOn(window, 'confirm').mockReturnValue(true);
 	});
 
@@ -236,5 +240,50 @@ describe('SettingsAdminCampaignsPane', () => {
 
 		expect(mockUploadCampaignAssetSource).toHaveBeenCalled();
 		expect(screen.getByRole('dialog', { name: 'Crop campaign screenshot' })).toBeInTheDocument();
+	});
+
+	it('saves current draft edits before publishing the campaign', async () => {
+		render(SettingsAdminCampaignsPane);
+
+		await waitFor(() => {
+			expect(screen.getByRole('button', { name: /Welcome tour/ })).toBeInTheDocument();
+		});
+
+		await fireEvent.input(screen.getByLabelText('Name'), { target: { value: 'Updated welcome tour' } });
+		await fireEvent.click(screen.getByRole('button', { name: 'Publish' }));
+
+		await waitFor(() => {
+			expect(mockPublishAdminCampaign).toHaveBeenCalledWith('campaign-1');
+		});
+		expect(mockUpdateAdminCampaign).toHaveBeenCalledWith(
+			'campaign-1',
+			expect.objectContaining({ name: 'Updated welcome tour' }),
+		);
+		expect(mockUpdateAdminCampaign.mock.invocationCallOrder[0]).toBeLessThan(
+			mockPublishAdminCampaign.mock.invocationCallOrder[0],
+		);
+	});
+
+	it('shows publish validation field errors in the checklist', async () => {
+		mockPublishAdminCampaign.mockRejectedValue(
+			new ApiError('Campaign is not ready to publish.', {
+				status: 400,
+				fieldErrors: {
+					'slides.slide-standard.desktopCropAssetId': 'Desktop crop asset is required.',
+				},
+			}),
+		);
+		render(SettingsAdminCampaignsPane);
+
+		await waitFor(() => {
+			expect(screen.getByRole('button', { name: /Welcome tour/ })).toBeInTheDocument();
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Publish' }));
+
+		await waitFor(() => {
+			expect(screen.getByText('Desktop crop asset is required.')).toBeInTheDocument();
+		});
+		expect(screen.getByText('Campaign is not ready to publish.')).toBeInTheDocument();
 	});
 });
