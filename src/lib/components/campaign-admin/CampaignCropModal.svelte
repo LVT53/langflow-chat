@@ -31,7 +31,7 @@
 		onCancel?: () => void;
 	} = $props();
 
-	const FRAME_WIDTH = 520;
+	const FRAME_LONG_EDGE = 520;
 	const MIN_ZOOM = 1;
 	const MAX_ZOOM = 3;
 
@@ -55,7 +55,8 @@
 	let dragStartPanX = 0;
 	let dragStartPanY = 0;
 
-	let frameHeight = $derived(Math.round(FRAME_WIDTH / ratio));
+	let frameWidth = $derived(ratio >= 1 ? FRAME_LONG_EDGE : Math.round(FRAME_LONG_EDGE * ratio));
+	let frameHeight = $derived(ratio >= 1 ? Math.round(FRAME_LONG_EDGE / ratio) : FRAME_LONG_EDGE);
 	let dialogTitle = $derived(title ?? $t('campaignCrop.title'));
 	let cropMetadata = $derived(
 		variant === 'desktop' ? $t('campaignCrop.desktopMetadata') : $t('campaignCrop.mobileMetadata'),
@@ -65,7 +66,7 @@
 	let finalOutputHeight = $derived(outputHeight ?? Math.round(finalOutputWidth / ratio));
 	let baseScale = $derived(
 		naturalWidth > 0 && naturalHeight > 0
-			? Math.max(FRAME_WIDTH / naturalWidth, frameHeight / naturalHeight)
+			? Math.max(frameWidth / naturalWidth, frameHeight / naturalHeight)
 			: 1,
 	);
 	let displayWidth = $derived(naturalWidth * baseScale * zoom);
@@ -93,11 +94,11 @@
 
 	function currentCrop(): CampaignAssetCropGeometry {
 		const scale = baseScale * zoom || 1;
-		const left = FRAME_WIDTH / 2 + panX - displayWidth / 2;
+		const left = frameWidth / 2 + panX - displayWidth / 2;
 		const top = frameHeight / 2 + panY - displayHeight / 2;
 		const x = clampCrop((0 - left) / scale, 0, naturalWidth);
 		const y = clampCrop((0 - top) / scale, 0, naturalHeight);
-		const width = clampCrop(FRAME_WIDTH / scale, 0, naturalWidth - x);
+		const width = clampCrop(frameWidth / scale, 0, naturalWidth - x);
 		const height = clampCrop(frameHeight / scale, 0, naturalHeight - y);
 
 		return {
@@ -223,19 +224,17 @@
 
 	onMount(() => {
 		previousFocus = document.activeElement as HTMLElement;
-		document.body.style.overflow = 'hidden';
 		setTimeout(() => dialogRef?.focus(), 0);
 	});
 
 	onDestroy(() => {
-		document.body.style.overflow = '';
 		previousFocus?.focus();
 	});
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-sm sm:items-center sm:p-md" transition:fade={{ duration: 120 }}>
+<div class="fixed inset-0 z-50 flex h-[100dvh] items-start justify-center overflow-y-auto overscroll-contain p-sm sm:items-center sm:p-md" transition:fade={{ duration: 120 }}>
 	<button
 		type="button"
 		class="absolute inset-0 cursor-pointer bg-surface-page opacity-80 backdrop-blur-sm"
@@ -249,7 +248,7 @@
 		aria-modal="true"
 		aria-labelledby="campaign-crop-title"
 		tabindex="-1"
-		class="relative my-sm flex max-h-[calc(100dvh-1rem)] w-full max-w-[680px] flex-col gap-md overflow-y-auto rounded-lg border border-border bg-surface-page p-md shadow-lg outline-none sm:my-md sm:p-lg"
+		class="relative my-sm flex max-h-[calc(100dvh-1rem)] w-full max-w-[920px] flex-col gap-md overflow-y-auto rounded-lg border border-border bg-surface-page p-md shadow-lg outline-none sm:my-md sm:max-h-[calc(100dvh-2rem)]"
 		transition:scale={{ duration: 120, start: 0.96 }}
 	>
 		<div class="flex items-start justify-between gap-md">
@@ -269,11 +268,11 @@
 			</button>
 		</div>
 
-		<div class="grid min-h-0 gap-md md:grid-cols-[minmax(0,1fr)_132px]">
+		<div class="grid min-h-0 gap-md md:grid-cols-[minmax(0,1fr)_152px]">
 			<div class="min-w-0">
 				<div
 					class="crop-frame relative mx-auto overflow-hidden rounded-md border border-border bg-surface-overlay"
-					style={`width: min(100%, ${FRAME_WIDTH}px); aspect-ratio: ${ratio}; --crop-ratio: ${ratio}; cursor: ${isDragging ? 'grabbing' : 'grab'};`}
+					style={`width: min(100%, ${frameWidth}px); aspect-ratio: ${ratio}; --crop-ratio: ${ratio}; --crop-frame-width: ${frameWidth}px; --crop-frame-height: ${frameHeight}px; cursor: ${isDragging ? 'grabbing' : 'grab'};`}
 					onpointerdown={handlePointerDown}
 					onpointermove={handlePointerMove}
 					onpointerup={handlePointerUp}
@@ -335,7 +334,7 @@
 			<p class="text-sm text-danger" role="alert">{errorMessage}</p>
 		{/if}
 
-		<div class="sticky bottom-0 -mx-md -mb-md flex flex-wrap justify-between gap-sm border-t border-border bg-surface-page/95 px-md py-md backdrop-blur sm:-mx-lg sm:-mb-lg sm:px-lg">
+		<div class="-mx-md -mb-md flex flex-wrap justify-between gap-sm border-t border-border bg-surface-page/95 px-md py-md backdrop-blur">
 			<button type="button" class="btn-secondary cursor-pointer" disabled={!imageReady || isSaving} onclick={resetCrop}>
 				{$t('campaignCrop.reset')}
 			</button>
@@ -368,8 +367,8 @@
 
 	@media (max-width: 640px) {
 		.crop-frame {
-			max-height: min(58dvh, 620px);
-			width: min(100%, calc(min(58dvh, 620px) * var(--crop-ratio))) !important;
+			max-height: min(58dvh, var(--crop-frame-height));
+			width: min(100%, var(--crop-frame-width), calc(min(58dvh, var(--crop-frame-height)) * var(--crop-ratio))) !important;
 		}
 	}
 
