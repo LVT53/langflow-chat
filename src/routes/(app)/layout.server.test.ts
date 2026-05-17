@@ -12,6 +12,15 @@ vi.mock("$lib/server/services/projects", () => ({
 	listProjects: vi.fn(() => Promise.resolve([])),
 }));
 
+vi.mock("$lib/server/services/app-version", () => ({
+	getAppVersionMetadata: vi.fn(() =>
+		Promise.resolve({
+			compact: "v1.0",
+			full: "1.0.0",
+		}),
+	),
+}));
+
 vi.mock("$lib/server/config-store", () => ({
 	getConfig: vi.fn(() => ({
 		maxMessageLength: 12000,
@@ -120,7 +129,7 @@ describe("(app) layout load", () => {
 		);
 	});
 
-	it("exposes package version metadata to the sidebar", async () => {
+	it("exposes resolved app version metadata to the sidebar", async () => {
 		const result = await load({
 			locals: {
 				user: {
@@ -134,8 +143,8 @@ describe("(app) layout load", () => {
 		expect(result).toEqual(
 			expect.objectContaining({
 				appVersion: {
-					compact: "v0.1",
-					full: "0.1.0",
+					compact: "v1.0",
+					full: "1.0.0",
 				},
 			}),
 		);

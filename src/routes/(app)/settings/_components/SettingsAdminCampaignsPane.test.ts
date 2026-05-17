@@ -2,6 +2,10 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import SettingsAdminCampaignsPane from './SettingsAdminCampaignsPane.svelte';
 
+vi.mock('$app/navigation', () => ({
+	invalidateAll: vi.fn(),
+}));
+
 vi.mock('$lib/client/api/campaigns', () => ({
 	archiveAdminCampaign: vi.fn(),
 	createAdminCampaign: vi.fn(),
@@ -29,6 +33,7 @@ import {
 } from '$lib/client/api/campaigns';
 import { uploadCampaignAssetSource } from '$lib/client/api/campaign-assets';
 import { ApiError } from '$lib/client/api/http';
+import { invalidateAll } from '$app/navigation';
 
 const mockArchiveAdminCampaign = archiveAdminCampaign as ReturnType<typeof vi.fn>;
 const mockDeleteAdminCampaignDraft = deleteAdminCampaignDraft as ReturnType<typeof vi.fn>;
@@ -37,6 +42,7 @@ const mockFetchAdminCampaign = fetchAdminCampaign as ReturnType<typeof vi.fn>;
 const mockPublishAdminCampaign = publishAdminCampaign as ReturnType<typeof vi.fn>;
 const mockUpdateAdminCampaign = updateAdminCampaign as ReturnType<typeof vi.fn>;
 const mockUploadCampaignAssetSource = uploadCampaignAssetSource as ReturnType<typeof vi.fn>;
+const mockInvalidateAll = invalidateAll as ReturnType<typeof vi.fn>;
 
 describe('SettingsAdminCampaignsPane', () => {
 	beforeEach(() => {
@@ -104,6 +110,7 @@ describe('SettingsAdminCampaignsPane', () => {
 		mockDeleteAdminCampaignDraft.mockResolvedValue(undefined);
 		mockArchiveAdminCampaign.mockResolvedValue({ id: 'campaign-1', status: 'archived' });
 		mockPublishAdminCampaign.mockResolvedValue({ id: 'campaign-1', status: 'published', slides: [] });
+		mockInvalidateAll.mockResolvedValue(undefined);
 		vi.spyOn(window, 'confirm').mockReturnValue(true);
 	});
 
@@ -285,5 +292,54 @@ describe('SettingsAdminCampaignsPane', () => {
 			expect(screen.getByText('Desktop crop asset is required.')).toBeInTheDocument();
 		});
 		expect(screen.getByText('Campaign is not ready to publish.')).toBeInTheDocument();
+	});
+
+	it('refreshes layout data after publishing a release campaign so the sidebar version can update', async () => {
+		mockFetchAdminCampaigns.mockResolvedValue([
+			{
+				id: 'campaign-release',
+				type: 'release_update',
+				version: 1,
+				name: 'AlfyAI 1.0',
+				status: 'draft',
+				slideCount: 1,
+			},
+		]);
+		mockFetchAdminCampaign.mockResolvedValue({
+			id: 'campaign-release',
+			type: 'release_update',
+			version: 1,
+			name: 'AlfyAI 1.0',
+			releaseVersion: '1.0.0',
+			status: 'draft',
+			slides: [],
+			validationErrors: [],
+		});
+		mockUpdateAdminCampaign.mockResolvedValue({
+			id: 'campaign-release',
+			type: 'release_update',
+			status: 'draft',
+			releaseVersion: '1.0.0',
+			slides: [],
+		});
+		mockPublishAdminCampaign.mockResolvedValue({
+			id: 'campaign-release',
+			type: 'release_update',
+			status: 'published',
+			releaseVersion: '1.0.0',
+			slides: [],
+		});
+
+		render(SettingsAdminCampaignsPane);
+
+		await waitFor(() => {
+			expect(screen.getByRole('button', { name: /AlfyAI 1.0/ })).toBeInTheDocument();
+		});
+
+		await fireEvent.click(screen.getByRole('button', { name: 'Publish' }));
+
+		await waitFor(() => {
+			expect(mockInvalidateAll).toHaveBeenCalledTimes(1);
+		});
 	});
 });

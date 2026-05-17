@@ -52,6 +52,6 @@ export const load: ServerLoad = async (event) => {
 		userAvatarId: userRow?.avatarId ?? null,
 		modelNames,
 		availableModels,
-		appVersion: getAppVersionMetadata(),
+		appVersion: await getAppVersionMetadata(),
 	};
 };

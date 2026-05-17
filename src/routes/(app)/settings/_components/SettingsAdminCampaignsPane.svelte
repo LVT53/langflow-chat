@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { invalidateAll } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import CampaignCropModal from '$lib/components/campaign-admin/CampaignCropModal.svelte';
 	import CampaignModal from '$lib/components/campaigns/CampaignModal.svelte';
@@ -364,6 +365,9 @@
 			const campaign = await publishAdminCampaign(saved.id);
 			draft = draftFromCampaign({ ...campaign, validationErrors: campaign.validationErrors ?? [] });
 			campaigns = campaigns.map((item) => (item.id === campaign.id ? { ...item, ...campaign } : item));
+			if (campaign.type === 'release_update') {
+				await invalidateAll();
+			}
 			showSuccess($t('admin.campaigns.messages.published'));
 		} catch (error) {
 			if (error instanceof ApiError && error.fieldErrors && draft) {
