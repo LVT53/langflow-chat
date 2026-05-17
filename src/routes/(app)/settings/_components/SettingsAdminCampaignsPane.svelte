@@ -91,10 +91,11 @@
 			: null,
 	);
 
-	let validationErrors = $derived(draft?.validationErrors ?? []);
 	let isDraftEditable = $derived(draft?.status === 'draft');
+	let clientValidationErrors = $derived(draft && isDraftEditable ? publishReadinessIssues(draft) : []);
+	let validationErrors = $derived(clientValidationErrors.length > 0 ? clientValidationErrors : (draft?.validationErrors ?? []));
 	let canSave = $derived(Boolean(draft && isDraftEditable && !saving && !detailLoading));
-	let canPublish = $derived(Boolean(draft && isDraftEditable && !actionLoading && !saving));
+	let canPublish = $derived(Boolean(draft && isDraftEditable && clientValidationErrors.length === 0 && !actionLoading && !saving));
 	let canArchive = $derived(Boolean(draft?.status === 'published' && !actionLoading && !saving));
 	let canDuplicate = $derived(Boolean(draft && !actionLoading && !saving));
 
@@ -182,6 +183,95 @@
 
 	function validationErrorsFromFieldErrors(fieldErrors: Record<string, string>): CampaignValidationIssue[] {
 		return Object.entries(fieldErrors).map(([path, message]) => ({ path, message }));
+	}
+
+	const allowedActionDestinations = new Set(['/', '/chat', '/knowledge', '/settings', '/settings/profile', '/settings/admin']);
+	const allowedSetupControls = new Set(['ui_language', 'theme', 'model_default', 'ai_style']);
+
+	function issue(path: string, message: string): CampaignValidationIssue {
+		return { path, message };
+	}
+
+	function publishReadinessIssues(campaign: DraftState): CampaignValidationIssue[] {
+		const issues: CampaignValidationIssue[] = [];
+		if (!campaign.name.trim()) {
+			issues.push(issue('name', $t('admin.campaigns.validation.nameRequired')));
+		}
+		if (campaign.type !== 'first_run_onboarding' && campaign.type !== 'release_update') {
+			issues.push(issue('type', $t('admin.campaigns.validation.typeInvalid')));
+		}
+		if (campaign.type === 'release_update' && !campaign.releaseVersion.trim()) {
+			issues.push(issue('releaseVersion', $t('admin.campaigns.validation.releaseVersionRequired')));
+		}
+		if (campaign.slides.length === 0) {
+			issues.push(issue('slides', $t('admin.campaigns.validation.slideRequired')));
+		}
+
+		const sortOrders = new Set<number>();
+		let setupCount = 0;
+		let dataDisclosureCount = 0;
+
+		for (const [index, slide] of campaign.slides.entries()) {
+			const prefix = `slides.${slide.id ?? slide.localId ?? index + 1}`;
+			if (slide.kind !== 'setup' && slide.kind !== 'standard') {
+				issues.push(issue(`${prefix}.layoutType`, $t('admin.campaigns.validation.slideLayoutInvalid')));
+			}
+			if (slide.semanticRole !== 'feature' && slide.semanticRole !== 'data_disclosure') {
+				issues.push(issue(`${prefix}.semanticRole`, $t('admin.campaigns.validation.semanticRoleInvalid')));
+			}
+			const sortOrder = Number(slide.sortOrder ?? index + 1);
+			if (!Number.isInteger(sortOrder) || sortOrder <= 0 || sortOrders.has(sortOrder)) {
+				issues.push(issue(`${prefix}.sortOrder`, $t('admin.campaigns.validation.sortOrderInvalid')));
+			}
+			sortOrders.add(sortOrder);
+
+			for (const [field, value] of [
+				['title.en', slide.titleEn],
+				['title.hu', slide.titleHu],
+				['body.en', slide.bodyEn],
+				['body.hu', slide.bodyHu],
+				['altText.en', slide.altEn],
+				['altText.hu', slide.altHu],
+			]) {
+				if (!value?.trim()) {
+					issues.push(issue(`${prefix}.${field}`, $t('admin.campaigns.validation.localizedContentRequired')));
+				}
+			}
+
+			if (!slide.desktopAssetId) {
+				issues.push(issue(`${prefix}.desktopCropAssetId`, $t('admin.campaigns.validation.desktopAssetRequired')));
+			}
+			if (!slide.mobileAssetId) {
+				issues.push(issue(`${prefix}.mobileCropAssetId`, $t('admin.campaigns.validation.mobileAssetRequired')));
+			}
+			if (slide.actionUrl && !allowedActionDestinations.has(slide.actionUrl)) {
+				issues.push(issue(`${prefix}.actionDestination`, $t('admin.campaigns.validation.actionDestinationInvalid')));
+			}
+			if (slide.actionUrl && (!slide.actionLabelEn?.trim() || !slide.actionLabelHu?.trim())) {
+				issues.push(issue(`${prefix}.actionLabel`, $t('admin.campaigns.validation.actionLabelsRequired')));
+			}
+
+			const setupControls = slide.setupControls ?? [];
+			if (slide.kind === 'setup') setupCount += 1;
+			if (slide.kind === 'standard' && slide.semanticRole === 'data_disclosure') dataDisclosureCount += 1;
+			if (setupControls.length > 0 && (campaign.type !== 'first_run_onboarding' || slide.kind !== 'setup')) {
+				issues.push(issue(`${prefix}.setupControls`, $t('admin.campaigns.validation.setupControlsPlacementInvalid')));
+			}
+			if (setupControls.some((control) => !allowedSetupControls.has(control))) {
+				issues.push(issue(`${prefix}.setupControls`, $t('admin.campaigns.validation.setupControlsUnsupported')));
+			}
+		}
+
+		if (campaign.type === 'first_run_onboarding') {
+			if (setupCount !== 1) {
+				issues.push(issue('setupSlide', $t('admin.campaigns.validation.setupSlideRequired')));
+			}
+			if (dataDisclosureCount < 1) {
+				issues.push(issue('dataDisclosure', $t('admin.campaigns.validation.dataDisclosureRequired')));
+			}
+		}
+
+		return issues;
 	}
 
 	async function loadCampaigns(preferredId: string | null = selectedCampaignId) {
@@ -356,7 +446,7 @@
 	}
 
 	async function publishCampaign() {
-		if (!draft || !isDraftEditable) return;
+		if (!draft || !isDraftEditable || clientValidationErrors.length > 0) return;
 		actionLoading = true;
 		try {
 			const payload = campaignPayload();

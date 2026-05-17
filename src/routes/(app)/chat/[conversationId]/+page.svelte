@@ -963,12 +963,6 @@ async function checkForOrphanedStreamOnMount() {
 	// alive, and the user gets a 502 on the next send due to orphan cancellation
 	// timing issues.
 	if (isSending || activeStream) {
-		console.info(
-			"[CHAT] Skip orphan check: isSending=",
-			isSending,
-			"activeStream=",
-			!!activeStream,
-		);
 		return;
 	}
 
@@ -980,19 +974,11 @@ async function checkForOrphanedStreamOnMount() {
 	// Check for orphaned streams regardless of existing messages
 	// Previous turns don't prevent reconnection to active streams
 	const streamId = await checkForOrphanedStream(data.conversation.id);
-	console.info(
-		"[CHAT] Orphan check result:",
-		streamId ? `found stream ${streamId}` : "no orphaned stream",
-	);
 
 	if (!streamId) return;
 
 	// Fetch buffer info to get the original user message for reconnection
 	const bufferInfo = await getStreamBufferInfo(streamId);
-	console.info(
-		"[CHAT] Buffer info:",
-		bufferInfo?.exists ? `found, ${bufferInfo.tokenCount} tokens` : "not found",
-	);
 
 	void reconnectToOrphanedStream(streamId, bufferInfo?.userMessage ?? "");
 }

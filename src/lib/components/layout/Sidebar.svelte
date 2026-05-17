@@ -13,7 +13,7 @@
 		SIDEBAR_DESKTOP_BREAKPOINT,
 		currentConversationId
 	} from '$lib/stores/ui';
-	import { goto, invalidateAll, preloadData } from '$app/navigation';
+	import { goto, invalidateAll } from '$app/navigation';
 	import { navigating } from '$app/stores';
 	import { fade } from 'svelte/transition';
 	import { markPreviousConversationId } from '$lib/client/conversation-session';
@@ -109,11 +109,6 @@
 			sidebarOpen.set(false);
 		}
 		goto(path);
-	}
-
-	function warmRoute(path: string) {
-		if (!browser) return;
-		void preloadData(path).catch(() => undefined);
 	}
 
 	async function handleLogout() {
@@ -254,8 +249,6 @@
 					type="button"
 					class="compose-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-icon-muted transition-colors duration-150 hover:text-icon-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
 					onclick={() => navigateAndClose('/knowledge')}
-					onmouseenter={() => warmRoute('/knowledge')}
-					onfocus={() => warmRoute('/knowledge')}
 					title={$t('sidebar.knowledgeBase')}
 					aria-label={$t('sidebar.openKnowledgeBase')}
 					aria-busy={knowledgePending}
@@ -316,8 +309,6 @@
 					type="button"
 					class="compose-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-icon-muted transition-colors duration-150 hover:text-icon-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
 					onclick={() => navigateAndClose('/knowledge')}
-					onmouseenter={() => warmRoute('/knowledge')}
-					onfocus={() => warmRoute('/knowledge')}
 					title={$t('sidebar.knowledgeBase')}
 					aria-label={$t('sidebar.openKnowledgeBase')}
 					aria-busy={knowledgePending}

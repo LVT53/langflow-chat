@@ -50,7 +50,7 @@ describe('SettingsAdminCampaignsPane', () => {
 		mockFetchAdminCampaigns.mockResolvedValue([
 			{
 				id: 'campaign-1',
-				type: 'first_run',
+				type: 'first_run_onboarding',
 				version: 3,
 				name: 'Welcome tour',
 				status: 'draft',
@@ -60,7 +60,7 @@ describe('SettingsAdminCampaignsPane', () => {
 		]);
 		mockFetchAdminCampaign.mockResolvedValue({
 			id: 'campaign-1',
-			type: 'first_run',
+			type: 'first_run_onboarding',
 			version: 3,
 			name: 'Welcome tour',
 			releaseVersion: '1.0.0',
@@ -83,6 +83,10 @@ describe('SettingsAdminCampaignsPane', () => {
 					titleHu: 'AlfyAI beállítása',
 					bodyEn: 'Connect your tools.',
 					bodyHu: 'Kapcsold össze az eszközeidet.',
+					altEn: 'Setup screenshot',
+					altHu: 'Beállítás képernyőkép',
+					desktopAssetId: 'setup-desktop',
+					mobileAssetId: 'setup-mobile',
 				},
 				{
 					id: 'slide-standard',
@@ -93,6 +97,10 @@ describe('SettingsAdminCampaignsPane', () => {
 					titleHu: 'Kezdj beszélgetni',
 					bodyEn: 'Ask a question.',
 					bodyHu: 'Tegyél fel egy kérdést.',
+					altEn: 'Chat screenshot',
+					altHu: 'Chat képernyőkép',
+					desktopAssetId: 'standard-desktop',
+					mobileAssetId: 'standard-mobile',
 					actionLabelEn: 'Open chat',
 					actionLabelHu: 'Chat megnyitása',
 				},
@@ -101,7 +109,7 @@ describe('SettingsAdminCampaignsPane', () => {
 		});
 		mockUpdateAdminCampaign.mockImplementation(async (_id, payload) => ({
 			id: 'campaign-1',
-			type: payload.type ?? 'first_run',
+			type: payload.type ?? 'first_run_onboarding',
 			version: 3,
 			name: payload.name ?? 'Welcome tour',
 			status: 'draft',
@@ -132,7 +140,7 @@ describe('SettingsAdminCampaignsPane', () => {
 		expect(payload).toEqual(
 			expect.objectContaining({
 				name: 'Welcome tour',
-				type: 'first_run',
+				type: 'first_run_onboarding',
 				releaseVersion: '1.0.0',
 			}),
 		);
@@ -294,6 +302,59 @@ describe('SettingsAdminCampaignsPane', () => {
 		expect(screen.getByText('Campaign is not ready to publish.')).toBeInTheDocument();
 	});
 
+	it('blocks publish locally when required assets are missing instead of sending a known-bad publish request', async () => {
+		mockFetchAdminCampaign.mockResolvedValue({
+			id: 'campaign-1',
+			type: 'first_run_onboarding',
+			version: 3,
+			name: 'Welcome tour',
+			status: 'draft',
+			slides: [
+				{
+					id: 'slide-setup',
+					kind: 'setup',
+					sortOrder: 1,
+					semanticRole: 'feature',
+					setupControls: ['ui_language', 'theme'],
+					titleEn: 'Set up AlfyAI',
+					titleHu: 'AlfyAI beállítása',
+					bodyEn: 'Connect your tools.',
+					bodyHu: 'Kapcsold össze az eszközeidet.',
+					altEn: 'Setup screenshot',
+					altHu: 'Beállítás képernyőkép',
+					desktopAssetId: 'setup-desktop',
+				},
+				{
+					id: 'slide-standard',
+					kind: 'standard',
+					sortOrder: 2,
+					semanticRole: 'data_disclosure',
+					titleEn: 'Start chatting',
+					titleHu: 'Kezdj beszélgetni',
+					bodyEn: 'Ask a question.',
+					bodyHu: 'Tegyél fel egy kérdést.',
+					altEn: 'Chat screenshot',
+					altHu: 'Chat képernyőkép',
+					desktopAssetId: 'standard-desktop',
+					mobileAssetId: 'standard-mobile',
+				},
+			],
+		});
+
+		render(SettingsAdminCampaignsPane);
+
+		await waitFor(() => {
+			expect(screen.getByRole('button', { name: /Welcome tour/ })).toBeInTheDocument();
+		});
+
+		const publishButton = screen.getByRole('button', { name: 'Publish' });
+		expect(publishButton).toBeDisabled();
+		expect(screen.getByText('Mobile crop asset is required.')).toBeInTheDocument();
+
+		await fireEvent.click(publishButton);
+		expect(mockPublishAdminCampaign).not.toHaveBeenCalled();
+	});
+
 	it('refreshes layout data after publishing a release campaign so the sidebar version can update', async () => {
 		mockFetchAdminCampaigns.mockResolvedValue([
 			{
@@ -312,7 +373,22 @@ describe('SettingsAdminCampaignsPane', () => {
 			name: 'AlfyAI 1.0',
 			releaseVersion: '1.0.0',
 			status: 'draft',
-			slides: [],
+			slides: [
+				{
+					id: 'release-slide',
+					kind: 'standard',
+					sortOrder: 1,
+					semanticRole: 'feature',
+					titleEn: 'AlfyAI 1.0',
+					titleHu: 'AlfyAI 1.0',
+					bodyEn: 'Production release.',
+					bodyHu: 'Production kiadás.',
+					altEn: 'Release screenshot',
+					altHu: 'Kiadási képernyőkép',
+					desktopAssetId: 'release-desktop',
+					mobileAssetId: 'release-mobile',
+				},
+			],
 			validationErrors: [],
 		});
 		mockUpdateAdminCampaign.mockResolvedValue({
@@ -320,7 +396,22 @@ describe('SettingsAdminCampaignsPane', () => {
 			type: 'release_update',
 			status: 'draft',
 			releaseVersion: '1.0.0',
-			slides: [],
+			slides: [
+				{
+					id: 'release-slide',
+					kind: 'standard',
+					sortOrder: 1,
+					semanticRole: 'feature',
+					titleEn: 'AlfyAI 1.0',
+					titleHu: 'AlfyAI 1.0',
+					bodyEn: 'Production release.',
+					bodyHu: 'Production kiadás.',
+					altEn: 'Release screenshot',
+					altHu: 'Kiadási képernyőkép',
+					desktopAssetId: 'release-desktop',
+					mobileAssetId: 'release-mobile',
+				},
+			],
 		});
 		mockPublishAdminCampaign.mockResolvedValue({
 			id: 'campaign-release',
@@ -333,7 +424,7 @@ describe('SettingsAdminCampaignsPane', () => {
 		render(SettingsAdminCampaignsPane);
 
 		await waitFor(() => {
-			expect(screen.getByRole('button', { name: /AlfyAI 1.0/ })).toBeInTheDocument();
+			expect(screen.getAllByText('AlfyAI 1.0').length).toBeGreaterThan(0);
 		});
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Publish' }));
