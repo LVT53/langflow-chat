@@ -30,6 +30,8 @@ const campaign: Campaign = {
 			altText: { en: 'Chat screenshot', hu: 'Chat képernyőkép' },
 			desktopCropAssetId: 'asset-desktop-2',
 			mobileCropAssetId: 'asset-mobile-2',
+			actionLabel: { en: 'Open chat', hu: 'Chat megnyitása' },
+			actionDestination: '/chat',
 		},
 	],
 };
@@ -50,10 +52,12 @@ describe('CampaignModal', () => {
 			},
 		});
 
-		expect(screen.getByRole('img', { name: 'Setup screenshot' })).toHaveAttribute(
+		const firstImage = screen.getByRole('img', { name: 'Setup screenshot' });
+		expect(firstImage).toHaveAttribute(
 			'src',
 			'/api/campaign-assets/asset-desktop-1/content',
 		);
+		expect(firstImage.closest('.campaign-image-frame')).toBeInTheDocument();
 		expect(screen.getByRole('heading', { name: 'Set up AlfyAI' })).toBeInTheDocument();
 		expect(screen.queryByText('Setup')).not.toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Skip' })).toBeInTheDocument();
@@ -64,6 +68,10 @@ describe('CampaignModal', () => {
 
 		await fireEvent.click(screen.getByRole('button', { name: 'Next' }));
 		expect(screen.getByRole('heading', { name: 'Start chatting' })).toBeInTheDocument();
+		const secondImage = screen.getByRole('img', { name: 'Chat screenshot' });
+		expect(secondImage).toHaveAttribute('src', '/api/campaign-assets/asset-desktop-2/content');
+		expect(secondImage).not.toBe(firstImage);
+		expect(screen.getByRole('link', { name: 'Open chat' })).toHaveClass('campaign-action-link');
 		expect(screen.queryByRole('button', { name: 'Skip' })).not.toBeInTheDocument();
 		expect(screen.getByRole('button', { name: 'Finish' })).toBeInTheDocument();
 		await waitFor(() => {

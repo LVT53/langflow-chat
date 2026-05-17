@@ -90,10 +90,33 @@
 	let explicitModelOptions = $derived(
 		setupPreferences?.availableModels.filter((model) => model.id !== systemDefaultModel) ?? [],
 	);
+	let currentDesktopImageUrl = $derived(assetUrl(currentSlide, 'desktop'));
+	let currentMobileImageUrl = $derived(assetUrl(currentSlide, 'mobile'));
+	let currentImageKey = $derived(
+		currentSlide
+			? `${currentSlide.id ?? safeSlideIndex}:${currentDesktopImageUrl}:${currentMobileImageUrl}`
+			: '',
+	);
+	let settledImageKey = $state('');
+	let trackedImageKey = $state('');
+	const preloadedImageUrls = new Set<string>();
+	const preloadedImages: HTMLImageElement[] = [];
 
 	$effect(() => {
 		if (!currentSlide || preview) return;
 		onSlideView?.(currentSlide, safeSlideIndex);
+	});
+
+	$effect(() => {
+		if (currentImageKey === trackedImageKey) return;
+		trackedImageKey = currentImageKey;
+		settledImageKey = '';
+	});
+
+	$effect(() => {
+		const nextSlide = slides[safeSlideIndex + 1] ?? null;
+		preloadCampaignImage(assetUrl(nextSlide, 'desktop'));
+		preloadCampaignImage(assetUrl(nextSlide, 'mobile'));
 	});
 
 	function localized(slide: CampaignSlide | null, field: 'title' | 'body' | 'alt' | 'actionLabel') {
@@ -134,6 +157,18 @@
 			slide.assets?.find((candidate) => candidate.variant === preferredVariant)?.id ??
 			slide.assets?.[0]?.id;
 		return assetId ? `/api/campaign-assets/${encodeURIComponent(assetId)}/content` : '';
+	}
+
+	function markImageSettled(key: string) {
+		if (key === currentImageKey) settledImageKey = key;
+	}
+
+	function preloadCampaignImage(url: string) {
+		if (!url || preloadedImageUrls.has(url) || typeof Image === 'undefined') return;
+		preloadedImageUrls.add(url);
+		const image = new Image();
+		image.src = url;
+		preloadedImages.push(image);
 	}
 
 	function goTo(index: number) {
@@ -261,13 +296,26 @@
 			</nav>
 
 			<div class="campaign-modal-body">
-				{#if assetUrl(currentSlide)}
-					<picture>
-						{#if assetUrl(currentSlide, 'mobile')}
-							<source media="(max-width: 640px)" srcset={assetUrl(currentSlide, 'mobile')} />
+				{#if currentDesktopImageUrl || currentMobileImageUrl}
+					<div class="campaign-image-frame" aria-busy={settledImageKey !== currentImageKey}>
+						{#key currentImageKey}
+							<picture class="campaign-picture" class:campaign-picture-loaded={settledImageKey === currentImageKey}>
+								{#if currentMobileImageUrl}
+									<source media="(max-width: 640px)" srcset={currentMobileImageUrl} />
+								{/if}
+								<img
+									class="campaign-image"
+									src={currentDesktopImageUrl || currentMobileImageUrl}
+									alt={localized(currentSlide, 'alt')}
+									onload={() => markImageSettled(currentImageKey)}
+									onerror={() => markImageSettled(currentImageKey)}
+								/>
+							</picture>
+						{/key}
+						{#if settledImageKey !== currentImageKey}
+							<div class="campaign-image-loading" aria-hidden="true"></div>
 						{/if}
-						<img class="campaign-image" src={assetUrl(currentSlide, 'desktop')} alt={localized(currentSlide, 'alt')} />
-					</picture>
+					</div>
 				{:else}
 					<div class="campaign-image-empty" aria-hidden="true">
 						{$t('campaignModal.noImage')}
@@ -281,7 +329,7 @@
 					</div>
 					{#if localized(currentSlide, 'actionLabel')}
 						<a
-							class="inline-flex min-h-10 items-center justify-center rounded-md bg-accent px-md text-sm font-semibold text-white"
+							class="campaign-action-link"
 							href={currentSlide.actionDestination || currentSlide.actionUrl || '#'}
 							aria-disabled={preview || !(currentSlide.actionDestination || currentSlide.actionUrl)}
 							onclick={(event) => {
@@ -528,20 +576,57 @@
 		padding: 0;
 	}
 
-	.campaign-modal-body picture {
-		display: block;
-	}
-
+	.campaign-image-frame,
 	.campaign-image,
 	.campaign-image-empty {
 		display: block;
 		width: 100%;
-		max-height: 220px;
+	}
+
+	.campaign-image-frame,
+	.campaign-image-empty {
+		position: relative;
+		flex-shrink: 0;
+		overflow: hidden;
+		width: min(100%, 520px);
 		aspect-ratio: 16 / 10;
+		margin: 0 auto;
 		border-radius: 8px;
 		background: var(--surface-overlay);
-		object-fit: cover;
+	}
+
+	.campaign-picture {
+		display: block;
+		width: 100%;
+		height: 100%;
+		opacity: 0;
+		transition: opacity 0.16s ease;
+	}
+
+	.campaign-picture-loaded {
+		opacity: 1;
+	}
+
+	.campaign-image {
+		height: 100%;
+		background: var(--surface-overlay);
+		object-fit: contain;
 		object-position: center;
+	}
+
+	.campaign-image-loading {
+		position: absolute;
+		inset: 0;
+		background:
+			linear-gradient(
+				100deg,
+				transparent 0%,
+				color-mix(in srgb, var(--surface-page) 42%, transparent) 50%,
+				transparent 100%
+			),
+			var(--surface-overlay);
+		background-size: 180% 100%;
+		animation: campaign-image-loading 1.1s ease-in-out infinite;
 	}
 
 	.campaign-image-empty {
@@ -571,6 +656,43 @@
 		font-size: 1.125rem;
 		font-weight: 700;
 		line-height: 1.25;
+	}
+
+	.campaign-action-link {
+		align-self: flex-start;
+		display: inline-flex;
+		min-height: 2.15rem;
+		cursor: pointer;
+		align-items: center;
+		justify-content: center;
+		border: 1px solid color-mix(in srgb, var(--accent) 44%, var(--border));
+		border-radius: 6px;
+		background: color-mix(in srgb, var(--accent) 7%, transparent);
+		padding: 0.4rem 0.75rem;
+		color: var(--accent);
+		font-size: 0.875rem;
+		font-weight: 700;
+		text-decoration: none;
+		transition:
+			background 0.15s ease,
+			border-color 0.15s ease,
+			color 0.15s ease,
+			transform 0.15s ease;
+	}
+
+	.campaign-action-link:hover {
+		border-color: color-mix(in srgb, var(--accent) 62%, var(--border));
+		background: color-mix(in srgb, var(--accent) 12%, transparent);
+		transform: translateY(-1px);
+	}
+
+	.campaign-action-link[aria-disabled='true'] {
+		cursor: default;
+		opacity: 0.62;
+	}
+
+	.campaign-action-link[aria-disabled='true']:hover {
+		transform: none;
 	}
 
 	.campaign-setup-controls {
@@ -751,6 +873,15 @@
 		outline-offset: 2px;
 	}
 
+	@keyframes campaign-image-loading {
+		from {
+			background-position: 140% 0;
+		}
+		to {
+			background-position: -80% 0;
+		}
+	}
+
 	@media (max-width: 640px) {
 		.campaign-shell {
 			align-items: center;
@@ -785,10 +916,10 @@
 			padding: var(--space-sm);
 		}
 
-		.campaign-image,
+		.campaign-image-frame,
 		.campaign-image-empty {
 			aspect-ratio: 9 / 16;
-			max-height: 16dvh;
+			width: min(58vw, 190px);
 		}
 
 		.campaign-slide-title {

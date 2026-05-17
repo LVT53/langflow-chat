@@ -26,7 +26,7 @@
 	import { shouldPersistCampaignCompletion, type CampaignDisplayMode } from '$lib/client/campaign-replay';
 	import { removeConversationFromPersistedWorkspaceDocumentState } from '$lib/client/document-workspace-state';
 	import { fetchPublicPersonalityProfiles } from '$lib/client/api/admin';
-	import { updateUserPreferences } from '$lib/client/api/settings';
+	import { fetchUserSettings, updateUserPreferences } from '$lib/client/api/settings';
 	import { reconcileProjectSnapshot } from '$lib/stores/projects';
 	import {
 		initSettings,
@@ -54,6 +54,8 @@
 	let campaignViewedSlideIds = new Set<string>();
 	let selectedCampaignModel = $state<UserModelPreference>(null);
 	let effectiveCampaignModel = $state<ModelId>('model1');
+	let campaignSystemDefaultModel = $state<ModelId>('model1');
+	let layoutCampaignDefaultKey = $state('');
 	let selectedCampaignTheme = $state<Theme>('system');
 	let selectedCampaignUiLanguage = $state<UiLanguage>('en');
 	let selectedCampaignPersonalityId = $state<string | null>(null);
@@ -91,6 +93,17 @@
 	$effect(() => {
 		if (updated.current) {
 			serverUpdateAvailable = true;
+		}
+	});
+
+	$effect(() => {
+		const nextDefault = data.systemDefaultModel ?? data.userModel;
+		const nextKey = `${nextDefault}:${data.userModel}`;
+		if (nextKey === layoutCampaignDefaultKey) return;
+		layoutCampaignDefaultKey = nextKey;
+		campaignSystemDefaultModel = nextDefault;
+		if (selectedCampaignModel === null) {
+			effectiveCampaignModel = campaignSystemDefaultModel;
 		}
 	});
 
@@ -190,11 +203,30 @@
 		});
 	}
 
+	async function refreshCampaignSetupPreferences() {
+		try {
+			const settings = await fetchUserSettings();
+			selectedCampaignModel = settings.preferences.preferredModel;
+			effectiveCampaignModel = settings.preferences.effectiveModel;
+			campaignSystemDefaultModel = settings.preferences.systemDefaultModel;
+			selectedCampaignTheme = settings.preferences.theme;
+			selectedCampaignUiLanguage = settings.preferences.uiLanguage;
+			selectedCampaignPersonalityId = settings.preferences.preferredPersonalityId;
+		} catch {
+			const fallbackDefault = data.systemDefaultModel ?? data.userModel;
+			campaignSystemDefaultModel = fallbackDefault;
+			if (selectedCampaignModel === null) {
+				effectiveCampaignModel = fallbackDefault;
+			}
+		}
+	}
+
 	async function checkEligibleCampaign() {
 		if (!browser || activeCampaign) return;
 		try {
 			const campaign = await fetchEligibleCampaign();
 			if (campaign && !activeCampaign) {
+				await refreshCampaignSetupPreferences();
 				openCampaign(campaign, 'auto');
 			}
 		} catch (error) {
@@ -207,6 +239,7 @@
 		try {
 			const campaign = await fetchLatestCampaign();
 			if (campaign) {
+				await refreshCampaignSetupPreferences();
 				openCampaign(campaign, 'replay');
 			}
 		} catch (error) {
@@ -257,7 +290,7 @@
 	async function changeCampaignModel(model: UserModelPreference) {
 		selectedCampaignModel = model;
 		if (model === null) {
-			effectiveCampaignModel = data.systemDefaultModel ?? data.userModel;
+			effectiveCampaignModel = campaignSystemDefaultModel;
 			await setModelPreferenceAndSync(null, effectiveCampaignModel);
 			recordSetupPreferenceChange('model_default', 'system');
 			return;
@@ -301,6 +334,7 @@
 		initAvatar(data.user?.profilePicture ?? null);
 		selectedCampaignModel = data.userModelPreference ?? null;
 		effectiveCampaignModel = data.userModel;
+		campaignSystemDefaultModel = data.systemDefaultModel ?? data.userModel;
 		selectedCampaignTheme = data.userTheme as Theme;
 		selectedCampaignUiLanguage = data.userUiLanguage;
 		selectedCampaignPersonalityId = data.userPersonality ?? null;
@@ -378,7 +412,7 @@
 		setupPreferences={{
 			availableModels: data.availableModels ?? [],
 			effectiveModel: effectiveCampaignModel,
-			systemDefaultModel: data.systemDefaultModel ?? data.userModel,
+			systemDefaultModel: campaignSystemDefaultModel,
 			selectedModel: selectedCampaignModel,
 			selectedTheme: selectedCampaignTheme,
 			selectedUiLanguage: selectedCampaignUiLanguage,

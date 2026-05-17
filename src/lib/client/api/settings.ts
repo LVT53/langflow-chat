@@ -1,5 +1,5 @@
-import type { ModelId, UserModelPreference } from '$lib/types';
-import { requestJson } from './http';
+import type { ModelId, UserModelPreference, UserSettings } from '$lib/types';
+import { requestJson, type FetchLike } from './http';
 
 // Re-export admin functions for backward compatibility
 export {
@@ -76,6 +76,15 @@ export interface AnalyticsResponse {
 	perUser?: PerUserAnalytics[];
 	availableMonths?: string[];
 	timeline?: Array<{ label: string; tokens: number }>;
+}
+
+export async function fetchUserSettings(fetchImpl?: FetchLike): Promise<UserSettings> {
+	return requestJson<UserSettings>(
+		'/api/settings',
+		undefined,
+		'Failed to load settings',
+		fetchImpl,
+	);
 }
 
 interface ProfileUpdateParams {
