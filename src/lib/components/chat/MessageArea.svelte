@@ -452,6 +452,7 @@ async function alignToBottomAfterRender() {
 	}
 
 	.fork-boundary-marker {
+		width: 100%;
 		margin: var(--space-sm) 0 var(--space-md);
 	}
 
