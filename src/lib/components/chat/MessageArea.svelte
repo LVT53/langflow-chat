@@ -433,10 +433,10 @@ async function alignToBottomAfterRender() {
 	}
 
 	.fork-lineage-marker {
-		display: inline-flex;
-		width: fit-content;
+		display: flex;
+		width: 100%;
 		max-width: 100%;
-		align-self: flex-start;
+		align-self: stretch;
 		align-items: center;
 		flex-wrap: wrap;
 		gap: var(--space-xs);
@@ -452,7 +452,6 @@ async function alignToBottomAfterRender() {
 	}
 
 	.fork-boundary-marker {
-		width: 100%;
 		margin: var(--space-sm) 0 var(--space-md);
 	}
 

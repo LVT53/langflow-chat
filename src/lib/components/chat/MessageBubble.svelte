@@ -714,10 +714,10 @@
 	}
 
 	.fork-lineage-marker {
-		display: inline-flex;
-		width: fit-content;
+		display: flex;
+		width: 100%;
 		max-width: 100%;
-		align-self: flex-start;
+		align-self: stretch;
 		align-items: center;
 		flex-wrap: wrap;
 		gap: var(--space-xs);

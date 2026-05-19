@@ -113,11 +113,6 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 
 	return await resolve(event, {
-		preload: ({ type, path }) => {
-			if (type === "css" && path.includes("AvatarCircle.")) {
-				return false;
-			}
-			return type === "js" || type === "css";
-		},
+		preload: ({ type }) => type === "js",
 	});
 };

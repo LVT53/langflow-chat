@@ -216,6 +216,46 @@ describe("hooks.server.ts", () => {
 		expect(resolve).toHaveBeenCalledOnce();
 	});
 
+	it("only preloads javascript chunks from server-rendered pages", async () => {
+		const { handle } = await import("./hooks.server");
+		mockValidateSession.mockResolvedValue({
+			id: "user-1",
+			email: "test@example.com",
+			displayName: "Test User",
+			role: "user",
+			avatarId: null,
+			profilePicture: null,
+		});
+		const resolve = vi.fn(async () => new Response("ok"));
+		const event = {
+			cookies: { get: vi.fn(() => "session-token") },
+			locals: {},
+			url: new URL("http://localhost/chat/conversation-1"),
+		} as Parameters<typeof handle>[0]["event"];
+
+		await handle({ event, resolve });
+
+		const resolveOptions = resolve.mock.calls[0]?.[1];
+		expect(
+			resolveOptions?.preload?.({
+				type: "js",
+				path: "/_app/immutable/chunks/app.js",
+			}),
+		).toBe(true);
+		expect(
+			resolveOptions?.preload?.({
+				type: "css",
+				path: "/_app/immutable/assets/DocumentWorkspace.css",
+			}),
+		).toBe(false);
+		expect(
+			resolveOptions?.preload?.({
+				type: "font",
+				path: "/_app/immutable/assets/nimbus.woff2",
+			}),
+		).toBe(false);
+	});
+
 	it("redirects authenticated users away from /login", async () => {
 		const { handle } = await import("./hooks.server");
 		mockValidateSession.mockResolvedValue({
