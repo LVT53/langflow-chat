@@ -745,8 +745,9 @@
 	}
 
 	.fork-origin-link {
+		flex: 1 1 auto;
 		min-width: 0;
-		max-width: 18rem;
+		max-width: 100%;
 		overflow-wrap: anywhere;
 		color: var(--text-secondary);
 		text-decoration: none;
@@ -761,6 +762,7 @@
 	}
 
 	.fork-origin-details {
+		flex: 1 1 auto;
 		min-width: 0;
 		max-width: 100%;
 	}

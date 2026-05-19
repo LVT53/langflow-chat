@@ -468,14 +468,16 @@ async function alignToBottomAfterRender() {
 	}
 
 	.fork-boundary-source {
+		flex: 1 1 auto;
 		min-width: 0;
-		max-width: 18rem;
+		max-width: 100%;
 		overflow-wrap: anywhere;
 		color: var(--text-secondary);
 	}
 
 	.fork-boundary-source-degraded {
 		display: inline-flex;
+		flex-wrap: wrap;
 		align-items: center;
 		gap: var(--space-xs);
 	}
