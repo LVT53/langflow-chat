@@ -460,6 +460,7 @@ describe("deep research Evidence Notes", () => {
 				reviewedAt: null,
 				supportedKeyQuestionsJson: null,
 				extractedClaimsJson: null,
+				discoveredAt: now,
 				updatedAt: now,
 			})
 			.run();

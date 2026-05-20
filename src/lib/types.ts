@@ -185,6 +185,9 @@ export interface DeepResearchPlanRaw {
 	goal: string;
 	depth: DeepResearchDepth;
 	reportIntent: DeepResearchReportIntent;
+	comparedEntities?: string[];
+	comparisonAxes?: string[];
+	planNormalizationNote?: string;
 	researchBudget: DeepResearchBudget;
 	keyQuestions: string[];
 	sourceScope: {

@@ -17,7 +17,8 @@ export type DeepResearchEvaluationDimension =
 	| "searchPolicyFit"
 	| "durableResume"
 	| "localization"
-	| "hardSearchBehavior";
+	| "hardSearchBehavior"
+	| "stabilizationOutcome";
 
 export type DeepResearchEvaluationDimensionResult = {
 	passed: boolean;
@@ -66,6 +67,7 @@ export type DeepResearchEvaluationRun = {
 	resumeTrace?: DeepResearchEvaluationResumeTrace;
 	localizedOutputs?: string[];
 	hardSearchTrace?: DeepResearchHardSearchStep[];
+	stabilizationOutcome?: DeepResearchEvaluationStabilizationOutcome;
 };
 
 export type DeepResearchEvaluationFixture = DeepResearchEvaluationRun;
@@ -85,6 +87,42 @@ export type DeepResearchHardSearchStep =
 	| "conflict_correction"
 	| "cautious_verification"
 	| "answer";
+
+export type DeepResearchEvaluationOutcome =
+	| "research_report"
+	| "limited_research_report"
+	| "evidence_limitation_memo"
+	| "plan_revision_needed"
+	| "corrected_plan_clean_execution";
+
+export type DeepResearchEvaluationStabilizationOutcome = {
+	outcome: DeepResearchEvaluationOutcome;
+	jobId: string;
+	status: "running" | "completed" | "failed";
+	stage: string;
+	reportBoundaryCreated: boolean;
+	reportArtifactId?: string | null;
+	reportArtifactRole?: string | null;
+	artifactMetadataOutcome?: string | null;
+	correctedPlan?: {
+		version: number;
+		status: "awaiting_approval" | "approved" | "retired";
+		plan: ResearchPlan;
+		sourceWorkAutoStarted: boolean;
+	};
+	cleanExecution?: {
+		sameJobId: string;
+		approvedPlanVersion: number;
+		positivePassStateRetired: boolean;
+		activePassNumbers: number[];
+		retiredPassNumbers: number[];
+		activeTaskAssignments: string[];
+		retiredTaskAssignments: string[];
+		poisonedDiagnosticSourceIds: string[];
+		correctedSourceIds: string[];
+		jobSealed: boolean;
+	};
+};
 
 const standardComparisonPlan: ResearchPlan = {
 	goal: "Compare private AI coding assistants for a small engineering team.",
@@ -107,7 +145,270 @@ const standardComparisonPlan: ResearchPlan = {
 	deliverables: ["Cited Research Report"],
 };
 
+const architectureRecommendationKeyQuestions = [
+	"Which architecture patterns are credible candidates for an enterprise deep research assistant?",
+	"What failure modes cause fabricated claims, weak citations, or brittle report generation?",
+	"How should evidence and citation reliability be enforced across web search and uploaded documents?",
+	"What document inspection approach is needed for uploaded files and long-form source material?",
+	"What security and compliance controls matter for a 50-person SaaS company?",
+	"What implementation burden and operating complexity differs across candidate architectures?",
+	"What implementation roadmap should a 50-person SaaS company follow?",
+];
+
 export const goldenDeepResearchFixtures = {
+	architectureRecommendationBaseline: {
+		id: "architecture-recommendation-baseline",
+		title:
+			"Architecture recommendation baseline without compared-entity pollution",
+		plan: {
+			...standardComparisonPlan,
+			goal: "Recommend the most reliable architecture for an enterprise deep research assistant that can search the web, inspect uploaded documents, cite evidence, and produce long-form reports without fabricating claims.",
+			reportIntent: "recommendation",
+			comparedEntities: [],
+			comparisonAxes: [],
+			planNormalizationNote:
+				"Candidate architecture patterns will be discovered during research instead of being pre-filled as Compared Entities.",
+			keyQuestions: architectureRecommendationKeyQuestions,
+			reportShape: [
+				"Answer-first recommendation",
+				"Candidate architecture patterns",
+				"Failure modes and controls",
+				"Implementation roadmap",
+				"Limitations",
+			],
+			constraints: [
+				"Discover candidate architecture patterns during research before comparing them.",
+				"Do not treat imperative clauses or quantity placeholders as Compared Entities.",
+			],
+		},
+		reviewedSources: [
+			reviewedSource({
+				id: "architecture-patterns-source",
+				title: "Deep research assistant architecture patterns",
+				canonicalUrl: "https://patterns.example.test/deep-research",
+				supportedKeyQuestions: architectureRecommendationKeyQuestions,
+				keyFindings: [
+					"RAG pipelines, workflow graphs, and multi-agent systems are candidate architectures with different control surfaces.",
+					"Workflow graphs add orchestration burden but make evidence gates easier to audit.",
+				],
+			}),
+			reviewedSource({
+				id: "citation-reliability-source",
+				title: "Citation reliability and document inspection controls",
+				canonicalUrl: "https://evidence.example.test/citation-controls",
+				supportedKeyQuestions: architectureRecommendationKeyQuestions,
+				keyFindings: [
+					"Claim-level citation audits and source-grounded document extraction reduce unsupported synthesis.",
+					"Uploaded documents need extraction, chunk provenance, and quote-level evidence links.",
+				],
+			}),
+			reviewedSource({
+				id: "saas-rollout-source",
+				title: "SaaS security controls and implementation roadmap",
+				canonicalUrl: "https://security.example.test/saas-rollout",
+				supportedKeyQuestions: architectureRecommendationKeyQuestions,
+				keyFindings: [
+					"Tenant isolation, audit logs, and permission-scoped retrieval are baseline controls.",
+					"A staged rollout should start with retrieval, add workflow gates, then expand automation.",
+				],
+			}),
+		],
+		discoveryRequests: [
+			{
+				query: "enterprise deep research assistant architecture patterns",
+				sourcePolicy: "medical_legal_financial",
+			},
+			{
+				query:
+					"claim citation audit document inspection reliability architecture",
+				sourcePolicy: "medical_legal_financial",
+			},
+		],
+		evidenceNotes: [
+			evidenceNote({
+				id: "note-architecture-patterns",
+				sourceId: "architecture-patterns-source",
+				findingText:
+					"RAG pipelines, workflow graphs, and multi-agent systems are candidate architectures with different control surfaces.",
+				supportedKeyQuestion:
+					"Which architecture patterns are credible candidates for an enterprise deep research assistant?",
+				sourceSupport: {
+					sourceId: "architecture-patterns-source",
+					reviewedSourceId: "architecture-patterns-source",
+				},
+			}),
+			evidenceNote({
+				id: "note-failure-modes",
+				sourceId: "citation-reliability-source",
+				findingText:
+					"Claim-level citation audits reduce fabricated claims and weak citation support.",
+				supportedKeyQuestion:
+					"What failure modes cause fabricated claims, weak citations, or brittle report generation?",
+				sourceSupport: {
+					sourceId: "citation-reliability-source",
+					reviewedSourceId: "citation-reliability-source",
+				},
+			}),
+			evidenceNote({
+				id: "note-citation-reliability",
+				sourceId: "citation-reliability-source",
+				findingText:
+					"Evidence reliability should be enforced through source-grounded extraction and citation audits.",
+				supportedKeyQuestion:
+					"How should evidence and citation reliability be enforced across web search and uploaded documents?",
+				sourceSupport: {
+					sourceId: "citation-reliability-source",
+					reviewedSourceId: "citation-reliability-source",
+				},
+			}),
+			evidenceNote({
+				id: "note-document-inspection",
+				sourceId: "citation-reliability-source",
+				findingText:
+					"Uploaded documents need extraction, chunk provenance, and quote-level evidence links.",
+				supportedKeyQuestion:
+					"What document inspection approach is needed for uploaded files and long-form source material?",
+				sourceSupport: {
+					sourceId: "citation-reliability-source",
+					reviewedSourceId: "citation-reliability-source",
+				},
+			}),
+			evidenceNote({
+				id: "note-security-compliance",
+				sourceId: "saas-rollout-source",
+				findingText:
+					"Tenant isolation, audit logs, and permission-scoped retrieval are baseline controls.",
+				supportedKeyQuestion:
+					"What security and compliance controls matter for a 50-person SaaS company?",
+				sourceSupport: {
+					sourceId: "saas-rollout-source",
+					reviewedSourceId: "saas-rollout-source",
+				},
+			}),
+			evidenceNote({
+				id: "note-implementation-burden",
+				sourceId: "architecture-patterns-source",
+				findingText:
+					"Workflow graphs add orchestration burden but make evidence gates easier to audit.",
+				supportedKeyQuestion:
+					"What implementation burden and operating complexity differs across candidate architectures?",
+				sourceSupport: {
+					sourceId: "architecture-patterns-source",
+					reviewedSourceId: "architecture-patterns-source",
+				},
+			}),
+			evidenceNote({
+				id: "note-implementation-roadmap",
+				sourceId: "saas-rollout-source",
+				findingText:
+					"A staged rollout should start with retrieval, add workflow gates, then expand automation.",
+				supportedKeyQuestion:
+					"What implementation roadmap should a 50-person SaaS company follow?",
+				sourceSupport: {
+					sourceId: "saas-rollout-source",
+					reviewedSourceId: "saas-rollout-source",
+				},
+			}),
+		],
+		synthesisClaims: [
+			synthesisClaim({
+				id: "claim-architecture-patterns",
+				statement:
+					"RAG pipelines, workflow graphs, and multi-agent systems are candidate architectures with different control surfaces.",
+				planQuestion:
+					"Which architecture patterns are credible candidates for an enterprise deep research assistant?",
+				status: "accepted",
+				evidenceNoteId: "note-architecture-patterns",
+			}),
+			synthesisClaim({
+				id: "claim-failure-modes",
+				statement:
+					"Claim-level citation audits reduce fabricated claims and weak citation support.",
+				planQuestion:
+					"What failure modes cause fabricated claims, weak citations, or brittle report generation?",
+				status: "accepted",
+				evidenceNoteId: "note-failure-modes",
+			}),
+			synthesisClaim({
+				id: "claim-citation-reliability",
+				statement:
+					"Evidence reliability should be enforced through source-grounded extraction and citation audits.",
+				planQuestion:
+					"How should evidence and citation reliability be enforced across web search and uploaded documents?",
+				status: "accepted",
+				evidenceNoteId: "note-citation-reliability",
+			}),
+			synthesisClaim({
+				id: "claim-document-inspection",
+				statement:
+					"Uploaded documents need extraction, chunk provenance, and quote-level evidence links.",
+				planQuestion:
+					"What document inspection approach is needed for uploaded files and long-form source material?",
+				status: "accepted",
+				evidenceNoteId: "note-document-inspection",
+			}),
+			synthesisClaim({
+				id: "claim-security-compliance",
+				statement:
+					"Tenant isolation, audit logs, and permission-scoped retrieval are baseline controls.",
+				planQuestion:
+					"What security and compliance controls matter for a 50-person SaaS company?",
+				status: "accepted",
+				evidenceNoteId: "note-security-compliance",
+			}),
+			synthesisClaim({
+				id: "claim-implementation-burden",
+				statement:
+					"Workflow graphs add orchestration burden but make evidence gates easier to audit.",
+				planQuestion:
+					"What implementation burden and operating complexity differs across candidate architectures?",
+				status: "accepted",
+				evidenceNoteId: "note-implementation-burden",
+			}),
+			synthesisClaim({
+				id: "claim-implementation-roadmap",
+				statement:
+					"A staged rollout should start with retrieval, add workflow gates, then expand automation.",
+				planQuestion:
+					"What implementation roadmap should a 50-person SaaS company follow?",
+				status: "accepted",
+				evidenceNoteId: "note-implementation-roadmap",
+			}),
+		],
+		reportArtifact: {
+			id: "artifact-architecture-recommendation",
+			contentText: [
+				"# Research Report: Enterprise deep research assistant architecture",
+				"## Answer",
+				"Recommendation: use a workflow-graph architecture around retrieval and document inspection because it makes citation gates, failure-mode checks, and staged SaaS rollout controls explicit.",
+				"## Key Findings",
+				"- RAG pipelines, workflow graphs, and multi-agent systems are candidate architectures with different control surfaces. [1]",
+				"- Claim-level citation audits reduce fabricated claims and weak citation support. [2]",
+				"- Evidence reliability should be enforced through source-grounded extraction and citation audits. [2]",
+				"- Uploaded documents need extraction, chunk provenance, and quote-level evidence links. [2]",
+				"- Tenant isolation, audit logs, and permission-scoped retrieval are baseline controls. [3]",
+				"- Workflow graphs add orchestration burden but make evidence gates easier to audit. [1]",
+				"- A staged rollout should start with retrieval, add workflow gates, then expand automation. [3]",
+				"## Source Ledger Snapshot",
+				"### Cited Sources",
+				"- Deep research assistant architecture patterns - https://patterns.example.test/deep-research",
+				"- Citation reliability and document inspection controls - https://evidence.example.test/citation-controls",
+				"- SaaS security controls and implementation roadmap - https://security.example.test/saas-rollout",
+			].join("\n"),
+			metadata: {
+				deepResearchReport: true,
+				documentRole: "research_report",
+				deepResearchReportOutcome: "research_report",
+			},
+		},
+	},
+	namedApproachComparison: buildNamedApproachComparisonFixture(),
+	highReviewedZeroTopicPlanHealthRecovery:
+		buildHighReviewedZeroTopicPlanHealthRecoveryFixture(),
+	correctedPlanCleanExecution: buildCorrectedPlanCleanExecutionFixture(),
+	partialEvidenceLimitedResearchReport:
+		buildPartialEvidenceLimitedResearchReportFixture(),
+	noUsefulClaimEvidenceLimitationMemo: buildNoUsefulClaimEvidenceMemoFixture(),
 	offTopicAuthorityWeakNotes: {
 		id: "off-topic-authority-weak-notes",
 		title: "Off-topic high-authority sources with weak Evidence Notes",
@@ -940,6 +1241,408 @@ export const goldenDeepResearchFixtures = {
 	},
 } satisfies Record<string, DeepResearchEvaluationFixture>;
 
+function buildNamedApproachComparisonFixture(): DeepResearchEvaluationFixture {
+	const comparedEntities = [
+		"RAG pipelines",
+		"Workflow graphs",
+		"Multi-agent research systems",
+	];
+	const comparisonAxes = ["Evidence control", "Operational complexity"];
+	const plan: ResearchPlan = {
+		...standardComparisonPlan,
+		depth: "focused",
+		goal: "Compare RAG pipelines, workflow graphs, and multi-agent research systems for enterprise deep research assistants.",
+		reportIntent: "comparison",
+		comparedEntities,
+		comparisonAxes,
+		keyQuestions: [
+			"How do RAG pipelines, workflow graphs, and multi-agent research systems compare on evidence control?",
+			"How do RAG pipelines, workflow graphs, and multi-agent research systems compare on operational complexity?",
+		],
+		reportShape: [
+			"Executive summary",
+			"Comparison Matrix",
+			"Decision guidance",
+			"Limitations",
+		],
+		constraints: [
+			"Preserve strict Comparison Report Shape because the approaches are explicitly named.",
+		],
+	};
+	const cells = comparedEntities.flatMap((comparedEntity) =>
+		comparisonAxes.map((comparisonAxis) => ({
+			comparedEntity,
+			comparisonAxis,
+			expectedText: `${comparedEntity} has ${comparisonAxis.toLowerCase()} evidence in the named approach fixture.`,
+		})),
+	);
+	const reviewedSources = cells.map((cell, index) =>
+		reviewedSource({
+			id: `approach-source-${index + 1}`,
+			title: `${cell.comparedEntity} ${cell.comparisonAxis} source`,
+			canonicalUrl: `https://approach-${index + 1}.example.test/source`,
+			supportedKeyQuestions: plan.keyQuestions,
+			keyFindings: [cell.expectedText],
+			comparedEntity: cell.comparedEntity,
+			comparisonAxis: cell.comparisonAxis,
+		}),
+	);
+	const evidenceNotes = cells.map((cell, index) =>
+		evidenceNote({
+			id: `note-approach-${index + 1}`,
+			sourceId: reviewedSources[index]?.id,
+			comparedEntity: cell.comparedEntity,
+			comparisonAxis: cell.comparisonAxis,
+			findingText: cell.expectedText,
+			supportedKeyQuestion:
+				cell.comparisonAxis === "Evidence control"
+					? plan.keyQuestions[0]
+					: plan.keyQuestions[1],
+			sourceSupport: {
+				sourceId: reviewedSources[index]?.id,
+				reviewedSourceId: reviewedSources[index]?.id,
+			},
+		}),
+	);
+	const synthesisClaims = cells.map((cell, index) =>
+		synthesisClaim({
+			id: `claim-approach-${index + 1}`,
+			statement: cell.expectedText,
+			planQuestion:
+				cell.comparisonAxis === "Evidence control"
+					? plan.keyQuestions[0]
+					: plan.keyQuestions[1],
+			status: "accepted",
+			evidenceNoteId: evidenceNotes[index]?.id ?? "",
+		}),
+	);
+	const matrixRows = comparisonAxes.map((axis) => {
+		const rowCells = comparedEntities.map((entity) => {
+			const cellIndex = cells.findIndex(
+				(candidate) =>
+					candidate.comparedEntity === entity &&
+					candidate.comparisonAxis === axis,
+			);
+			const expectedText =
+				cellIndex >= 0 ? cells[cellIndex]?.expectedText : "Not established";
+			return `${expectedText} [${cellIndex + 1}]`;
+		});
+		return `| ${axis} | ${rowCells.join(" | ")} | The named approaches remain directly comparable on ${axis.toLowerCase()}. |`;
+	});
+	return {
+		id: "named-approach-comparison",
+		title: "Named architecture approaches preserve Comparison Report Shape",
+		plan,
+		reviewedSources,
+		discoveryRequests: cells.map((cell) => ({
+			query: `${cell.comparedEntity} ${cell.comparisonAxis} architecture evidence`,
+			sourcePolicy: "technical",
+			comparedEntity: cell.comparedEntity,
+			comparisonAxis: cell.comparisonAxis,
+		})),
+		evidenceNotes,
+		synthesisClaims,
+		reportArtifact: {
+			id: "artifact-named-approach-comparison",
+			contentText: [
+				"# Research Report: Named approach comparison",
+				"## Answer",
+				"Compared on the accepted evidence, the named approaches remain suitable for strict comparison because each approach has evidence for both axes.",
+				"## Comparison Matrix",
+				`| Axis | ${comparedEntities.join(" | ")} | Decision Meaning |`,
+				`| --- | ${comparedEntities.map(() => "---").join(" | ")} | --- |`,
+				...matrixRows,
+			].join("\n"),
+			metadata: {
+				deepResearchReport: true,
+				documentRole: "research_report",
+				deepResearchReportOutcome: "research_report",
+			},
+		},
+		expectedComparisonGrid: cells,
+	};
+}
+
+function buildHighReviewedZeroTopicPlanHealthRecoveryFixture(): DeepResearchEvaluationFixture {
+	const poisonedPlan: ResearchPlan = {
+		...standardComparisonPlan,
+		goal: "Recommend an enterprise deep research assistant architecture after comparing at least three architecture patterns.",
+		reportIntent: "comparison",
+		comparedEntities: [
+			"at least three architecture patterns",
+			"identify failure modes",
+			"recommend one design",
+		],
+		comparisonAxes: ["Pricing", "Availability", "Model year"],
+		keyQuestions: [
+			"Which manufacturers and trim differences matter most?",
+			"Which dealer listings and model years prove availability?",
+		],
+		constraints: [
+			"Poisoned fixture: imperative clauses were incorrectly treated as Compared Entities.",
+		],
+	};
+	return {
+		id: "high-reviewed-zero-topic-plan-health-recovery",
+		title: "High-reviewed zero-topic Plan Health Check recovery",
+		plan: poisonedPlan,
+		reviewedSources: Array.from({ length: 12 }, (_, index) =>
+			reviewedSource({
+				id: `poisoned-reviewed-source-${index + 1}`,
+				title: `Poisoned vehicle source ${index + 1}`,
+				canonicalUrl: `https://vehicles-${index + 1}.example.test/listing`,
+				supportedKeyQuestions: poisonedPlan.keyQuestions,
+				keyFindings: [
+					"Vehicle listing material does not answer the architecture request.",
+				],
+				topicRelevant: false,
+			}),
+		),
+		evidenceNotes: [],
+		synthesisClaims: [],
+		stabilizationOutcome: {
+			outcome: "plan_revision_needed",
+			jobId: "high-reviewed-zero-topic-plan-health-recovery",
+			status: "completed",
+			stage: "plan_revision_needed",
+			reportBoundaryCreated: false,
+			reportArtifactId: null,
+			reportArtifactRole: null,
+			correctedPlan: {
+				version: 2,
+				status: "awaiting_approval",
+				sourceWorkAutoStarted: false,
+				plan: {
+					...standardComparisonPlan,
+					goal: architectureRecommendationKeyQuestions[0],
+					reportIntent: "recommendation",
+					comparedEntities: [],
+					comparisonAxes: [],
+					planNormalizationNote:
+						"Candidate architecture patterns will be discovered during research instead of being pre-filled as Compared Entities.",
+					keyQuestions: architectureRecommendationKeyQuestions,
+				},
+			},
+		},
+	};
+}
+
+function buildCorrectedPlanCleanExecutionFixture(): DeepResearchEvaluationFixture {
+	const correctedPlan: ResearchPlan = {
+		...standardComparisonPlan,
+		goal: "Recommend a reliable enterprise deep research assistant architecture.",
+		reportIntent: "recommendation",
+		comparedEntities: [],
+		comparisonAxes: [],
+		planNormalizationNote:
+			"Candidate architecture patterns will be discovered during research instead of being pre-filled as Compared Entities.",
+		keyQuestions: architectureRecommendationKeyQuestions,
+	};
+	return {
+		id: "corrected-plan-clean-execution",
+		title: "Same-job corrected-plan approval restarts clean execution state",
+		plan: correctedPlan,
+		reviewedSources: [],
+		evidenceNotes: [],
+		synthesisClaims: [],
+		stabilizationOutcome: {
+			outcome: "corrected_plan_clean_execution",
+			jobId: "corrected-plan-clean-execution",
+			status: "running",
+			stage: "research_tasks",
+			reportBoundaryCreated: false,
+			reportArtifactId: null,
+			correctedPlan: {
+				version: 2,
+				status: "approved",
+				sourceWorkAutoStarted: true,
+				plan: correctedPlan,
+			},
+			cleanExecution: {
+				sameJobId: "corrected-plan-clean-execution",
+				approvedPlanVersion: 2,
+				positivePassStateRetired: true,
+				activePassNumbers: [1, 2],
+				retiredPassNumbers: [-1],
+				activeTaskAssignments: [
+					"Review additional architecture pattern sources.",
+				],
+				retiredTaskAssignments: [
+					"Review additional vehicle listing sources for the bad plan.",
+				],
+				poisonedDiagnosticSourceIds: ["poisoned-reviewed-source-1"],
+				correctedSourceIds: ["corrected-architecture-source-1"],
+				jobSealed: false,
+			},
+		},
+	};
+}
+
+function buildPartialEvidenceLimitedResearchReportFixture(): DeepResearchEvaluationFixture {
+	const plan: ResearchPlan = {
+		...standardComparisonPlan,
+		depth: "focused",
+		goal: "Recommend private AI coding assistant controls for a small engineering team.",
+		reportIntent: "recommendation",
+		keyQuestions: [
+			"Which repository-aware workflow controls are supported by credible evidence?",
+			"Which pricing and compliance claims remain unsupported?",
+		],
+		reportShape: ["Limited answer", "Supported findings", "Report Limitations"],
+	};
+	return {
+		id: "partial-evidence-limited-research-report",
+		title: "Partial evidence publishes a Limited Research Report",
+		plan,
+		reviewedSources: [
+			reviewedSource({
+				id: "repo-control-source",
+				title: "Repository permission control documentation",
+				canonicalUrl: "https://vendor.example.test/repository-controls",
+				supportedKeyQuestions: [plan.keyQuestions[0]],
+				keyFindings: [
+					"Repository-aware workflows can be scoped by organization permissions.",
+				],
+			}),
+		],
+		evidenceNotes: [
+			evidenceNote({
+				id: "note-repo-control",
+				sourceId: "repo-control-source",
+				findingText:
+					"Repository-aware workflows can be scoped by organization permissions.",
+				supportedKeyQuestion: plan.keyQuestions[0],
+				sourceSupport: {
+					sourceId: "repo-control-source",
+					reviewedSourceId: "repo-control-source",
+				},
+			}),
+		],
+		synthesisClaims: [
+			synthesisClaim({
+				id: "claim-repo-control",
+				statement:
+					"Repository-aware workflows can be scoped by organization permissions.",
+				planQuestion: plan.keyQuestions[0],
+				status: "accepted",
+				evidenceNoteId: "note-repo-control",
+			}),
+		],
+		reportArtifact: {
+			id: "artifact-limited-report",
+			contentText: [
+				"# Limited Research Report: Private AI coding assistant controls",
+				"## Answer",
+				"The useful supported answer is narrow: repository-aware workflows can be scoped by organization permissions. [1]",
+				"## Supported Findings",
+				"- Repository-aware workflows can be scoped by organization permissions. [1]",
+				"## Report Limitations",
+				"- Pricing and compliance claims remain unsupported and are omitted from the report body.",
+				"## Source Ledger Snapshot",
+				"### Cited Sources",
+				"- Repository permission control documentation - https://vendor.example.test/repository-controls",
+			].join("\n"),
+			metadata: {
+				deepResearchReport: true,
+				deepResearchReportOutcome: "limited_research_report",
+				documentRole: "limited_research_report",
+			},
+		},
+		stabilizationOutcome: {
+			outcome: "limited_research_report",
+			jobId: "partial-evidence-limited-research-report",
+			status: "completed",
+			stage: "limited_research_report_ready",
+			reportBoundaryCreated: true,
+			reportArtifactId: "artifact-limited-report",
+			reportArtifactRole: "limited_research_report",
+			artifactMetadataOutcome: "limited_research_report",
+		},
+	};
+}
+
+function buildNoUsefulClaimEvidenceMemoFixture(): DeepResearchEvaluationFixture {
+	const plan: ResearchPlan = {
+		...standardComparisonPlan,
+		depth: "focused",
+		goal: "Assess unverified battery recycling claims.",
+		reportIntent: "investigation",
+		keyQuestions: [
+			"Which battery recycling claims are supported by credible topic-relevant evidence?",
+		],
+		reportShape: ["Evidence Limitation Memo"],
+	};
+	return {
+		id: "no-useful-claim-evidence-limitation-memo",
+		title:
+			"No useful Central Synthesis Claim publishes Evidence Limitation Memo",
+		plan,
+		reviewedSources: [
+			reviewedSource({
+				id: "unsupported-recycling-source",
+				title: "Unsupported recycling claims page",
+				canonicalUrl: "https://claims.example.test/recycling",
+				supportedKeyQuestions: [plan.keyQuestions[0]],
+				keyFindings: [
+					"The page repeats the claim but gives no credible evidence.",
+				],
+				topicRelevant: true,
+			}),
+		],
+		evidenceNotes: [
+			evidenceNote({
+				id: "note-unsupported-recycling",
+				sourceId: "unsupported-recycling-source",
+				findingText:
+					"The page repeats the claim but gives no credible evidence.",
+				supportedKeyQuestion: plan.keyQuestions[0],
+				sourceSupport: {
+					sourceId: "unsupported-recycling-source",
+					reviewedSourceId: "unsupported-recycling-source",
+				},
+			}),
+		],
+		synthesisClaims: [
+			synthesisClaim({
+				id: "claim-unsupported-recycling",
+				statement:
+					"The battery recycling claim is not supported by credible evidence.",
+				planQuestion: plan.keyQuestions[0],
+				status: "rejected",
+				statusReason:
+					"No useful topic-relevant synthesized claim survived citation audit.",
+				evidenceNoteId: "note-unsupported-recycling",
+			}),
+		],
+		reportArtifact: {
+			id: "artifact-evidence-limitation-memo",
+			contentText: [
+				"# Evidence Limitation Memo: Assess unverified battery recycling claims",
+				"## Reviewed Scope",
+				"| Scope item | Count |",
+				"| --- | ---: |",
+				"| Reviewed sources | 1 |",
+				"## Grounded Limitation Reasons",
+				"- No useful topic-relevant synthesized claim survived citation audit.",
+				"## Recovery Actions",
+				"- Search for primary technical, regulatory, or audited lifecycle evidence.",
+			].join("\n"),
+			metadata: {
+				documentRole: "evidence_limitation_memo",
+			},
+		},
+		stabilizationOutcome: {
+			outcome: "evidence_limitation_memo",
+			jobId: "no-useful-claim-evidence-limitation-memo",
+			status: "completed",
+			stage: "evidence_limitation_memo_ready",
+			reportBoundaryCreated: false,
+			reportArtifactId: "artifact-evidence-limitation-memo",
+			reportArtifactRole: "evidence_limitation_memo",
+		},
+	};
+}
+
 export async function evaluateGoldenDeepResearchFixtures(): Promise<
 	DeepResearchEvaluationResult[]
 > {
@@ -960,6 +1663,7 @@ export async function evaluateDeepResearchRun(
 	run: DeepResearchEvaluationRun,
 ): Promise<DeepResearchEvaluationResult> {
 	const dimensions = buildPassingDimensions();
+	const stabilizationOutcome = run.stabilizationOutcome?.outcome;
 	const coverage = assessResearchCoverage({
 		jobId: run.id,
 		conversationId: "evaluation-conversation",
@@ -971,7 +1675,10 @@ export async function evaluateDeepResearchRun(
 		},
 	});
 
-	if (coverage.status === "insufficient") {
+	if (
+		coverage.status === "insufficient" &&
+		!allowsInsufficientCoverage(stabilizationOutcome)
+	) {
 		failDimension(
 			dimensions.sourceRelevance,
 			coverage.reportLimitations.some(
@@ -991,7 +1698,10 @@ export async function evaluateDeepResearchRun(
 	const minimumAcceptedCentralClaims = run.expectedComparisonGrid?.length
 		? run.expectedComparisonGrid.length
 		: run.plan.keyQuestions.length;
-	if (acceptedSupportedCentralClaims.length < minimumAcceptedCentralClaims) {
+	if (
+		acceptedSupportedCentralClaims.length < minimumAcceptedCentralClaims &&
+		!allowsPartialOrNoClaimOutcome(stabilizationOutcome)
+	) {
 		failDimension(
 			dimensions.claimGrounding,
 			"Enough reviewed sources were present, but the fixture had too few accepted supported central claims.",
@@ -1001,7 +1711,8 @@ export async function evaluateDeepResearchRun(
 		run.synthesisClaims.some(
 			(claim) =>
 				claim.central && ["needs-repair", "rejected"].includes(claim.status),
-		)
+		) &&
+		!allowsRejectedCentralClaims(stabilizationOutcome)
 	) {
 		failDimension(
 			dimensions.claimGrounding,
@@ -1017,7 +1728,9 @@ export async function evaluateDeepResearchRun(
 			"Report reads like repeated source notes instead of synthesized analysis.",
 		);
 	}
-	evaluateComparisonCoverage(run, dimensions.comparisonCoverage);
+	if (!isLifecycleOnlyOutcome(stabilizationOutcome)) {
+		evaluateComparisonCoverage(run, dimensions.comparisonCoverage);
+	}
 	evaluateSearchPolicyFit(run, dimensions.searchPolicyFit);
 	evaluateReportAnswerQuality(run, dimensions.readableSynthesis);
 	evaluateSourceLedgerQuality(run, dimensions);
@@ -1065,6 +1778,7 @@ export async function evaluateDeepResearchRun(
 			"Unsupported Non-Central Claims were removable without blocking supported central claims.",
 		);
 	}
+	evaluateStabilizationOutcome(run, dimensions.stabilizationOutcome);
 
 	return {
 		fixtureId: run.id,
@@ -1087,7 +1801,49 @@ function buildPassingDimensions(): Record<
 		durableResume: { passed: true, reasons: [] },
 		localization: { passed: true, reasons: [] },
 		hardSearchBehavior: { passed: true, reasons: [] },
+		stabilizationOutcome: { passed: true, reasons: [] },
 	};
+}
+
+function allowsInsufficientCoverage(
+	outcome: DeepResearchEvaluationOutcome | undefined,
+): boolean {
+	return (
+		outcome === "plan_revision_needed" ||
+		outcome === "evidence_limitation_memo" ||
+		outcome === "limited_research_report" ||
+		outcome === "corrected_plan_clean_execution"
+	);
+}
+
+function allowsPartialOrNoClaimOutcome(
+	outcome: DeepResearchEvaluationOutcome | undefined,
+): boolean {
+	return (
+		outcome === "limited_research_report" ||
+		outcome === "evidence_limitation_memo" ||
+		outcome === "plan_revision_needed" ||
+		outcome === "corrected_plan_clean_execution"
+	);
+}
+
+function allowsRejectedCentralClaims(
+	outcome: DeepResearchEvaluationOutcome | undefined,
+): boolean {
+	return (
+		outcome === "evidence_limitation_memo" ||
+		outcome === "plan_revision_needed" ||
+		outcome === "corrected_plan_clean_execution"
+	);
+}
+
+function isLifecycleOnlyOutcome(
+	outcome: DeepResearchEvaluationOutcome | undefined,
+): boolean {
+	return (
+		outcome === "plan_revision_needed" ||
+		outcome === "corrected_plan_clean_execution"
+	);
 }
 
 function failDimension(
@@ -1368,6 +2124,284 @@ function isSearchPolicyCompatible(
 		return policy === "commerce";
 	}
 	return policy === "general";
+}
+
+function evaluateStabilizationOutcome(
+	run: DeepResearchEvaluationRun,
+	dimension: DeepResearchEvaluationDimensionResult,
+) {
+	const outcome = run.stabilizationOutcome;
+	if (!outcome) return;
+	if (outcome.jobId !== run.id) {
+		failDimension(
+			dimension,
+			"Stabilization outcome must belong to the evaluated fixture job.",
+		);
+	}
+	if (outcome.status === "failed") {
+		failDimension(
+			dimension,
+			"Stabilization fixtures must not encode recovery outcomes as failed jobs.",
+		);
+	}
+	if (outcome.outcome === "plan_revision_needed") {
+		evaluatePlanRevisionNeededOutcome(outcome, dimension);
+	} else if (outcome.outcome === "corrected_plan_clean_execution") {
+		evaluateCorrectedPlanCleanExecutionOutcome(outcome, dimension);
+	} else if (outcome.outcome === "limited_research_report") {
+		evaluateLimitedResearchReportOutcome(run, outcome, dimension);
+	} else if (outcome.outcome === "evidence_limitation_memo") {
+		evaluateEvidenceLimitationMemoOutcome(run, outcome, dimension);
+	}
+}
+
+function evaluatePlanRevisionNeededOutcome(
+	outcome: DeepResearchEvaluationStabilizationOutcome,
+	dimension: DeepResearchEvaluationDimensionResult,
+) {
+	if (
+		outcome.status !== "completed" ||
+		outcome.stage !== "plan_revision_needed"
+	) {
+		failDimension(
+			dimension,
+			"Plan Health Check recovery must complete the job as plan_revision_needed.",
+		);
+	}
+	if (outcome.reportBoundaryCreated || outcome.reportArtifactId) {
+		failDimension(
+			dimension,
+			"Research Plan Revision Needed must not create a report artifact or Report Boundary.",
+		);
+	}
+	const correctedPlan = outcome.correctedPlan;
+	if (!correctedPlan) {
+		failDimension(
+			dimension,
+			"Research Plan Revision Needed must expose a corrected Research Plan draft.",
+		);
+		return;
+	}
+	if (
+		correctedPlan.status !== "awaiting_approval" ||
+		correctedPlan.version < 2
+	) {
+		failDimension(
+			dimension,
+			"Corrected Research Plan drafts must be a new awaiting-approval plan version.",
+		);
+	}
+	if (correctedPlan.sourceWorkAutoStarted) {
+		failDimension(
+			dimension,
+			"Plan Health Check recovery must not auto-start source-heavy work for the corrected draft.",
+		);
+	}
+	if (correctedPlan.plan.reportIntent !== "recommendation") {
+		failDimension(
+			dimension,
+			"Corrected poisoned architecture plans must recover recommendation-oriented framing.",
+		);
+	}
+	if (correctedPlan.plan.comparedEntities?.length) {
+		failDimension(
+			dimension,
+			"Corrected poisoned architecture plans must not retain fake Compared Entities.",
+		);
+	}
+	if (
+		!correctedPlan.plan.planNormalizationNote?.includes(
+			"Candidate architecture patterns will be discovered during research",
+		)
+	) {
+		failDimension(
+			dimension,
+			"Corrected poisoned architecture plans must carry the Plan Normalization Note.",
+		);
+	}
+}
+
+function evaluateCorrectedPlanCleanExecutionOutcome(
+	outcome: DeepResearchEvaluationStabilizationOutcome,
+	dimension: DeepResearchEvaluationDimensionResult,
+) {
+	const cleanExecution = outcome.cleanExecution;
+	if (!cleanExecution) {
+		failDimension(
+			dimension,
+			"Corrected-plan fixtures must encode clean execution state.",
+		);
+		return;
+	}
+	if (cleanExecution.sameJobId !== outcome.jobId) {
+		failDimension(
+			dimension,
+			"Corrected-plan approval must continue the same Deep Research Job.",
+		);
+	}
+	if (cleanExecution.approvedPlanVersion < 2) {
+		failDimension(
+			dimension,
+			"Corrected-plan approval must advance to a new approved plan version.",
+		);
+	}
+	if (!cleanExecution.positivePassStateRetired) {
+		failDimension(
+			dimension,
+			"Corrected-plan approval must retire stale positive pass state from the poisoned run.",
+		);
+	}
+	if (cleanExecution.activePassNumbers.some((passNumber) => passNumber <= 0)) {
+		failDimension(
+			dimension,
+			"Corrected-plan active passes must restart with fresh positive pass numbers.",
+		);
+	}
+	if (cleanExecution.retiredPassNumbers.some((passNumber) => passNumber > 0)) {
+		failDimension(
+			dimension,
+			"Poisoned positive pass numbers must remain diagnostic history, not active corrected-plan coverage.",
+		);
+	}
+	if (
+		cleanExecution.activeTaskAssignments.some((assignment) =>
+			/vehicle|dealer|trim|manufacturer|model year/iu.test(assignment),
+		)
+	) {
+		failDimension(
+			dimension,
+			"Corrected-plan active tasks must not retain poisoned product or vehicle framing.",
+		);
+	}
+	if (cleanExecution.correctedSourceIds.length === 0) {
+		failDimension(
+			dimension,
+			"Corrected-plan clean execution must include corrected-run source diagnostics.",
+		);
+	}
+	if (cleanExecution.poisonedDiagnosticSourceIds.length === 0) {
+		failDimension(
+			dimension,
+			"Corrected-plan clean execution must preserve poisoned-run diagnostics.",
+		);
+	}
+	if (cleanExecution.jobSealed) {
+		failDimension(
+			dimension,
+			"Corrected-plan jobs must remain unsealed until a report outcome is published.",
+		);
+	}
+}
+
+function evaluateLimitedResearchReportOutcome(
+	run: DeepResearchEvaluationRun,
+	outcome: DeepResearchEvaluationStabilizationOutcome,
+	dimension: DeepResearchEvaluationDimensionResult,
+) {
+	if (
+		outcome.status !== "completed" ||
+		outcome.stage !== "limited_research_report_ready"
+	) {
+		failDimension(
+			dimension,
+			"Limited Research Report fixtures must complete at limited_research_report_ready.",
+		);
+	}
+	if (!outcome.reportBoundaryCreated) {
+		failDimension(
+			dimension,
+			"Limited Research Reports must create a Report Boundary.",
+		);
+	}
+	if (
+		outcome.reportArtifactRole !== "limited_research_report" ||
+		outcome.artifactMetadataOutcome !== "limited_research_report"
+	) {
+		failDimension(
+			dimension,
+			"Limited Research Report artifacts must carry limited_research_report metadata.",
+		);
+	}
+	if (
+		!run.synthesisClaims.some(
+			(claim) =>
+				claim.central &&
+				claim.status === "accepted" &&
+				claim.evidenceLinks.some((link) => link.relation === "support"),
+		)
+	) {
+		failDimension(
+			dimension,
+			"Limited Research Reports require at least one useful citation-supported Central Synthesis Claim.",
+		);
+	}
+	const reportText = reportTextForEvaluation(run);
+	if (!/^# Limited Research Report:/imu.test(reportText)) {
+		failDimension(
+			dimension,
+			"Limited Research Reports must be explicitly labeled as limited.",
+		);
+	}
+	if (!/## Report Limitations/iu.test(reportText)) {
+		failDimension(
+			dimension,
+			"Limited Research Reports must include explicit Report Limitations.",
+		);
+	}
+}
+
+function evaluateEvidenceLimitationMemoOutcome(
+	run: DeepResearchEvaluationRun,
+	outcome: DeepResearchEvaluationStabilizationOutcome,
+	dimension: DeepResearchEvaluationDimensionResult,
+) {
+	if (
+		outcome.status !== "completed" ||
+		outcome.stage !== "evidence_limitation_memo_ready"
+	) {
+		failDimension(
+			dimension,
+			"Evidence Limitation Memo fixtures must complete at evidence_limitation_memo_ready.",
+		);
+	}
+	if (outcome.reportBoundaryCreated) {
+		failDimension(
+			dimension,
+			"Evidence Limitation Memos must not create a Report Boundary.",
+		);
+	}
+	if (outcome.reportArtifactRole !== "evidence_limitation_memo") {
+		failDimension(
+			dimension,
+			"Evidence Limitation Memo artifacts must carry evidence_limitation_memo metadata.",
+		);
+	}
+	if (
+		run.synthesisClaims.some(
+			(claim) =>
+				claim.central &&
+				claim.status === "accepted" &&
+				claim.evidenceLinks.some((link) => link.relation === "support"),
+		)
+	) {
+		failDimension(
+			dimension,
+			"Evidence Limitation Memo fallback requires no useful accepted Central Synthesis Claim.",
+		);
+	}
+	const reportText = reportTextForEvaluation(run);
+	if (!/^# Evidence Limitation Memo:/imu.test(reportText)) {
+		failDimension(
+			dimension,
+			"No-useful-claim fallback must publish an Evidence Limitation Memo.",
+		);
+	}
+	if (/^# (Limited )?Research Report:/imu.test(reportText)) {
+		failDimension(
+			dimension,
+			"No-useful-claim fallback must not be padded into a Research Report.",
+		);
+	}
 }
 
 function hasUnresolvedMaterialClaimConflict(

@@ -8,6 +8,139 @@ import {
 } from "./evaluation";
 
 describe("Deep Research evaluation harness", () => {
+	it("accepts the architecture recommendation baseline fixture without planner pollution", async () => {
+		const fixture =
+			goldenDeepResearchFixtures.architectureRecommendationBaseline;
+		const result = await evaluateDeepResearchFixture(fixture);
+		const questions = fixture.plan.keyQuestions.join("\n");
+
+		expect(result.accepted).toBe(true);
+		expect(fixture.plan.reportIntent).toBe("recommendation");
+		expect(fixture.plan.comparedEntities ?? []).toEqual([]);
+		expect(fixture.plan.planNormalizationNote).toContain(
+			"Candidate architecture patterns will be discovered during research",
+		);
+		expect(questions).toEqual(expect.stringContaining("architecture patterns"));
+		expect(questions).toEqual(expect.stringContaining("failure modes"));
+		expect(questions).toEqual(
+			expect.stringContaining("implementation roadmap"),
+		);
+		expect(questions).not.toMatch(/manufacturer|trim|dealer|rider|model year/i);
+	});
+
+	it("accepts named approach comparisons with strict Comparison Report Shape", async () => {
+		const fixture = goldenDeepResearchFixtures.namedApproachComparison;
+		const result = await evaluateDeepResearchFixture(fixture);
+
+		expect(result.accepted).toBe(true);
+		expect(fixture.plan.reportIntent).toBe("comparison");
+		expect(fixture.plan.comparedEntities).toEqual([
+			"RAG pipelines",
+			"Workflow graphs",
+			"Multi-agent research systems",
+		]);
+		expect(fixture.reportArtifact?.contentText).toContain(
+			"| Axis | RAG pipelines | Workflow graphs | Multi-agent research systems | Decision Meaning |",
+		);
+		expect(result.dimensions.comparisonCoverage.passed).toBe(true);
+	});
+
+	it("keeps named product and vehicle comparison fallback available where appropriate", async () => {
+		const fixture = goldenDeepResearchFixtures.nulaneKathmanduComparison;
+		const result = await evaluateDeepResearchFixture(fixture);
+		const questions = fixture.plan.keyQuestions.join("\n");
+
+		expect(result.accepted).toBe(true);
+		expect(fixture.plan.reportIntent).toBe("comparison");
+		expect(fixture.plan.comparedEntities).toEqual([
+			"CUBE Nulane Hybrid C:62 SLX 400X 2025",
+			"CUBE Kathmandu Hybrid SLX 2025",
+		]);
+		expect(questions).toMatch(/pricing|availability|motor|battery/i);
+		expect(result.dimensions.searchPolicyFit.passed).toBe(true);
+	});
+
+	it("accepts high-reviewed zero-topic Plan Health Check recovery as Research Plan Revision Needed", async () => {
+		const fixture =
+			goldenDeepResearchFixtures.highReviewedZeroTopicPlanHealthRecovery;
+		const result = await evaluateDeepResearchFixture(fixture);
+
+		expect(result.accepted).toBe(true);
+		expect(result.dimensions.stabilizationOutcome.passed).toBe(true);
+		expect(fixture.stabilizationOutcome).toMatchObject({
+			outcome: "plan_revision_needed",
+			status: "completed",
+			stage: "plan_revision_needed",
+			reportBoundaryCreated: false,
+			reportArtifactId: null,
+			correctedPlan: {
+				version: 2,
+				status: "awaiting_approval",
+				sourceWorkAutoStarted: false,
+				plan: {
+					reportIntent: "recommendation",
+					comparedEntities: [],
+				},
+			},
+		});
+	});
+
+	it("accepts corrected-plan approval only when the same job restarts from clean execution state", async () => {
+		const fixture = goldenDeepResearchFixtures.correctedPlanCleanExecution;
+		const result = await evaluateDeepResearchFixture(fixture);
+
+		expect(result.accepted).toBe(true);
+		expect(result.dimensions.stabilizationOutcome.passed).toBe(true);
+		expect(fixture.stabilizationOutcome?.cleanExecution).toMatchObject({
+			sameJobId: fixture.id,
+			approvedPlanVersion: 2,
+			positivePassStateRetired: true,
+			activePassNumbers: [1, 2],
+			retiredPassNumbers: [-1],
+			jobSealed: false,
+		});
+	});
+
+	it("accepts partial evidence publication as a Limited Research Report with limitations", async () => {
+		const fixture =
+			goldenDeepResearchFixtures.partialEvidenceLimitedResearchReport;
+		const result = await evaluateDeepResearchFixture(fixture);
+
+		expect(result.accepted).toBe(true);
+		expect(result.dimensions.stabilizationOutcome.passed).toBe(true);
+		expect(fixture.stabilizationOutcome).toMatchObject({
+			outcome: "limited_research_report",
+			stage: "limited_research_report_ready",
+			reportBoundaryCreated: true,
+			reportArtifactRole: "limited_research_report",
+			artifactMetadataOutcome: "limited_research_report",
+		});
+		expect(fixture.reportArtifact?.contentText).toContain(
+			"## Report Limitations",
+		);
+	});
+
+	it("accepts no-useful-claim fallback as an Evidence Limitation Memo without a Report Boundary", async () => {
+		const fixture =
+			goldenDeepResearchFixtures.noUsefulClaimEvidenceLimitationMemo;
+		const result = await evaluateDeepResearchFixture(fixture);
+
+		expect(result.accepted).toBe(true);
+		expect(result.dimensions.stabilizationOutcome.passed).toBe(true);
+		expect(fixture.stabilizationOutcome).toMatchObject({
+			outcome: "evidence_limitation_memo",
+			stage: "evidence_limitation_memo_ready",
+			reportBoundaryCreated: false,
+			reportArtifactRole: "evidence_limitation_memo",
+		});
+		expect(fixture.reportArtifact?.contentText).toContain(
+			"# Evidence Limitation Memo:",
+		);
+		expect(fixture.reportArtifact?.contentText).not.toContain(
+			"# Limited Research Report:",
+		);
+	});
+
 	it("evaluates run-level comparison coverage and search policy fit from the saved report artifact", async () => {
 		const plan = {
 			...goldenDeepResearchFixtures.sourceNoteDumpReport.plan,
@@ -396,9 +529,16 @@ describe("Deep Research evaluation harness", () => {
 	});
 
 	it("runs all golden fixtures repeatably for CI without live web dependencies", async () => {
+		// Focused deterministic command: npm test -- src/lib/server/services/deep-research/evaluation.test.ts
 		const results = await evaluateGoldenDeepResearchFixtures();
 
 		expect(results.map((result) => result.fixtureId)).toEqual([
+			"architecture-recommendation-baseline",
+			"named-approach-comparison",
+			"high-reviewed-zero-topic-plan-health-recovery",
+			"corrected-plan-clean-execution",
+			"partial-evidence-limited-research-report",
+			"no-useful-claim-evidence-limitation-memo",
 			"off-topic-authority-weak-notes",
 			"claim-support-and-conflict",
 			"source-note-dump-report",
@@ -407,6 +547,12 @@ describe("Deep Research evaluation harness", () => {
 			"crash-resume-hungarian-hard-search",
 		]);
 		expect(results.map((result) => result.accepted)).toEqual([
+			true,
+			true,
+			true,
+			true,
+			true,
+			true,
 			false,
 			false,
 			false,
@@ -424,6 +570,7 @@ describe("Deep Research evaluation harness", () => {
 			"readableSynthesis",
 			"searchPolicyFit",
 			"sourceRelevance",
+			"stabilizationOutcome",
 		]);
 	});
 });

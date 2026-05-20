@@ -1258,6 +1258,176 @@ describe("deep research job shell service", () => {
 		expect(secondApproval).toEqual(firstApproval);
 	});
 
+	it("approves a corrected plan revision on the same completed job with clean execution state", async () => {
+		const {
+			approveDeepResearchPlan,
+			completeDeepResearchJobWithPlanRevisionNeeded,
+			startDeepResearchJobShell,
+		} = await import("./index");
+		const { saveDiscoveredResearchSource, listResearchSources } = await import(
+			"./sources"
+		);
+		const {
+			listResearchCoverageGaps,
+			saveCoverageGapsForPass,
+			upsertResearchPassCheckpoint,
+		} = await import("./pass-state");
+		const { createResearchTasksFromCoverageGaps, listResearchTasks } =
+			await import("./tasks");
+		const userRequest =
+			"What is the most reliable architecture for building an enterprise deep research assistant in 2026? Compare at least three architecture patterns, identify failure modes, recommend one design, and include an implementation roadmap.";
+		const created = await startDeepResearchJobShell({
+			userId: "user-1",
+			conversationId: "conv-1",
+			triggerMessageId: "user-msg-1",
+			userRequest,
+			depth: "standard",
+			now: new Date("2026-05-05T10:01:00.000Z"),
+		});
+		const firstApproval = await approveDeepResearchPlan({
+			userId: "user-1",
+			jobId: created.id,
+			now: new Date("2026-05-05T10:06:00.000Z"),
+		});
+		const diagnosticSource = await saveDiscoveredResearchSource({
+			userId: "user-1",
+			conversationId: "conv-1",
+			jobId: created.id,
+			url: "https://vehicles.example.test/off-topic",
+			title: "Off-topic vehicle listing",
+			provider: "public_web",
+			snippet: "Dealer listing kept as diagnostic history.",
+			discoveredAt: new Date("2026-05-05T10:07:00.000Z"),
+		});
+		const checkpoint = await upsertResearchPassCheckpoint({
+			userId: "user-1",
+			jobId: created.id,
+			conversationId: "conv-1",
+			passNumber: 2,
+			searchIntent: "Poisoned follow-up coverage",
+			reviewedSourceIds: [diagnosticSource.id],
+			now: new Date("2026-05-05T10:08:00.000Z"),
+		});
+		const [gap] = await saveCoverageGapsForPass({
+			userId: "user-1",
+			jobId: created.id,
+			conversationId: "conv-1",
+			passCheckpointId: checkpoint.id,
+			gaps: [
+				{
+					keyQuestion: "Which manufacturers and trim differences matter most?",
+					reason: "Poisoned product question from the bad plan.",
+					reviewedSourceCount: 75,
+					severity: "critical",
+					recommendedNextAction:
+						"Review additional vehicle listing sources for the bad plan.",
+				},
+			],
+			now: new Date("2026-05-05T10:08:30.000Z"),
+		});
+		await createResearchTasksFromCoverageGaps({
+			userId: "user-1",
+			jobId: created.id,
+			conversationId: "conv-1",
+			passNumber: 2,
+			gaps: [
+				{
+					id: gap.id,
+					keyQuestion: gap.keyQuestion,
+					summary: gap.recommendedNextAction,
+					severity: gap.severity,
+				},
+			],
+			now: new Date("2026-05-05T10:09:00.000Z"),
+		});
+
+		const revisionNeeded = await completeDeepResearchJobWithPlanRevisionNeeded({
+			userId: "user-1",
+			jobId: created.id,
+			reason:
+				"The Research Plan appears to have framed the request incorrectly.",
+			signals: [
+				"Abstract architecture recommendation was treated as a strict entity comparison.",
+			],
+			sourceCounts: {
+				discovered: 75,
+				reviewed: 75,
+				cited: 0,
+			},
+			now: new Date("2026-05-05T10:20:00.000Z"),
+		});
+		const approvedCorrected = await approveDeepResearchPlan({
+			userId: "user-1",
+			jobId: created.id,
+			now: new Date("2026-05-05T10:25:00.000Z"),
+		});
+		const sources = await listResearchSources({
+			userId: "user-1",
+			jobId: created.id,
+		});
+		const tasks = await listResearchTasks({
+			userId: "user-1",
+			jobId: created.id,
+		});
+		const gaps = await listResearchCoverageGaps({
+			userId: "user-1",
+			jobId: created.id,
+		});
+
+		expect(revisionNeeded).toMatchObject({
+			id: created.id,
+			status: "completed",
+			stage: "plan_revision_needed",
+			reportArtifactId: null,
+			currentPlan: {
+				version: (firstApproval?.currentPlan?.version ?? 1) + 1,
+				status: "awaiting_approval",
+			},
+		});
+		expect(approvedCorrected).toMatchObject({
+			id: created.id,
+			status: "approved",
+			stage: "plan_approved",
+			reportArtifactId: null,
+			completedAt: null,
+			currentPlan: {
+				version: revisionNeeded?.currentPlan?.version,
+				status: "approved",
+				rawPlan: {
+					reportIntent: "recommendation",
+				},
+			},
+		});
+		expect(
+			approvedCorrected?.currentPlan?.rawPlan?.comparedEntities,
+		).toBeUndefined();
+		expect(sources).toEqual([
+			expect.objectContaining({
+				id: diagnosticSource.id,
+				jobId: created.id,
+				url: "https://vehicles.example.test/off-topic",
+			}),
+		]);
+		expect(tasks).toEqual([
+			expect.objectContaining({
+				coverageGapId: gap.id,
+				passNumber: expect.any(Number),
+				status: "cancelled",
+				failureReason:
+					"Retired because a corrected Research Plan was approved for the same job.",
+			}),
+		]);
+		expect(tasks[0].passNumber).toBeLessThan(0);
+		expect(gaps).toEqual([
+			expect.objectContaining({
+				id: gap.id,
+				lifecycleState: "resolved",
+				resolutionSummary:
+					"Retired because a corrected Research Plan was approved for the same job.",
+			}),
+		]);
+	});
+
 	it("does not expose the legacy fake report completion path", async () => {
 		const deepResearchService = await import("./index");
 

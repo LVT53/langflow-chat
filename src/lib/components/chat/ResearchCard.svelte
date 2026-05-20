@@ -100,9 +100,11 @@ let canAdvanceResearch = $derived(
 	job.status === "approved" || job.status === "running",
 );
 let activePlan = $derived(job.plan ?? job.currentPlan ?? null);
+let isPlanRevisionNeeded = $derived(isPlanRevisionNeededJob(job, activePlan));
 let activeReportIntent = $derived(activePlan?.rawPlan?.reportIntent ?? null);
 let canApprovePlan = $derived(
-	job.status === "awaiting_approval" && Boolean(activePlan),
+	(job.status === "awaiting_approval" || isPlanRevisionNeeded) &&
+		Boolean(activePlan),
 );
 let hasReportIntentEdit = $derived(
 	Boolean(
@@ -115,10 +117,16 @@ let isEvidenceLimitationMemo = $derived(
 		(job.stage === "evidence_limitation_memo_ready" ||
 			Boolean(evidenceLimitationMemo)),
 );
+let isLimitedResearchReport = $derived(isLimitedResearchReportJob(job));
 let researchSeverity = $derived(
 	getResearchSeverity(job, isEvidenceLimitationMemo),
 );
 let reportDocument = $derived(buildReportDocument(job));
+let openReportLabelKey = $derived(
+	isLimitedResearchReport
+		? "deepResearch.openLimitedReportLabel"
+		: "deepResearch.openReportLabel",
+);
 let sourceCounts = $derived(
 	job.sourceCounts ?? { discovered: 0, reviewed: 0, cited: 0 },
 );
@@ -213,12 +221,33 @@ function getResearchSeverity(
 	hasEvidenceLimitationMemo: boolean,
 ): ResearchCardSeverity {
 	if (hasEvidenceLimitationMemo) return "insufficient_evidence";
+	if (isPlanRevisionNeededJob(job, job.plan ?? job.currentPlan ?? null))
+		return "needs_attention";
 	if (job.status === "awaiting_approval") return "needs_attention";
 	if (job.status === "approved" || job.status === "running") return "working";
 	if (job.status === "completed") return "completed";
 	if (job.status === "cancelled") return "cancelled";
 	if (job.status === "failed") return "failed";
 	return "awaiting_plan";
+}
+
+function isPlanRevisionNeededJob(
+	job: DeepResearchJob,
+	plan: DeepResearchPlanSummary | null,
+): boolean {
+	return (
+		job.status === "completed" &&
+		job.stage === "plan_revision_needed" &&
+		plan?.status === "awaiting_approval"
+	);
+}
+
+function isLimitedResearchReportJob(job: DeepResearchJob): boolean {
+	return (
+		job.status === "completed" &&
+		job.stage === "limited_research_report_ready" &&
+		Boolean(job.reportArtifactId)
+	);
 }
 
 function severityLabelKey(severity: ResearchCardSeverity): I18nKey {
@@ -366,6 +395,9 @@ function formatFinalResearchTimeLabel(job: DeepResearchJob): string | null {
 function buildTimelineSteps(job: DeepResearchJob): TimelineStep[] {
 	const currentIndex = activeTimelineIndex(job);
 	const timelineEvents = buildTimelineEventViews(job.timeline ?? []);
+	const isTerminalCompleted =
+		job.status === "completed" &&
+		!isPlanRevisionNeededJob(job, job.plan ?? job.currentPlan ?? null);
 	return TIMELINE_STEP_DEFINITIONS.map((step, index) => {
 		const events = timelineEvents.filter((event) =>
 			step.stages.includes(event.stage),
@@ -373,7 +405,7 @@ function buildTimelineSteps(job: DeepResearchJob): TimelineStep[] {
 		return {
 			...step,
 			status:
-				job.status === "completed" || index < currentIndex
+				isTerminalCompleted || index < currentIndex
 					? "completed"
 					: index === currentIndex
 						? "active"
@@ -383,7 +415,7 @@ function buildTimelineSteps(job: DeepResearchJob): TimelineStep[] {
 	}).filter((step, index) => {
 		if (step.events.length > 0) return true;
 		if (index === currentIndex) return true;
-		if (job.status === "awaiting_approval" && index === currentIndex - 1)
+		if (job.status === "awaiting_approval" && step.id === "plan-drafted")
 			return true;
 		return false;
 	});
@@ -406,6 +438,8 @@ function stageProgressBand(
 	job: DeepResearchJob,
 ): "start" | "early" | "middle" | "late" | "done" {
 	const index = activeTimelineIndex(job);
+	if (isPlanRevisionNeededJob(job, job.plan ?? job.currentPlan ?? null))
+		return "early";
 	if (job.status === "completed") return "done";
 	if (index <= 1) return "start";
 	if (index <= 3) return "early";
@@ -631,6 +665,9 @@ function timelineEventSummary(event: TimelineEventView): string {
 	if (event.messageKey === "deepResearch.timeline.planGenerated") {
 		return $t("deepResearch.timeline.summary.planGenerated");
 	}
+	if (event.messageKey === "deepResearch.timeline.planRevisionNeeded") {
+		return $t("deepResearch.timeline.summary.planRevisionNeeded");
+	}
 	if (event.messageKey === "deepResearch.timeline.sourceDiscoveryCompleted") {
 		return $t("deepResearch.timeline.summary.sourceDiscoveryCompleted", {
 			count: timelineNumberParam(
@@ -698,6 +735,12 @@ function isLocalizableTimelineSummary(
 	const summary = event.summary.trim();
 	if (event.messageKey === "deepResearch.timeline.planGenerated") {
 		return summary === "Research Plan drafted for approval.";
+	}
+	if (event.messageKey === "deepResearch.timeline.planRevisionNeeded") {
+		return (
+			summary ===
+			"Research Plan revision needed; corrected draft is ready for approval."
+		);
 	}
 	if (event.messageKey === "deepResearch.timeline.sourceDiscoveryCompleted") {
 		return /^Discovered \d+ public web source candidates\.$/.test(summary);
@@ -783,8 +826,16 @@ function timelineNumberParam(
 }
 
 function activeTimelineIndex(job: DeepResearchJob): number {
+	if (isPlanRevisionNeededJob(job, job.plan ?? job.currentPlan ?? null)) {
+		return TIMELINE_STEP_DEFINITIONS.findIndex((step) =>
+			step.stages.includes("plan_revision_needed"),
+		);
+	}
 	if (job.status === "completed") return TIMELINE_STEP_DEFINITIONS.length - 1;
-	if (job.status === "awaiting_approval") return 2;
+	if (job.status === "awaiting_approval")
+		return TIMELINE_STEP_DEFINITIONS.findIndex(
+			(step) => step.id === "approval",
+		);
 	const stage = job.stage ?? "";
 	const index = TIMELINE_STEP_DEFINITIONS.findIndex((step) =>
 		step.stages.includes(stage),
@@ -812,6 +863,11 @@ const TIMELINE_STEP_DEFINITIONS = [
 		id: "plan-drafted",
 		labelKey: "deepResearch.timeline.planDrafted",
 		stages: ["plan_drafted", "plan_revised"],
+	},
+	{
+		id: "plan-revision-needed",
+		labelKey: "deepResearch.timeline.planRevisionNeeded",
+		stages: ["plan_revision_needed"],
 	},
 	{
 		id: "approval",
@@ -865,13 +921,16 @@ function cancelJob() {
 	void onCancel(job.id);
 }
 
-function buildReportFilename(title: string): string {
+function buildReportFilename(
+	title: string,
+	prefix = "Research Report",
+): string {
 	const safeTitle = title
 		.replace(/[\\/:*?"<>|]+/g, " ")
 		.replace(/\s+/g, " ")
 		.trim()
 		.slice(0, 96);
-	return `Research Report - ${safeTitle || "Deep Research"}.md`;
+	return `${prefix} - ${safeTitle || "Deep Research"}.md`;
 }
 
 function buildReportDocument(
@@ -883,7 +942,12 @@ function buildReportDocument(
 		job.evidenceLimitationMemo
 	)
 		return null;
-	const filename = buildReportFilename(job.title);
+	const filename = buildReportFilename(
+		job.title,
+		isLimitedResearchReportJob(job)
+			? $t("deepResearch.limitedReport.filenamePrefix")
+			: undefined,
+	);
 	return {
 		id: `artifact:${job.reportArtifactId}`,
 		source: "knowledge_artifact",
@@ -1111,6 +1175,13 @@ async function submitPlanEdit(event: SubmitEvent) {
 				<span>v{activePlan.version}</span>
 			</div>
 
+			{#if isPlanRevisionNeeded}
+				<div class="research-card__notice research-card__notice--attention">
+					<strong>{$t('deepResearch.planRevision.heading')}</strong>
+					<p>{$t('deepResearch.planRevision.body')}</p>
+				</div>
+			{/if}
+
 			<div class="research-card__effort" aria-label={$t('deepResearch.effortHeading')}>
 				<span>
 					<strong>{$t('deepResearch.expectedTime')}</strong>
@@ -1217,6 +1288,16 @@ async function submitPlanEdit(event: SubmitEvent) {
 				<strong>{$t('deepResearch.planningInProgress')}</strong>
 				<p>{$t('deepResearch.planningInProgressDetail')}</p>
 			</div>
+		</section>
+	{/if}
+
+	{#if isLimitedResearchReport}
+		<section
+			class="research-card__notice research-card__notice--limited"
+			aria-labelledby={`${job.id}-limited-report-heading`}
+		>
+			<h3 id={`${job.id}-limited-report-heading`}>{$t('deepResearch.limitedReport.heading')}</h3>
+			<p>{$t('deepResearch.limitedReport.body')}</p>
 		</section>
 	{/if}
 
@@ -1411,7 +1492,7 @@ async function submitPlanEdit(event: SubmitEvent) {
 		</div>
 	{/if}
 
-	{#if canCancel}
+	{#if canCancel || canApprovePlan}
 		<div class="research-card__actions">
 			{#if canApprovePlan}
 				<button
@@ -1435,16 +1516,18 @@ async function submitPlanEdit(event: SubmitEvent) {
 					{$t('deepResearch.editPlanLabel')}
 				</button>
 			{/if}
-			<button
-				type="button"
-				class="research-card__action research-card__cancel"
-				onclick={cancelJob}
-				disabled={!onCancel || planApprovalPending || planEditPending}
-				aria-label={$t('deepResearch.cancelLabel')}
-				title={$t('deepResearch.cancelLabel')}
-			>
-				{$t('common.cancel')}
-			</button>
+			{#if canCancel}
+				<button
+					type="button"
+					class="research-card__action research-card__cancel"
+					onclick={cancelJob}
+					disabled={!onCancel || planApprovalPending || planEditPending}
+					aria-label={$t('deepResearch.cancelLabel')}
+					title={$t('deepResearch.cancelLabel')}
+				>
+					{$t('common.cancel')}
+				</button>
+			{/if}
 		</div>
 	{/if}
 
@@ -1455,10 +1538,10 @@ async function submitPlanEdit(event: SubmitEvent) {
 				class="research-card__action research-card__action--primary"
 				onclick={openReport}
 				disabled={!onOpenReport}
-				aria-label={$t('deepResearch.openReportLabel')}
-				title={$t('deepResearch.openReportLabel')}
+				aria-label={$t(openReportLabelKey)}
+				title={$t(openReportLabelKey)}
 			>
-				{$t('deepResearch.openReportLabel')}
+				{$t(openReportLabelKey)}
 			</button>
 			<button
 				type="button"
@@ -1754,6 +1837,41 @@ async function submitPlanEdit(event: SubmitEvent) {
 		border-top-color: var(--accent);
 		border-radius: 999px;
 		animation: research-spin 0.9s linear infinite;
+	}
+
+	.research-card__notice {
+		display: flex;
+		flex-direction: column;
+		gap: 0.25rem;
+		border: 1px solid color-mix(in srgb, var(--accent) 24%, var(--border-subtle));
+		border-radius: 8px;
+		background: color-mix(in srgb, var(--accent) 7%, var(--surface-page));
+		padding: var(--space-sm);
+		color: var(--text-secondary);
+	}
+
+	.research-card__notice--attention {
+		border-color: color-mix(in srgb, #f97316 36%, var(--border-subtle));
+		background: color-mix(in srgb, #f97316 8%, var(--surface-page));
+	}
+
+	.research-card__notice--limited {
+		border-color: color-mix(in srgb, #22c55e 28%, var(--border-subtle));
+		background: color-mix(in srgb, #22c55e 7%, var(--surface-page));
+	}
+
+	.research-card__notice h3,
+	.research-card__notice strong {
+		margin: 0;
+		font-size: 0.9rem;
+		color: var(--text-primary);
+	}
+
+	.research-card__notice p {
+		margin: 0;
+		font-size: 0.82rem;
+		line-height: 1.45;
+		color: var(--text-muted);
 	}
 
 	.research-card__sources,

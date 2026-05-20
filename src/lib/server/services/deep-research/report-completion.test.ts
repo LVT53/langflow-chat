@@ -391,6 +391,174 @@ describe("audited Deep Research report completion", () => {
 		});
 	});
 
+	it("writes a Limited Research Report artifact from partial cited central claims and seals the conversation", async () => {
+		const { db } = await import("$lib/server/db");
+		const {
+			approveDeepResearchPlan,
+			completeDeepResearchJobWithAuditedReport,
+			startDeepResearchJobShell,
+		} = await import("./index");
+		const { saveDeepResearchEvidenceNotes } = await import("./evidence-notes");
+		const { upsertResearchPassCheckpoint } = await import("./pass-state");
+		const { markResearchSourceReviewed, saveDiscoveredResearchSource } =
+			await import("./sources");
+		const { saveDeepResearchSynthesisClaims } = await import(
+			"./synthesis-claims"
+		);
+		const { getArtifactForUser } = await import(
+			"$lib/server/services/knowledge/store"
+		);
+
+		const created = await startDeepResearchJobShell({
+			userId: "user-1",
+			conversationId: "conv-1",
+			triggerMessageId: "user-msg-1",
+			userRequest: "Compare private AI coding assistants",
+			depth: "standard",
+			now: new Date("2026-05-05T10:01:00.000Z"),
+		});
+		await approveDeepResearchPlan({
+			userId: "user-1",
+			jobId: created.id,
+			now: new Date("2026-05-05T10:06:00.000Z"),
+		});
+		await seedCompletedMeaningfulPasses(created.id, 3, 2);
+		const checkpoint = await upsertResearchPassCheckpoint({
+			userId: "user-1",
+			jobId: created.id,
+			conversationId: "conv-1",
+			passNumber: 1,
+			searchIntent: "Verify repository workflow support",
+			now: new Date("2026-05-05T10:10:00.000Z"),
+		});
+		const source = await saveDiscoveredResearchSource({
+			userId: "user-1",
+			conversationId: "conv-1",
+			jobId: created.id,
+			url: "https://vendor.example.test/private-ai-coding-workflow",
+			title: "Private AI coding workflow docs",
+			provider: "public_web",
+			snippet: "Repository workflow support for private AI coding assistants.",
+			discoveredAt: new Date("2026-05-05T10:07:00.000Z"),
+		});
+		const reviewedSource = await markResearchSourceReviewed({
+			userId: "user-1",
+			sourceId: source.id,
+			reviewedAt: new Date("2026-05-05T10:08:00.000Z"),
+			reviewedNote:
+				"Private AI coding assistants can support repository-aware workflow when permission controls are documented.",
+			topicRelevant: true,
+			supportedKeyQuestions: [
+				"Which products have the strongest repository-aware coding workflow?",
+			],
+			extractedClaims: [
+				"Private AI coding assistants can support repository-aware workflow when permission controls are documented.",
+			],
+		});
+		const [evidenceNote] = await saveDeepResearchEvidenceNotes({
+			userId: "user-1",
+			jobId: created.id,
+			conversationId: "conv-1",
+			passCheckpointId: checkpoint.id,
+			sourceId: reviewedSource.id,
+			notes: [
+				{
+					supportedKeyQuestion:
+						"Which products have the strongest repository-aware coding workflow?",
+					findingText:
+						"Private AI coding assistants can support repository-aware workflow when permission controls are documented.",
+					sourceSupport: { sourceId: reviewedSource.id },
+				},
+			],
+			now: new Date("2026-05-05T10:11:00.000Z"),
+		});
+		await saveDeepResearchSynthesisClaims({
+			userId: "user-1",
+			jobId: created.id,
+			conversationId: "conv-1",
+			passCheckpointId: checkpoint.id,
+			synthesisPass: "synthesis-pass-1",
+			claims: [
+				{
+					statement:
+						"Private AI coding assistants can support repository-aware workflow when permission controls are documented.",
+					claimType: "general",
+					central: true,
+					status: "accepted",
+					evidenceLinks: [
+						{
+							evidenceNoteId: evidenceNote.id,
+							relation: "support",
+						},
+					],
+				},
+			],
+			now: new Date("2026-05-05T10:12:00.000Z"),
+		});
+
+		const completed = await completeDeepResearchJobWithAuditedReport({
+			userId: "user-1",
+			jobId: created.id,
+			synthesisNotes: buildSynthesisNotes(created.id, [
+				{
+					statement:
+						"Private AI coding assistants can support repository-aware workflow when permission controls are documented.",
+					sourceId: reviewedSource.id,
+					url: reviewedSource.url,
+					title: reviewedSource.title ?? "Private AI coding workflow docs",
+				},
+			]),
+			reportOutcome: "limited_research_report",
+			limitations: [
+				"Pricing and compliance coverage were unsupported and omitted from the report body.",
+			],
+			now: new Date("2026-05-05T10:20:00.000Z"),
+		});
+		const reportArtifact = completed?.reportArtifactId
+			? await getArtifactForUser("user-1", completed.reportArtifactId)
+			: null;
+		const [conversation] = await db
+			.select({
+				status: schema.conversations.status,
+				sealedAt: schema.conversations.sealedAt,
+			})
+			.from(schema.conversations)
+			.where(eq(schema.conversations.id, "conv-1"));
+
+		expect(completed).toMatchObject({
+			id: created.id,
+			status: "completed",
+			stage: "limited_research_report_ready",
+		});
+		expect(reportArtifact).toMatchObject({
+			name: "Limited Research Report - Compare private AI coding assistants.md",
+			metadata: {
+				deepResearchReport: true,
+				deepResearchReportOutcome: "limited_research_report",
+				documentRole: "limited_research_report",
+				citationAuditStatus: expect.any(String),
+			},
+		});
+		expect(reportArtifact?.contentText).toContain(
+			"# Limited Research Report: Compare private AI coding assistants",
+		);
+		expect(reportArtifact?.contentText).toContain(
+			"Private AI coding assistants can support repository-aware workflow when permission controls are documented.",
+		);
+		expect(reportArtifact?.contentText).toContain("## Report Limitations");
+		expect(reportArtifact?.contentText).toContain(
+			"Pricing and compliance coverage were unsupported and omitted from the report body.",
+		);
+		expect(reportArtifact?.contentText).not.toContain(
+			"fully comparable pricing and compliance coverage",
+		);
+		expect(reportArtifact?.contentText).toContain("## Appendix: Sources");
+		expect(conversation).toEqual({
+			status: "sealed",
+			sealedAt: new Date("2026-05-05T10:20:00.000Z"),
+		});
+	});
+
 	it("assembles the completed report from verified Synthesis Claims instead of source-note synthesis text", async () => {
 		const {
 			approveDeepResearchPlan,
@@ -545,10 +713,8 @@ describe("audited Deep Research report completion", () => {
 			saveDiscoveredResearchSource,
 		} = await import("./sources");
 		const { upsertResearchPassCheckpoint } = await import("./pass-state");
-		const {
-			listDeepResearchSynthesisClaims,
-			saveDeepResearchSynthesisClaims,
-		} = await import("./synthesis-claims");
+		const { listDeepResearchSynthesisClaims, saveDeepResearchSynthesisClaims } =
+			await import("./synthesis-claims");
 		const { getArtifactForUser } = await import(
 			"$lib/server/services/knowledge/store"
 		);
@@ -764,7 +930,9 @@ describe("audited Deep Research report completion", () => {
 		const evaluation = await evaluateDeepResearchRun({
 			id: created.id,
 			title: "DB-backed comparison completion fixture",
-			plan: approvedPlan as Parameters<typeof evaluateDeepResearchRun>[0]["plan"],
+			plan: approvedPlan as Parameters<
+				typeof evaluateDeepResearchRun
+			>[0]["plan"],
 			reviewedSources: sources.map((source) => ({
 				id: source.id,
 				title: source.title ?? source.url,
@@ -779,13 +947,13 @@ describe("audited Deep Research report completion", () => {
 			discoveryRequests: [
 				{
 					query: "Product A official specifications Range",
-					sourcePolicy: "commerce",
+					sourcePolicy: "technical",
 					comparedEntity: "Product A",
 					comparisonAxis: "Range",
 				},
 				{
 					query: "Product B official specifications Motor support",
-					sourcePolicy: "commerce",
+					sourcePolicy: "technical",
 					comparedEntity: "Product B",
 					comparisonAxis: "Motor support",
 				},

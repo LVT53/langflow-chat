@@ -8,6 +8,7 @@ const auditedPrefixes = [
 	"admin.systemSkills.",
 	"composerCommandRegistry.",
 	"composerCommands.",
+	"deepResearch.",
 	"linkedSources.",
 	"fork.",
 	"pendingSkill.",

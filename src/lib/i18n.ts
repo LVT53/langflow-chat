@@ -1137,6 +1137,9 @@ const dictionary = {
 		"deepResearch.planningInProgressDetail":
 			"Preparing the plan card. The draft will appear here when it is ready.",
 		"deepResearch.planHeading": "Research Plan",
+		"deepResearch.planRevision.heading": "Research Plan Revision Needed",
+		"deepResearch.planRevision.body":
+			"The corrected draft is ready. Approve it to continue Deep Research, or edit it before approving.",
 		"deepResearch.plan.goal": "Goal",
 		"deepResearch.plan.keyQuestions": "Key questions",
 		"deepResearch.plan.deliverables": "Deliverables",
@@ -1193,8 +1196,13 @@ const dictionary = {
 		"deepResearch.editPlanFailed": "Failed to edit Research Plan",
 		"deepResearch.approvePlanFailed": "Failed to approve Research Plan",
 		"deepResearch.openReportLabel": "Open Report",
+		"deepResearch.openLimitedReportLabel": "Open Limited Research Report",
 		"deepResearch.discussReportLabel": "Discuss Report",
 		"deepResearch.researchFurtherLabel": "Research Further",
+		"deepResearch.limitedReport.heading": "Limited Research Report",
+		"deepResearch.limitedReport.body":
+			"The report is complete, but it explicitly labels evidence limits and unresolved gaps.",
+		"deepResearch.limitedReport.filenamePrefix": "Limited Research Report",
 		"deepResearch.memo.heading": "Evidence Limitation Memo",
 		"deepResearch.memo.reviewedScope": "Reviewed scope",
 		"deepResearch.memo.topicRelevant": "{count} topic-relevant",
@@ -1219,6 +1227,7 @@ const dictionary = {
 		"deepResearch.timeline.warnings": "Warnings",
 		"deepResearch.timeline.planDrafting": "Drafting plan",
 		"deepResearch.timeline.planDrafted": "Plan drafted",
+		"deepResearch.timeline.planRevisionNeeded": "Research Plan Revision Needed",
 		"deepResearch.timeline.awaitingApproval": "Awaiting approval",
 		"deepResearch.timeline.discoveringSources": "Discovering sources",
 		"deepResearch.timeline.reviewingSources": "Reviewing sources",
@@ -1231,6 +1240,8 @@ const dictionary = {
 		"deepResearch.timeline.completed": "Completed",
 		"deepResearch.timeline.summary.planGenerated":
 			"Research Plan drafted for approval.",
+		"deepResearch.timeline.summary.planRevisionNeeded":
+			"Research Plan revision needed; corrected draft is ready for approval.",
 		"deepResearch.timeline.summary.sourceDiscoveryCompleted":
 			"Discovered {count} public web source candidates.",
 		"deepResearch.timeline.summary.sourceReviewCompleted":
@@ -2579,6 +2590,9 @@ const dictionary = {
 		"deepResearch.planningInProgressDetail":
 			"A tervkártya előkészítése folyamatban van. A vázlat itt jelenik meg, amint elkészült.",
 		"deepResearch.planHeading": "Kutatási terv",
+		"deepResearch.planRevision.heading": "Kutatási terv módosítása szükséges",
+		"deepResearch.planRevision.body":
+			"A javított vázlat készen áll. Hagyd jóvá a Mély kutatás folytatásához, vagy szerkeszd jóváhagyás előtt.",
 		"deepResearch.plan.goal": "Cél",
 		"deepResearch.plan.keyQuestions": "Kulcskérdések",
 		"deepResearch.plan.deliverables": "Eredmények",
@@ -2639,8 +2653,15 @@ const dictionary = {
 		"deepResearch.approvePlanFailed":
 			"Nem sikerült jóváhagyni a kutatási tervet",
 		"deepResearch.openReportLabel": "Jelentés megnyitása",
+		"deepResearch.openLimitedReportLabel":
+			"Korlátozott kutatási jelentés megnyitása",
 		"deepResearch.discussReportLabel": "Jelentés megbeszélése",
 		"deepResearch.researchFurtherLabel": "További kutatás",
+		"deepResearch.limitedReport.heading": "Korlátozott kutatási jelentés",
+		"deepResearch.limitedReport.body":
+			"A jelentés elkészült, de kifejezetten jelöli a bizonyítékkorlátokat és a nyitott hiányokat.",
+		"deepResearch.limitedReport.filenamePrefix":
+			"Korlátozott kutatási jelentés",
 		"deepResearch.memo.heading": "Bizonyítékkorlát-memó",
 		"deepResearch.memo.reviewedScope": "Áttekintett hatókör",
 		"deepResearch.memo.topicRelevant": "{count} témához illeszkedő",
@@ -2666,6 +2687,8 @@ const dictionary = {
 		"deepResearch.timeline.warnings": "Figyelmeztetések",
 		"deepResearch.timeline.planDrafting": "Terv készítése",
 		"deepResearch.timeline.planDrafted": "Terv elkészült",
+		"deepResearch.timeline.planRevisionNeeded":
+			"Kutatási terv módosítása szükséges",
 		"deepResearch.timeline.awaitingApproval": "Jóváhagyásra vár",
 		"deepResearch.timeline.discoveringSources": "Források keresése",
 		"deepResearch.timeline.reviewingSources": "Források áttekintése",
@@ -2678,6 +2701,8 @@ const dictionary = {
 		"deepResearch.timeline.completed": "Befejezve",
 		"deepResearch.timeline.summary.planGenerated":
 			"A kutatási terv elkészült jóváhagyásra.",
+		"deepResearch.timeline.summary.planRevisionNeeded":
+			"A kutatási terv módosítása szükséges; a javított vázlat jóváhagyásra vár.",
 		"deepResearch.timeline.summary.sourceDiscoveryCompleted":
 			"{count} nyilvános webes forrásjelölt felfedezve.",
 		"deepResearch.timeline.summary.sourceReviewCompleted":

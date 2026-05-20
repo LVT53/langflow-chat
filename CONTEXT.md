@@ -382,6 +382,14 @@ _Avoid_: installed skill, hidden prompt, temporary chat instruction
 The saved editable configuration for a **Skill**, including its display information, instructions, visibility, run policy, note behavior, source scope, ownership, enabled state, and version.
 _Avoid_: executable plugin, Langflow node, raw system prompt
 
+**Skill Activation Hint**:
+Optional activation-facing guidance that helps AlfyAI decide when a **Skill** should be suggested or selected without exposing the full skill instructions.
+_Avoid_: hidden instruction, classifier prompt, ranking keyword
+
+**Skill Activation Profile**:
+The durable activation-facing metadata on a **Skill Definition** that tells AlfyAI when assisted activation is eligible, when it should prefer no skill, how to break overlaps with other skills, and what user-facing reason to show.
+_Avoid_: full skill instructions, hidden router prompt, hardcoded resolver rule
+
 **Skill Draft Card**:
 A compact assistant-message card that presents an AlfyAI-proposed **Skill Draft** and lets the user review, save, dismiss, or publish it if they are an admin.
 _Avoid_: installed skill row, hidden suggestion, tool output
@@ -401,6 +409,10 @@ _Avoid_: transcript log, settings editor, hidden mode banner
 **Pending Skill Chip**:
 A compact composer chip showing a one-turn **Skill** selected for the next Normal Chat message.
 _Avoid_: active session panel, transcript marker, command text
+
+**Skill Suggestion Chip**:
+A compact composer suggestion shown when **Assisted Skill Activation** has enough confidence to offer a **Skill** but not enough confidence to select it for the next turn.
+_Avoid_: hidden auto-selection, active session panel, durable session state
 
 **Linked Source Chip**:
 A compact composer chip showing a **Linked Context Source** selected for upcoming Normal Chat context.
@@ -570,7 +582,11 @@ _Avoid_: uploaded attachment, file copy, hidden retrieval hint
 - V1 AI-created **Skill Drafts** are app-side draft proposals, not Langflow tool side effects.
 - V1 should not expose a model-facing Langflow `create_skill` tool.
 - A v1 **Skill Definition** should be declarative configuration, not executable code or an arbitrary plugin surface.
-- A v1 **Skill Definition** should include display name, description, instructions, activation examples, visibility, ownership, enabled state, duration policy, question policy, notes policy, source scope, creation source, version, and update timestamp.
+- A v1 **Skill Definition** should include display name, description, instructions, activation examples, a **Skill Activation Profile**, visibility, ownership, enabled state, duration policy, question policy, notes policy, source scope, creation source, version, and update timestamp.
+- **Assisted Skill Activation** should classify from activation-facing metadata such as display name, description, activation examples, run policy, and optional **Skill Activation Hints**, not from full skill instructions by default.
+- A **Skill Activation Profile** should be first-class durable metadata, not a resolver-local hardcoded list or documentation-only convention.
+- A **Skill Activation Profile** should include assisted-activation eligibility, positive signals, negative signals, the material-improvement rule, overlap tie-breakers, and a short user-facing reason template.
+- System **Skill Packs** should ship curated **Skill Activation Profiles**; **User Skills** and **Skill Variants** may own or override activation-facing profile fields without exposing or copying admin-managed pack instructions.
 - V1 should not include generic skill sharing, copying, duplicating, import, package install, remote marketplace, or plugin-style export flows.
 - Users may create new **User Skills** manually, and v1 may support deliberate personalization of admin-maintained **Skill Packs** through **Skill Variants** instead of clone, copy, or forked personalized-system-skill workflows.
 - V1 should ship a small initial **System Skill** set rather than a large catalog.
@@ -628,6 +644,12 @@ _Avoid_: uploaded attachment, file copy, hidden retrieval hint
 - Restarting the same **Skill** in the same conversation may use prior same-conversation **Skill Notes** as low-authority reference context.
 - A **Skill** should not receive blanket high-authority access to all **Skill Notes** it created across other conversations.
 - Activating a **Skill** should add structured Normal Chat turn context rather than rewriting or prefixing the user's message text.
+- **Assisted Skill Activation** may affect the current turn only when the selected **Skill** is visible and reversible; it should not silently start a durable **Skill Session**.
+- **Assisted Skill Activation** should prefer no skill unless the selected **Skill** would materially improve the answer beyond ordinary **Normal Chat**.
+- Product lookup, web search, or source retrieval alone should not trigger **Assisted Skill Activation** unless the user's task also matches a skill's workflow intent.
+- High-confidence **Assisted Skill Activation** may automatically set a visible removable **Pending Skill Chip** before the user submits the message.
+- Medium-confidence **Assisted Skill Activation** should show a **Skill Suggestion Chip** with use, details, and dismiss actions instead of selecting the skill.
+- **Assisted Skill Activation** should not silently add a **Skill** to a turn after the user has submitted that turn; late activation results may only suggest a **Skill** for a future turn.
 - The user-visible transcript should preserve what the user wrote, not the command syntax or hidden skill instructions.
 - Skill instructions, **Skill Session** state, and relevant **Skill Notes** should enter **Prompt Context** through the chat-turn assembly path.
 - **Skills** should act as process guidance, while **Linked Context Sources** and attachments provide source or task material.
@@ -678,6 +700,7 @@ _Avoid_: uploaded attachment, file copy, hidden retrieval hint
 - **Skill Notes** remain durable after their originating **Skill Session** ends.
 - The **Skill Session Panel** should own active controls for a running **Skill Session**.
 - A **Pending Skill Chip** should represent a one-turn **Skill** selected before message submission.
+- A **Skill Suggestion Chip** should never start a **Skill Session** or affect **Prompt Context** until the user accepts it or the system promotes it to a visible removable **Pending Skill Chip** before submission.
 - **Linked Source Chips** should represent composer-selected **Linked Context Sources** and remain visually distinct from upload attachment chips.
 - **Setting State Chips** should appear only for temporary non-default composer choices that affect the next turn.
 - Pending chips should sit inside the composer flow between the textarea and action controls so they read as part of the next message payload.
@@ -1241,11 +1264,11 @@ An explicit chat composer setting that causes the next user request to start a *
 _Avoid_: auto research, agent mode, report mode
 
 **Report Boundary**:
-The point after a **Deep Research Job** completes where its conversation becomes read-only and further discussion must start from the completed report in a new conversation.
+The point after a **Deep Research Job** completes with a **Research Report** or **Limited Research Report** where its conversation becomes read-only and further discussion must start from the completed report in a new conversation.
 _Avoid_: finished chat, dead chat, context lock, archive
 
 **Report Action**:
-An allowed interaction with a completed report after a **Report Boundary**, such as opening, inspecting sources, exporting, or starting a new conversation from it.
+An allowed interaction with a completed **Research Report** or **Limited Research Report** after a **Report Boundary**, such as opening, inspecting sources, exporting, or starting a new conversation from it.
 _Avoid_: follow-up turn, continued chat
 
 **Discuss Report**:
@@ -1268,6 +1291,18 @@ _Avoid_: hidden prompt, agent thoughts, execution plan
 A freeform user instruction that asks AlfyAI to revise a **Research Plan** before research starts.
 _Avoid_: advanced plan form, parameter editor
 
+**Plan Normalization Note**:
+A compact user-facing note shown on a **Research Plan** when AlfyAI safely reinterprets or narrows the requested report shape before approval, such as treating unnamed option-category comparison as candidate discovery.
+_Avoid_: debug warning, model parser detail, hidden classifier result
+
+**Plan Health Check**:
+A cheap diagnostic check run when research progress suggests the approved **Research Plan** itself may be poisoned, mis-scoped, or internally inconsistent rather than merely under-evidenced.
+_Avoid_: citation audit, source review, user blame, hidden failure
+
+**Research Plan Revision Needed**:
+A terminal Deep Research outcome produced when a **Plan Health Check** finds that the approved **Research Plan** was likely poisoned or mis-scoped and should be corrected before further source-heavy research.
+_Avoid_: Evidence Limitation Memo, failed job, normal report, silent retry
+
 **Focused Deep Research**:
 A Deep Research depth for narrow questions that still need deliberate multi-pass research and a cited brief without broad source exploration.
 _Avoid_: short, quick, shallow, normal web search
@@ -1289,8 +1324,12 @@ A source that a **Deep Research Job** may read, analyze, cite, or use as evidenc
 _Avoid_: context, memory, hint
 
 **Research Report**:
-The completed, cited output produced by a **Deep Research Job**.
+The completed, cited output produced by a **Deep Research Job** when the evidence is strong enough to answer the approved **Research Plan** as a normal report.
 _Avoid_: assistant answer, generated file, summary, chat response
+
+**Limited Research Report**:
+A completed, cited **Deep Research Job** output produced when some useful evidence exists but the approved **Research Plan** cannot be fully answered with normal-report confidence. It gives the best supported answer, narrows or omits unsupported sections, and makes the evidence limits visible.
+_Avoid_: Evidence Limitation Memo, partial draft, failed report, padded report
 
 **Readable Research Report**:
 A **Research Report** organized for scanning and decision-making, with a short title, answer-first executive summary, capped key findings, plan-shaped analysis, visible limitations, and a cited source list.
@@ -1650,7 +1689,7 @@ _Avoid_: citation audit, final formatting, source count check
 
 **Evidence Limitation Memo**:
 A durable Deep Research output assembled from grounded **Report Limitations** and workspace state when no credible **Research Report** can be produced.
-_Avoid_: failed report, partial report, empty report, memo-only explanation path
+_Avoid_: failed report, limited report, plan revision needed, partial report, empty report, memo-only explanation path
 
 ### Relationships
 
@@ -1679,6 +1718,33 @@ _Avoid_: failed report, partial report, empty report, memo-only explanation path
 - **Report Intent** should be shown to the user before **Research Plan** approval so the user can correct the expected report shape.
 - Source-heavy research should use the approved **Report Intent** to guide discovery, **Claim Type** selection, **Evidence Requirements**, **Coverage Assessment**, and **Report Shape Template** selection.
 - Report assembly should not infer a different **Report Intent** after research has completed unless the output becomes an **Evidence Limitation Memo** because the approved intent cannot be supported.
+- A request to compare unnamed option categories, such as "at least three architecture patterns," is not enough by itself to create known **Compared Entities**.
+- When comparison is a means to choosing or recommending and the options are not named yet, the **Research Plan** should use **Recommendation Report Shape** or another decision-oriented intent, discover candidate options as research work, and add comparison blocks only after those options are grounded.
+- **Comparison Report Shape** is for known **Compared Entities** present in the user request or approved **Research Plan**, not imperative clauses such as "identify failure modes" or "recommend one design."
+- Strict **Comparison Report Shape** requires at least two named, source-searchable **Compared Entities** before approval, such as concrete products, vendors, jurisdictions, people, organizations, standards, versions, policies, or explicitly named approaches.
+- Candidate options discovered during recommendation, scan, or investigation work may become comparison columns later, but they should not be pre-approved as **Compared Entities** until they are concrete and grounded.
+- Generic comparison fallback questions should be domain-neutral; product, vehicle, procurement, legal, software, health, finance, and literature-review questions should appear only when topic detection or the approved **Research Plan** justifies that domain.
+- Product or vehicle comparison questions may ask about specs, model years, trims, dealers, manufacturers, availability, and rider or buyer use cases only when the compared entities are actually products or vehicles.
+- Planner model output may draft useful structure, but local **Research Plan** normalization owns the trust boundary for **Report Intent**, **Compared Entities**, and domain-appropriate fallback questions.
+- Local **Research Plan** normalization should reject imperative clauses, quantity placeholders, and unnamed option categories as **Compared Entities** even when a planner model returns them as strings.
+- A **Research Plan** should include a **Plan Normalization Note** when local normalization changes **Report Intent**, drops invalid **Compared Entities**, or converts unnamed option categories into candidate-discovery work.
+- A **Plan Normalization Note** should not block approval and should not expose regexes, parser internals, or low-level model diagnostics.
+- If a **Deep Research Job** reviews a meaningful number of sources and accepts zero topic-relevant sources, AlfyAI should run a **Plan Health Check** before presenting the outcome as insufficient evidence.
+- A **Plan Health Check** should detect signs such as fake **Compared Entities**, imperative clauses treated as entities, domain-mismatched key questions, or search/relevance framing that no longer matches the user's goal.
+- If a **Plan Health Check** detects plan poisoning, the user-facing outcome should explain that the research plan needs revision and offer a corrected draft or recovery path instead of implying the real topic lacks evidence.
+- If a **Plan Health Check** detects plan poisoning after source-heavy work has already run, Deep Research should complete as **Research Plan Revision Needed**, not as an **Evidence Limitation Memo**.
+- **Research Plan Revision Needed** should create a corrected **Research Plan** draft automatically when AlfyAI can infer the safe correction, but it must not start another source-heavy run without user approval.
+- The corrected **Research Plan** draft after **Research Plan Revision Needed** should be reviewable with the same approve, edit, or cancel controls as any other **Research Plan**.
+- Rejected or off-topic source counts from the poisoned run should not be treated as evidence against the corrected **Research Plan** topic.
+- The first UI slice for **Research Plan Revision Needed** should be minimal: the **Research Card** shows that the plan needs revision, explains the plan-health reason briefly, and presents the corrected draft through the existing approval controls.
+- **Research Plan Revision Needed** should not introduce a new modal, wizard, or separate recovery surface when the existing **Research Plan** approval UI can handle approve, edit, and cancel.
+- **Research Plan Revision Needed** should be stored as an operationally completed **Deep Research Job** with a distinct plan-revision-needed stage or outcome, not as a failed job.
+- **Research Plan Revision Needed** should not have a normal report artifact, should not create a **Report Boundary**, and should keep the corrected **Research Plan** available for approval.
+- The **Activity Timeline** for **Research Plan Revision Needed** should explain the plan-health failure in user-facing terms.
+- Approving the corrected **Research Plan** after **Research Plan Revision Needed** should continue the same **Deep Research Job** with a new plan version rather than starting an unrelated job.
+- The corrected run should start source-heavy work from clean execution state for the new plan while preserving the poisoned run's timeline, source ledger, and usage as diagnostic history.
+- Poisoned-run rejected sources, coverage gaps, tasks, and topic-relevance counts should not satisfy or block coverage for the corrected **Research Plan**.
+- If the **Plan Health Check** passes and useful topic-relevant evidence is still absent, Deep Research should publish an **Evidence Limitation Memo**.
 - A **Plan Edit** is freeform; AlfyAI synthesizes the user's edit into a revised **Research Plan**.
 - The Deep Research planning flow avoids exposing advanced structured controls beyond approval, cancellation, and freeform editing.
 - Deep Research depth levels are **Focused Deep Research**, **Standard Deep Research**, and **Max Deep Research**.
@@ -1692,12 +1758,13 @@ _Avoid_: failed report, partial report, empty report, memo-only explanation path
 - Current conversation context may be **Planning Context**, but is not automatically cited as a **Research Source** unless the approved **Research Plan** says the report is based on it.
 - When private or workspace material influences a **Research Plan**, the plan may show a compact "context considered" disclosure.
 - A "context considered" disclosure summarizes **Planning Context** by type, count, or title; it is not evidence or citation.
-- Every successful **Deep Research Job** produces exactly one **Research Report**.
-- A **Research Report** creates the **Report Boundary** for its conversation.
-- A **Research Report** is durable and reusable; it is not only assistant message text.
-- A **Research Report** includes citations and a user-facing source list.
+- Every completed **Deep Research Job** produces exactly one durable outcome: a **Research Report**, **Limited Research Report**, **Evidence Limitation Memo**, or **Research Plan Revision Needed**.
+- A **Research Report** or **Limited Research Report** creates the **Report Boundary** for its conversation.
+- A **Research Report** or **Limited Research Report** is durable and reusable; it is not only assistant message text.
+- A **Research Report** or **Limited Research Report** includes citations and a user-facing source list.
 - Every successful **Research Report** should be a **Readable Research Report**.
 - A Deep Research output should be labeled a **Research Report** only when it is a **Readable Research Report**.
+- A **Limited Research Report** should still read as a **Decision Brief**, but it should explicitly narrow unsupported scope instead of pretending the full approved **Research Plan** was answered.
 - A **Readable Research Report** should be produced from a **Structured Research Report** rather than a freeform Markdown blob.
 - A **Structured Research Report** should be assembled through **Claim-Grounded Report Assembly**.
 - A **Structured Research Report** should preserve intent-specific **Structured Report Blocks** before Markdown rendering.
@@ -1714,7 +1781,10 @@ _Avoid_: failed report, partial report, empty report, memo-only explanation path
 - A **Structured Research Report** should preserve report parts such as title, scope, executive summary, recommendation, comparison matrix, key findings, sections, limitations, and cited sources before rendering.
 - A **Readable Research Report** is not a dump of every reviewed source note.
 - Styling or Markdown polish cannot turn source titles, snippets, or weak per-source notes into a **Readable Research Report**.
-- When the available evidence can only support weak per-source notes rather than synthesized conclusions, Deep Research should produce an **Evidence Limitation Memo** instead of a normal **Research Report**.
+- When the available evidence supports useful synthesized conclusions but not the full approved **Research Plan**, Deep Research should produce a **Limited Research Report** instead of blocking on a normal **Research Report**.
+- A **Limited Research Report** requires at least one useful, citation-supported **Central Synthesis Claim**, a narrower answerable version of the approved goal, and explicit **Report Limitations** for unsupported parts.
+- A **Limited Research Report** must not invent unsupported sections to preserve the original **Research Plan** shape.
+- When the available evidence can only support weak per-source notes rather than useful synthesized conclusions, Deep Research should produce an **Evidence Limitation Memo** instead of a normal **Research Report**.
 - By default, a **Readable Research Report** should read as a **Decision Brief** rather than a research transcript.
 - A **Readable Research Report** should lead with the answer, then show the strongest evidence-backed findings, then organize the body around the approved **Research Plan**.
 - Key findings in a **Readable Research Report** should be capped to a small, scannable set; additional reviewed notes belong in the **Research Workspace**, source ledger, or future appendix, not the main report body.
@@ -1885,8 +1955,9 @@ _Avoid_: failed report, partial report, empty report, memo-only explanation path
 - **Research Card Severity** describes user-facing meaning, such as working, needs attention, insufficient evidence, completed, cancelled, or failed.
 - Awaiting approval or plan edit should map to needs attention.
 - Running normally should map to working.
-- A completed **Research Report** should map to completed.
+- A completed **Research Report** or **Limited Research Report** should map to completed.
 - An **Evidence Limitation Memo** should map to insufficient evidence.
+- **Research Plan Revision Needed** should map to needs attention.
 - User cancellation should map to cancelled.
 - Infrastructure failure or unrecoverable execution failure should map to failed.
 - A **Research Card** should use cited-site favicons for **Cited Sources** where available, as visual source identity rather than evidence authority.
@@ -1971,10 +2042,10 @@ _Avoid_: failed report, partial report, empty report, memo-only explanation path
 - Transient **Research Task** failures may be retried.
 - Failed **Research Tasks** become **Coverage Gaps** when they affect critical questions and cannot be replaced within budget.
 - A **Deep Research Job** does not fail only because some non-critical **Research Tasks** fail.
-- A **Deep Research Job** may complete with **Report Limitations** when it can still produce a useful, citation-supported **Research Report**.
-- A **Deep Research Job** should fail only when no credible **Research Report** can be produced, core claims cannot be supported, required source pools are inaccessible, infrastructure repeatedly fails, or cancellation is requested.
-- **Report Limitations** must be visible in the **Research Report** rather than hidden in internal logs.
-- Every **Research Report** goes through **Citation Audit**.
+- A **Deep Research Job** may complete with **Report Limitations** when it can still produce a useful, citation-supported **Research Report** or **Limited Research Report**.
+- A **Deep Research Job** should fail only for true execution failure, unrecoverable invalid state, repeated infrastructure failure, or user cancellation; weak or partial evidence should normally become a **Limited Research Report** or **Evidence Limitation Memo**.
+- **Report Limitations** must be visible in the **Research Report** or **Limited Research Report** rather than hidden in internal logs.
+- Every **Research Report** and **Limited Research Report** goes through **Citation Audit**.
 - **Citation Audit** verifies the **Claim Graph**, not only citation formatting.
 - **Citation Audit** should inspect **Synthesis Claims**, **Evidence Notes**, and **Claim Evidence Links** before user-facing Markdown citation cleanup.
 - **Citation Audit** should produce first-class **Citation Audit Verdicts** for **Synthesis Claims**, such as supported, partially supported, unsupported, contradicted, or needs repair.
@@ -1986,30 +2057,37 @@ _Avoid_: failed report, partial report, empty report, memo-only explanation path
 - **Report Limitations** should be first-class graph objects, not derived-only fields on the final Markdown report.
 - Generic limitations may be included only when they are tied to a concrete workspace signal, such as unavailable source types, stale evidence, inaccessible sources, or exhausted **Research Budget**.
 - **Citation Audit** may trigger one **Repair Pass** before completion or failure.
-- Every **Research Report** must pass the **Report Eligibility Gate** before **Citation Audit** can publish it.
+- Every **Research Report** or **Limited Research Report** must pass the appropriate **Report Eligibility Gate** before **Citation Audit** can publish it.
 - **Citation Audit** verifies evidence support for retained claims through **Claim Evidence Links**; it does not replace the **Report Eligibility Gate**.
 - **Citation Audit** produces an **Audited Structured Report**, not a flat retained-claims list.
 - **Citation Audit** should preserve report sections, comparison tables, recommendations, and plan-shaped analysis when their claims remain supported.
 - **Claim-Grounded Report Assembly** should retain claim IDs and evidence-link references inside report sections, key findings, recommendations, comparison rows, and limitation records until final rendering.
-- A **Research Report** has a semi-fixed readable structure: short title, executive summary, capped key findings, compact methodology, main body organized by the **Research Plan**, source list, and **Report Limitations** when applicable.
-- A **Research Report** may add plan-specific sections such as recommendations, comparison matrices, timelines, methodology, appendices, or next steps.
+- A **Research Report** or **Limited Research Report** has a semi-fixed readable structure: short title, executive summary, capped key findings, compact methodology, main body organized by the supported parts of the **Research Plan**, source list, and **Report Limitations** when applicable.
+- A **Research Report** or **Limited Research Report** may add plan-specific sections such as recommendations, comparison matrices, timelines, methodology, appendices, or next steps.
 - **Citation Audit** should preserve readable report structure while removing unsupported claims; it should not replace every report section with the same retained-claim list.
 - Markdown is a rendering target for a **Structured Research Report**, not the report's source of truth.
-- If the **Report Eligibility Gate** fails because too few sources are topic-relevant, Deep Research should end with an insufficient-relevant-evidence outcome instead of publishing a normal **Research Report**.
-- An insufficient-relevant-evidence outcome may create an **Evidence Limitation Memo**.
+- If the normal **Report Eligibility Gate** fails because evidence only supports part of the approved scope, Deep Research may publish a **Limited Research Report** with narrowed scope and explicit **Report Limitations**.
+- If the **Report Eligibility Gate** fails because too few sources are topic-relevant to support useful synthesized conclusions, Deep Research should end with an insufficient-relevant-evidence outcome instead of publishing a normal **Research Report**.
+- An insufficient-relevant-evidence outcome should create an **Evidence Limitation Memo**.
 - An **Evidence Limitation Memo** is durable and inspectable, but it must not create the same user expectation as a completed **Research Report**.
 - An **Evidence Limitation Memo** should use the same grounded **Report Limitations** and **Research Workspace** state as a failed-to-publish **Research Report**, rather than a separate memo-only explanation path.
 - An **Evidence Limitation Memo** should summarize the approved goal, searched/reviewed scope, topic-relevant counts, evidence-note or claim-readiness gaps when available, rejected or limited claims, audit outcomes when available, why no credible report was produced, and the best next research direction.
 - When the limitation state is the useful output, the **Evidence Limitation Memo** is that limitation state rendered for the user.
 - An **Evidence Limitation Memo** does not create a **Report Boundary**.
+- **Research Plan Revision Needed** does not create a **Report Boundary**.
 - After an **Evidence Limitation Memo**, the conversation should remain usable so the user can use **Memo Recovery Actions** such as revising the request, adding sources, choosing deeper depth, or starting another **Deep Research Job**.
+- After **Research Plan Revision Needed**, the conversation should remain usable so the user can revise or approve a corrected **Research Plan** without treating the prior result as evidence about the original topic.
 - Deep Research should be built in independently testable and verifiable vertical slices.
 - Deep Research slices should follow test-driven development: prove the behavior, implement it, then refactor.
 - Deep Research v1 slices should be production-capable rather than prototype-only.
 - A production-capable Deep Research slice includes fallback behavior, observability, tests, and cleanup appropriate to its scope.
 - Deep Research cleanup should be part of replacement slices so obsolete paths do not remain as parallel behavior.
+- Deep Research fixes should repair poisoned **Research Plan** generation before adding richer final rendering for the same failure path.
+- The first stabilization slice for abstract decision prompts should make planning produce sane **Report Intent**, candidate-option discovery, and domain-appropriate key questions before **Limited Research Report** rendering is added.
+- The first stabilization slice for abstract decision prompts should also include a minimal **Plan Health Check** so already-approved or slipped-through poisoned plans do not end as plain insufficient-evidence memos.
+- The minimal **Plan Health Check** should trigger only on high-reviewed-source, zero-topic-relevant runs, detect obvious plan poison, and offer a plan-revision recovery path without automatically starting broad second research.
 - A **Deep Research Evaluation Harness** should exist before raising Deep Research depth budgets.
-- The **Deep Research Evaluation Harness** should include **Golden Research Fixtures** for off-topic high-authority sources, enough sources but weak **Evidence Notes**, unsupported **Central Claims**, **Non-Central Claim** removal, **Claim Conflicts**, crash/resume across passes, Hungarian output, and the bad downloaded report regression.
+- The **Deep Research Evaluation Harness** should include **Golden Research Fixtures** for off-topic high-authority sources, enough sources but weak **Evidence Notes**, unsupported **Central Claims**, **Non-Central Claim** removal, **Claim Conflicts**, crash/resume across passes, Hungarian output, abstract architecture recommendation plan pollution, and the bad downloaded report regression.
 - The **Deep Research Evaluation Harness** should include Kimi-inspired hard-search fixtures that require multi-turn search, cross-validation, conflict correction, and cautious verification before answering.
 - A generated output should fail evaluation when it reads like a source-note dump, repeats snippets without synthesis, makes unsupported central claims, hides unresolved conflicts, cites sources that do not support the claim, or publishes a report when the correct outcome is an **Evidence Limitation Memo**.
 - Evaluation should treat readable synthesis, claim grounding, source relevance, citation support, durable resume, and localization as separate acceptance dimensions.

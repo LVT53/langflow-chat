@@ -2,6 +2,142 @@ import { describe, expect, it, vi } from "vitest";
 import { createFirstResearchPlanDraft } from "./planning";
 
 describe("createFirstResearchPlanDraft", () => {
+	it("plans abstract architecture recommendations as candidate discovery instead of fake entity comparison", async () => {
+		const result = await createFirstResearchPlanDraft({
+			jobId: "job-architecture-recommendation-baseline",
+			userRequest:
+				"What is the most reliable architecture for building an enterprise deep research assistant in 2026 that can search the web, inspect uploaded documents, cite evidence, and produce long-form reports without fabricating claims? Compare at least three architecture patterns, identify failure modes, recommend one design for a 50-person SaaS company, and include an implementation roadmap.",
+			selectedDepth: "standard",
+			researchLanguage: "en",
+		});
+		const questions = result.plan.keyQuestions.join("\n").toLowerCase();
+
+		expect(result.plan.reportIntent).toBe("recommendation");
+		expect(result.plan.comparedEntities).toBeUndefined();
+		expect(result.plan.planNormalizationNote).toContain(
+			"Candidate architecture patterns will be discovered during research",
+		);
+		expect(result.renderedPlan).toContain("Plan Normalization Note:");
+		expect(result.renderedPlan).toContain(
+			"Candidate architecture patterns will be discovered during research",
+		);
+		expect(questions).toContain("architecture patterns");
+		expect(questions).toContain("failure modes");
+		expect(questions).toContain("evidence");
+		expect(questions).toContain("citation");
+		expect(questions).toContain("uploaded documents");
+		expect(questions).toContain("security");
+		expect(questions).toContain("compliance");
+		expect(questions).toContain("implementation burden");
+		expect(questions).toContain("roadmap");
+		expect(questions).not.toMatch(
+			/trim differences|dealer listings|manufacturers|rider use cases|model years/,
+		);
+	});
+
+	it("localizes abstract architecture Plan Normalization Note in Hungarian plans", async () => {
+		const result = await createFirstResearchPlanDraft({
+			jobId: "job-architecture-recommendation-hu",
+			userRequest:
+				"Melyik a legmegbízhatóbb architektúra egy vállalati mély kutatási asszisztenshez, amely weben keres, feltöltött dokumentumokat vizsgál, bizonyítékot idéz és hosszú jelentéseket készít kitalált állítások nélkül? Hasonlíts össze legalább három architektúramintát, azonosíts hibamódokat, ajánlj egy megoldást egy 50 fős SaaS cégnek, és adj bevezetési roadmapet.",
+			selectedDepth: "standard",
+			researchLanguage: "hu",
+		});
+
+		expect(result.plan.reportIntent).toBe("recommendation");
+		expect(result.plan.comparedEntities).toBeUndefined();
+		expect(result.renderedPlan).toContain("Tervnormalizálási megjegyzés:");
+		expect(result.plan.planNormalizationNote).toContain(
+			"A jelölt architektúramintákat a kutatás során kell feltárni",
+		);
+		expect(result.plan.planNormalizationNote).not.toContain(
+			"Candidate architecture patterns",
+		);
+	});
+
+	it("preserves strict comparison shape for explicitly named architecture approaches", async () => {
+		const result = await createFirstResearchPlanDraft({
+			jobId: "job-named-architecture-approaches",
+			userRequest:
+				"Compare RAG, workflow graphs, and multi-agent research systems for reliability, evidence handling, and operational complexity.",
+			selectedDepth: "standard",
+			researchLanguage: "en",
+		});
+		const questions = result.plan.keyQuestions.join("\n").toLowerCase();
+
+		expect(result.plan.reportIntent).toBe("comparison");
+		expect(result.plan.comparedEntities).toEqual([
+			"RAG",
+			"workflow graphs",
+			"multi-agent research systems",
+		]);
+		expect(result.plan.comparisonAxes).toEqual([
+			"reliability",
+			"evidence handling",
+			"operational complexity",
+		]);
+		expect(result.plan.planNormalizationNote).toBeUndefined();
+		expect(questions).not.toMatch(
+			/trim differences|dealer listings|manufacturer pages|rider or buyer use cases|model years/,
+		);
+	});
+
+	it("sanitizes structured planner fake entities for abstract architecture recommendations", async () => {
+		const result = await createFirstResearchPlanDraft(
+			{
+				jobId: "job-architecture-structured-sanitization",
+				userRequest:
+					"What is the most reliable architecture for building an enterprise deep research assistant in 2026 that can search the web, inspect uploaded documents, cite evidence, and produce long-form reports without fabricating claims? Compare at least three architecture patterns, identify failure modes, recommend one design for a 50-person SaaS company, and include an implementation roadmap.",
+				selectedDepth: "standard",
+				researchLanguage: "en",
+			},
+			{
+				structuredPlanner: {
+					draftPlan: vi.fn(async (_, context) => ({
+						goal: "Compare at least three architecture patterns and recommend one design.",
+						depth: "standard",
+						researchLanguage: "en",
+						reportIntent: "comparison",
+						comparedEntities: [
+							"at least three architecture patterns",
+							"identify failure modes",
+							"recommend one design",
+						],
+						comparisonAxes: ["reliability"],
+						researchBudget: context.selectedBudget,
+						keyQuestions: [
+							"Which exact variants, trim differences, model years, dealer listings, and rider use cases matter?",
+						],
+						sourceScope: {
+							includePublicWeb: true,
+							planningContextDisclosure: null,
+						},
+						reportShape: ["Executive summary"],
+						constraints: [],
+						deliverables: ["Cited Research Report"],
+					})),
+				},
+			},
+		);
+		const questions = result.plan.keyQuestions.join("\n").toLowerCase();
+
+		expect(result.plan.reportIntent).toBe("recommendation");
+		expect(result.plan.comparedEntities).toBeUndefined();
+		expect(result.plan.comparisonAxes).toBeUndefined();
+		expect(result.plan.planNormalizationNote).toContain(
+			"Candidate architecture patterns will be discovered during research",
+		);
+		expect(questions).toContain("candidate architecture patterns");
+		expect(questions).toContain("uploaded documents");
+		expect(questions).toContain("roadmap");
+		expect(questions).not.toMatch(
+			/trim differences|dealer listings|rider use cases|model years/,
+		);
+		expect(result.renderedPlan).not.toContain(
+			"- at least three architecture patterns",
+		);
+	});
+
 	it("drafts and persists a structured Research Plan with a rendered user-facing plan", async () => {
 		const repository = {
 			saveResearchPlanDraft: vi.fn(async (draft) => ({

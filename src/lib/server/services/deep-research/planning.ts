@@ -34,6 +34,7 @@ export type ResearchPlan = {
 	reportIntent: ReportIntent;
 	comparedEntities?: string[];
 	comparisonAxes?: string[];
+	planNormalizationNote?: string;
 	researchBudget: ResearchBudget;
 	keyQuestions: string[];
 	sourceScope: {
@@ -151,6 +152,7 @@ const planLabels: Record<
 		modelReasoningConcurrency: (count: number) => string;
 		goal: string;
 		reportIntent: string;
+		planNormalizationNote: string;
 		comparedEntities: string;
 		comparisonAxes: string;
 		includedSources: string;
@@ -173,6 +175,7 @@ const planLabels: Record<
 			`Model reasoning concurrency: up to ${count}`,
 		goal: "Goal",
 		reportIntent: "Report intent",
+		planNormalizationNote: "Plan Normalization Note",
 		comparedEntities: "Compared entities",
 		comparisonAxes: "Central comparison axes",
 		includedSources: "Included sources",
@@ -195,6 +198,7 @@ const planLabels: Record<
 			`Modell következtetési párhuzamosság: legfeljebb ${count}`,
 		goal: "Cél",
 		reportIntent: "Jelentési szándék",
+		planNormalizationNote: "Tervnormalizálási megjegyzés",
 		comparedEntities: "Összehasonlított entitások",
 		comparisonAxes: "Központi összehasonlítási tengelyek",
 		includedSources: "Bevont források",
@@ -330,6 +334,7 @@ export async function createFirstResearchPlanDraft(
 		),
 	};
 	normalizePlanTextFields(plan, input.userRequest);
+	normalizePlanAbstractDecisionFraming(plan, input.userRequest);
 	normalizePlanComparisonMetadata(plan, input.userRequest);
 	validatePlanAgainstSelectedDepth(plan, input.selectedDepth);
 	const renderedPlan = renderResearchPlan(plan);
@@ -390,6 +395,10 @@ export async function createRevisedResearchPlanDraft(
 		),
 	};
 	normalizePlanTextFields(
+		plan,
+		`${input.previousPlan.goal} ${input.editInstruction}`,
+	);
+	normalizePlanAbstractDecisionFraming(
 		plan,
 		`${input.previousPlan.goal} ${input.editInstruction}`,
 	);
@@ -542,6 +551,9 @@ function renderResearchPlan(plan: ResearchPlan): string {
 	return [
 		`${labels.goal}: ${plan.goal}`,
 		`${labels.reportIntent}: ${localizedReportIntentLabels[researchLanguage][plan.reportIntent]}`,
+		...(plan.planNormalizationNote
+			? ["", `${labels.planNormalizationNote}:`, plan.planNormalizationNote]
+			: []),
 		...(plan.comparedEntities?.length
 			? [
 					"",
@@ -610,6 +622,12 @@ function normalizeReportIntent(
 	value: unknown,
 	fallbackText: string,
 ): ReportIntent {
+	if (
+		value === "comparison" &&
+		shouldFrameAsCandidateDiscoveryRecommendation(fallbackText)
+	) {
+		return "recommendation";
+	}
 	if (isReportIntent(value)) return value;
 	return inferReportIntent(fallbackText);
 }
@@ -646,6 +664,8 @@ function normalizePlanTextFields(
 		plan.comparisonAxes = normalizePlanTextArray(plan.comparisonAxes);
 		if (plan.comparisonAxes.length === 0) delete plan.comparisonAxes;
 	}
+	plan.planNormalizationNote =
+		normalizePlanTextValue(plan.planNormalizationNote) ?? undefined;
 }
 
 function normalizePlanTextArray(values: unknown): string[] {
@@ -720,6 +740,27 @@ function normalizePlanComparisonMetadata(
 	} else {
 		delete plan.comparisonAxes;
 	}
+}
+
+function normalizePlanAbstractDecisionFraming(
+	plan: ResearchPlan,
+	fallbackText: string,
+): void {
+	if (!shouldFrameAsCandidateDiscoveryRecommendation(fallbackText)) {
+		return;
+	}
+
+	plan.reportIntent = "recommendation";
+	delete plan.comparedEntities;
+	delete plan.comparisonAxes;
+	plan.planNormalizationNote =
+		(plan.researchLanguage ?? "en") === "hu"
+			? "A jelölt architektúramintákat a kutatás során kell feltárni, nem előre kitölteni összehasonlított entitásként, mert a kérés opciókategóriát nevez meg konkrét, forrásokban kereshető megközelítések helyett."
+			: "Candidate architecture patterns will be discovered during research instead of pre-filled as compared entities, because the request names an option category rather than specific source-searchable approaches.";
+	plan.keyQuestions = buildDefaultKeyQuestions(
+		fallbackText,
+		plan.researchLanguage ?? "en",
+	);
 }
 
 function repairProvidedComparisonMetadata(
@@ -1013,8 +1054,13 @@ function isReportIntent(value: unknown): value is ReportIntent {
 function inferReportIntent(value: string): ReportIntent {
 	const text = value.toLowerCase();
 	if (
-		/\b(compare|comparison|versus|vs\.?|összehasonl|hasonlítsd)\b/u.test(text)
+		/\b(compare|comparison|versus|vs\.?|összehasonl|hasonlíts(?:d)?)\b/u.test(
+			text,
+		)
 	) {
+		if (shouldFrameAsCandidateDiscoveryRecommendation(value)) {
+			return "recommendation";
+		}
 		return "comparison";
 	}
 	if (
@@ -1040,6 +1086,54 @@ function inferReportIntent(value: string): ReportIntent {
 		return "limitation_focused";
 	}
 	return "investigation";
+}
+
+function shouldFrameAsCandidateDiscoveryRecommendation(value: string): boolean {
+	const text = value.toLocaleLowerCase();
+	return (
+		hasRecommendationDecisionSignal(text) &&
+		hasUnnamedOptionCategoryComparison(text) &&
+		countValidComparedEntities(inferComparisonMetadata(value).entities) < 2
+	);
+}
+
+function countValidComparedEntities(entities: string[]): number {
+	return entities.filter((entity) => !isInvalidComparedEntityCandidate(entity))
+		.length;
+}
+
+function isInvalidComparedEntityCandidate(value: string): boolean {
+	const normalized = value.trim().toLocaleLowerCase();
+	return (
+		/^(?:at\s+least\s+)?(?:one|two|three|four|five|six|\d+)\s+[\w -]+(?:patterns?|options?|approaches?|architectures?|designs?|strategies?|systems?|solutions?|categories?)$/u.test(
+			normalized,
+		) ||
+		/^(?:identify|recommend|include|compare|evaluate|assess|analy[sz]e|map|research|find)\b/u.test(
+			normalized,
+		)
+	);
+}
+
+function hasRecommendationDecisionSignal(text: string): boolean {
+	return (
+		/\b(recommend|recommendation|choose|best|most reliable|one design|decision|roadmap)\b/u.test(
+			text,
+		) || /(?:ajánl|válassz|legjobb)/u.test(text)
+	);
+}
+
+function hasUnnamedOptionCategoryComparison(text: string): boolean {
+	return (
+		/\bcompare\s+(?:at\s+least\s+)?(?:two|three|four|five|\d+)\s+[\w -]+(?:patterns?|options?|approaches?|architectures?|designs?|strategies?|systems?|solutions?|categories?)\b/u.test(
+			text,
+		) ||
+		/\bcompare\s+(?:unnamed|candidate|possible|potential|different|several|multiple)\s+[\w -]+(?:patterns?|options?|approaches?|architectures?|designs?|strategies?|systems?|solutions?|categories?)\b/u.test(
+			text,
+		) ||
+		/\b(?:hasonlíts(?:d)?\s+össze|összehasonlít(?:ás|ani)?)\s+(?:legalább\s+)?(?:két|három|négy|öt|\d+)\s+[\p{L}\p{M}\d _-]+(?:mintát|mintákat|opciót|opciókat|megközelítést|megközelítéseket|architektúrát|architektúrákat|megoldást|megoldásokat|kategóriát|kategóriákat)\b/u.test(
+			text,
+		)
+	);
 }
 
 function isEvidenceReviewIntent(text: string): boolean {
@@ -1119,6 +1213,9 @@ function buildRecommendationKeyQuestions(
 	topic: string,
 	researchLanguage: ResearchLanguage,
 ): string[] {
+	if (isArchitectureDecisionTopic(topic)) {
+		return buildArchitectureRecommendationKeyQuestions(topic, researchLanguage);
+	}
 	if (researchLanguage === "hu") {
 		return [
 			`Milyen döntést kell támogatnia a jelentésnek a témában, és mik a kötelező kritériumok, kizáró okok, költség- vagy időkorlátok: ${topic}?`,
@@ -1136,6 +1233,41 @@ function buildRecommendationKeyQuestions(
 		"What tradeoffs, risks, switching costs, lock-in, or failure conditions could change the recommendation?",
 		"What recommendation follows, under which conditions would it change, and what uncertainties must be stated plainly?",
 	];
+}
+
+function buildArchitectureRecommendationKeyQuestions(
+	topic: string,
+	researchLanguage: ResearchLanguage,
+): string[] {
+	if (researchLanguage === "hu") {
+		return [
+			`Milyen döntési kritériumok alapján kell architektúrát ajánlani ehhez a feladathoz: ${topic}?`,
+			"Mely jelölt architektúraminták alkalmasak mély kutatási asszisztenshez, és milyen források támasztják alá az egyes minták erősségeit és korlátait?",
+			"Milyen hibamódok vezetnek hallucinált állításokhoz, gyenge forrásminőséghez, elveszett kontextushoz vagy törékeny hosszú jelentésekhez?",
+			"Hogyan biztosítják az opciók a bizonyíték- és hivatkozás-megbízhatóságot, beleértve az állítások forráshoz kötését és auditálását?",
+			"Hogyan kezelik az opciók a feltöltött dokumentumok vizsgálatát, jogosultságait, forrásidézeteit és a webes forrásokkal való összevetését?",
+			"Milyen biztonsági, megfelelőségi, adatkezelési és üzemeltetési kontrollok szükségesek egy vállalati bevezetéshez?",
+			"Mekkora implementációs teher, integrációs komplexitás, költség és karbantartási kockázat jár az egyes jelöltekkel?",
+			"Melyik architektúra ajánlható, milyen bevezetési roadmap következik belőle, és milyen feltételek mellett változna az ajánlás?",
+		];
+	}
+
+	return [
+		`What decision criteria should govern the architecture recommendation for ${topic}?`,
+		"Which candidate architecture patterns should be discovered for a deep research assistant, and what evidence supports each pattern's strengths and limits?",
+		"What failure modes lead to fabricated claims, weak source quality, lost context, or brittle long-form reports?",
+		"How does each option protect evidence and citation reliability, including claim-to-source traceability and auditability?",
+		"How does each option inspect uploaded documents, preserve document permissions, cite document evidence, and reconcile document evidence with web sources?",
+		"What security, compliance, data-handling, and operational controls are required for enterprise deployment?",
+		"What implementation burden, integration complexity, cost, and maintenance risk does each candidate architecture create?",
+		"Which architecture should be recommended, what implementation roadmap follows, and under what conditions would the recommendation change?",
+	];
+}
+
+function isArchitectureDecisionTopic(topic: string): boolean {
+	return /\b(?:architecture|architectural|architecture patterns?|workflow graphs?|multi-agent|rag|retrieval|deep research assistant|research assistant architecture|uploaded documents?)\b/iu.test(
+		topic,
+	);
 }
 
 function buildMarketScanKeyQuestions(
@@ -1376,6 +1508,13 @@ function buildComparisonKeyQuestions(input: {
 		: inferDefaultComparisonAxes(input.topic);
 	const yearText = extractRequestedYearScope(input.topic);
 	const yearPhrase = yearText ? `${yearText} ` : "";
+	if (!isVehicleComparisonTopic(input.topic)) {
+		return buildGenericComparisonKeyQuestions({
+			...input,
+			entityText,
+			axisText,
+		});
+	}
 	if (input.researchLanguage === "hu") {
 		return [
 			`Pontosan mely ${yearPhrase}${entityText} változatok tartoznak a kérdésbe, és mely hivatalos specifikációk, árak, elérhetőségi adatok vagy régiós eltérések ellenőrizhetők?`,
@@ -1393,6 +1532,39 @@ function buildComparisonKeyQuestions(input: {
 		"Which manufacturer pages, manuals, dealer listings, and independent reviews corroborate or conflict with the main claims?",
 		"Which rider or buyer use cases favor each option, and what evidence gaps, risks, or limitations should the report state plainly?",
 	];
+}
+
+function buildGenericComparisonKeyQuestions(input: {
+	topic: string;
+	researchLanguage: ResearchLanguage;
+	entities: string[];
+	axes: string[];
+	entityText: string;
+	axisText: string;
+}): string[] {
+	if (input.researchLanguage === "hu") {
+		return [
+			`Pontosan hogyan kell meghatározni és elhatárolni a következő összehasonlított opciókat: ${input.entityText}?`,
+			`Miben különbözik a ${input.entityText} a következő tengelyek mentén: ${input.axisText}?`,
+			"Mely elsődleges, független vagy technikai források támasztják alá vagy cáfolják a fő összehasonlító állításokat?",
+			"Milyen költségek, korlátok, kockázatok, üzemeltetési terhek és bevezetési feltételek változtatják meg az összehasonlítást?",
+			"Mely opció mely helyzetben illeszkedik jobban, és milyen bizonytalanságokat vagy bizonyítékréseket kell kimondani?",
+		];
+	}
+
+	return [
+		`How should ${input.entityText} be precisely defined and scoped for this comparison?`,
+		`How do ${input.entityText} differ on ${input.axisText}?`,
+		"Which primary, independent, or technical sources support or contradict the main comparison claims?",
+		"What costs, constraints, risks, operating burdens, and adoption conditions materially change the comparison?",
+		"Which option fits which context best, and what uncertainties or evidence gaps should the report state plainly?",
+	];
+}
+
+function isVehicleComparisonTopic(topic: string): boolean {
+	return /\b(?:bike|bikes|bicycle|bicycles|cube|nulane|kathmandu|kathmando|frame size|drivetrain|brakes?|geometry|motor\/battery)\b/iu.test(
+		topic,
+	);
 }
 
 function inferDefaultComparisonAxes(topic: string): string {

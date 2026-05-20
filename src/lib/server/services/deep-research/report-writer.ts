@@ -110,6 +110,7 @@ export type StructuredResearchReport = {
 
 export type ResearchReportDraft = {
 	jobId: string;
+	reportOutcome: DeepResearchReportOutcome;
 	title: string;
 	executiveSummary: string;
 	keyFindings: string[];
@@ -121,6 +122,10 @@ export type ResearchReportDraft = {
 	sourceLedgerSnapshotSources: ResearchReportSource[];
 	markdown: string;
 };
+
+export type DeepResearchReportOutcome =
+	| "research_report"
+	| "limited_research_report";
 
 export type AuditedResearchReportClaim = {
 	id: string;
@@ -174,6 +179,7 @@ export type EvidenceLimitationMemoDraft = {
 
 export type WriteResearchReportInput = {
 	jobId: string;
+	reportOutcome?: DeepResearchReportOutcome;
 	plan: ResearchPlan;
 	synthesisNotes: SynthesisNotes;
 	synthesisClaims?: DeepResearchSynthesisClaim[];
@@ -234,6 +240,7 @@ const reportLabels: Record<
 	ResearchLanguage,
 	{
 		titlePrefix: string;
+		limitedTitlePrefix: string;
 		executiveSummary: string;
 		keyFindings: string;
 		analysis: string;
@@ -277,6 +284,7 @@ const reportLabels: Record<
 > = {
 	en: {
 		titlePrefix: "Research Report",
+		limitedTitlePrefix: "Limited Research Report",
 		executiveSummary: "Executive Summary",
 		keyFindings: "Key Findings",
 		analysis: "Analysis",
@@ -331,6 +339,7 @@ const reportLabels: Record<
 	},
 	hu: {
 		titlePrefix: "Kutatási jelentés",
+		limitedTitlePrefix: "Korlátozott kutatási jelentés",
 		executiveSummary: "Vezetői összefoglaló",
 		keyFindings: "Fő megállapítások",
 		analysis: "Elemzés",
@@ -586,6 +595,7 @@ export function writeResearchReport(
 	input: WriteResearchReportInput,
 ): ResearchReportDraft {
 	const researchLanguage = input.plan.researchLanguage ?? "en";
+	const reportOutcome = input.reportOutcome ?? "research_report";
 	const useVerifiedClaims = hasVerifiedClaimInput(input);
 	const limitations = [
 		...input.synthesisNotes.reportLimitations.map(
@@ -595,7 +605,11 @@ export function writeResearchReport(
 	]
 		.map(normalizeText)
 		.filter(Boolean);
-	const title = buildReportTitle(input.plan.goal, researchLanguage);
+	const title = buildReportTitle(
+		input.plan.goal,
+		researchLanguage,
+		reportOutcome,
+	);
 	const structuredReport = buildStructuredResearchReport({
 		...input,
 		title,
@@ -622,13 +636,16 @@ export function writeResearchReport(
 				citedSources,
 			)
 		: buildExecutiveSummary(input.plan, keyFindings, researchLanguage);
-	const sections = useVerifiedClaims
-		? buildStructuredReportSectionsForMarkdown(
-				structuredReport,
-				citedSources,
-				researchLanguage,
-			)
-		: buildReportSections(input.plan, keyFindings, researchLanguage);
+	const sections =
+		reportOutcome === "limited_research_report"
+			? []
+			: useVerifiedClaims
+				? buildStructuredReportSectionsForMarkdown(
+						structuredReport,
+						citedSources,
+						researchLanguage,
+					)
+				: buildReportSections(input.plan, keyFindings, researchLanguage);
 	const renderedLimitations = useVerifiedClaims
 		? structuredReport.core.limitations.map((limitation) =>
 				formatStructuredTextBlockWithCitations(limitation, citedSources),
@@ -649,6 +666,7 @@ export function writeResearchReport(
 
 	return {
 		jobId: input.jobId,
+		reportOutcome,
 		title,
 		executiveSummary,
 		keyFindings,
@@ -3396,8 +3414,14 @@ function normalizeText(value: string): string {
 function buildReportTitle(
 	goal: string,
 	researchLanguage: ResearchLanguage,
+	reportOutcome: DeepResearchReportOutcome = "research_report",
 ): string {
-	return `${reportLabels[researchLanguage].titlePrefix}: ${shortenTitleSubject(goal)}`;
+	const labels = reportLabels[researchLanguage];
+	const prefix =
+		reportOutcome === "limited_research_report"
+			? labels.limitedTitlePrefix
+			: labels.titlePrefix;
+	return `${prefix}: ${shortenTitleSubject(goal)}`;
 }
 
 function shortenTitleSubject(value: string): string {

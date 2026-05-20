@@ -66,6 +66,59 @@ async function createApprovedResearchJob() {
 	return approved;
 }
 
+async function createApprovedPoisonedArchitectureJob() {
+	const { approveDeepResearchPlan, startDeepResearchJobShell } = await import(
+		"./index"
+	);
+	const { db } = await import("$lib/server/db");
+	const userRequest =
+		"What is the most reliable architecture for building an enterprise deep research assistant in 2026 that can search the web, inspect uploaded documents, cite evidence, and produce long-form reports without fabricating claims? Compare at least three architecture patterns, identify failure modes, recommend one design for a 50-person SaaS company, and include an implementation roadmap.";
+	const created = await startDeepResearchJobShell({
+		userId: "user-1",
+		conversationId: "conv-1",
+		triggerMessageId: "user-msg-1",
+		userRequest,
+		depth: "standard",
+		now: new Date("2026-05-05T10:01:00.000Z"),
+	});
+	const poisonedPlan = {
+		...created.currentPlan?.rawPlan,
+		goal: userRequest,
+		depth: "standard",
+		reportIntent: "comparison",
+		comparedEntities: [
+			"at least three architecture patterns",
+			"identify failure modes",
+			"recommend one design",
+		],
+		comparisonAxes: ["enterprise reliability", "implementation roadmap"],
+		planNormalizationNote:
+			"Planner treated abstract architecture instructions as comparison entities.",
+		keyQuestions: [
+			"Which manufacturers and trim differences matter most?",
+			"How do dealer listings compare across model years?",
+			"Which rider use cases fit each architecture pattern?",
+		],
+	};
+	await db
+		.update(schema.deepResearchPlanVersions)
+		.set({
+			rawPlanJson: JSON.stringify(poisonedPlan),
+			renderedPlan:
+				"Report intent: Comparison\nCompared entities:\n- at least three architecture patterns\n- identify failure modes\n- recommend one design",
+			updatedAt: new Date("2026-05-05T10:02:00.000Z"),
+		})
+		.where(eq(schema.deepResearchPlanVersions.jobId, created.id));
+	const approved = await approveDeepResearchPlan({
+		userId: "user-1",
+		jobId: created.id,
+		now: new Date("2026-05-05T10:06:00.000Z"),
+	});
+	if (!approved)
+		throw new Error("Expected poisoned plan approval to return the job");
+	return approved;
+}
+
 async function seedCompletedMeaningfulPass(jobId: string, passNumber = 1) {
 	const { upsertResearchPassCheckpoint, completeResearchPassCheckpoint } =
 		await import("./pass-state");
@@ -698,7 +751,7 @@ describe("real Deep Research workflow stepper", () => {
 		expect(synthesisTaskSourceIds).toEqual([accepted.id]);
 	});
 
-	it("publishes an Evidence Limitation Memo when a comparison entity lacks useful supported cells", async () => {
+	it("publishes a Limited Research Report when a comparison entity lacks useful supported cells but another central cell is cited", async () => {
 		const approved = await createApprovedResearchJob();
 		const approvedPlan = approved.currentPlan?.rawPlan;
 		if (!approvedPlan) throw new Error("Expected approved plan");
@@ -728,14 +781,11 @@ describe("real Deep Research workflow stepper", () => {
 		const { upsertResearchPassCheckpoint, completeResearchPassCheckpoint } =
 			await import("./pass-state");
 		const { saveDeepResearchEvidenceNotes } = await import("./evidence-notes");
-		const { getArtifactForUser } = await import(
-			"$lib/server/services/knowledge/store"
-		);
 		const { runDeepResearchWorkflowStep } = await import("./workflow");
 		const completeDeepResearchJobWithAuditedReport = vi.fn(async () => ({
 			...approved,
 			status: "completed",
-			stage: "report_ready",
+			stage: "limited_research_report_ready",
 		}));
 
 		await db
@@ -868,38 +918,24 @@ describe("real Deep Research workflow stepper", () => {
 				},
 			},
 		);
-		const memoArtifact = result?.job.reportArtifactId
-			? await getArtifactForUser("user-1", result.job.reportArtifactId)
-			: null;
-
 		expect(result).toMatchObject({
 			advanced: true,
 			outcome: "report_completed",
 			job: {
 				id: approved.id,
 				status: "completed",
-				stage: "evidence_limitation_memo_ready",
-				evidenceLimitationMemo: {
-					reviewedScope: {
-						discoveredCount: 2,
-						reviewedCount: 2,
-						topicRelevantCount: 1,
-						rejectedOrOffTopicCount: 1,
-					},
-				},
+				stage: "limited_research_report_ready",
 			},
 		});
-		expect(completeDeepResearchJobWithAuditedReport).not.toHaveBeenCalled();
-		expect(memoArtifact?.contentText).toContain("# Evidence Limitation Memo:");
-		expect(memoArtifact?.contentText).toContain("| Reviewed sources | 2 |");
-		expect(memoArtifact?.contentText).toContain(
-			"| Rejected or off-topic sources | 1 |",
+		expect(completeDeepResearchJobWithAuditedReport).toHaveBeenCalledWith(
+			expect.objectContaining({
+				reportOutcome: "limited_research_report",
+				limitations: expect.arrayContaining([
+					expect.stringContaining("Assistant B"),
+					expect.stringContaining("Repository workflow"),
+				]),
+			}),
 		);
-		expect(memoArtifact?.contentText).toContain("Assistant B");
-		expect(memoArtifact?.contentText).toContain("Repository workflow");
-		expect(memoArtifact?.contentText).toContain("Next Research Direction");
-		expect(memoArtifact?.contentText).toContain("Focused Deep Research");
-		expect(memoArtifact?.contentText).not.toContain("Standard Deep Research");
 	});
 
 	it("publishes an Evidence Limitation Memo when reviewed sources do not produce useful accepted claims", async () => {
@@ -1055,7 +1091,7 @@ describe("real Deep Research workflow stepper", () => {
 		expect(memoArtifact?.contentText).toContain("3 accepted reviewed sources");
 	});
 
-	it("publishes an Evidence Limitation Memo for a mostly empty comparison matrix", async () => {
+	it("publishes a Limited Research Report for a mostly empty comparison matrix with useful cited cells", async () => {
 		const approved = await createApprovedResearchJob();
 		const approvedPlan = approved.currentPlan?.rawPlan;
 		if (!approvedPlan) throw new Error("Expected approved plan");
@@ -1086,7 +1122,7 @@ describe("real Deep Research workflow stepper", () => {
 		const completeDeepResearchJobWithAuditedReport = vi.fn(async () => ({
 			...approved,
 			status: "completed",
-			stage: "report_ready",
+			stage: "limited_research_report_ready",
 		}));
 		const completeDeepResearchJobWithEvidenceLimitationMemo = vi.fn(
 			async () => ({
@@ -1227,14 +1263,15 @@ describe("real Deep Research workflow stepper", () => {
 			job: {
 				id: approved.id,
 				status: "completed",
-				stage: "evidence_limitation_memo_ready",
+				stage: "limited_research_report_ready",
 			},
 		});
-		expect(completeDeepResearchJobWithAuditedReport).not.toHaveBeenCalled();
 		expect(
 			completeDeepResearchJobWithEvidenceLimitationMemo,
-		).toHaveBeenCalledWith(
+		).not.toHaveBeenCalled();
+		expect(completeDeepResearchJobWithAuditedReport).toHaveBeenCalledWith(
 			expect.objectContaining({
+				reportOutcome: "limited_research_report",
 				limitations: expect.arrayContaining([
 					expect.stringContaining("Mostly empty comparison matrix"),
 					expect.stringContaining("Unresolved axis gap"),
@@ -1779,6 +1816,676 @@ describe("real Deep Research workflow stepper", () => {
 				"Rejected because the source is off-topic for the approved Research Plan.",
 			reviewedAt: "2026-05-05T10:09:00.000Z",
 		});
+	});
+
+	it("completes as Research Plan Revision Needed for a high-reviewed zero-topic poisoned plan", async () => {
+		const approved = await createApprovedPoisonedArchitectureJob();
+		const { db } = await import("$lib/server/db");
+		const { saveDiscoveredResearchSource, markResearchSourceRejected } =
+			await import("./sources");
+		const { listResearchTimelineEvents } = await import("./timeline");
+		const { runDeepResearchWorkflowStep } = await import("./workflow");
+
+		for (let index = 0; index < 75; index += 1) {
+			const source = await saveDiscoveredResearchSource({
+				userId: "user-1",
+				conversationId: "conv-1",
+				jobId: approved.id,
+				url: `https://vehicles.example.test/review-${index}`,
+				title: `Vehicle trim review ${index}`,
+				provider: "public_web",
+				snippet: "Dealer listings, trim changes, and rider use cases.",
+				sourceText:
+					"Dealer listings, model years, trim differences, and rider use cases for unrelated vehicles.",
+				discoveredAt: new Date("2026-05-05T10:07:00.000Z"),
+			});
+			await markResearchSourceRejected({
+				userId: "user-1",
+				sourceId: source.id,
+				rejectedAt: new Date("2026-05-05T10:08:00.000Z"),
+				rejectedReason:
+					"Rejected because the source is off-topic for the approved Research Plan.",
+				relevanceScore: 5,
+				topicRelevant: false,
+				topicRelevanceReason:
+					"The source discusses vehicle product details, not enterprise research assistant architecture.",
+			});
+		}
+		await db
+			.update(schema.deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "source_review",
+				updatedAt: new Date("2026-05-05T10:08:00.000Z"),
+			})
+			.where(eq(schema.deepResearchJobs.id, approved.id));
+
+		const result = await runDeepResearchWorkflowStep(
+			{
+				userId: "user-1",
+				jobId: approved.id,
+				now: new Date("2026-05-05T10:20:00.000Z"),
+			},
+			{
+				coverage: {
+					assessResearchCoverage: () => ({
+						jobId: approved.id,
+						conversationId: "conv-1",
+						status: "insufficient",
+						canContinue: false,
+						continuationRecommendation: null,
+						coverageGaps: [],
+						reportLimitations: [
+							{
+								keyQuestion:
+									"Which manufacturers and trim differences matter most?",
+								limitation:
+									"No topic-relevant accepted sources matched the approved plan.",
+								reviewedSourceCount: 0,
+							},
+						],
+						budget: {
+							selectedDepth: "standard",
+							sourceReviewCeiling: 75,
+							reviewedSourceCount: 75,
+							remainingSourceReviews: 0,
+							synthesisPassCeiling: 0,
+							remainingSynthesisPasses: 0,
+							exhausted: true,
+						},
+						remainingBudget: {
+							sourceReviews: 0,
+							synthesisPasses: 0,
+						},
+						timelineSummary: {
+							stage: "coverage_assessment",
+							kind: "coverage_assessed",
+							messageKey: "deepResearch.timeline.coverageLimited",
+							messageParams: {
+								reviewedSources: 75,
+								coverageGaps: 0,
+								reportLimitations: 1,
+							},
+							sourceCounts: {
+								discovered: 75,
+								reviewed: 75,
+								cited: 0,
+							},
+							assumptions: [],
+							warnings: ["No topic-relevant accepted sources remained."],
+							summary: "No topic-relevant accepted sources remained.",
+						},
+					}),
+				},
+			},
+		);
+		const timeline = await listResearchTimelineEvents({
+			userId: "user-1",
+			jobId: approved.id,
+		});
+
+		expect(result).toMatchObject({
+			advanced: true,
+			outcome: "plan_revision_needed",
+			job: {
+				id: approved.id,
+				status: "completed",
+				stage: "plan_revision_needed",
+				reportArtifactId: null,
+				evidenceLimitationMemo: null,
+				currentPlan: {
+					version: 2,
+					status: "awaiting_approval",
+					rawPlan: {
+						reportIntent: "recommendation",
+					},
+				},
+			},
+		});
+		expect(result?.job.currentPlan?.rawPlan?.comparedEntities).toBeUndefined();
+		expect(
+			result?.job.currentPlan?.rawPlan?.keyQuestions.join("\n"),
+		).not.toMatch(/manufacturer|trim|dealer|rider|model year/i);
+		expect(result?.job.currentPlan?.rawPlan?.planNormalizationNote).toContain(
+			"Candidate architecture patterns will be discovered during research",
+		);
+		expect(timeline).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					stage: "plan_health_check",
+					kind: "warning",
+					messageKey: "deepResearch.timeline.planRevisionNeeded",
+					sourceCounts: {
+						discovered: 75,
+						reviewed: 75,
+						cited: 0,
+					},
+					summary: expect.stringContaining("Research Plan needs revision"),
+				}),
+			]),
+		);
+	});
+
+	it("starts corrected-plan workflow from fresh pass semantics after poisoned completed passes and tasks", async () => {
+		const approved = await createApprovedPoisonedArchitectureJob();
+		const {
+			approveDeepResearchPlan,
+			completeDeepResearchJobWithPlanRevisionNeeded,
+		} = await import("./index");
+		const { saveDiscoveredResearchSource, listResearchSources } = await import(
+			"./sources"
+		);
+		const {
+			completeResearchPassCheckpoint,
+			listResearchPassCheckpoints,
+			saveCoverageGapsForPass,
+			upsertResearchPassCheckpoint,
+		} = await import("./pass-state");
+		const {
+			completeResearchTask,
+			createResearchTasksFromCoverageGaps,
+			listResearchTasks,
+		} = await import("./tasks");
+		const { runDeepResearchWorkflowStep } = await import("./workflow");
+
+		const poisonedSource = await saveDiscoveredResearchSource({
+			userId: "user-1",
+			conversationId: "conv-1",
+			jobId: approved.id,
+			url: "https://vehicles.example.test/poisoned-completed-task",
+			title: "Poisoned completed vehicle task source",
+			provider: "public_web",
+			snippet: "Vehicle dealer listing from the poisoned run.",
+			discoveredAt: new Date("2026-05-05T10:07:00.000Z"),
+		});
+		const poisonedCheckpoint = await upsertResearchPassCheckpoint({
+			userId: "user-1",
+			jobId: approved.id,
+			conversationId: "conv-1",
+			passNumber: 1,
+			searchIntent: "Initial poisoned source review",
+			reviewedSourceIds: [poisonedSource.id],
+			now: new Date("2026-05-05T10:08:00.000Z"),
+		});
+		const [poisonedGap] = await saveCoverageGapsForPass({
+			userId: "user-1",
+			jobId: approved.id,
+			conversationId: "conv-1",
+			passCheckpointId: poisonedCheckpoint.id,
+			gaps: [
+				{
+					keyQuestion: "Which manufacturers and trim differences matter most?",
+					reason: "Poisoned product question from the bad plan.",
+					reviewedSourceCount: 75,
+					severity: "critical",
+					recommendedNextAction:
+						"Review additional vehicle listing sources for the bad plan.",
+				},
+			],
+			now: new Date("2026-05-05T10:08:30.000Z"),
+		});
+		await completeResearchPassCheckpoint({
+			userId: "user-1",
+			checkpointId: poisonedCheckpoint.id,
+			coverageGapIds: [poisonedGap.id],
+			nextDecision: "continue_research",
+			decisionSummary: "Poisoned pass completed before plan health recovery.",
+			now: new Date("2026-05-05T10:09:00.000Z"),
+		});
+		const [poisonedTask] = await createResearchTasksFromCoverageGaps({
+			userId: "user-1",
+			jobId: approved.id,
+			conversationId: "conv-1",
+			passNumber: 2,
+			gaps: [
+				{
+					id: poisonedGap.id,
+					keyQuestion: poisonedGap.keyQuestion,
+					summary: poisonedGap.recommendedNextAction,
+					severity: poisonedGap.severity,
+				},
+			],
+			now: new Date("2026-05-05T10:10:00.000Z"),
+		});
+		await completeResearchTask({
+			userId: "user-1",
+			taskId: poisonedTask.id,
+			output: {
+				summary: "Completed poisoned vehicle task.",
+				findings: ["Vehicle listings do not answer the architecture request."],
+				sourceIds: [poisonedSource.id],
+			},
+			now: new Date("2026-05-05T10:11:00.000Z"),
+		});
+
+		await completeDeepResearchJobWithPlanRevisionNeeded({
+			userId: "user-1",
+			jobId: approved.id,
+			reason:
+				"The Research Plan appears to have framed the request incorrectly.",
+			signals: [
+				"Abstract architecture recommendation was treated as a strict entity comparison.",
+			],
+			sourceCounts: {
+				discovered: 75,
+				reviewed: 75,
+				cited: 0,
+			},
+			now: new Date("2026-05-05T10:20:00.000Z"),
+		});
+		await approveDeepResearchPlan({
+			userId: "user-1",
+			jobId: approved.id,
+			now: new Date("2026-05-05T10:25:00.000Z"),
+		});
+
+		await runDeepResearchWorkflowStep(
+			{
+				userId: "user-1",
+				jobId: approved.id,
+				now: new Date("2026-05-05T10:26:00.000Z"),
+			},
+			{
+				discovery: {
+					runPublicWebDiscoveryPass: async (input) => {
+						const correctedSource = await saveDiscoveredResearchSource({
+							userId: input.userId,
+							conversationId: input.conversationId,
+							jobId: input.jobId,
+							url: "https://architecture.example.test/deep-research-assistant",
+							title: "Deep research assistant architecture patterns",
+							provider: "public_web",
+							snippet:
+								"Architecture patterns for reliable deep research assistants.",
+							sourceText:
+								"RAG, workflow graphs, and multi-agent systems for reliable cited research assistants.",
+							discoveredAt: input.now,
+						});
+						return {
+							queries: [input.approvedPlan.goal],
+							discoveredCount: 1,
+							savedSources: [correctedSource],
+							warnings: [],
+						};
+					},
+				},
+			},
+		);
+		const sourceReviewResult = await runDeepResearchWorkflowStep(
+			{
+				userId: "user-1",
+				jobId: approved.id,
+				now: new Date("2026-05-05T10:27:00.000Z"),
+			},
+			{
+				sourceReview: {
+					reviewer: {
+						reviewSource: async (source) => ({
+							summary: `Reviewed ${source.title}`,
+							keyFindings: [
+								"Architecture workflow graphs can improve reliability.",
+							],
+							extractedText: source.sourceText,
+							relevanceScore: 90,
+							supportedKeyQuestions: [
+								"Which candidate architecture patterns should be discovered for a deep research assistant, and what evidence supports each pattern's strengths and limits?",
+							],
+							extractedClaims: [
+								"Architecture workflow graphs can improve reliability.",
+							],
+							topicRelevant: true,
+							topicRelevanceReason:
+								"The source discusses deep research assistant architecture.",
+						}),
+					},
+				},
+				coverage: {
+					assessResearchCoverage: () => ({
+						jobId: approved.id,
+						conversationId: "conv-1",
+						status: "insufficient",
+						canContinue: true,
+						continuationRecommendation:
+							"Continue corrected architecture pattern coverage.",
+						coverageGaps: [
+							{
+								keyQuestion:
+									"Which candidate architecture patterns should be discovered?",
+								reason: "insufficient_reviewed_sources",
+								reviewedSourceCount: 1,
+								severity: "critical",
+								recommendedNextAction:
+									"Review additional architecture pattern sources.",
+							},
+						],
+						reportLimitations: [],
+						budget: {
+							selectedDepth: "standard",
+							sourceReviewCeiling: 75,
+							reviewedSourceCount: 1,
+							remainingSourceReviews: 74,
+							synthesisPassCeiling: 3,
+							remainingSynthesisPasses: 2,
+							exhausted: false,
+						},
+						remainingBudget: {
+							sourceReviews: 74,
+							synthesisPasses: 2,
+						},
+						timelineSummary: {
+							stage: "coverage_assessment",
+							kind: "coverage_assessed",
+							messageKey: "deepResearch.timeline.coverageLimited",
+							messageParams: {
+								reviewedSources: 1,
+								coverageGaps: 1,
+								reportLimitations: 0,
+							},
+							sourceCounts: {
+								discovered: 1,
+								reviewed: 1,
+								cited: 0,
+							},
+							assumptions: [],
+							warnings: [],
+							summary: "Corrected pass 1 needs targeted follow-up.",
+						},
+					}),
+				},
+			},
+		);
+		const checkpoints = await listResearchPassCheckpoints({
+			userId: "user-1",
+			jobId: approved.id,
+		});
+		const tasks = await listResearchTasks({
+			userId: "user-1",
+			jobId: approved.id,
+		});
+		const sources = await listResearchSources({
+			userId: "user-1",
+			jobId: approved.id,
+		});
+
+		expect(sourceReviewResult).toMatchObject({
+			advanced: true,
+			outcome: "coverage_continuation_created",
+			job: {
+				status: "running",
+				stage: "research_tasks",
+			},
+		});
+		expect(sources.map((source) => source.id)).toContain(poisonedSource.id);
+		expect(
+			checkpoints.filter((checkpoint) => checkpoint.passNumber > 0),
+		).toEqual([
+			expect.objectContaining({
+				passNumber: 1,
+				searchIntent: "Initial approved-plan source review",
+				terminalDecision: true,
+			}),
+			expect.objectContaining({
+				passNumber: 2,
+				searchIntent: "Targeted follow-up for pass 1 Coverage Gaps",
+				terminalDecision: false,
+			}),
+		]);
+		expect(tasks.filter((task) => task.passNumber > 0)).toEqual([
+			expect.objectContaining({
+				passNumber: 2,
+				status: "pending",
+				assignment: "Review additional architecture pattern sources.",
+			}),
+		]);
+		expect(
+			tasks.find((task) => task.id === poisonedTask.id)?.passNumber,
+		).toBeLessThan(0);
+	});
+
+	it("does not let retired poisoned synthesis claims satisfy corrected-plan report eligibility", async () => {
+		const approved = await createApprovedPoisonedArchitectureJob();
+		const {
+			approveDeepResearchPlan,
+			completeDeepResearchJobWithPlanRevisionNeeded,
+		} = await import("./index");
+		const { db } = await import("$lib/server/db");
+		const { saveDeepResearchEvidenceNotes } = await import("./evidence-notes");
+		const { completeResearchPassCheckpoint, upsertResearchPassCheckpoint } =
+			await import("./pass-state");
+		const { saveDiscoveredResearchSource, markResearchSourceReviewed } =
+			await import("./sources");
+		const { saveDeepResearchSynthesisClaims } = await import(
+			"./synthesis-claims"
+		);
+		const { runDeepResearchWorkflowStep } = await import("./workflow");
+
+		const poisonedSource = await saveDiscoveredResearchSource({
+			userId: "user-1",
+			conversationId: "conv-1",
+			jobId: approved.id,
+			url: "https://vehicles.example.test/stale-synthesis",
+			title: "Poisoned stale vehicle evidence",
+			provider: "public_web",
+			snippet: "Vehicle trim evidence from the poisoned run.",
+			discoveredAt: new Date("2026-05-05T10:07:00.000Z"),
+		});
+		await markResearchSourceReviewed({
+			userId: "user-1",
+			sourceId: poisonedSource.id,
+			reviewedAt: new Date("2026-05-05T10:08:00.000Z"),
+			reviewedNote: "Vehicle trims are available from dealer listings.",
+			supportedKeyQuestions: [
+				"Which manufacturers and trim differences matter most?",
+			],
+			extractedClaims: ["Vehicle trims are available from dealer listings."],
+		});
+		const poisonedCheckpoint = await upsertResearchPassCheckpoint({
+			userId: "user-1",
+			jobId: approved.id,
+			conversationId: "conv-1",
+			passNumber: 1,
+			searchIntent: "Initial poisoned source review",
+			reviewedSourceIds: [poisonedSource.id],
+			now: new Date("2026-05-05T10:09:00.000Z"),
+		});
+		const [poisonedNote] = await saveDeepResearchEvidenceNotes({
+			userId: "user-1",
+			jobId: approved.id,
+			conversationId: "conv-1",
+			passCheckpointId: poisonedCheckpoint.id,
+			sourceId: poisonedSource.id,
+			notes: [
+				{
+					supportedKeyQuestion:
+						"Which manufacturers and trim differences matter most?",
+					findingText: "Vehicle trims are available from dealer listings.",
+					sourceSupport: {
+						sourceId: poisonedSource.id,
+						reviewedSourceId: poisonedSource.id,
+					},
+				},
+			],
+			now: new Date("2026-05-05T10:09:30.000Z"),
+		});
+		await saveDeepResearchSynthesisClaims({
+			userId: "user-1",
+			jobId: approved.id,
+			conversationId: "conv-1",
+			passCheckpointId: poisonedCheckpoint.id,
+			synthesisPass: `synthesis:${approved.id}:1`,
+			claims: [
+				{
+					statement: "Vehicle trims are available from dealer listings.",
+					planQuestion: "Which manufacturers and trim differences matter most?",
+					central: true,
+					status: "accepted",
+					evidenceLinks: [
+						{
+							evidenceNoteId: poisonedNote.id,
+							relation: "support",
+						},
+					],
+				},
+			],
+			now: new Date("2026-05-05T10:10:00.000Z"),
+		});
+		await completeResearchPassCheckpoint({
+			userId: "user-1",
+			checkpointId: poisonedCheckpoint.id,
+			nextDecision: "synthesize",
+			decisionSummary: "Poisoned synthesis was ready before recovery.",
+			now: new Date("2026-05-05T10:11:00.000Z"),
+		});
+
+		await completeDeepResearchJobWithPlanRevisionNeeded({
+			userId: "user-1",
+			jobId: approved.id,
+			reason:
+				"The Research Plan appears to have framed the request incorrectly.",
+			signals: [
+				"Abstract architecture recommendation was treated as a strict entity comparison.",
+			],
+			sourceCounts: {
+				discovered: 1,
+				reviewed: 1,
+				cited: 0,
+			},
+			now: new Date("2026-05-05T10:20:00.000Z"),
+		});
+		const correctedApproval = await approveDeepResearchPlan({
+			userId: "user-1",
+			jobId: approved.id,
+			now: new Date("2026-05-05T10:25:00.000Z"),
+		});
+		const correctedPlan = correctedApproval?.currentPlan?.rawPlan;
+		if (!correctedPlan || !correctedApproval.currentPlan?.id) {
+			throw new Error("Expected corrected plan approval");
+		}
+		await db
+			.update(schema.deepResearchPlanVersions)
+			.set({
+				rawPlanJson: JSON.stringify({
+					...correctedPlan,
+					researchBudget: {
+						...correctedPlan.researchBudget,
+						meaningfulPassFloor: 1,
+						repairPassCeiling: 1,
+					},
+				}),
+			})
+			.where(
+				eq(
+					schema.deepResearchPlanVersions.id,
+					correctedApproval.currentPlan.id,
+				),
+			);
+
+		const correctedSource = await saveDiscoveredResearchSource({
+			userId: "user-1",
+			conversationId: "conv-1",
+			jobId: approved.id,
+			url: "https://architecture.example.test/evidence-gap",
+			title: "Architecture evidence gap",
+			provider: "public_web",
+			snippet: "Architecture source that still needs synthesis support.",
+			discoveredAt: new Date("2026-05-05T10:26:00.000Z"),
+		});
+		await markResearchSourceReviewed({
+			userId: "user-1",
+			sourceId: correctedSource.id,
+			reviewedAt: new Date("2026-05-05T10:27:00.000Z"),
+			reviewedNote:
+				"Workflow graphs can make architecture evidence gates explicit.",
+			supportedKeyQuestions: [
+				"Which candidate architecture patterns should be discovered for a deep research assistant, and what evidence supports each pattern's strengths and limits?",
+			],
+			extractedClaims: [
+				"Workflow graphs can make architecture evidence gates explicit.",
+			],
+		});
+		const correctedCheckpoint = await upsertResearchPassCheckpoint({
+			userId: "user-1",
+			jobId: approved.id,
+			conversationId: "conv-1",
+			passNumber: 1,
+			searchIntent: "Initial approved-plan source review",
+			reviewedSourceIds: [correctedSource.id],
+			now: new Date("2026-05-05T10:28:00.000Z"),
+		});
+		await completeResearchPassCheckpoint({
+			userId: "user-1",
+			checkpointId: correctedCheckpoint.id,
+			nextDecision: "synthesize",
+			decisionSummary: "Corrected pass is ready for synthesis.",
+			now: new Date("2026-05-05T10:28:30.000Z"),
+		});
+		await saveDeepResearchEvidenceNotes({
+			userId: "user-1",
+			jobId: approved.id,
+			conversationId: "conv-1",
+			passCheckpointId: correctedCheckpoint.id,
+			sourceId: correctedSource.id,
+			notes: [
+				{
+					supportedKeyQuestion:
+						"Which candidate architecture patterns should be discovered for a deep research assistant, and what evidence supports each pattern's strengths and limits?",
+					findingText:
+						"Workflow graphs can make architecture evidence gates explicit.",
+					sourceSupport: {
+						sourceId: correctedSource.id,
+						reviewedSourceId: correctedSource.id,
+					},
+				},
+			],
+			now: new Date("2026-05-05T10:29:00.000Z"),
+		});
+		await db
+			.update(schema.deepResearchJobs)
+			.set({
+				status: "running",
+				stage: "synthesis",
+				updatedAt: new Date("2026-05-05T10:29:30.000Z"),
+			})
+			.where(eq(schema.deepResearchJobs.id, approved.id));
+
+		const completeDeepResearchJobWithAuditedReport = vi.fn(async () => ({
+			...correctedApproval,
+			status: "completed",
+			stage: "report_ready",
+		}));
+		const result = await runDeepResearchWorkflowStep(
+			{
+				userId: "user-1",
+				jobId: approved.id,
+				now: new Date("2026-05-05T10:30:00.000Z"),
+			},
+			{
+				synthesis: {
+					buildSynthesisNotes: async () => ({
+						jobId: approved.id,
+						findings: [],
+						supportedFindings: [],
+						conflicts: [],
+						assumptions: [],
+						reportLimitations: [],
+					}),
+				},
+				reportCompletion: {
+					completeDeepResearchJobWithAuditedReport,
+				},
+			},
+		);
+
+		expect(result).toMatchObject({
+			advanced: true,
+			outcome: "coverage_continuation_created",
+			job: {
+				id: approved.id,
+				status: "running",
+				stage: "research_tasks",
+			},
+		});
+		expect(completeDeepResearchJobWithAuditedReport).not.toHaveBeenCalled();
 	});
 
 	it("completes with report limitations when source review budget is exhausted after reviewed evidence", async () => {

@@ -149,6 +149,106 @@ describe("ResearchCard", () => {
 		).toBeInTheDocument();
 	});
 
+	it("presents a corrected plan revision draft as needing approval", async () => {
+		const onApprove = vi.fn(async () => {});
+		const onEdit = vi.fn(async () => {});
+		const onCancel = vi.fn(async () => {});
+		const {
+			getAllByText,
+			getByLabelText,
+			getByRole,
+			getByText,
+			queryByRole,
+			queryByText,
+		} = render(ResearchCard, {
+			job: makeDeepResearchJob({
+				status: "completed",
+				stage: "plan_revision_needed",
+				plan: null,
+				currentPlan: {
+					version: 2,
+					status: "awaiting_approval",
+					renderedPlan: "",
+					rawPlan: {
+						goal: "Compare EU and US battery recycling policy with a narrower source scope.",
+						depth: "standard",
+						reportIntent: "comparison",
+						researchBudget: {
+							sourceReviewCeiling: 24,
+							synthesisPassCeiling: 2,
+						},
+						keyQuestions: [
+							"Which official policy updates are supported by primary sources?",
+						],
+						sourceScope: {
+							includePublicWeb: true,
+							planningContextDisclosure: null,
+						},
+						reportShape: ["Corrected comparison"],
+						constraints: [],
+						deliverables: ["Corrected cited report"],
+					},
+					contextDisclosure:
+						"The previous draft needed a narrower, evidence-backed scope.",
+					effortEstimate: {
+						selectedDepth: "standard",
+						expectedTimeBand: "10-25 minutes",
+						sourceReviewCeiling: 24,
+						relativeCostWarning:
+							"Moderate relative cost; use for serious multi-source synthesis.",
+					},
+				},
+			}),
+			onApprove,
+			onEdit,
+			onCancel,
+		});
+
+		expect(getByText("Needs attention")).toBeInTheDocument();
+		expect(queryByText("Completed")).not.toBeInTheDocument();
+		expect(queryByText("Insufficient evidence")).not.toBeInTheDocument();
+		expect(
+			getByText("Stage: Research Plan Revision Needed"),
+		).toBeInTheDocument();
+		expect(
+			getAllByText("Research Plan Revision Needed").length,
+		).toBeGreaterThan(0);
+		expect(
+			getByText(
+				"The corrected draft is ready. Approve it to continue Deep Research, or edit it before approving.",
+			),
+		).toBeInTheDocument();
+		expect(getByText("Research Plan")).toBeInTheDocument();
+		expect(getByText("v2")).toBeInTheDocument();
+		expect(
+			getByText(
+				"Which official policy updates are supported by primary sources?",
+			),
+		).toBeInTheDocument();
+
+		await fireEvent.click(
+			getByRole("button", { name: "Approve Research Plan" }),
+		);
+		expect(onApprove).toHaveBeenCalledWith("research-job-1");
+
+		await fireEvent.click(getByRole("button", { name: "Edit Research Plan" }));
+		await fireEvent.input(getByLabelText("Edit plan instructions"), {
+			target: {
+				value: "Keep the corrected scope but add enforcement examples.",
+			},
+		});
+		await fireEvent.click(getByRole("button", { name: "Submit Plan Edit" }));
+
+		expect(onEdit).toHaveBeenCalledWith(
+			"research-job-1",
+			"Keep the corrected scope but add enforcement examples.",
+		);
+		expect(
+			queryByRole("button", { name: "Cancel Deep Research" }),
+		).not.toBeInTheDocument();
+		expect(onCancel).not.toHaveBeenCalled();
+	});
+
 	it("maps operational job status to user-facing research severity", () => {
 		const examples: Array<[Partial<DeepResearchJob>, string]> = [
 			[
@@ -1461,6 +1561,52 @@ describe("ResearchCard", () => {
 			conversationId: "conv-1",
 			previewUrl: "/api/knowledge/artifact-report-1/preview",
 			downloadUrl: "/api/knowledge/artifact-report-1/download",
+		});
+	});
+
+	it("labels limited Research Reports distinctly while keeping completed report handoff", async () => {
+		const onOpenReport = vi.fn<(document: DocumentWorkspaceItem) => void>();
+		const { getAllByText, getByRole, getByText, queryByText } = render(
+			ResearchCard,
+			{
+				job: makeDeepResearchJob({
+					status: "completed",
+					stage: "limited_research_report_ready",
+					reportArtifactId: "artifact-limited-report-1",
+					completedAt: Date.now(),
+				}),
+				onOpenReport,
+			},
+		);
+
+		expect(getAllByText("Completed").length).toBeGreaterThan(0);
+		expect(queryByText("Insufficient evidence")).not.toBeInTheDocument();
+		expect(getByText("Limited Research Report")).toBeInTheDocument();
+		expect(
+			getByText(
+				"The report is complete, but it explicitly labels evidence limits and unresolved gaps.",
+			),
+		).toBeInTheDocument();
+
+		await fireEvent.click(
+			getByRole("button", { name: "Open Limited Research Report" }),
+		);
+
+		expect(onOpenReport).toHaveBeenCalledWith({
+			id: "artifact:artifact-limited-report-1",
+			source: "knowledge_artifact",
+			filename:
+				"Limited Research Report - Research battery recycling policy.md",
+			title: "Limited Research Report - Research battery recycling policy.md",
+			documentLabel:
+				"Limited Research Report - Research battery recycling policy.md",
+			documentRole: "research_report",
+			versionNumber: 1,
+			mimeType: "text/markdown",
+			artifactId: "artifact-limited-report-1",
+			conversationId: "conv-1",
+			previewUrl: "/api/knowledge/artifact-limited-report-1/preview",
+			downloadUrl: "/api/knowledge/artifact-limited-report-1/download",
 		});
 	});
 });

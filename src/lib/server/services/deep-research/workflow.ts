@@ -7,6 +7,7 @@ import type {
 	DeepResearchJob,
 	DeepResearchPassCheckpoint,
 	DeepResearchPassDecision,
+	DeepResearchPlanSummary,
 	DeepResearchSource,
 	DeepResearchSynthesisClaim,
 	DeepResearchTask,
@@ -27,6 +28,7 @@ import {
 import {
 	completeDeepResearchJobWithAuditedReport,
 	completeDeepResearchJobWithEvidenceLimitationMemo,
+	completeDeepResearchJobWithPlanRevisionNeeded,
 	listConversationDeepResearchJobs,
 } from "./index";
 import {
@@ -42,7 +44,9 @@ import {
 	saveCoverageGapsForPass,
 	upsertResearchPassCheckpoint,
 } from "./pass-state";
+import { assessPlanHealthBeforeEvidenceLimitation } from "./plan-health";
 import type { ResearchPlan } from "./planning";
+import type { DeepResearchReportOutcome } from "./report-writer";
 import {
 	completeResearchResumePoint,
 	getResearchResumePoint,
@@ -93,6 +97,7 @@ export type DeepResearchWorkflowOutcome =
 	| "discovery_completed"
 	| "report_completed"
 	| "coverage_continuation_created"
+	| "plan_revision_needed"
 	| "not_eligible";
 
 export type RunDeepResearchWorkflowStepResult = {
@@ -121,6 +126,7 @@ export type DeepResearchWorkflowDependencies = {
 	reportCompletion?: {
 		completeDeepResearchJobWithAuditedReport: typeof completeDeepResearchJobWithAuditedReport;
 		completeDeepResearchJobWithEvidenceLimitationMemo?: typeof completeDeepResearchJobWithEvidenceLimitationMemo;
+		completeDeepResearchJobWithPlanRevisionNeeded?: typeof completeDeepResearchJobWithPlanRevisionNeeded;
 	};
 	tasks?: {
 		createResearchTasksFromCoverageGaps?: typeof createResearchTasksFromCoverageGaps;
@@ -250,8 +256,9 @@ async function runResearchTasksStep(
 		userId: jobRow.userId,
 		jobId: jobRow.id,
 	});
-	const reviewedSources = sources.filter((source) => source.reviewedAt);
-	const acceptedReviewedSources = sources.filter(
+	const activeSources = filterSourcesForCurrentPlan(sources, job.currentPlan);
+	const reviewedSources = activeSources.filter((source) => source.reviewedAt);
+	const acceptedReviewedSources = activeSources.filter(
 		isAcceptedReviewedResearchSource,
 	);
 
@@ -324,7 +331,7 @@ async function runResearchTasksStep(
 					approvedPlan: approvedPlan as ResearchPlan,
 					task,
 					reviewedSources: acceptedReviewedSources,
-					allSources: sources,
+					allSources: activeSources,
 					now,
 				});
 				await (
@@ -547,6 +554,7 @@ async function runResearchTasksStep(
 	};
 	const synthesisNotes = await buildSynthesisNotesWithResumePoint({
 		jobRow,
+		currentPlan: job.currentPlan,
 		passNumber,
 		now,
 		synthesisInput,
@@ -557,8 +565,9 @@ async function runResearchTasksStep(
 		approvedPlan: approvedPlan as ResearchPlan,
 		passNumber,
 		reviewedSources: acceptedReviewedSources,
-		allSources: sources,
+		allSources: activeSources,
 		taskLimitations,
+		currentPlanUpdatedAt: job.currentPlan?.updatedAt,
 		now,
 		dependencies,
 	});
@@ -574,6 +583,14 @@ async function runResearchTasksStep(
 			dependencies,
 		});
 	if (minimumPassContinuation) return minimumPassContinuation;
+	const completionOutcome = await determineReportCompletionOutcome({
+		jobRow,
+		approvedPlan: approvedPlan as ResearchPlan,
+		reviewedSources: acceptedReviewedSources,
+		allSources: activeSources,
+		taskLimitations,
+		currentPlanUpdatedAt: job.currentPlan?.updatedAt,
+	});
 	const completedJob = await (
 		dependencies.reportCompletion?.completeDeepResearchJobWithAuditedReport ??
 		completeDeepResearchJobWithAuditedReport
@@ -581,7 +598,8 @@ async function runResearchTasksStep(
 		userId: jobRow.userId,
 		jobId: jobRow.id,
 		synthesisNotes,
-		limitations: taskLimitations,
+		reportOutcome: completionOutcome.reportOutcome,
+		limitations: completionOutcome.limitations,
 		now,
 	});
 	if (!completedJob) return null;
@@ -634,11 +652,16 @@ async function runSynthesisResumeStep(
 		userId: jobRow.userId,
 		jobId: jobRow.id,
 	});
-	const reviewedSources = sources.filter((source) => source.reviewedAt);
-	const acceptedReviewedSources = sources.filter(
+	const activeSources = filterSourcesForCurrentPlan(sources, job.currentPlan);
+	const reviewedSources = activeSources.filter((source) => source.reviewedAt);
+	const acceptedReviewedSources = activeSources.filter(
 		isAcceptedReviewedResearchSource,
 	);
-	const synthesisResumeKey = `synthesis:${jobRow.id}:${passNumber}`;
+	const synthesisResumeKey = buildSynthesisResumeKey(
+		jobRow.id,
+		job.currentPlan,
+		passNumber,
+	);
 	const existingSynthesis = await getResearchResumePoint({
 		userId: jobRow.userId,
 		jobId: jobRow.id,
@@ -707,8 +730,9 @@ async function runSynthesisResumeStep(
 		approvedPlan: approvedPlan as ResearchPlan,
 		passNumber,
 		reviewedSources: acceptedReviewedSources,
-		allSources: sources,
+		allSources: activeSources,
 		taskLimitations,
+		currentPlanUpdatedAt: job.currentPlan?.updatedAt,
 		now,
 		dependencies,
 	});
@@ -719,11 +743,19 @@ async function runSynthesisResumeStep(
 			approvedPlan: approvedPlan as ResearchPlan,
 			currentPassNumber: passNumber,
 			reviewedSources: acceptedReviewedSources,
-			sources,
+			sources: activeSources,
 			now,
 			dependencies,
 		});
 	if (minimumPassContinuation) return minimumPassContinuation;
+	const completionOutcome = await determineReportCompletionOutcome({
+		jobRow,
+		approvedPlan: approvedPlan as ResearchPlan,
+		reviewedSources: acceptedReviewedSources,
+		allSources: activeSources,
+		taskLimitations,
+		currentPlanUpdatedAt: job.currentPlan?.updatedAt,
+	});
 	const completedJob = await (
 		dependencies.reportCompletion?.completeDeepResearchJobWithAuditedReport ??
 		completeDeepResearchJobWithAuditedReport
@@ -731,7 +763,8 @@ async function runSynthesisResumeStep(
 		userId: jobRow.userId,
 		jobId: jobRow.id,
 		synthesisNotes,
-		limitations: taskLimitations,
+		reportOutcome: completionOutcome.reportOutcome,
+		limitations: completionOutcome.limitations,
 		now,
 	});
 	if (!completedJob) return null;
@@ -749,6 +782,7 @@ async function assessReportEligibilityAfterSynthesis(input: {
 	reviewedSources: DeepResearchSource[];
 	allSources: DeepResearchSource[];
 	taskLimitations: string[];
+	currentPlanUpdatedAt?: number;
 	now: Date;
 	dependencies: DeepResearchWorkflowDependencies;
 }): Promise<RunDeepResearchWorkflowStepResult | null> {
@@ -762,15 +796,25 @@ async function assessReportEligibilityAfterSynthesis(input: {
 			jobId: input.jobRow.id,
 		}),
 	]);
+	const activeEvidenceNotes = filterRecordsForCurrentPlan(
+		evidenceNotes,
+		input.currentPlanUpdatedAt,
+	);
+	const activeSynthesisClaims = filterRecordsForCurrentPlan(
+		synthesisClaims,
+		input.currentPlanUpdatedAt,
+	);
 	const publicationGate = assessReportPublicationGate({
 		approvedPlan: input.approvedPlan,
 		reviewedSources: input.reviewedSources,
 		allSources: input.allSources,
-		evidenceNotes,
-		synthesisClaims,
+		evidenceNotes: activeEvidenceNotes,
+		synthesisClaims: activeSynthesisClaims,
+		scopeLimitations: input.taskLimitations,
 	});
-	const hasClaimReadinessIssue =
-		hasReportBlockingClaimReadinessIssue(synthesisClaims);
+	const hasClaimReadinessIssue = hasReportBlockingClaimReadinessIssue(
+		activeSynthesisClaims,
+	);
 	if (!publicationGate.eligible && publicationGate.forceMemo) {
 		return completeCoverageExhaustedWithEvidenceLimitationMemo({
 			jobRow: input.jobRow,
@@ -780,7 +824,7 @@ async function assessReportEligibilityAfterSynthesis(input: {
 			dependencies: input.dependencies,
 		});
 	}
-	if (evidenceNotes.length === 0) return null;
+	if (activeEvidenceNotes.length === 0) return null;
 	if (!hasClaimReadinessIssue) {
 		if (!publicationGate.eligible) {
 			return completeCoverageExhaustedWithEvidenceLimitationMemo({
@@ -812,8 +856,8 @@ async function assessReportEligibilityAfterSynthesis(input: {
 		reviewedSources: input.reviewedSources.map((source) =>
 			mapReviewedSourceForCoverage(source, input.approvedPlan),
 		),
-		evidenceNotes,
-		synthesisClaims,
+		evidenceNotes: activeEvidenceNotes,
+		synthesisClaims: activeSynthesisClaims,
 		signals: {
 			freshnessRequired: false,
 		},
@@ -957,6 +1001,52 @@ async function assessReportEligibilityAfterSynthesis(input: {
 		: null;
 }
 
+async function determineReportCompletionOutcome(input: {
+	jobRow: typeof deepResearchJobs.$inferSelect;
+	approvedPlan: ResearchPlan;
+	reviewedSources: DeepResearchSource[];
+	allSources: DeepResearchSource[];
+	taskLimitations: string[];
+	currentPlanUpdatedAt?: number;
+}): Promise<{
+	reportOutcome: DeepResearchReportOutcome;
+	limitations: string[];
+}> {
+	const [evidenceNotes, synthesisClaims] = await Promise.all([
+		listDeepResearchEvidenceNotes({
+			userId: input.jobRow.userId,
+			jobId: input.jobRow.id,
+		}),
+		listDeepResearchSynthesisClaims({
+			userId: input.jobRow.userId,
+			jobId: input.jobRow.id,
+		}),
+	]);
+	const activeEvidenceNotes = filterRecordsForCurrentPlan(
+		evidenceNotes,
+		input.currentPlanUpdatedAt,
+	);
+	const activeSynthesisClaims = filterRecordsForCurrentPlan(
+		synthesisClaims,
+		input.currentPlanUpdatedAt,
+	);
+	const publicationGate = assessReportPublicationGate({
+		approvedPlan: input.approvedPlan,
+		reviewedSources: input.reviewedSources,
+		allSources: input.allSources,
+		evidenceNotes: activeEvidenceNotes,
+		synthesisClaims: activeSynthesisClaims,
+		scopeLimitations: input.taskLimitations,
+	});
+	return {
+		reportOutcome: publicationGate.reportOutcome,
+		limitations:
+			publicationGate.reportOutcome === "limited_research_report"
+				? [...input.taskLimitations, ...publicationGate.limitations]
+				: input.taskLimitations,
+	};
+}
+
 function hasReportBlockingClaimReadinessIssue(
 	synthesisClaims: Awaited<ReturnType<typeof listDeepResearchSynthesisClaims>>,
 ): boolean {
@@ -968,6 +1058,7 @@ function hasReportBlockingClaimReadinessIssue(
 type ReportPublicationGateResult = {
 	eligible: boolean;
 	forceMemo: boolean;
+	reportOutcome: DeepResearchReportOutcome;
 	limitations: string[];
 };
 
@@ -977,6 +1068,7 @@ function assessReportPublicationGate(input: {
 	allSources: DeepResearchSource[];
 	evidenceNotes: DeepResearchEvidenceNote[];
 	synthesisClaims: DeepResearchSynthesisClaim[];
+	scopeLimitations?: string[];
 }): ReportPublicationGateResult {
 	const usefulClaims = input.synthesisClaims.filter(isUsefulReportClaim);
 	const acceptedReviewedSourceCount = input.reviewedSources.length;
@@ -987,11 +1079,20 @@ function assessReportPublicationGate(input: {
 
 	if (input.approvedPlan.reportIntent !== "comparison") {
 		if (usefulClaims.length > 0) {
-			return { eligible: true, forceMemo: false, limitations: [] };
+			return {
+				eligible: true,
+				forceMemo: false,
+				reportOutcome:
+					(input.scopeLimitations?.length ?? 0) > 0
+						? "limited_research_report"
+						: "research_report",
+				limitations: [],
+			};
 		}
 		return {
 			eligible: false,
 			forceMemo: false,
+			reportOutcome: "research_report",
 			limitations: [
 				scopeSummary,
 				"No accepted or limited Synthesis Claim had useful supporting evidence for the approved Research Plan.",
@@ -1006,12 +1107,30 @@ function assessReportPublicationGate(input: {
 		synthesisClaims: input.synthesisClaims,
 	});
 	if (comparisonGate.eligible) {
-		return { eligible: true, forceMemo: false, limitations: [] };
+		return {
+			eligible: true,
+			forceMemo: false,
+			reportOutcome:
+				(input.scopeLimitations?.length ?? 0) > 0
+					? "limited_research_report"
+					: "research_report",
+			limitations: [],
+		};
+	}
+
+	if (comparisonGate.hasUsefulCells) {
+		return {
+			eligible: true,
+			forceMemo: false,
+			reportOutcome: "limited_research_report",
+			limitations: comparisonGate.limitations,
+		};
 	}
 
 	return {
 		eligible: false,
 		forceMemo: comparisonGate.hasUsefulCells,
+		reportOutcome: "research_report",
 		limitations: [scopeSummary, ...comparisonGate.limitations],
 	};
 }
@@ -1019,6 +1138,7 @@ function assessReportPublicationGate(input: {
 function isUsefulReportClaim(claim: DeepResearchSynthesisClaim): boolean {
 	return (
 		(claim.status === "accepted" || claim.status === "limited") &&
+		claim.central &&
 		claim.evidenceLinks.some(
 			(link) =>
 				link.relation === "support" || link.relation === "qualification",
@@ -1214,6 +1334,7 @@ function isReportReadyCentralClaim(
 
 async function buildSynthesisNotesWithResumePoint(input: {
 	jobRow: typeof deepResearchJobs.$inferSelect;
+	currentPlan?: DeepResearchPlanSummary | null;
 	passNumber: number;
 	now: Date;
 	synthesisInput: {
@@ -1223,7 +1344,11 @@ async function buildSynthesisNotesWithResumePoint(input: {
 	};
 	dependencies: DeepResearchWorkflowDependencies;
 }): Promise<Awaited<ReturnType<typeof buildSynthesisNotes>>> {
-	const synthesisResumeKey = `synthesis:${input.jobRow.id}:${input.passNumber}`;
+	const synthesisResumeKey = buildSynthesisResumeKey(
+		input.jobRow.id,
+		input.currentPlan,
+		input.passNumber,
+	);
 	const existingSynthesis = await getResearchResumePoint({
 		userId: input.jobRow.userId,
 		jobId: input.jobRow.id,
@@ -1307,8 +1432,13 @@ async function persistSynthesisClaimsForPass(input: {
 			jobId: input.jobRow.id,
 		}),
 	]);
+	const activeEvidenceNotes = evidenceNotes.filter(
+		(note) => note.passNumber > 0,
+	);
 	const checkpoint = passCheckpoints.find(
-		(passCheckpoint) => passCheckpoint.passNumber === input.passNumber,
+		(passCheckpoint) =>
+			passCheckpoint.passNumber > 0 &&
+			passCheckpoint.passNumber === input.passNumber,
 	);
 	await saveDeepResearchSynthesisClaimsFromNotes({
 		userId: input.jobRow.userId,
@@ -1317,7 +1447,7 @@ async function persistSynthesisClaimsForPass(input: {
 		passCheckpointId: checkpoint?.id ?? null,
 		synthesisPass: input.synthesisPass,
 		synthesisNotes: input.synthesisNotes,
-		evidenceNotes,
+		evidenceNotes: activeEvidenceNotes,
 		now: input.now,
 	});
 }
@@ -1379,6 +1509,7 @@ async function runSourceReviewStep(
 		userId: jobRow.userId,
 		jobId: jobRow.id,
 	});
+	sources = filterSourcesForCurrentPlan(sources, job.currentPlan);
 	const alreadyReviewedCount = sources.filter(
 		(source) => source.reviewedAt,
 	).length;
@@ -1513,6 +1644,7 @@ async function runSourceReviewStep(
 			userId: jobRow.userId,
 			jobId: jobRow.id,
 		});
+		sources = filterSourcesForCurrentPlan(sources, job.currentPlan);
 	}
 	const reviewedSources = sources.filter((source) => source.reviewedAt);
 	const acceptedReviewedSources = sources.filter(
@@ -1889,13 +2021,43 @@ async function completeSourceReviewReport(input: {
 		reviewedSources: input.reviewedSources.map(mapReviewedSourceForSynthesis),
 		completedTasks: [],
 	};
+	const job = await reloadWorkflowJob(
+		input.jobRow.userId,
+		input.jobRow.conversationId,
+		input.jobRow.id,
+	);
 	const synthesisNotes = await buildSynthesisNotesWithResumePoint({
 		jobRow: input.jobRow,
+		currentPlan: job?.currentPlan,
 		passNumber: 1,
 		now: input.now,
 		synthesisInput,
 		dependencies: input.dependencies,
 	});
+	const allSources = await (
+		input.dependencies.sources?.listResearchSources ?? listResearchSources
+	)({
+		userId: input.jobRow.userId,
+		jobId: input.jobRow.id,
+	});
+	const approvedPlan = job?.currentPlan?.rawPlan;
+	const activeSources = filterSourcesForCurrentPlan(
+		allSources,
+		job?.currentPlan ?? null,
+	);
+	const completionOutcome = approvedPlan
+		? await determineReportCompletionOutcome({
+				jobRow: input.jobRow,
+				approvedPlan: approvedPlan as ResearchPlan,
+				reviewedSources: input.reviewedSources,
+				allSources: activeSources,
+				taskLimitations: input.limitations,
+				currentPlanUpdatedAt: job?.currentPlan?.updatedAt,
+			})
+		: {
+				reportOutcome: "research_report" as const,
+				limitations: input.limitations,
+			};
 	const completedJob = await (
 		input.dependencies.reportCompletion
 			?.completeDeepResearchJobWithAuditedReport ??
@@ -1904,7 +2066,8 @@ async function completeSourceReviewReport(input: {
 		userId: input.jobRow.userId,
 		jobId: input.jobRow.id,
 		synthesisNotes,
-		limitations: input.limitations,
+		reportOutcome: completionOutcome.reportOutcome,
+		limitations: completionOutcome.limitations,
 		now: input.now,
 	});
 	if (!completedJob) return null;
@@ -2028,6 +2191,57 @@ async function completeCoverageExhaustedWithEvidenceLimitationMemo(input: {
 	};
 	dependencies: DeepResearchWorkflowDependencies;
 }): Promise<RunDeepResearchWorkflowStepResult> {
+	const sources = await (
+		input.dependencies.sources?.listResearchSources ?? listResearchSources
+	)({
+		userId: input.jobRow.userId,
+		jobId: input.jobRow.id,
+	});
+	const reloadedJob = await reloadWorkflowJob(
+		input.jobRow.userId,
+		input.jobRow.conversationId,
+		input.jobRow.id,
+	);
+	const activeSources = filterSourcesForCurrentPlan(
+		sources,
+		reloadedJob?.currentPlan ?? null,
+	);
+	const acceptedReviewedSources = activeSources.filter(
+		isAcceptedReviewedResearchSource,
+	);
+	const approvedPlan = reloadedJob?.currentPlan?.rawPlan as
+		| ResearchPlan
+		| undefined;
+	const planHealthFailure = approvedPlan
+		? assessPlanHealthBeforeEvidenceLimitation({
+				plan: approvedPlan,
+				userRequest: reloadedJob?.userRequest ?? input.jobRow.userRequest,
+				reviewedSourceCount: activeSources.filter((source) => source.reviewedAt)
+					.length,
+				acceptedTopicRelevantSourceCount: acceptedReviewedSources.length,
+			})
+		: null;
+	if (planHealthFailure) {
+		const completedJob = await (
+			input.dependencies.reportCompletion
+				?.completeDeepResearchJobWithPlanRevisionNeeded ??
+			completeDeepResearchJobWithPlanRevisionNeeded
+		)({
+			userId: input.jobRow.userId,
+			jobId: input.jobRow.id,
+			reason: planHealthFailure.reason,
+			signals: planHealthFailure.signals,
+			sourceCounts: input.sourceCounts,
+			now: input.now,
+		});
+		if (!completedJob) return null;
+		return {
+			job: completedJob,
+			advanced: true,
+			outcome: "plan_revision_needed",
+		};
+	}
+
 	const warning =
 		"Depth budget exhausted before any reviewed evidence was available; no useful Research Report can be produced.";
 	await saveResearchTimelineEvent({
@@ -2323,6 +2537,7 @@ async function countCompletedMeaningfulResearchPasses(input: {
 	const checkpoints = await listResearchPassCheckpoints(input);
 	return checkpoints.filter(
 		(checkpoint) =>
+			checkpoint.passNumber > 0 &&
 			checkpoint.terminalDecision &&
 			!isRepairPassCheckpoint(checkpoint.searchIntent),
 	).length;
@@ -2335,6 +2550,7 @@ async function countCompletedRepairResearchPasses(input: {
 	const checkpoints = await listResearchPassCheckpoints(input);
 	return checkpoints.filter(
 		(checkpoint) =>
+			checkpoint.passNumber > 0 &&
 			checkpoint.terminalDecision &&
 			isRepairPassCheckpoint(checkpoint.searchIntent),
 	).length;
@@ -2438,8 +2654,11 @@ const defaultResearchTaskExecutor =
 	};
 
 function currentResearchPassNumber(tasks: DeepResearchTask[]): number {
-	if (tasks.length === 0) return 1;
-	return Math.max(...tasks.map((task) => task.passNumber));
+	const activePassNumbers = tasks
+		.map((task) => task.passNumber)
+		.filter((passNumber) => passNumber > 0);
+	if (activePassNumbers.length === 0) return 1;
+	return Math.max(...activePassNumbers);
 }
 
 async function getTerminalPassDecision(input: {
@@ -2462,7 +2681,8 @@ async function getResearchPassCheckpoint(input: {
 	});
 	return (
 		checkpoints.find(
-			(checkpoint) => checkpoint.passNumber === input.passNumber,
+			(checkpoint) =>
+				checkpoint.passNumber > 0 && checkpoint.passNumber === input.passNumber,
 		) ?? null
 	);
 }
@@ -2655,6 +2875,36 @@ function mapReviewedSourceForCoverage(
 				},
 			}),
 	};
+}
+
+function filterSourcesForCurrentPlan(
+	sources: DeepResearchSource[],
+	currentPlan: { updatedAt?: number } | null | undefined,
+): DeepResearchSource[] {
+	if (!currentPlan?.updatedAt) return sources;
+	return sources.filter((source) => {
+		const activeAt = Date.parse(source.reviewedAt ?? source.discoveredAt);
+		return Number.isNaN(activeAt) || activeAt >= currentPlan.updatedAt;
+	});
+}
+
+function filterRecordsForCurrentPlan<T extends { createdAt?: string }>(
+	records: T[],
+	currentPlanUpdatedAt: number | null | undefined,
+): T[] {
+	if (!currentPlanUpdatedAt) return records;
+	return records.filter((record) => {
+		const activeAt = Date.parse(record.createdAt ?? "");
+		return Number.isNaN(activeAt) || activeAt >= currentPlanUpdatedAt;
+	});
+}
+
+function buildSynthesisResumeKey(
+	jobId: string,
+	currentPlan: DeepResearchPlanSummary | null | undefined,
+	passNumber: number,
+): string {
+	return `synthesis:${jobId}:v${currentPlan?.version ?? 1}:${passNumber}`;
 }
 
 function mapReviewedSourceForSynthesis(
