@@ -157,6 +157,7 @@ export function createServerChunkRuntime({
 	const leakedToolDiagnosticsState = createLeakedToolDiagnosticsState();
 	const serverSegments: ServerStreamSegment[] = [];
 	const toolCallRecords: ToolCallEntry[] = [];
+	const toolCallAliases = new Map<string, string>();
 	const skillControlEnvelopePayloads: string[] = [];
 	let pendingThinkingBuffer = "";
 	let leadingOutputState: "pending" | "thinking" | "done" = "pending";
@@ -298,29 +299,79 @@ export function createServerChunkRuntime({
 		details?: ImportedToolDetails,
 	) => {
 		const shouldStoreThinkingSegment = !isFileProductionToolName(name);
-		const callId = details?.callId;
+		const rawCallId = details?.callId;
+		const callId = rawCallId
+			? (toolCallAliases.get(rawCallId) ?? rawCallId)
+			: undefined;
 		const inputKey = toolCallInputKey(input);
-		const matchesRunningRecord = (
-			record: ToolCallEntry,
-			options: { matchInput: boolean },
+		const runningRecordMatchesInput = (record: ToolCallEntry) =>
+			record.status === "running" &&
+			record.name === name &&
+			toolCallInputKey(record.input) === inputKey;
+		const completedRecordMatchesInput = (record: ToolCallEntry) =>
+			record.status === "done" &&
+			record.name === name &&
+			toolCallInputKey(record.input) === inputKey;
+		const runningRecordMatchesCallId = (record: ToolCallEntry) =>
+			Boolean(callId) &&
+			record.status === "running" &&
+			record.name === name &&
+			record.callId === callId;
+		const findLastToolCallRecordIndex = (
+			predicate: (record: ToolCallEntry) => boolean,
 		) => {
-			if (record.status !== "running" || record.name !== name) return false;
-			if (callId) return record.callId === callId;
-			return options.matchInput
-				? toolCallInputKey(record.input) === inputKey
-				: true;
+			for (let i = toolCallRecords.length - 1; i >= 0; i -= 1) {
+				if (predicate(toolCallRecords[i])) return i;
+			}
+			return -1;
+		};
+		const findRunningRecordIndex = (options: { matchInput: boolean }) => {
+			if (callId) {
+				const exactIndex = findLastToolCallRecordIndex(
+					runningRecordMatchesCallId,
+				);
+				if (exactIndex !== -1) return exactIndex;
+			}
+			if (options.matchInput) {
+				const inputIndex = findLastToolCallRecordIndex(
+					runningRecordMatchesInput,
+				);
+				if (inputIndex !== -1) return inputIndex;
+			}
+			return findLastToolCallRecordIndex((record) => {
+				if (record.status !== "running" || record.name !== name) return false;
+				return true;
+			});
+		};
+		const findCompletedRecordIndexByInput = () =>
+			findLastToolCallRecordIndex(completedRecordMatchesInput);
+		const rememberAlias = (record: ToolCallEntry | undefined) => {
+			if (!rawCallId || !record?.callId || rawCallId === record.callId) return;
+			toolCallAliases.set(rawCallId, record.callId);
 		};
 		const matchesCompletedRecord = (record: ToolCallEntry) =>
 			Boolean(callId) && record.status === "done" && record.callId === callId;
 
 		if (status === "running") {
-			const duplicateRunning = toolCallRecords.some((record) =>
-				matchesRunningRecord(record, { matchInput: true }),
-			);
-			if (duplicateRunning) {
+			const duplicateRunningIndex = findRunningRecordIndex({ matchInput: true });
+			if (duplicateRunningIndex !== -1) {
+				rememberAlias(toolCallRecords[duplicateRunningIndex]);
+				return;
+			}
+			const completedDuplicateIndex = findCompletedRecordIndexByInput();
+			if (completedDuplicateIndex !== -1) {
+				rememberAlias(toolCallRecords[completedDuplicateIndex]);
 				return;
 			}
 		} else if (toolCallRecords.some(matchesCompletedRecord)) {
+			return;
+		} else if (
+			callId &&
+			findRunningRecordIndex({ matchInput: false }) === -1 &&
+			toolCallRecords.some(
+				(record) => record.status === "done" && record.name === name,
+			)
+		) {
 			return;
 		}
 
@@ -379,11 +430,13 @@ export function createServerChunkRuntime({
 			}
 		}
 
+		const runningRecordIndex = findRunningRecordIndex({ matchInput: false });
 		for (let i = toolCallRecords.length - 1; i >= 0; i--) {
 			const toolRecord = toolCallRecords[i];
-			if (matchesRunningRecord(toolRecord, { matchInput: false })) {
+			if (i === runningRecordIndex) {
 				toolCallRecords[i] = {
 					...toolRecord,
+					...(callId ? { callId } : {}),
 					status: "done",
 					outputSummary: details?.outputSummary ?? null,
 					sourceType: details?.sourceType ?? null,

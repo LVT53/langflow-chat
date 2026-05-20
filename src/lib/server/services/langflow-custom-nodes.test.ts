@@ -25,11 +25,10 @@ describe("Langflow custom model node", () => {
 	it("keeps tool-call marker callbacks single-sourced per tool", () => {
 		const source = nodeSource("agent_node.py");
 
-		expect(source).toContain("TOOLS_WITH_NATIVE_MARKERS");
 		expect(source).toContain(
 			"if not isinstance(callback, ToolCallEmitterCallback)",
 		);
-		expect(source).toContain("tool_name in TOOLS_WITH_NATIVE_MARKERS");
+		expect(source).toContain("next_callbacks = existing + [cb]");
 		expect(source).toContain('"callId": call_id');
 	});
 });

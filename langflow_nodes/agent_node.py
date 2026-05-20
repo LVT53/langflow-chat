@@ -60,9 +60,6 @@ def _tool_source_type(name: str) -> str:
     return "tool"
 
 
-TOOLS_WITH_NATIVE_MARKERS = {"image_search", "memory_context", "produce_file", "research_web"}
-
-
 def _extract_candidates(value: Any, source_type: str, limit: int = 8) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     seen: set[str] = set()
@@ -526,11 +523,7 @@ class AgentComponent(ToolCallingAgentComponent):
                         for callback in existing
                         if not isinstance(callback, ToolCallEmitterCallback)
                     ]
-                    tool_name = str(getattr(tool, "name", "") or "").strip().lower()
-                    if tool_name in TOOLS_WITH_NATIVE_MARKERS:
-                        next_callbacks = existing
-                    else:
-                        next_callbacks = existing + [cb]
+                    next_callbacks = existing + [cb]
                     try:
                         tool.callbacks = next_callbacks
                     except Exception:

@@ -212,6 +212,112 @@ describe("createServerChunkRuntime", () => {
 			}),
 		]);
 	});
+
+	it("aliases duplicate tool starts with different marker ids so either end completes immediately", () => {
+		const chunks: string[] = [];
+		const runtime = createServerChunkRuntime({
+			enqueueChunk(chunk) {
+				chunks.push(chunk);
+				return true;
+			},
+		});
+
+		runtime.emitToolCallEvent(
+			"research_web",
+			{ query: "SvelteKit streaming docs" },
+			"running",
+			{ callId: "langchain-run-1" },
+		);
+		runtime.emitToolCallEvent(
+			"research_web",
+			{ query: "SvelteKit streaming docs" },
+			"running",
+			{ callId: "native-marker-1" },
+		);
+		runtime.emitToolCallEvent("research_web", {}, "done", {
+			callId: "native-marker-1",
+			sourceType: "web",
+			outputSummary: "Found sources",
+		});
+		runtime.emitToolCallEvent("research_web", {}, "done", {
+			callId: "langchain-run-1",
+			sourceType: "web",
+			outputSummary: "Found sources",
+		});
+
+		expect(
+			chunks.filter((chunk) => chunk.startsWith("event: tool_call")),
+		).toHaveLength(2);
+		expect(runtime.toolCallRecords).toEqual([
+			expect.objectContaining({
+				callId: "langchain-run-1",
+				name: "research_web",
+				status: "done",
+				outputSummary: "Found sources",
+			}),
+		]);
+		expect(runtime.serverSegments).toEqual([
+			expect.objectContaining({
+				callId: "langchain-run-1",
+				name: "research_web",
+				status: "done",
+				outputSummary: "Found sources",
+			}),
+		]);
+	});
+
+	it("suppresses delayed duplicate native markers after the callback marker completed", () => {
+		const chunks: string[] = [];
+		const runtime = createServerChunkRuntime({
+			enqueueChunk(chunk) {
+				chunks.push(chunk);
+				return true;
+			},
+		});
+
+		runtime.emitToolCallEvent(
+			"research_web",
+			{ query: "SvelteKit streaming docs" },
+			"running",
+			{ callId: "langchain-run-1" },
+		);
+		runtime.emitToolCallEvent("research_web", {}, "done", {
+			callId: "langchain-run-1",
+			sourceType: "web",
+			outputSummary: "Found sources",
+		});
+		runtime.emitToolCallEvent(
+			"research_web",
+			{ query: "SvelteKit streaming docs" },
+			"running",
+			{ callId: "native-marker-1" },
+		);
+		runtime.emitToolCallEvent("research_web", {}, "done", {
+			callId: "native-marker-1",
+			sourceType: "web",
+			outputSummary: "Found sources",
+		});
+
+		expect(
+			chunks.filter((chunk) => chunk.startsWith("event: tool_call")),
+		).toHaveLength(2);
+		expect(runtime.toolCallRecords).toEqual([
+			expect.objectContaining({
+				callId: "langchain-run-1",
+				name: "research_web",
+				status: "done",
+				outputSummary: "Found sources",
+			}),
+		]);
+		expect(runtime.serverSegments).toEqual([
+			expect.objectContaining({
+				callId: "langchain-run-1",
+				name: "research_web",
+				status: "done",
+				outputSummary: "Found sources",
+			}),
+		]);
+	});
 });
 
 describe("stream error extraction", () => {
