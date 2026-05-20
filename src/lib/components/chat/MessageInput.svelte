@@ -198,6 +198,7 @@ let ensureDraftConversationPromise: Promise<string> | null = null;
 let draftEmissionVersion = 0;
 let commandTrayCloseTimer: ReturnType<typeof setTimeout> | null = null;
 let textareaValueSyncFrame: number | null = null;
+const commandRowElements = new Map<string, HTMLElement>();
 const COMMAND_TRAY_CLOSE_DURATION_MS = 150;
 
 let isEmpty = $derived(message.trim().length === 0);
@@ -302,6 +303,16 @@ $effect(() => {
 	}
 	document.addEventListener("keydown", handleDocumentKeydown);
 	return () => document.removeEventListener("keydown", handleDocumentKeydown);
+});
+
+$effect(() => {
+	if (!commandTrayInteractive || !activeCommandRow) return;
+	const activeCommandElement = commandRowElements.get(activeCommandRow.id);
+	if (typeof activeCommandElement?.scrollIntoView !== "function") return;
+	activeCommandElement.scrollIntoView({
+		block: "nearest",
+		inline: "nearest",
+	});
 });
 
 $effect(() => {
@@ -791,6 +802,21 @@ function selectDeepResearchDepth(depth: DeepResearchDepth) {
 
 function setForceWebSearch(enabled: boolean) {
 	forceWebSearch = enabled;
+}
+
+function commandRowRef(node: HTMLElement, id: string) {
+	commandRowElements.set(id, node);
+	return {
+		update(nextId: string) {
+			if (nextId === id) return;
+			commandRowElements.delete(id);
+			id = nextId;
+			commandRowElements.set(id, node);
+		},
+		destroy() {
+			commandRowElements.delete(id);
+		},
+	};
 }
 
 type CommandTrayRow = Omit<
@@ -1529,6 +1555,7 @@ async function emitDraftChange(force = false) {
 						role="option"
 						aria-selected={index === highlightedCommandIndex}
 						aria-disabled={command.disabled}
+						use:commandRowRef={command.id}
 						onmouseenter={() => highlightedCommandIndex = index}
 						onclick={() => selectCommand(command)}
 					>

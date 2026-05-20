@@ -33,6 +33,29 @@ function getRegisteredUpload(
 	return uploadFn;
 }
 
+function spyOnScrollIntoView() {
+	const originalScrollIntoView = HTMLElement.prototype.scrollIntoView;
+	if (!originalScrollIntoView) {
+		Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+			configurable: true,
+			value: vi.fn(),
+		});
+	}
+	const spy = vi
+		.spyOn(HTMLElement.prototype, "scrollIntoView")
+		.mockImplementation(() => undefined);
+
+	return {
+		spy,
+		restore() {
+			spy.mockRestore();
+			if (!originalScrollIntoView) {
+				delete HTMLElement.prototype.scrollIntoView;
+			}
+		},
+	};
+}
+
 const fetchKnowledgeLibraryMock = vi.hoisted(() => vi.fn());
 const discoverSkillsMock = vi.hoisted(() => vi.fn());
 
@@ -455,6 +478,45 @@ describe("MessageInput", () => {
 		expect(getByRole("status")).toHaveTextContent(
 			"Active command: /style Style",
 		);
+	});
+
+	it("scrolls the active slash command option into view while navigating the tray with arrow keys", async () => {
+		const { spy, restore } = spyOnScrollIntoView();
+		try {
+			const { getByPlaceholderText, getByRole } = render(MessageInput, {
+				composerCommandRegistryEnabled: true,
+			});
+			const input = getByPlaceholderText(
+				"Type a message...",
+			) as HTMLTextAreaElement;
+
+			await fireEvent.input(input, { target: { value: "/" } });
+			spy.mockClear();
+			await fireEvent.keyDown(input, { key: "ArrowDown" });
+
+			expect(getByRole("option", { name: /\/style/i })).toHaveAttribute(
+				"aria-selected",
+				"true",
+			);
+			expect(spy).toHaveBeenCalledWith({
+				block: "nearest",
+				inline: "nearest",
+			});
+
+			spy.mockClear();
+			await fireEvent.keyDown(input, { key: "ArrowUp" });
+
+			expect(getByRole("option", { name: /\/model/i })).toHaveAttribute(
+				"aria-selected",
+				"true",
+			);
+			expect(spy).toHaveBeenCalledWith({
+				block: "nearest",
+				inline: "nearest",
+			});
+		} finally {
+			restore();
+		}
 	});
 
 	it("keeps Shift+Enter and IME composition from selecting command rows", async () => {
@@ -880,6 +942,51 @@ describe("MessageInput", () => {
 			await findByRole("option", { name: /Interview coach/i }),
 		).toBeInTheDocument();
 		expect(discoverSkillsMock).toHaveBeenCalledWith("interview");
+	});
+
+	it("scrolls the active skill discovery option into view while navigating the tray", async () => {
+		discoverSkillsMock.mockResolvedValue([
+			{
+				id: "skill-1",
+				ownership: "user",
+				displayName: "Interview coach",
+				description: "Practice interview answers.",
+				activationExamples: [],
+				enabled: true,
+			},
+			{
+				id: "skill-2",
+				ownership: "user",
+				displayName: "Research planner",
+				description: "Plan source-backed research.",
+				activationExamples: [],
+				enabled: true,
+			},
+		]);
+		const { spy, restore } = spyOnScrollIntoView();
+		try {
+			const { getByPlaceholderText, findByRole } = render(MessageInput, {
+				composerCommandRegistryEnabled: true,
+			});
+			const input = getByPlaceholderText(
+				"Type a message...",
+			) as HTMLTextAreaElement;
+
+			await fireEvent.input(input, { target: { value: "$research" } });
+			await findByRole("option", { name: /Interview coach/i });
+			spy.mockClear();
+			await fireEvent.keyDown(input, { key: "ArrowDown" });
+
+			expect(
+				await findByRole("option", { name: /Research planner/i }),
+			).toHaveAttribute("aria-selected", "true");
+			expect(spy).toHaveBeenCalledWith({
+				block: "nearest",
+				inline: "nearest",
+			});
+		} finally {
+			restore();
+		}
 	});
 
 	it("selects a discovered skill into pending state and preserves surrounding text", async () => {
