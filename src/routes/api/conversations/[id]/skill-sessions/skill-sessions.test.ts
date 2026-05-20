@@ -85,6 +85,7 @@ describe("/api/conversations/[id]/skill-sessions", () => {
 				pendingSkill: {
 					id: "skill-1",
 					ownership: "system",
+					skillKind: "skill_pack",
 					displayName: "Meeting critic",
 				},
 			}),
@@ -95,6 +96,7 @@ describe("/api/conversations/[id]/skill-sessions", () => {
 		expect(mockStartSkillSession).toHaveBeenCalledWith("user-1", "conv-1", {
 			id: "skill-1",
 			ownership: "system",
+			skillKind: "skill_pack",
 			displayName: "Meeting critic",
 		});
 		expect(data.activeSkillSession).toMatchObject({

@@ -52,7 +52,10 @@ export {
 // Internal helpers (moved to sub-modules, retained here for local use)
 // ---------------------------------------------------------------------------
 import { getNestedObject } from "$lib/services/stream-protocol";
-import { isFileProductionToolName } from "$lib/utils/tool-calls";
+import {
+	isFileProductionToolName,
+	toolCallInputKey,
+} from "$lib/utils/tool-calls";
 import { parseMaybeJson } from "./stream-parser";
 import type { StreamToolCallDetails as ImportedToolDetails } from "./tool-call-markers";
 
@@ -73,6 +76,7 @@ export type ServerStreamSegment =
 	| { type: "text"; content: string }
 	| {
 			type: "tool_call";
+			callId?: string;
 			name: string;
 			input: Record<string, unknown>;
 			status: "running" | "done";
@@ -216,7 +220,9 @@ export function createServerChunkRuntime({
 		const visibleChunk = holdLength
 			? envelopeFilteredBuffer.slice(0, -holdLength)
 			: envelopeFilteredBuffer;
-		visibleTokenBuffer = holdLength ? envelopeFilteredBuffer.slice(-holdLength) : "";
+		visibleTokenBuffer = holdLength
+			? envelopeFilteredBuffer.slice(-holdLength)
+			: "";
 
 		if (!visibleChunk) {
 			return true;
@@ -292,12 +298,39 @@ export function createServerChunkRuntime({
 		details?: ImportedToolDetails,
 	) => {
 		const shouldStoreThinkingSegment = !isFileProductionToolName(name);
+		const callId = details?.callId;
+		const inputKey = toolCallInputKey(input);
+		const matchesRunningRecord = (
+			record: ToolCallEntry,
+			options: { matchInput: boolean },
+		) => {
+			if (record.status !== "running" || record.name !== name) return false;
+			if (callId) return record.callId === callId;
+			return options.matchInput
+				? toolCallInputKey(record.input) === inputKey
+				: true;
+		};
+		const matchesCompletedRecord = (record: ToolCallEntry) =>
+			Boolean(callId) && record.status === "done" && record.callId === callId;
+
+		if (status === "running") {
+			const duplicateRunning = toolCallRecords.some((record) =>
+				matchesRunningRecord(record, { matchInput: true }),
+			);
+			if (duplicateRunning) {
+				return;
+			}
+		} else if (toolCallRecords.some(matchesCompletedRecord)) {
+			return;
+		}
 
 		flushInlineThinkingBuffer();
 		flushPendingThinking();
-		if (onToolCall) onToolCall(name, input, status, details?.outputSummary, details);
+		if (onToolCall)
+			onToolCall(name, input, status, details?.outputSummary, details);
 		enqueueChunk(
 			`event: tool_call\ndata: ${JSON.stringify({
+				callId,
 				name,
 				input,
 				status,
@@ -312,12 +345,18 @@ export function createServerChunkRuntime({
 			if (shouldStoreThinkingSegment) {
 				serverSegments.push({
 					type: "tool_call",
+					...(callId ? { callId } : {}),
 					name,
 					input,
 					status: "running",
 				});
 			}
-			toolCallRecords.push({ name, input, status: "running" });
+			toolCallRecords.push({
+				...(callId ? { callId } : {}),
+				name,
+				input,
+				status: "running",
+			});
 			return;
 		}
 
@@ -327,7 +366,8 @@ export function createServerChunkRuntime({
 				if (
 					segment.type === "tool_call" &&
 					segment.name === name &&
-					segment.status === "running"
+					segment.status === "running" &&
+					(callId ? segment.callId === callId : true)
 				) {
 					segment.status = "done";
 					segment.outputSummary = details?.outputSummary ?? null;
@@ -341,7 +381,7 @@ export function createServerChunkRuntime({
 
 		for (let i = toolCallRecords.length - 1; i >= 0; i--) {
 			const toolRecord = toolCallRecords[i];
-			if (toolRecord.name === name && toolRecord.status === "running") {
+			if (matchesRunningRecord(toolRecord, { matchInput: false })) {
 				toolCallRecords[i] = {
 					...toolRecord,
 					status: "done",

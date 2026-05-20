@@ -3,6 +3,7 @@ from __future__ import annotations
 import ast
 import json
 import re
+import uuid
 from typing import TYPE_CHECKING, Any
 
 from pydantic import ValidationError
@@ -57,6 +58,9 @@ def _tool_source_type(name: str) -> str:
     if any(token in lowered for token in ("search", "searx", "tavily", "fetch", "browse", "web", "url")):
         return "web"
     return "tool"
+
+
+TOOLS_WITH_NATIVE_MARKERS = {"image_search", "memory_context", "produce_file", "research_web"}
 
 
 def _extract_candidates(value: Any, source_type: str, limit: int = 8) -> list[dict[str, Any]]:
@@ -150,6 +154,8 @@ class ToolCallEmitterCallback(AsyncCallbackHandler):
     def __init__(self, event_manager: Any) -> None:
         super().__init__()
         self.event_manager = event_manager
+        self._call_ids_by_run_id: dict[str, str] = {}
+        self._tool_names_by_run_id: dict[str, str] = {}
 
     async def _emit(self, marker: str) -> None:
         try:
@@ -165,6 +171,11 @@ class ToolCallEmitterCallback(AsyncCallbackHandler):
         **kwargs: Any,
     ) -> None:
         name = serialized.get("name", "tool")
+        run_id = str(kwargs.get("run_id") or "").strip()
+        call_id = run_id or f"{name}:{uuid.uuid4().hex}"
+        if run_id:
+            self._call_ids_by_run_id[run_id] = call_id
+            self._tool_names_by_run_id[run_id] = name
         try:
             input_data: Any = json.loads(input_str)
         except (json.JSONDecodeError, TypeError):
@@ -174,7 +185,7 @@ class ToolCallEmitterCallback(AsyncCallbackHandler):
                 input_data = ast.literal_eval(input_str)
             except Exception:
                 input_data = {"input": str(input_str)}
-        payload = json.dumps({"name": name, "input": input_data}, ensure_ascii=False)
+        payload = json.dumps({"callId": call_id, "name": name, "input": input_data}, ensure_ascii=False)
         await self._emit(f"\x02TOOL_START\x1f{payload}\x03")
 
     async def on_tool_end(
@@ -183,10 +194,22 @@ class ToolCallEmitterCallback(AsyncCallbackHandler):
         name: str | None = None,
         **kwargs: Any,
     ) -> None:
-        tool_name = name or kwargs.get("name") or "tool"
+        run_id = str(kwargs.get("run_id") or "").strip()
+        call_id = (
+            self._call_ids_by_run_id.pop(run_id, None)
+            if run_id
+            else None
+        ) or (run_id or f"{name or kwargs.get('name') or 'tool'}:{uuid.uuid4().hex}")
+        tool_name = (
+            name
+            or kwargs.get("name")
+            or (self._tool_names_by_run_id.pop(run_id, None) if run_id else None)
+            or "tool"
+        )
         source_type = _tool_source_type(tool_name)
         payload = json.dumps(
             {
+                "callId": call_id,
                 "name": tool_name,
                 "sourceType": source_type,
                 "outputSummary": _clip_text(output, 280) if output is not None else None,
@@ -498,12 +521,22 @@ class AgentComponent(ToolCallingAgentComponent):
                 cb = ToolCallEmitterCallback(event_manager)
                 for tool in self.tools:
                     existing = list(getattr(tool, "callbacks", None) or [])
+                    existing = [
+                        callback
+                        for callback in existing
+                        if not isinstance(callback, ToolCallEmitterCallback)
+                    ]
+                    tool_name = str(getattr(tool, "name", "") or "").strip().lower()
+                    if tool_name in TOOLS_WITH_NATIVE_MARKERS:
+                        next_callbacks = existing
+                    else:
+                        next_callbacks = existing + [cb]
                     try:
-                        tool.callbacks = existing + [cb]
+                        tool.callbacks = next_callbacks
                     except Exception:
                         # Frozen Pydantic model — bypass via object.__setattr__
                         try:
-                            object.__setattr__(tool, "callbacks", existing + [cb])
+                            object.__setattr__(tool, "callbacks", next_callbacks)
                         except Exception:
                             pass
 

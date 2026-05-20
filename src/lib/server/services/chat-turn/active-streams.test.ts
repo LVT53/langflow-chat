@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	appendToStreamBuffer,
 	clearStreamBuffer,
@@ -7,128 +7,164 @@ import {
 	registerActiveChatStream,
 	requestActiveChatStreamStop,
 	unregisterActiveChatStream,
-} from './active-streams';
+} from "./active-streams";
 
-describe('active chat streams registry', () => {
+describe("active chat streams registry", () => {
 	afterEach(() => {
 		vi.useRealTimers();
 	});
 
-	it('aborts an active controller when a stop is requested by the same user', () => {
+	it("aborts an active controller when a stop is requested by the same user", () => {
 		const controller = new AbortController();
 		registerActiveChatStream({
-			streamId: 'stream-1',
-			userId: 'user-1',
+			streamId: "stream-1",
+			userId: "user-1",
 			controller,
-			conversationId: 'conversation-1',
+			conversationId: "conversation-1",
 		});
 
 		const stopped = requestActiveChatStreamStop({
-			streamId: 'stream-1',
-			userId: 'user-1',
+			streamId: "stream-1",
+			userId: "user-1",
 		});
 
 		expect(stopped).toBe(true);
 		expect(controller.signal.aborted).toBe(true);
 
-		unregisterActiveChatStream('stream-1', controller);
+		unregisterActiveChatStream("stream-1", controller);
 	});
 
-	it('aborts a controller that registers after an early stop request', () => {
+	it("aborts a controller that registers after an early stop request", () => {
 		const stopped = requestActiveChatStreamStop({
-			streamId: 'stream-early-stop',
-			userId: 'user-1',
+			streamId: "stream-early-stop",
+			userId: "user-1",
 		});
 		expect(stopped).toBe(false);
 
 		const controller = new AbortController();
 		registerActiveChatStream({
-			streamId: 'stream-early-stop',
-			userId: 'user-1',
+			streamId: "stream-early-stop",
+			userId: "user-1",
 			controller,
-			conversationId: 'conversation-early-stop',
+			conversationId: "conversation-early-stop",
 		});
 
 		expect(controller.signal.aborted).toBe(true);
 
-		unregisterActiveChatStream('stream-early-stop', controller);
+		unregisterActiveChatStream("stream-early-stop", controller);
 	});
 
-	it('does not abort a stream owned by another user', () => {
+	it("does not abort a stream owned by another user", () => {
 		const controller = new AbortController();
 		registerActiveChatStream({
-			streamId: 'stream-2',
-			userId: 'user-1',
+			streamId: "stream-2",
+			userId: "user-1",
 			controller,
-			conversationId: 'conversation-2',
+			conversationId: "conversation-2",
 		});
 
 		const stopped = requestActiveChatStreamStop({
-			streamId: 'stream-2',
-			userId: 'user-2',
+			streamId: "stream-2",
+			userId: "user-2",
 		});
 
 		expect(stopped).toBe(false);
 		expect(controller.signal.aborted).toBe(false);
 
-		unregisterActiveChatStream('stream-2', controller);
+		unregisterActiveChatStream("stream-2", controller);
 	});
 
-	it('clears the stream buffer cleanup timer when the last buffer is removed', () => {
+	it("clears the stream buffer cleanup timer when the last buffer is removed", () => {
 		vi.useFakeTimers();
 
-		getOrCreateStreamBuffer('stream-buffer', 'hello');
+		getOrCreateStreamBuffer("stream-buffer", "hello");
 		expect(vi.getTimerCount()).toBe(1);
 
-		clearStreamBuffer('stream-buffer');
+		clearStreamBuffer("stream-buffer");
 		expect(vi.getTimerCount()).toBe(0);
 	});
 
-	it('stores completed tool-call source metadata for reconnect replay', () => {
-		getOrCreateStreamBuffer('stream-tool-buffer', 'search this');
+	it("stores completed tool-call source metadata for reconnect replay", () => {
+		getOrCreateStreamBuffer("stream-tool-buffer", "search this");
 
-		appendToStreamBuffer('stream-tool-buffer', 'tool_call', {
-			name: 'web_search',
-			input: { query: 'OpenAI news' },
-			status: 'running',
+		appendToStreamBuffer("stream-tool-buffer", "tool_call", {
+			callId: "tool-call-1",
+			name: "web_search",
+			input: { query: "OpenAI news" },
+			status: "running",
 		});
-		appendToStreamBuffer('stream-tool-buffer', 'tool_call', {
-			name: 'web_search',
-			status: 'done',
-			outputSummary: 'Found current sources',
-			sourceType: 'web',
+		appendToStreamBuffer("stream-tool-buffer", "tool_call", {
+			callId: "tool-call-1",
+			name: "web_search",
+			status: "done",
+			outputSummary: "Found current sources",
+			sourceType: "web",
 			candidates: [
 				{
-					id: 'src-1',
-					title: 'OpenAI',
-					url: 'https://openai.com/',
-					snippet: 'Official source',
-					sourceType: 'web',
+					id: "src-1",
+					title: "OpenAI",
+					url: "https://openai.com/",
+					snippet: "Official source",
+					sourceType: "web",
 				},
 			],
 			metadata: { resultCount: 1 },
 		});
 
-		expect(getStreamBuffer('stream-tool-buffer')?.toolCalls).toEqual([
+		expect(getStreamBuffer("stream-tool-buffer")?.toolCalls).toEqual([
 			{
-				name: 'web_search',
-				input: { query: 'OpenAI news' },
-				status: 'done',
-				outputSummary: 'Found current sources',
-				sourceType: 'web',
+				callId: "tool-call-1",
+				name: "web_search",
+				input: { query: "OpenAI news" },
+				status: "done",
+				outputSummary: "Found current sources",
+				sourceType: "web",
 				candidates: [
 					{
-						id: 'src-1',
-						title: 'OpenAI',
-						url: 'https://openai.com/',
-						snippet: 'Official source',
-						sourceType: 'web',
+						id: "src-1",
+						title: "OpenAI",
+						url: "https://openai.com/",
+						snippet: "Official source",
+						sourceType: "web",
 					},
 				],
 				metadata: { resultCount: 1 },
 			},
 		]);
 
-		clearStreamBuffer('stream-tool-buffer');
+		clearStreamBuffer("stream-tool-buffer");
+	});
+
+	it("does not replay duplicate running tool calls with the same call id", () => {
+		getOrCreateStreamBuffer("stream-tool-buffer-dedupe", "search this");
+
+		appendToStreamBuffer("stream-tool-buffer-dedupe", "tool_call", {
+			callId: "tool-call-1",
+			name: "web_search",
+			input: { query: "OpenAI news" },
+			status: "running",
+		});
+		appendToStreamBuffer("stream-tool-buffer-dedupe", "tool_call", {
+			callId: "tool-call-1",
+			name: "web_search",
+			input: { query: "OpenAI news" },
+			status: "running",
+		});
+		appendToStreamBuffer("stream-tool-buffer-dedupe", "tool_call", {
+			callId: "tool-call-1",
+			name: "web_search",
+			status: "done",
+			outputSummary: "Found current sources",
+		});
+
+		expect(getStreamBuffer("stream-tool-buffer-dedupe")?.toolCalls).toEqual([
+			expect.objectContaining({
+				callId: "tool-call-1",
+				name: "web_search",
+				status: "done",
+			}),
+		]);
+
+		clearStreamBuffer("stream-tool-buffer-dedupe");
 	});
 });

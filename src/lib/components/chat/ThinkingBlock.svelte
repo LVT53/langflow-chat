@@ -1,20 +1,20 @@
 <script lang="ts">
-	import type { ThinkingSegment } from '$lib/types';
-	import {
-		isFileProductionToolName,
-		isVisibleThinkingSegment,
-		isVisibleThinkingToolCall,
-	} from '$lib/utils/tool-calls';
+import type { ThinkingSegment } from "$lib/types";
+import {
+	isFileProductionToolName,
+	isVisibleThinkingSegment,
+	isVisibleThinkingToolCall,
+} from "$lib/utils/tool-calls";
 
-	let {
-		content = '',
-		thinkingIsDone = false,
-		segments = []
-	}: {
-		content?: string;
-		thinkingIsDone?: boolean;
-		segments?: ThinkingSegment[];
-	} = $props();
+let {
+	content = "",
+	thinkingIsDone = false,
+	segments = [],
+}: {
+	content?: string;
+	thinkingIsDone?: boolean;
+	segments?: ThinkingSegment[];
+} = $props();
 
 let expanded = $state(false);
 let container = $state<HTMLDivElement | undefined>(undefined);
@@ -23,94 +23,106 @@ let contentFresh = $state(false);
 let newCharStart = $state(-1);
 let freshTimeout: ReturnType<typeof setTimeout> | undefined;
 
-	const label = $derived(thinkingIsDone ? 'Thought' : 'Thinking');
+const label = $derived(thinkingIsDone ? "Thought" : "Thinking");
 const isActiveThinking = $derived(!thinkingIsDone);
 const visibleSegments = $derived(segments.filter(isVisibleThinkingSegment));
 const hasSegments = $derived(visibleSegments.length > 0);
 const visibleTools = $derived(segments.filter(isVisibleThinkingToolCall));
 
 $effect(() => {
-const totalLength = hasSegments
-? visibleSegments.reduce((sum, s) => sum + (s.type === 'text' ? s.content.length : 0), 0)
-: content.length;
-if (totalLength > prevContentLength && isActiveThinking) {
-contentFresh = true;
-newCharStart = prevContentLength;
-clearTimeout(freshTimeout);
-freshTimeout = setTimeout(() => { contentFresh = false; }, 500);
-}
-prevContentLength = totalLength;
+	const totalLength = hasSegments
+		? visibleSegments.reduce(
+				(sum, s) => sum + (s.type === "text" ? s.content.length : 0),
+				0,
+			)
+		: content.length;
+	if (totalLength > prevContentLength && isActiveThinking) {
+		contentFresh = true;
+		newCharStart = prevContentLength;
+		clearTimeout(freshTimeout);
+		freshTimeout = setTimeout(() => {
+			contentFresh = false;
+		}, 500);
+	}
+	prevContentLength = totalLength;
 });
 
-	function extractHostname(raw: string): string {
-		try {
-			return new URL(raw).hostname.replace(/^www\./, '');
-		} catch {
-			return raw.slice(0, 40);
-		}
+function extractHostname(raw: string): string {
+	try {
+		return new URL(raw).hostname.replace(/^www\./, "");
+	} catch {
+		return raw.slice(0, 40);
 	}
+}
 
-	function isFetchTool(name: string): boolean {
-		const n = name.toLowerCase();
-		return n.includes('fetch') || n.includes('url') || n.includes('web') || n.includes('browse');
-	}
+function isFetchTool(name: string): boolean {
+	const n = name.toLowerCase();
+	return (
+		n.includes("fetch") ||
+		n.includes("url") ||
+		n.includes("web") ||
+		n.includes("browse")
+	);
+}
 
-	function toUrlList(value: unknown): string[] {
-		return String(value ?? '')
-			.split(',')
-			.map((part) => part.trim())
-			.filter((part) => {
-				try {
-					new URL(part);
-					return true;
-				} catch {
-					return false;
-				}
-			});
-	}
+function toUrlList(value: unknown): string[] {
+	return String(value ?? "")
+		.split(",")
+		.map((part) => part.trim())
+		.filter((part) => {
+			try {
+				new URL(part);
+				return true;
+			} catch {
+				return false;
+			}
+		});
+}
 
-	function getFetchUrls(name: string, input: Record<string, unknown>): string[] {
-		if (isFileProductionToolName(name)) return [];
-		if (!isFetchTool(name)) return [];
-		return Object.values(input).flatMap(toUrlList);
-	}
+function getFetchUrls(name: string, input: Record<string, unknown>): string[] {
+	if (isFileProductionToolName(name)) return [];
+	if (!isFetchTool(name)) return [];
+	return Object.values(input).flatMap(toUrlList);
+}
 
-	function formatToolCall(name: string, input: Record<string, unknown>): string {
-		const n = name.toLowerCase();
-		const firstVal = () => String(Object.values(input)[0] ?? '').slice(0, 200);
-		if (isFileProductionToolName(name)) {
-			return 'produce_file';
-		}
-		if (n.includes('search') || n.includes('tavily')) {
-			const q = input.query ?? input.q ?? Object.values(input)[0];
-			return `Searching: "${String(q ?? '').slice(0, 200)}"`;
-		}
-		if (isFetchTool(name)) {
-			const raw = String(Object.values(input)[0] ?? '');
-			return `Fetching: ${extractHostname(raw)}`;
-		}
-		return firstVal() ? `${name}: ${firstVal()}` : name;
+function formatToolCall(name: string, input: Record<string, unknown>): string {
+	const n = name.toLowerCase();
+	const firstVal = () => String(Object.values(input)[0] ?? "").slice(0, 200);
+	if (isFileProductionToolName(name)) {
+		return "produce_file";
 	}
+	if (n.includes("search") || n.includes("tavily")) {
+		const q = input.query ?? input.q ?? Object.values(input)[0];
+		return `Searching: "${String(q ?? "").slice(0, 200)}"`;
+	}
+	if (isFetchTool(name)) {
+		const raw = String(Object.values(input)[0] ?? "");
+		return `Fetching: ${extractHostname(raw)}`;
+	}
+	return firstVal() ? `${name}: ${firstVal()}` : name;
+}
 
-	function getToolTitle(name: string, input: Record<string, unknown>): string {
-		const n = name.toLowerCase();
-		if (n.includes('search') || n.includes('tavily')) {
-			const q = input.query ?? input.q ?? Object.values(input)[0];
-			return String(q ?? '');
-		}
-		if (isFileProductionToolName(name)) {
-			const title = input.requestTitle ?? input.filename ?? input.documentIntent;
-			return title ? String(title) : 'produce_file';
-		}
-		if (isFetchTool(name)) {
-			return String(Object.values(input)[0] ?? '');
-		}
-		return String(Object.values(input)[0] ?? '');
+function getToolTitle(name: string, input: Record<string, unknown>): string {
+	const n = name.toLowerCase();
+	if (n.includes("search") || n.includes("tavily")) {
+		const q = input.query ?? input.q ?? Object.values(input)[0];
+		return String(q ?? "");
 	}
+	if (isFileProductionToolName(name)) {
+		const title = input.requestTitle ?? input.filename ?? input.documentIntent;
+		return title ? String(title) : "produce_file";
+	}
+	if (isFetchTool(name)) {
+		return String(Object.values(input)[0] ?? "");
+	}
+	return String(Object.values(input)[0] ?? "");
+}
 
-	async function toggle() {
-		await preserveScrollOnToggle(container, expanded, () => { expanded = !expanded; });
-	}
+async function toggle() {
+	await preserveScrollOnToggle(container, expanded, () => {
+		expanded = !expanded;
+	});
+}
 </script>
 
 <script module>
@@ -144,7 +156,7 @@ prevContentLength = totalLength;
 
 	{#if visibleTools.length > 0}
 		<div class="tool-call-stack">
-			{#each visibleTools as tool, i (tool.name + JSON.stringify(tool.input) + '-' + i)}
+			{#each visibleTools as tool, i (tool.callId ?? tool.name + JSON.stringify(tool.input) + '-' + i)}
 				{#if getFetchUrls(tool.name, tool.input).length > 0}
 					{#each getFetchUrls(tool.name, tool.input) as url}
 						<div class="tool-call-row" class:is-running={tool.status === 'running'}>
@@ -179,7 +191,7 @@ prevContentLength = totalLength;
 	{#if expanded}
 <div class="thinking-content" class:content-fresh={contentFresh} transition:slide>
 			{#if hasSegments}
-				{#each visibleSegments as seg}
+				{#each visibleSegments as seg, i (seg.type === 'tool_call' ? (seg.callId ?? seg.name + JSON.stringify(seg.input) + '-' + i) : `text-${i}`)}
 					{#if seg.type === 'text'}
 						<pre class="thinking-text">{seg.content}</pre>
 					{:else}

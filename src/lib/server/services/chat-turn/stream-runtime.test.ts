@@ -165,6 +165,53 @@ describe("createServerChunkRuntime", () => {
 		]);
 		expect(runtime.serverSegments).toEqual([]);
 	});
+
+	it("coalesces duplicate tool starts by call id and completes that call", () => {
+		const chunks: string[] = [];
+		const runtime = createServerChunkRuntime({
+			enqueueChunk(chunk) {
+				chunks.push(chunk);
+				return true;
+			},
+		});
+
+		runtime.emitToolCallEvent(
+			"research_web",
+			{ query: "SvelteKit streaming docs" },
+			"running",
+			{ callId: "tool-call-1" },
+		);
+		runtime.emitToolCallEvent(
+			"research_web",
+			{ query: "SvelteKit streaming docs" },
+			"running",
+			{ callId: "tool-call-1" },
+		);
+		runtime.emitToolCallEvent("research_web", {}, "done", {
+			callId: "tool-call-1",
+			sourceType: "web",
+			outputSummary: "Found sources",
+		});
+
+		expect(
+			chunks.filter((chunk) => chunk.startsWith("event: tool_call")),
+		).toHaveLength(2);
+		expect(runtime.toolCallRecords).toEqual([
+			expect.objectContaining({
+				callId: "tool-call-1",
+				name: "research_web",
+				status: "done",
+				outputSummary: "Found sources",
+			}),
+		]);
+		expect(runtime.serverSegments).toEqual([
+			expect.objectContaining({
+				callId: "tool-call-1",
+				name: "research_web",
+				status: "done",
+			}),
+		]);
+	});
 });
 
 describe("stream error extraction", () => {

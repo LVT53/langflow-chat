@@ -16,6 +16,7 @@ import hmac
 import json
 import os
 import time
+import uuid
 from typing import Any
 
 import requests
@@ -267,7 +268,9 @@ class WebResearchToolComponent(Component):
             })
 
         payload = self._request_payload(query, conversation_id)
+        call_id = f"research_web:{uuid.uuid4().hex}"
         self._emit_tool_marker("TOOL_START", {
+            "callId": call_id,
             "name": "research_web",
             "input": {
                 "query": query,
@@ -297,6 +300,7 @@ class WebResearchToolComponent(Component):
                 len(evidence),
             )
             self._emit_tool_marker("TOOL_END", {
+                "callId": call_id,
                 "name": "research_web",
                 "sourceType": "web",
                 "outputSummary": None,
@@ -331,6 +335,7 @@ class WebResearchToolComponent(Component):
         error_msg = result.get("error", "Unknown error")
         logger.error(f"Web research failed: {error_msg}")
         self._emit_tool_marker("TOOL_END", {
+            "callId": call_id,
             "name": "research_web",
             "sourceType": "web",
             "outputSummary": None,

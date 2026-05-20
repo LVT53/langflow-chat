@@ -1,22 +1,24 @@
-import { getConfig } from '$lib/server/config-store';
-import { getConversation } from '$lib/server/services/conversations';
+import { getConfig } from "$lib/server/config-store";
+import { getConversation } from "$lib/server/services/conversations";
 import {
 	assertPromptReadyAttachments,
 	isAttachmentReadinessError,
-} from '$lib/server/services/knowledge';
+} from "$lib/server/services/knowledge";
 import {
 	addConversationLinkedContextSources,
 	isLinkedContextSourceError,
-} from '$lib/server/services/linked-context-sources';
-import { resolveSkillPromptContext } from '$lib/server/services/skills/prompt-context';
-import { startSkillSession } from '$lib/server/services/skills/sessions';
-import { getAvailableSkillSummary } from '$lib/server/services/skills/user-skills';
+} from "$lib/server/services/linked-context-sources";
+import {
+	resolveSkillPromptContext,
+	skillSessionToPromptContext,
+} from "$lib/server/services/skills/prompt-context";
+import { startSkillSession } from "$lib/server/services/skills/sessions";
+import { resolveEffectiveSkillDefinition } from "$lib/server/services/skills/user-skills";
 import type {
 	ChatTurnRequestError,
 	ParsedChatTurnRequest,
 	PreflightedChatTurn,
-	SkillPromptContext,
-} from './types';
+} from "./types";
 
 type PreflightResult =
 	| { ok: true; value: PreflightedChatTurn }
@@ -30,7 +32,10 @@ export async function preflightChatTurn(params: {
 	let resolvedLinkedSources = request.linkedSources;
 	const conversation = await getConversation(userId, request.conversationId);
 	if (!conversation) {
-		return { ok: false, error: { status: 404, error: 'Conversation not found' } };
+		return {
+			ok: false,
+			error: { status: 404, error: "Conversation not found" },
+		};
 	}
 
 	if (request.attachmentIds.length > 0) {
@@ -63,8 +68,8 @@ export async function preflightChatTurn(params: {
 				ok: false,
 				error: {
 					status: 403,
-					error: 'Composer Command Registry is disabled.',
-					code: 'composer_commands_disabled',
+					error: "Composer Command Registry is disabled.",
+					code: "composer_commands_disabled",
 				},
 			};
 		}
@@ -96,22 +101,22 @@ export async function preflightChatTurn(params: {
 				ok: false,
 				error: {
 					status: 403,
-					error: 'Composer Command Registry is disabled.',
-					code: 'composer_commands_disabled',
+					error: "Composer Command Registry is disabled.",
+					code: "composer_commands_disabled",
 				},
 			};
 		}
-		const availableSkill = await getAvailableSkillSummary(userId, {
+		const availableSkill = await resolveEffectiveSkillDefinition(userId, {
 			id: request.pendingSkill.id,
 			ownership: request.pendingSkill.ownership,
 		});
-		if (!availableSkill) {
+		if (!availableSkill.available) {
 			return {
 				ok: false,
 				error: {
 					status: 409,
-					error: 'Selected skill is no longer available.',
-					code: 'pending_skill_unavailable',
+					error: "Selected skill is no longer available.",
+					code: "pending_skill_unavailable",
 				},
 			};
 		}
@@ -128,14 +133,14 @@ export async function preflightChatTurn(params: {
 	if (
 		!request.deepResearchDepth &&
 		request.pendingSkill &&
-		skillPromptContext?.source !== 'pending_skill'
+		skillPromptContext?.source !== "pending_skill"
 	) {
 		return {
 			ok: false,
 			error: {
 				status: 409,
-				error: 'Selected skill is no longer available.',
-				code: 'pending_skill_unavailable',
+				error: "Selected skill is no longer available.",
+				code: "pending_skill_unavailable",
 			},
 		};
 	}
@@ -143,8 +148,8 @@ export async function preflightChatTurn(params: {
 	if (
 		!request.deepResearchDepth &&
 		request.pendingSkill &&
-		skillPromptContext?.source === 'pending_skill' &&
-		skillPromptContext.durationPolicy === 'session'
+		skillPromptContext?.source === "pending_skill" &&
+		skillPromptContext.durationPolicy === "session"
 	) {
 		try {
 			const session = await startSkillSession(
@@ -152,48 +157,37 @@ export async function preflightChatTurn(params: {
 				request.conversationId,
 				request.pendingSkill,
 			);
-			skillPromptContext = {
-				source: 'active_session',
-				sessionId: session.id,
-				sessionStatus: session.status === 'paused' ? 'paused' : 'active',
-				skillId: session.skillId,
-				skillOwnership: session.skillOwnership,
-				skillDisplayName: session.skillDisplayName,
-				skillDescription: session.skillDescription,
-				skillInstructions: session.skillInstructions,
-				durationPolicy: session.durationPolicy,
-				questionPolicy: session.questionPolicy,
-				notesPolicy: session.notesPolicy,
-				sourceScope: session.sourceScope,
-				skillVersion: session.skillVersion,
+			skillPromptContext = skillSessionToPromptContext({
+				session,
 				linkedSources: skillPromptContext.linkedSources,
-			} satisfies SkillPromptContext;
+				skillResources: skillPromptContext.skillResources,
+			});
 		} catch (error) {
 			const code =
-				error instanceof Error && 'code' in error
+				error instanceof Error && "code" in error
 					? (error as { code?: unknown }).code
 					: undefined;
 			const status =
-				error instanceof Error && 'status' in error
+				error instanceof Error && "status" in error
 					? (error as { status?: unknown }).status
 					: undefined;
-			if (code === 'skill_unavailable') {
+			if (code === "skill_unavailable") {
 				return {
 					ok: false,
 					error: {
 						status: 409,
-						error: 'Selected skill is no longer available.',
-						code: 'pending_skill_unavailable',
+						error: "Selected skill is no longer available.",
+						code: "pending_skill_unavailable",
 					},
 				};
 			}
-			if (code === 'active_skill_session_conflict') {
+			if (code === "active_skill_session_conflict") {
 				return {
 					ok: false,
 					error: {
-						status: typeof status === 'number' ? status : 409,
-						error: 'Another skill session is already active.',
-						code: 'active_skill_session_conflict',
+						status: typeof status === "number" ? status : 409,
+						error: "Another skill session is already active.",
+						code: "active_skill_session_conflict",
 					},
 				};
 			}

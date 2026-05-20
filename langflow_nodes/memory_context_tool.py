@@ -15,6 +15,7 @@ import hmac
 import json
 import os
 import time
+import uuid
 from typing import Any
 
 import requests
@@ -316,7 +317,9 @@ class MemoryContextToolComponent(Component):
         max_history_conversations = int(
             payload.get("maxHistoryConversations", 8) or 8
         )
+        call_id = f"memory_context:{uuid.uuid4().hex}"
         self._emit_tool_marker("TOOL_START", {
+            "callId": call_id,
             "name": "memory_context",
             "input": {
                 "mode": payload.get("mode", "persona"),
@@ -405,6 +408,7 @@ class MemoryContextToolComponent(Component):
                     metadata["omittedMessageCount"] = omitted_message_count
 
             self._emit_tool_marker("TOOL_END", {
+                "callId": call_id,
                 "name": "memory_context",
                 "sourceType": "memory",
                 "outputSummary": output_summary,
@@ -440,6 +444,7 @@ class MemoryContextToolComponent(Component):
         error_message = str(result.get("error", "Unknown memory context error"))
         logger.error(f"Memory context failed: {error_message}")
         self._emit_tool_marker("TOOL_END", {
+            "callId": call_id,
             "name": "memory_context",
             "sourceType": "memory",
             "outputSummary": None,

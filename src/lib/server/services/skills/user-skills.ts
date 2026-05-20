@@ -1,9 +1,10 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { and, asc, desc, eq, notInArray, sql } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { userSkillDefinitions, users } from "$lib/server/db/schema";
 
 export type SkillOwnership = "user" | "system";
+export type SkillKind = "user_skill" | "skill_pack" | "skill_variant";
 export type SkillDurationPolicy = "next_message" | "session";
 export type SkillQuestionPolicy = "none" | "ask_when_needed";
 export type SkillNotesPolicy = "none" | "create_private_notes";
@@ -13,6 +14,11 @@ export type SkillCreationSource = "user_created" | "ai_draft" | "system_seed";
 export interface UserSkillDefinition {
 	id: string;
 	ownership: SkillOwnership;
+	skillKind: SkillKind;
+	baseSkillId: string | null;
+	baseSkillVersion: number | null;
+	baseSkillDisplayName?: string | null;
+	baseSkillLocalizedDefaults?: SystemSkillSummaryLocalizedDefaults | null;
 	displayName: string;
 	description: string;
 	instructions: string;
@@ -26,6 +32,15 @@ export interface UserSkillDefinition {
 	version: number;
 	createdAt: number;
 	updatedAt: number;
+}
+
+export interface UserSkillVariantDefinition extends UserSkillDefinition {
+	skillKind: "skill_variant";
+	baseSkillId: string;
+	baseSkillVersion: number | null;
+	baseSkillDisplayName: string | null;
+	baseSkillAvailable: boolean;
+	baseSkillAvailabilityReason: SkillAvailabilityReason;
 }
 
 export interface SystemSkillLocalizedDefaults {
@@ -52,9 +67,26 @@ export interface SystemSkillSummaryLocalizedDefaults {
 	};
 }
 
+export interface ManagedSkillResourceMetadata {
+	id: string;
+	title: string;
+	kind: "guidance" | "domain_template";
+	summary: string;
+	whenToUse: string;
+}
+
+export interface ManagedSkillPromptResource
+	extends ManagedSkillResourceMetadata {
+	content: string;
+	keywords: string[];
+}
+
 export interface SystemSkillDefinition {
 	id: string;
 	ownership: "system";
+	skillKind: "skill_pack";
+	baseSkillId: null;
+	baseSkillVersion: null;
 	displayName: string;
 	description: string;
 	instructions: string;
@@ -70,11 +102,12 @@ export interface SystemSkillDefinition {
 	createdAt: number;
 	updatedAt: number;
 	localizedDefaults: SystemSkillLocalizedDefaults;
+	managedResources: ManagedSkillResourceMetadata[];
 }
 
 export type SystemSkillSummary = Omit<
 	SystemSkillDefinition,
-	"instructions" | "localizedDefaults"
+	"instructions" | "localizedDefaults" | "managedResources"
 > & {
 	localizedDefaults: SystemSkillSummaryLocalizedDefaults;
 };
@@ -82,6 +115,58 @@ export type SystemSkillSummary = Omit<
 export type SkillDiscoverySummary =
 	| Omit<UserSkillDefinition, "instructions">
 	| SystemSkillSummary;
+
+export type SkillAvailabilityReason =
+	| "available"
+	| "not_found"
+	| "hidden"
+	| "disabled"
+	| "unpublished"
+	| "base_pack_missing"
+	| "base_pack_disabled"
+	| "base_pack_unpublished";
+
+export interface EffectiveSkillSourceIds {
+	skillId: string;
+	skillVersion: number;
+	packSkillId: string | null;
+	packSkillVersion: number | null;
+	variantSkillId: string | null;
+	variantSkillVersion: number | null;
+}
+
+export type EffectiveSkillDefinition =
+	| {
+			available: true;
+			availabilityReason: "available";
+			id: string;
+			ownership: SkillOwnership;
+			skillKind: SkillKind;
+			displayName: string;
+			description: string;
+			effectiveInstructions: string;
+			effectiveInstructionsHash: string;
+			publicSummary: SkillDiscoverySummary;
+			durationPolicy: SkillDurationPolicy;
+			questionPolicy: SkillQuestionPolicy;
+			notesPolicy: SkillNotesPolicy;
+			sourceScope: SkillSourceScope;
+			promptResources: ManagedSkillPromptResource[];
+			sourceIds: EffectiveSkillSourceIds;
+	  }
+	| {
+			available: false;
+			availabilityReason: Exclude<SkillAvailabilityReason, "available">;
+			id: string;
+			ownership: SkillOwnership;
+			skillKind: SkillKind | null;
+			displayName: string | null;
+			description: string | null;
+			effectiveInstructions: "";
+			effectiveInstructionsHash: null;
+			publicSummary: SkillDiscoverySummary | null;
+			sourceIds: EffectiveSkillSourceIds | null;
+	  };
 
 export interface CreateUserSkillDefinitionInput {
 	displayName: string;
@@ -98,6 +183,20 @@ export interface CreateUserSkillDefinitionInput {
 
 export type UpdateUserSkillDefinitionInput =
 	Partial<CreateUserSkillDefinitionInput>;
+
+export interface CreateUserSkillVariantDefinitionInput {
+	baseSkillId: string;
+	displayName: string;
+	description?: string;
+	instructions: string;
+	activationExamples?: string[];
+	enabled?: boolean;
+	creationSource?: SkillCreationSource;
+}
+
+export type UpdateUserSkillVariantDefinitionInput = Partial<
+	Omit<CreateUserSkillVariantDefinitionInput, "baseSkillId">
+>;
 
 export interface CreateSystemSkillDefinitionInput
 	extends CreateUserSkillDefinitionInput {
@@ -139,6 +238,147 @@ const creationSources = new Set<SkillCreationSource>([
 	"ai_draft",
 	"system_seed",
 ]);
+
+const spreadsheetManagedResources = [
+	{
+		id: "spreadsheet-style-quality",
+		title: "Spreadsheet style and workbook quality",
+		kind: "guidance",
+		summary:
+			"Workbook structure, visual hierarchy, formulas, assumptions, source separation, validation, and dashboard/KPI layout guidance adapted for AlfyAI XLSX delivery.",
+		whenToUse:
+			"Use for every spreadsheet or workbook request, especially new XLSX creation, analytical tables, dashboards, templates, trackers, and workbook edits.",
+	},
+	{
+		id: "spreadsheet-finance-models",
+		title: "Finance and operating model conventions",
+		kind: "domain_template",
+		summary:
+			"Finance, accounting, valuation, forecasting, FP&A, sensitivity, scenario, and operating-model conventions with clear assumptions, checks, sources, and formula-driven outputs.",
+		whenToUse:
+			"Use only when the request is finance, accounting, valuation, budgeting, forecasting, investing, KPI, operations metrics, or investment-banking related.",
+	},
+	{
+		id: "spreadsheet-healthcare-admin",
+		title: "Healthcare workbook conventions",
+		kind: "domain_template",
+		summary:
+			"Healthcare and clinical-administration workbook conventions for raw-data preservation, units, identifiers, thresholds, legends, and urgent scannability.",
+		whenToUse:
+			"Use only for healthcare, clinical, hospital, patient, staffing, care-delivery, or healthcare-administration workbooks.",
+	},
+	{
+		id: "spreadsheet-marketing-analytics",
+		title: "Marketing analytics conventions",
+		kind: "domain_template",
+		summary:
+			"Marketing, advertising, funnel, CRM, attribution, ROI, and campaign-reporting conventions for source data, KPI dashboards, helper tables, and metric formatting.",
+		whenToUse:
+			"Use only for marketing, advertising, campaign, funnel, lead, CRM, growth, attribution, ROI, web, or ad-performance workbooks.",
+	},
+	{
+		id: "spreadsheet-scientific-research",
+		title: "Scientific research workbook conventions",
+		kind: "domain_template",
+		summary:
+			"Scientific and research workbook conventions for raw measurements, processed-data copies, units in headers, reproducible calculations, and transparent helper columns.",
+		whenToUse:
+			"Use only for scientific research, experiments, lab measurements, surveys, statistics, reproducibility, protocols, or raw/processed research data.",
+	},
+] satisfies ManagedSkillResourceMetadata[];
+
+const spreadsheetPromptResources = [
+	{
+		...spreadsheetManagedResources[0],
+		content: [
+			"Default workbook shape: summary or dashboard first when useful, then source data, assumptions, calculations, checks, and detail sheets.",
+			"Use formula-driven derived values, readable labels, number/date formats, sensible widths, freeze panes, filters, validation lists, light borders, and restrained fills.",
+			"Keep source facts and assumptions separate. Put source references in workbook cells or compact source/audit sheets.",
+			"For visuals, use chart-ready helper tables, KPI blocks, conditional formats, heatmaps, timelines, and static worksheet layouts.",
+			"Verify with bounded sandbox-local checks: output file count, workbook reload, expected sheets, representative formulas, and obvious formula-error scans.",
+		].join(" "),
+		keywords: [],
+	},
+	{
+		...spreadsheetManagedResources[1],
+		content: [
+			"Use finance model structure such as cover/summary, assumptions, drivers, model, outputs, scenarios/sensitivities, checks, and sources/audit.",
+			"Apply finance number formats for currency, percentages, multiples, counts, and dates. Keep assumptions in labeled cells and avoid hardcoded business logic inside formulas.",
+			"Include visible checks for nontrivial models: source completeness, totals, sign/units, scenario inputs, balance/cash-flow ties when applicable, and model status formulas.",
+		].join(" "),
+		keywords: [
+			"finance",
+			"financial",
+			"valuation",
+			"dcf",
+			"budget",
+			"forecast",
+			"fp&a",
+			"kpi",
+			"operating model",
+			"sensitivity",
+			"scenario",
+			"investment",
+			"lbo",
+			"three-statement",
+		],
+	},
+	{
+		...spreadsheetManagedResources[2],
+		content: [
+			"Preserve raw healthcare data and use separate calculation/report sheets. Label units, identifiers, thresholds, normal ranges, and code definitions clearly.",
+			"Use legends and conditional formats for critical or attention-needed values, and keep clinical or staffing views printable and scannable.",
+		].join(" "),
+		keywords: [
+			"healthcare",
+			"clinical",
+			"patient",
+			"medical",
+			"hospital",
+			"staffing",
+			"care delivery",
+			"clinic",
+		],
+	},
+	{
+		...spreadsheetManagedResources[3],
+		content: [
+			"Separate source exports, processing/analysis, and dashboard/report sheets. Keep raw marketing data intact and make cleaning steps formula-driven or documented.",
+			"Format common metrics clearly: budget, spend, CPA, CPC, CPM, CTR, conversion rate, ROAS, funnel conversion, leads, pipeline, and attribution notes.",
+		].join(" "),
+		keywords: [
+			"marketing",
+			"advertising",
+			"campaign",
+			"funnel",
+			"lead",
+			"crm",
+			"growth",
+			"attribution",
+			"roi",
+			"roas",
+			"ad performance",
+		],
+	},
+	{
+		...spreadsheetManagedResources[4],
+		content: [
+			"Keep raw measurements separate from processed data and results. Put units in headers, one variable per column, and one observation per row.",
+			"Document cleaning steps, conversions, reproducibility notes, and helper-column calculations so results remain auditable.",
+		].join(" "),
+		keywords: [
+			"scientific",
+			"research",
+			"experiment",
+			"lab",
+			"measurement",
+			"survey",
+			"statistical",
+			"protocol",
+			"reproducibility",
+		],
+	},
+] satisfies ManagedSkillPromptResource[];
 
 const builtInSystemSkills = [
 	{
@@ -353,6 +593,51 @@ const builtInSystemSkills = [
 			"build an appointment checklist",
 		],
 	},
+	{
+		id: "system:spreadsheet-builder",
+		en: {
+			displayName: "Spreadsheet Builder",
+			description:
+				"Creates polished XLSX workbooks with formulas, tables, assumptions, dashboards, and AlfyAI file-production delivery.",
+			instructions: [
+				"Use this skill when the user asks to create, edit, analyze, visualize, or work with spreadsheet files such as .xlsx, .xls, .csv, or .tsv.",
+				'For downloadable XLSX creation, route the work through produce_file. Use sourceMode: "program", language: "javascript", JSON-encoded requestedOutputs, JSON-encoded program, idempotencyKey, requestTitle, and documentIntent.',
+				'The JavaScript program should use exceljs and write final requested files under /output with workbook.xlsx.writeFile("/output/<name>.xlsx"). When program.filename is provided, produce exactly one final requested workbook at /output/<name>.xlsx and do not write scratch diagnostics or unrelated files under /output.',
+				"Use bounded sheets, tables, and helper ranges. Keep raw/source data, assumptions, calculations, outputs, checks, and dashboard or KPI views separated when the task is analytical.",
+				"Use formula-driven workbook logic for derived values. Avoid magic numbers in formulas; put assumptions in labeled cells or sheets and reference them.",
+				"When formulas are included, set workbook.calcProperties.fullCalcOnLoad = true. Verify only with sandbox-local assertions, formula-text/error scans, ZIP/workbook reload checks, and representative worksheet checks.",
+				"Use exceljs tables, freeze panes, filters, data validation, number formats, column widths, fills, borders, conditional formatting where supported, and clear titles to make the workbook usable and polished.",
+				"For visual summaries, create chart-ready helper tables, KPI/dashboard layouts, heatmaps, timelines, and tested static worksheet visuals. Do not use embedded plotting APIs until the runtime has explicit support for them.",
+				"Keep domain-specific guidance selective: include finance, healthcare, marketing, or scientific conventions only when the user's request clearly matches that domain.",
+				"Be explicit about source facts versus assumptions. Cite sources inside workbook cells or source/audit sheets when the task depends on external or user-provided data.",
+			].join("\n"),
+		},
+		hu: {
+			displayName: "Táblázatkészítő",
+			description:
+				"Átgondolt XLSX munkafüzeteket készít képletekkel, táblákkal, feltételezésekkel, irányítópultokkal és AlfyAI fájl-előállítással.",
+			instructions: [
+				"Akkor használd ezt a skillt, amikor a felhasználó táblázatfájlokkal, például .xlsx, .xls, .csv vagy .tsv fájlokkal szeretne létrehozási, szerkesztési, elemzési vagy vizualizációs munkát végezni.",
+				'Letölthető XLSX létrehozásához a munkát produce_file kéréssel indítsd. Használd a sourceMode: "program", language: "javascript", JSON-kódolt requestedOutputs, JSON-kódolt program, idempotencyKey, requestTitle és documentIntent mezőket.',
+				'A JavaScript program exceljs-t használjon, és a végleges kért fájlokat a /output alá írja a workbook.xlsx.writeFile("/output/<name>.xlsx") hívással. Ha a program.filename adott, pontosan egy végleges kért munkafüzet készüljön a /output/<name>.xlsx útvonalon, és ne kerüljenek segédnaplók vagy nem kért fájlok a /output alá.',
+				"Használj korlátozott méretű munkalapokat, táblákat és segédtartományokat. Elemző feladatnál válaszd szét a nyers/forrásadatokat, feltételezéseket, számításokat, kimeneteket, ellenőrzéseket és dashboard vagy KPI nézeteket.",
+				"A származtatott értékek munkafüzetbeli logikája képletekből álljon. Ne rejts üzleti feltételezéseket képletekbe; tedd őket címkézett cellákba vagy lapokra, és hivatkozz rájuk.",
+				"Ha képletek vannak a munkafüzetben, állítsd be: workbook.calcProperties.fullCalcOnLoad = true. Az ellenőrzés csak sandboxon belüli állításokra, képlet- és hibakeresésre, ZIP/munkafüzet újratöltésre és reprezentatív munkalapellenőrzésre támaszkodjon.",
+				"Használj exceljs táblákat, rögzített paneleket, szűrőket, adatvalidációt, számformátumokat, oszlopszélességeket, kitöltéseket, szegélyeket, támogatott feltételes formázást és világos címeket.",
+				"Vizuális összefoglalókhoz diagramkész segédtáblákat, KPI/dashboard elrendezéseket, hőtérképeket, ütemterveket és ellenőrzött statikus munkalapi vizuális elemeket készíts. Ne használj beágyazott rajzolási API-kat, amíg a futtatókörnyezet ezt külön nem támogatja.",
+				"Domain-specifikus útmutatást csak akkor használj, ha a felhasználói kérés egyértelműen illeszkedik a pénzügyi, egészségügyi, marketing vagy tudományos területhez.",
+				"Különítsd el a forrástényeket és a feltételezéseket. Ha a feladat külső vagy felhasználói adatoktól függ, a forrásokat cellákban vagy forrás/audit lapon tüntesd fel.",
+			].join("\n"),
+		},
+		activationExamples: [
+			"build a spreadsheet",
+			"create an xlsx workbook",
+			"make a KPI dashboard",
+			"turn this into a financial model",
+			"format this CSV as a workbook",
+		],
+		managedResources: spreadsheetManagedResources,
+	},
 ] as const;
 
 const retiredBuiltInSystemSkillIds = [
@@ -445,8 +730,98 @@ function parseExamples(value: string): string[] {
 	}
 }
 
+function isManagedResourceKind(
+	value: unknown,
+): value is ManagedSkillResourceMetadata["kind"] {
+	return value === "guidance" || value === "domain_template";
+}
+
+function parseManagedResources(
+	value: string | null,
+): ManagedSkillResourceMetadata[] {
+	if (!value) return [];
+	try {
+		const parsed = JSON.parse(value) as unknown;
+		if (!Array.isArray(parsed)) return [];
+		return parsed.flatMap((item): ManagedSkillResourceMetadata[] => {
+			if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+			const record = item as Record<string, unknown>;
+			if (
+				typeof record.id !== "string" ||
+				typeof record.title !== "string" ||
+				!isManagedResourceKind(record.kind) ||
+				typeof record.summary !== "string" ||
+				typeof record.whenToUse !== "string"
+			) {
+				return [];
+			}
+			return [
+				{
+					id: record.id,
+					title: record.title,
+					kind: record.kind,
+					summary: record.summary,
+					whenToUse: record.whenToUse,
+				},
+			];
+		});
+	} catch {
+		return [];
+	}
+}
+
+function builtInManagedResourcesForSkill(
+	skillId: string,
+): ManagedSkillResourceMetadata[] {
+	const builtIn = builtInSystemSkills.find((skill) => skill.id === skillId);
+	return "managedResources" in (builtIn ?? {})
+		? [...(builtIn.managedResources ?? [])]
+		: [];
+}
+
+function builtInPromptResourcesForSkill(
+	skillId: string,
+): ManagedSkillPromptResource[] {
+	if (skillId === "system:spreadsheet-builder") {
+		return [...spreadsheetPromptResources];
+	}
+	return [];
+}
+
+function serializeManagedResources(
+	resources: readonly ManagedSkillResourceMetadata[] | undefined,
+): string | null {
+	return resources?.length ? JSON.stringify(resources) : null;
+}
+
+const hiddenSystemPackPreferenceDescription =
+	"__alfyai_hidden_system_skill_pack__";
+
+function hiddenSystemPackPreferenceId(
+	userId: string,
+	packSkillId: string,
+): string {
+	return `hidden-system-pack:${createHash("sha256")
+		.update(`${userId}\0${packSkillId}`)
+		.digest("hex")
+		.slice(0, 32)}`;
+}
+
 function toUnixSeconds(value: Date): number {
 	return Math.floor(value.getTime() / 1000);
+}
+
+function rowSkillKind(
+	row: typeof userSkillDefinitions.$inferSelect,
+): SkillKind {
+	if (
+		row.skillKind === "user_skill" ||
+		row.skillKind === "skill_pack" ||
+		row.skillKind === "skill_variant"
+	) {
+		return row.skillKind;
+	}
+	return row.ownership === "system" ? "skill_pack" : "user_skill";
 }
 
 function toUserSkillDefinition(
@@ -455,6 +830,9 @@ function toUserSkillDefinition(
 	return {
 		id: row.id,
 		ownership: "user",
+		skillKind: rowSkillKind(row),
+		baseSkillId: row.baseSkillId ?? null,
+		baseSkillVersion: row.baseSkillVersion ?? null,
 		displayName: row.displayName,
 		description: row.description,
 		instructions: row.instructions,
@@ -492,9 +870,13 @@ function localizedDefaultsForSystemSkill(
 function toSystemSkillDefinition(
 	row: typeof userSkillDefinitions.$inferSelect,
 ): SystemSkillDefinition {
+	const managedResources = parseManagedResources(row.resourceMetadataJson);
 	return {
 		id: row.id,
 		ownership: "system",
+		skillKind: "skill_pack",
+		baseSkillId: null,
+		baseSkillVersion: null,
 		displayName: row.displayName,
 		description: row.description,
 		instructions: row.instructions,
@@ -510,6 +892,10 @@ function toSystemSkillDefinition(
 		createdAt: toUnixSeconds(row.createdAt),
 		updatedAt: toUnixSeconds(row.updatedAt),
 		localizedDefaults: localizedDefaultsForSystemSkill(row),
+		managedResources:
+			managedResources.length > 0
+				? managedResources
+				: builtInManagedResourcesForSkill(row.id),
 	};
 }
 
@@ -519,6 +905,7 @@ function toSystemSkillSummary(
 	const {
 		instructions: _instructions,
 		localizedDefaults,
+		managedResources: _managedResources,
 		...summary
 	} = toSystemSkillDefinition(row);
 	return {
@@ -544,6 +931,34 @@ function toUserSkillSummary(
 	return summary;
 }
 
+function toUserSkillVariantDefinition(
+	row: typeof userSkillDefinitions.$inferSelect,
+	packRow: typeof userSkillDefinitions.$inferSelect | undefined,
+): UserSkillVariantDefinition {
+	const packUnavailableReason = unavailablePackReason(packRow);
+	return {
+		...toUserSkillDefinition(row),
+		skillKind: "skill_variant",
+		baseSkillId: row.baseSkillId ?? "",
+		baseSkillVersion: packRow?.version ?? row.baseSkillVersion ?? null,
+		baseSkillDisplayName: packRow?.displayName ?? null,
+		baseSkillLocalizedDefaults: packRow
+			? toSystemSkillSummary(packRow).localizedDefaults
+			: null,
+		baseSkillAvailable: packUnavailableReason === null,
+		baseSkillAvailabilityReason: packUnavailableReason ?? "available",
+	};
+}
+
+function toUserSkillVariantSummary(
+	row: typeof userSkillDefinitions.$inferSelect,
+	packRow: typeof userSkillDefinitions.$inferSelect,
+): Omit<UserSkillVariantDefinition, "instructions"> {
+	const { instructions: _instructions, ...summary } =
+		toUserSkillVariantDefinition(row, packRow);
+	return summary;
+}
+
 function builtInSystemSkillOrder(id: string): number {
 	const index = builtInSystemSkills.findIndex((skill) => skill.id === id);
 	return index === -1 ? Number.MAX_SAFE_INTEGER : index;
@@ -560,7 +975,7 @@ function discoveryMatchRank(
 	if (!query) return 0;
 	const displayNames = [skill.displayName];
 	const descriptions = [skill.description];
-	if (skill.ownership === "system") {
+	if (skill.ownership === "system" && "localizedDefaults" in skill) {
 		displayNames.push(
 			skill.localizedDefaults.en.displayName,
 			skill.localizedDefaults.hu.displayName,
@@ -569,6 +984,20 @@ function discoveryMatchRank(
 			skill.localizedDefaults.en.description,
 			skill.localizedDefaults.hu.description,
 		);
+	}
+	if (skill.skillKind === "skill_variant") {
+		if (skill.baseSkillDisplayName)
+			displayNames.push(skill.baseSkillDisplayName);
+		if (skill.baseSkillLocalizedDefaults) {
+			displayNames.push(
+				skill.baseSkillLocalizedDefaults.en.displayName,
+				skill.baseSkillLocalizedDefaults.hu.displayName,
+			);
+			descriptions.push(
+				skill.baseSkillLocalizedDefaults.en.description,
+				skill.baseSkillLocalizedDefaults.hu.description,
+			);
+		}
 	}
 	if (
 		displayNames.some((displayName) =>
@@ -642,12 +1071,42 @@ export function localizeSystemSkillSummary(
 	};
 }
 
+function localizeVariantBaseSkillName<
+	T extends {
+		baseSkillDisplayName?: string | null;
+		baseSkillLocalizedDefaults?: SystemSkillSummaryLocalizedDefaults | null;
+	},
+>(skill: T, language: "en" | "hu" | undefined): T {
+	if (language !== "hu" || !skill.baseSkillLocalizedDefaults) return skill;
+	const localized = skill.baseSkillLocalizedDefaults[language];
+	const english = skill.baseSkillLocalizedDefaults.en;
+	const baseSkillDisplayName =
+		skill.baseSkillDisplayName === english.displayName ||
+		skill.baseSkillDisplayName === localized.displayName
+			? localized.displayName
+			: skill.baseSkillDisplayName;
+	return {
+		...skill,
+		baseSkillDisplayName,
+	};
+}
+
+export function localizeUserSkillVariantDefinition(
+	variant: UserSkillVariantDefinition,
+	language: "en" | "hu" | undefined,
+): UserSkillVariantDefinition {
+	return localizeVariantBaseSkillName(variant, language);
+}
+
 export function localizeSkillDiscoverySummary(
 	skill: SkillDiscoverySummary,
 	language: "en" | "hu" | undefined,
 ): SkillDiscoverySummary {
-	return skill.ownership === "system"
-		? localizeSystemSkillSummary(skill, language)
+	if (skill.ownership === "system" && "localizedDefaults" in skill) {
+		return localizeSystemSkillSummary(skill, language);
+	}
+	return skill.skillKind === "skill_variant"
+		? localizeVariantBaseSkillName(skill, language)
 		: skill;
 }
 
@@ -743,6 +1202,7 @@ function buildCreateValues(
 			120,
 		),
 		description: cleanOptionalText(input.description, 600),
+		skillKind: "user_skill",
 		instructions: cleanRequiredText(
 			input.instructions,
 			"skill.instructionsRequired",
@@ -796,7 +1256,144 @@ function buildSystemCreateValues(
 			creationSource: input.creationSource ?? "user_created",
 		}),
 		ownership: "system",
+		skillKind: "skill_pack",
 		published: input.published ?? false,
+	};
+}
+
+async function requireAvailablePackForVariant(
+	baseSkillId: unknown,
+): Promise<typeof userSkillDefinitions.$inferSelect> {
+	const packSkillId = cleanRequiredText(
+		baseSkillId,
+		"skillVariant.baseSkillRequired",
+		"Skill Pack is required.",
+		200,
+	);
+	const packRow = await getPackRow(packSkillId);
+	const unavailableReason = unavailablePackReason(packRow);
+	if (unavailableReason || !packRow) {
+		throw new UserSkillValidationError(
+			`skillVariant.${unavailableReason ?? "base_pack_missing"}`,
+			"Selected Skill Pack is not available.",
+		);
+	}
+	return packRow;
+}
+
+async function buildVariantCreateValues(
+	userId: string,
+	input: CreateUserSkillVariantDefinitionInput,
+) {
+	const packRow = await requireAvailablePackForVariant(input.baseSkillId);
+	return {
+		id: randomUUID(),
+		userId,
+		ownership: "user",
+		skillKind: "skill_variant",
+		baseSkillId: packRow.id,
+		baseSkillVersion: packRow.version,
+		displayName: cleanRequiredText(
+			input.displayName,
+			"skill.displayNameRequired",
+			"Display name is required.",
+			120,
+		),
+		description: cleanOptionalText(input.description, 600),
+		instructions: cleanOptionalText(input.instructions, 8000),
+		activationExamplesJson: JSON.stringify(
+			cleanExamples(input.activationExamples),
+		),
+		enabled: input.enabled ?? true,
+		published: false,
+		durationPolicy: "next_message",
+		questionPolicy: "none",
+		notesPolicy: "none",
+		sourceScope: "current_conversation",
+		creationSource: cleanEnum(
+			input.creationSource,
+			creationSources,
+			"user_created",
+			"skill.invalidCreationSource",
+		),
+	};
+}
+
+function buildEffectiveInstructions(parts: string[]): string {
+	return parts
+		.map((part) => part.trim())
+		.filter(Boolean)
+		.join("\n\n");
+}
+
+function hashEffectiveInstructions(params: {
+	instructions: string;
+	sourceIds: EffectiveSkillSourceIds;
+}): string {
+	return createHash("sha256")
+		.update(
+			JSON.stringify({
+				instructions: params.instructions,
+				sourceIds: params.sourceIds,
+			}),
+		)
+		.digest("hex");
+}
+
+function unavailableResolution(params: {
+	id: string;
+	ownership: SkillOwnership;
+	reason: Exclude<SkillAvailabilityReason, "available">;
+	row?: typeof userSkillDefinitions.$inferSelect | null;
+	publicSummary?: SkillDiscoverySummary | null;
+}): EffectiveSkillDefinition {
+	return {
+		available: false,
+		availabilityReason: params.reason,
+		id: params.id,
+		ownership: params.ownership,
+		skillKind: params.row ? rowSkillKind(params.row) : null,
+		displayName: params.row?.displayName ?? null,
+		description: params.row?.description ?? null,
+		effectiveInstructions: "",
+		effectiveInstructionsHash: null,
+		publicSummary: params.publicSummary ?? null,
+		sourceIds: null,
+	};
+}
+
+function availableResolution(params: {
+	row: typeof userSkillDefinitions.$inferSelect;
+	publicSummary: SkillDiscoverySummary;
+	instructions: string;
+	durationPolicy: SkillDurationPolicy;
+	questionPolicy: SkillQuestionPolicy;
+	notesPolicy: SkillNotesPolicy;
+	sourceScope: SkillSourceScope;
+	promptResources?: ManagedSkillPromptResource[];
+	sourceIds: EffectiveSkillSourceIds;
+}): EffectiveSkillDefinition {
+	const effectiveInstructionsHash = hashEffectiveInstructions({
+		instructions: params.instructions,
+		sourceIds: params.sourceIds,
+	});
+	return {
+		available: true,
+		availabilityReason: "available",
+		id: params.row.id,
+		ownership: params.row.ownership as SkillOwnership,
+		skillKind: rowSkillKind(params.row),
+		displayName: params.row.displayName,
+		description: params.row.description,
+		effectiveInstructions: params.instructions,
+		effectiveInstructionsHash,
+		publicSummary: params.publicSummary,
+		durationPolicy: params.durationPolicy,
+		questionPolicy: params.questionPolicy,
+		notesPolicy: params.notesPolicy,
+		sourceScope: params.sourceScope,
+		promptResources: params.promptResources ?? [],
+		sourceIds: params.sourceIds,
 	};
 }
 
@@ -882,6 +1479,44 @@ function buildSystemUpdateValues(input: UpdateSystemSkillDefinitionInput) {
 	return values;
 }
 
+function buildVariantUpdateValues(
+	input: UpdateUserSkillVariantDefinitionInput,
+) {
+	const values: Partial<typeof userSkillDefinitions.$inferInsert> = {
+		updatedAt: new Date(),
+	};
+
+	if ("displayName" in input) {
+		values.displayName = cleanRequiredText(
+			input.displayName,
+			"skill.displayNameRequired",
+			"Display name is required.",
+			120,
+		);
+	}
+	if ("description" in input)
+		values.description = cleanOptionalText(input.description, 600);
+	if ("instructions" in input)
+		values.instructions = cleanOptionalText(input.instructions, 8000);
+	if ("activationExamples" in input) {
+		values.activationExamplesJson = JSON.stringify(
+			cleanExamples(input.activationExamples),
+		);
+	}
+	if ("enabled" in input && typeof input.enabled === "boolean")
+		values.enabled = input.enabled;
+	if ("creationSource" in input) {
+		values.creationSource = cleanEnum(
+			input.creationSource,
+			creationSources,
+			"user_created",
+			"skill.invalidCreationSource",
+		);
+	}
+
+	return values;
+}
+
 export async function listUserSkillDefinitions(
 	userId: string,
 ): Promise<UserSkillDefinition[]> {
@@ -892,6 +1527,7 @@ export async function listUserSkillDefinitions(
 			and(
 				eq(userSkillDefinitions.userId, userId),
 				eq(userSkillDefinitions.ownership, "user"),
+				eq(userSkillDefinitions.skillKind, "user_skill"),
 			),
 		)
 		.orderBy(desc(userSkillDefinitions.updatedAt));
@@ -911,6 +1547,7 @@ export async function getUserSkillDefinition(
 				eq(userSkillDefinitions.id, skillId),
 				eq(userSkillDefinitions.userId, userId),
 				eq(userSkillDefinitions.ownership, "user"),
+				eq(userSkillDefinitions.skillKind, "user_skill"),
 			),
 		)
 		.get();
@@ -947,6 +1584,7 @@ export async function updateUserSkillDefinition(
 				eq(userSkillDefinitions.id, skillId),
 				eq(userSkillDefinitions.userId, userId),
 				eq(userSkillDefinitions.ownership, "user"),
+				eq(userSkillDefinitions.skillKind, "user_skill"),
 			),
 		)
 		.returning();
@@ -966,6 +1604,115 @@ export async function deleteUserSkillDefinition(
 				eq(userSkillDefinitions.id, skillId),
 				eq(userSkillDefinitions.userId, userId),
 				eq(userSkillDefinitions.ownership, "user"),
+				eq(userSkillDefinitions.skillKind, "user_skill"),
+			),
+		)
+		.run();
+
+	return result.changes > 0;
+}
+
+async function getVariantPackRow(
+	row: typeof userSkillDefinitions.$inferSelect,
+) {
+	return row.baseSkillId ? getPackRow(row.baseSkillId) : undefined;
+}
+
+export async function listUserSkillVariantDefinitions(
+	userId: string,
+): Promise<UserSkillVariantDefinition[]> {
+	const rows = await db
+		.select()
+		.from(userSkillDefinitions)
+		.where(
+			and(
+				eq(userSkillDefinitions.userId, userId),
+				eq(userSkillDefinitions.ownership, "user"),
+				eq(userSkillDefinitions.skillKind, "skill_variant"),
+			),
+		)
+		.orderBy(desc(userSkillDefinitions.updatedAt));
+
+	return Promise.all(
+		rows.map(async (row) =>
+			toUserSkillVariantDefinition(row, await getVariantPackRow(row)),
+		),
+	);
+}
+
+export async function getUserSkillVariantDefinition(
+	userId: string,
+	skillId: string,
+): Promise<UserSkillVariantDefinition | null> {
+	const row = await db
+		.select()
+		.from(userSkillDefinitions)
+		.where(
+			and(
+				eq(userSkillDefinitions.id, skillId),
+				eq(userSkillDefinitions.userId, userId),
+				eq(userSkillDefinitions.ownership, "user"),
+				eq(userSkillDefinitions.skillKind, "skill_variant"),
+			),
+		)
+		.get();
+
+	return row
+		? toUserSkillVariantDefinition(row, await getVariantPackRow(row))
+		: null;
+}
+
+export async function createUserSkillVariantDefinition(
+	userId: string,
+	input: CreateUserSkillVariantDefinitionInput,
+): Promise<UserSkillVariantDefinition> {
+	const [row] = await db
+		.insert(userSkillDefinitions)
+		.values(await buildVariantCreateValues(userId, input))
+		.returning();
+
+	return toUserSkillVariantDefinition(row, await getVariantPackRow(row));
+}
+
+export async function updateUserSkillVariantDefinition(
+	userId: string,
+	skillId: string,
+	input: UpdateUserSkillVariantDefinitionInput,
+): Promise<UserSkillVariantDefinition | null> {
+	const values = buildVariantUpdateValues(input);
+	const [row] = await db
+		.update(userSkillDefinitions)
+		.set({
+			...values,
+			version: sql`${userSkillDefinitions.version} + 1`,
+		})
+		.where(
+			and(
+				eq(userSkillDefinitions.id, skillId),
+				eq(userSkillDefinitions.userId, userId),
+				eq(userSkillDefinitions.ownership, "user"),
+				eq(userSkillDefinitions.skillKind, "skill_variant"),
+			),
+		)
+		.returning();
+
+	return row
+		? toUserSkillVariantDefinition(row, await getVariantPackRow(row))
+		: null;
+}
+
+export async function deleteUserSkillVariantDefinition(
+	userId: string,
+	skillId: string,
+): Promise<boolean> {
+	const result = await db
+		.delete(userSkillDefinitions)
+		.where(
+			and(
+				eq(userSkillDefinitions.id, skillId),
+				eq(userSkillDefinitions.userId, userId),
+				eq(userSkillDefinitions.ownership, "user"),
+				eq(userSkillDefinitions.skillKind, "skill_variant"),
 			),
 		)
 		.run();
@@ -1012,6 +1759,9 @@ export async function seedBuiltInSystemSkillDefinitions(
 	}
 
 	for (const builtIn of builtInSystemSkills) {
+		const builtInResourceMetadataJson = serializeManagedResources(
+			"managedResources" in builtIn ? builtIn.managedResources : undefined,
+		);
 		const existing = await db
 			.select()
 			.from(userSkillDefinitions)
@@ -1069,6 +1819,9 @@ export async function seedBuiltInSystemSkillDefinitions(
 			) {
 				nextValues.activationExamplesJson = builtInActivationExamplesJson;
 			}
+			if (existing.resourceMetadataJson !== builtInResourceMetadataJson) {
+				nextValues.resourceMetadataJson = builtInResourceMetadataJson;
+			}
 
 			if (Object.keys(nextValues).length > 1) {
 				await db
@@ -1094,10 +1847,12 @@ export async function seedBuiltInSystemSkillDefinitions(
 				id: builtIn.id,
 				userId: seedOwnerId,
 				ownership: "system",
+				skillKind: "skill_pack",
 				displayName: builtIn.en.displayName,
 				description: builtIn.en.description,
 				instructions: builtIn.en.instructions,
 				activationExamplesJson: JSON.stringify(builtIn.activationExamples),
+				resourceMetadataJson: builtInResourceMetadataJson,
 				enabled: true,
 				published: true,
 				durationPolicy: "next_message",
@@ -1127,9 +1882,95 @@ export async function listAdminSystemSkillDefinitions(): Promise<
 	return rows.map(toSystemSkillDefinition);
 }
 
-export async function listEnabledSystemSkillSummaries(): Promise<
-	SystemSkillSummary[]
-> {
+async function listHiddenSystemSkillPackIds(
+	userId: string,
+): Promise<Set<string>> {
+	const rows = await db
+		.select({ baseSkillId: userSkillDefinitions.baseSkillId })
+		.from(userSkillDefinitions)
+		.where(
+			and(
+				eq(userSkillDefinitions.userId, userId),
+				eq(userSkillDefinitions.ownership, "user"),
+				eq(userSkillDefinitions.skillKind, "skill_pack"),
+				eq(
+					userSkillDefinitions.description,
+					hiddenSystemPackPreferenceDescription,
+				),
+			),
+		);
+
+	return new Set(
+		rows
+			.map((row) => row.baseSkillId)
+			.filter((id): id is string => typeof id === "string" && id.length > 0),
+	);
+}
+
+async function isSystemSkillPackHiddenForUser(
+	userId: string,
+	packSkillId: string,
+): Promise<boolean> {
+	return (await listHiddenSystemSkillPackIds(userId)).has(packSkillId);
+}
+
+export async function setSystemSkillPackHiddenForUser(
+	userId: string,
+	packSkillId: string,
+	hidden: boolean,
+): Promise<void> {
+	const preferenceId = hiddenSystemPackPreferenceId(userId, packSkillId);
+	if (!hidden) {
+		await db
+			.delete(userSkillDefinitions)
+			.where(
+				and(
+					eq(userSkillDefinitions.id, preferenceId),
+					eq(userSkillDefinitions.userId, userId),
+					eq(userSkillDefinitions.ownership, "user"),
+					eq(userSkillDefinitions.skillKind, "skill_pack"),
+				),
+			)
+			.run();
+		return;
+	}
+
+	await db
+		.insert(userSkillDefinitions)
+		.values({
+			id: preferenceId,
+			userId,
+			ownership: "user",
+			skillKind: "skill_pack",
+			baseSkillId: packSkillId,
+			displayName: "Hidden Skill Pack preference",
+			description: hiddenSystemPackPreferenceDescription,
+			instructions: "",
+			activationExamplesJson: "[]",
+			enabled: false,
+			published: false,
+			durationPolicy: "next_message",
+			questionPolicy: "none",
+			notesPolicy: "none",
+			sourceScope: "current_conversation",
+			creationSource: "user_created",
+			updatedAt: new Date(),
+		})
+		.onConflictDoUpdate({
+			target: userSkillDefinitions.id,
+			set: {
+				baseSkillId: packSkillId,
+				description: hiddenSystemPackPreferenceDescription,
+				enabled: false,
+				updatedAt: new Date(),
+			},
+		})
+		.run();
+}
+
+export async function listEnabledSystemSkillSummaries(
+	userId?: string,
+): Promise<SystemSkillSummary[]> {
 	const rows = await db
 		.select()
 		.from(userSkillDefinitions)
@@ -1142,7 +1983,10 @@ export async function listEnabledSystemSkillSummaries(): Promise<
 		)
 		.orderBy(asc(userSkillDefinitions.displayName));
 
-	return rows.map(toSystemSkillSummary);
+	const hiddenIds = userId
+		? await listHiddenSystemSkillPackIds(userId)
+		: new Set<string>();
+	return rows.filter((row) => !hiddenIds.has(row.id)).map(toSystemSkillSummary);
 }
 
 export async function discoverSkillSummaries(
@@ -1174,10 +2018,24 @@ export async function discoverSkillSummaries(
 			)
 			.orderBy(asc(userSkillDefinitions.displayName)),
 	]);
+	const hiddenSystemSkillIds = await listHiddenSystemSkillPackIds(userId);
+
+	const userSummaries = await Promise.all(
+		userRows.map(async (row) => {
+			if (rowSkillKind(row) !== "skill_variant") return toUserSkillSummary(row);
+			const packRow = await getVariantPackRow(row);
+			if (unavailablePackReason(packRow) || !packRow) return null;
+			return toUserSkillVariantSummary(row, packRow);
+		}),
+	);
 
 	return [
-		...userRows.map(toUserSkillSummary),
-		...systemRows.map(toSystemSkillSummary),
+		...userSummaries.filter(
+			(skill): skill is SkillDiscoverySummary => skill !== null,
+		),
+		...systemRows
+			.filter((row) => !hiddenSystemSkillIds.has(row.id))
+			.map(toSystemSkillSummary),
 	]
 		.filter(
 			(skill) =>
@@ -1213,6 +2071,12 @@ export async function getAvailableSkillSummary(
 		.get();
 
 	if (!row) return null;
+	if (
+		row.ownership === "system" &&
+		(await isSystemSkillPackHiddenForUser(userId, row.id))
+	) {
+		return null;
+	}
 	return row.ownership === "system"
 		? toSystemSkillSummary(row)
 		: toUserSkillSummary(row);
@@ -1243,9 +2107,179 @@ export async function getAvailableSkillDefinition(
 		.get();
 
 	if (!row) return null;
+	if (
+		row.ownership === "system" &&
+		(await isSystemSkillPackHiddenForUser(userId, row.id))
+	) {
+		return null;
+	}
 	return row.ownership === "system"
 		? toSystemSkillDefinition(row)
 		: toUserSkillDefinition(row);
+}
+
+async function getSkillRowForResolution(
+	userId: string,
+	selection: { id: string; ownership: SkillOwnership },
+) {
+	return db
+		.select()
+		.from(userSkillDefinitions)
+		.where(
+			selection.ownership === "user"
+				? and(
+						eq(userSkillDefinitions.id, selection.id),
+						eq(userSkillDefinitions.userId, userId),
+						eq(userSkillDefinitions.ownership, "user"),
+					)
+				: and(
+						eq(userSkillDefinitions.id, selection.id),
+						eq(userSkillDefinitions.ownership, "system"),
+					),
+		)
+		.get();
+}
+
+async function getPackRow(packSkillId: string) {
+	return db
+		.select()
+		.from(userSkillDefinitions)
+		.where(
+			and(
+				eq(userSkillDefinitions.id, packSkillId),
+				eq(userSkillDefinitions.ownership, "system"),
+			),
+		)
+		.get();
+}
+
+function unavailablePackReason(
+	packRow: typeof userSkillDefinitions.$inferSelect | undefined,
+): "base_pack_missing" | "base_pack_disabled" | "base_pack_unpublished" | null {
+	if (!packRow) return "base_pack_missing";
+	if (!packRow.enabled) return "base_pack_disabled";
+	if (!packRow.published) return "base_pack_unpublished";
+	return null;
+}
+
+function variantSummary(
+	row: typeof userSkillDefinitions.$inferSelect,
+	packRow: typeof userSkillDefinitions.$inferSelect,
+): Omit<UserSkillDefinition, "instructions"> {
+	return {
+		...toUserSkillSummary(row),
+		baseSkillId: packRow.id,
+		baseSkillVersion: packRow.version,
+		baseSkillDisplayName: packRow.displayName,
+	};
+}
+
+export async function resolveEffectiveSkillDefinition(
+	userId: string,
+	selection: { id: string; ownership: SkillOwnership },
+): Promise<EffectiveSkillDefinition> {
+	const row = await getSkillRowForResolution(userId, selection);
+	if (!row) {
+		return unavailableResolution({
+			id: selection.id,
+			ownership: selection.ownership,
+			reason: "not_found",
+		});
+	}
+	if (!row.enabled) {
+		return unavailableResolution({
+			id: selection.id,
+			ownership: selection.ownership,
+			reason: "disabled",
+			row,
+		});
+	}
+	if (row.ownership === "system" && !row.published) {
+		return unavailableResolution({
+			id: selection.id,
+			ownership: selection.ownership,
+			reason: "unpublished",
+			row,
+			publicSummary: toSystemSkillSummary(row),
+		});
+	}
+
+	const kind = rowSkillKind(row);
+	if (
+		row.ownership === "system" &&
+		kind === "skill_pack" &&
+		(await isSystemSkillPackHiddenForUser(userId, row.id))
+	) {
+		return unavailableResolution({
+			id: selection.id,
+			ownership: selection.ownership,
+			reason: "hidden",
+			row,
+			publicSummary: toSystemSkillSummary(row),
+		});
+	}
+	if (kind === "skill_variant") {
+		const packSkillId = row.baseSkillId;
+		const packRow = packSkillId ? await getPackRow(packSkillId) : undefined;
+		const packUnavailableReason = unavailablePackReason(packRow);
+		if (packUnavailableReason || !packRow) {
+			return unavailableResolution({
+				id: selection.id,
+				ownership: selection.ownership,
+				reason: packUnavailableReason ?? "base_pack_missing",
+				row,
+				publicSummary: toUserSkillSummary(row),
+			});
+		}
+		const instructions = buildEffectiveInstructions([
+			packRow.instructions,
+			row.instructions,
+		]);
+		const sourceIds: EffectiveSkillSourceIds = {
+			skillId: row.id,
+			skillVersion: row.version,
+			packSkillId: packRow.id,
+			packSkillVersion: packRow.version,
+			variantSkillId: row.id,
+			variantSkillVersion: row.version,
+		};
+		return availableResolution({
+			row,
+			publicSummary: variantSummary(row, packRow),
+			instructions,
+			durationPolicy: packRow.durationPolicy as SkillDurationPolicy,
+			questionPolicy: packRow.questionPolicy as SkillQuestionPolicy,
+			notesPolicy: packRow.notesPolicy as SkillNotesPolicy,
+			sourceScope: packRow.sourceScope as SkillSourceScope,
+			promptResources: builtInPromptResourcesForSkill(packRow.id),
+			sourceIds,
+		});
+	}
+
+	const instructions = buildEffectiveInstructions([row.instructions]);
+	const sourceIds: EffectiveSkillSourceIds = {
+		skillId: row.id,
+		skillVersion: row.version,
+		packSkillId: kind === "skill_pack" ? row.id : null,
+		packSkillVersion: kind === "skill_pack" ? row.version : null,
+		variantSkillId: null,
+		variantSkillVersion: null,
+	};
+	return availableResolution({
+		row,
+		publicSummary:
+			row.ownership === "system"
+				? toSystemSkillSummary(row)
+				: toUserSkillSummary(row),
+		instructions,
+		durationPolicy: row.durationPolicy as SkillDurationPolicy,
+		questionPolicy: row.questionPolicy as SkillQuestionPolicy,
+		notesPolicy: row.notesPolicy as SkillNotesPolicy,
+		sourceScope: row.sourceScope as SkillSourceScope,
+		promptResources:
+			kind === "skill_pack" ? builtInPromptResourcesForSkill(row.id) : [],
+		sourceIds,
+	});
 }
 
 export async function getSystemSkillDefinition(

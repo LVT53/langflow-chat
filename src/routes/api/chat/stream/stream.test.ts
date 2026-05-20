@@ -16,7 +16,8 @@ vi.mock("$lib/server/config-store", () => ({
 		modelTimeoutFailoverEnabled: false,
 		modelTimeoutFailoverTargetModel: null,
 		modelTimeoutFailoverTimeoutMs: 1_000,
-		composerCommandRegistryEnabled: configMockState.composerCommandRegistryEnabled,
+		composerCommandRegistryEnabled:
+			configMockState.composerCommandRegistryEnabled,
 		model1: {
 			displayName: "Model 1",
 		},
@@ -96,6 +97,48 @@ vi.mock("$lib/server/services/skills/user-skills", () => ({
 		id: "skill-1",
 		ownership: "user",
 		displayName: "Interview coach",
+	})),
+	resolveEffectiveSkillDefinition: vi.fn(async () => ({
+		available: true,
+		availabilityReason: "available",
+		id: "skill-1",
+		ownership: "user",
+		skillKind: "user_skill",
+		displayName: "Interview coach",
+		description: "Asks useful questions.",
+		effectiveInstructions: "Ask one concise follow-up before answering.",
+		effectiveInstructionsHash: "test-hash",
+		publicSummary: {
+			id: "skill-1",
+			ownership: "user",
+			skillKind: "user_skill",
+			baseSkillId: null,
+			baseSkillVersion: null,
+			displayName: "Interview coach",
+			description: "Asks useful questions.",
+			activationExamples: ["interview me first"],
+			enabled: true,
+			durationPolicy: "next_message",
+			questionPolicy: "ask_when_needed",
+			notesPolicy: "none",
+			sourceScope: "selected_sources_only",
+			creationSource: "user_created",
+			version: 1,
+			createdAt: 1,
+			updatedAt: 2,
+		},
+		durationPolicy: "next_message",
+		questionPolicy: "ask_when_needed",
+		notesPolicy: "none",
+		sourceScope: "selected_sources_only",
+		sourceIds: {
+			skillId: "skill-1",
+			skillVersion: 1,
+			packSkillId: null,
+			packSkillVersion: null,
+			variantSkillId: null,
+			variantSkillVersion: null,
+		},
 	})),
 }));
 
@@ -694,7 +737,9 @@ describe("POST /api/chat/stream", () => {
 				type: "document" as const,
 			},
 		];
-		mockAddConversationLinkedContextSources.mockResolvedValueOnce(linkedSources);
+		mockAddConversationLinkedContextSources.mockResolvedValueOnce(
+			linkedSources,
+		);
 
 		const event = makeEvent({
 			message: "  Draft the plan  ",
@@ -723,7 +768,9 @@ describe("POST /api/chat/stream", () => {
 		);
 		const options = mockSendMessageStream.mock.calls.at(-1)?.[3];
 		expect(options.systemPromptAppendix).toContain("Discovery notes.pdf");
-		expect(options.systemPromptAppendix).toContain("displayArtifactId: display-1");
+		expect(options.systemPromptAppendix).toContain(
+			"displayArtifactId: display-1",
+		);
 		expect(options.systemPromptAppendix).not.toContain("  Draft the plan  ");
 		expect(mockCreateMessage).toHaveBeenCalledWith(
 			"conv-1",
@@ -771,7 +818,12 @@ describe("POST /api/chat/stream", () => {
 			updatedAt: 0,
 		});
 		mockCreateMessage
-			.mockResolvedValueOnce({ id: "user-msg", role: "user", content: "Hello", timestamp: Date.now() })
+			.mockResolvedValueOnce({
+				id: "user-msg",
+				role: "user",
+				content: "Hello",
+				timestamp: Date.now(),
+			})
 			.mockResolvedValueOnce({
 				id: "assistant-msg",
 				role: "assistant",
@@ -801,7 +853,9 @@ describe("POST /api/chat/stream", () => {
 			]),
 		);
 
-		const response = await POST(makeEvent({ message: "Hello", conversationId: "conv-1" }));
+		const response = await POST(
+			makeEvent({ message: "Hello", conversationId: "conv-1" }),
+		);
 		const body = await readSseResponse(response);
 
 		expect(response.status).toBe(200);

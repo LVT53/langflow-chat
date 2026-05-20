@@ -680,7 +680,12 @@ export interface ChatGeneratedFile {
 	createdAt: number;
 }
 
-export type FileProductionJobStatus = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+export type FileProductionJobStatus =
+	| "queued"
+	| "running"
+	| "succeeded"
+	| "failed"
+	| "cancelled";
 
 export interface FileProductionJobFile {
 	id: string;
@@ -791,6 +796,7 @@ export interface ToolEvidenceCandidate {
 }
 
 export interface ToolCallEntry {
+	callId?: string;
 	name: string;
 	input: Record<string, unknown>;
 	status: "running" | "done";
@@ -804,6 +810,7 @@ export type ThinkingSegment =
 	| { type: "text"; content: string }
 	| {
 			type: "tool_call";
+			callId?: string;
 			name: string;
 			input: Record<string, unknown>;
 			status: "running" | "done";
@@ -897,11 +904,7 @@ export type SkillControlSessionTransition =
 	| "failed_note"
 	| "dismissed";
 
-export type SkillDraftStatus =
-	| "proposed"
-	| "saved"
-	| "dismissed"
-	| "published";
+export type SkillDraftStatus = "proposed" | "saved" | "dismissed" | "published";
 
 export type SkillDraftDurationPolicy = "next_message" | "session";
 export type SkillDraftQuestionPolicy = "none" | "ask_when_needed";
@@ -1152,7 +1155,11 @@ export interface LinkedContextSource {
 export interface PendingSkillSelection {
 	id: string;
 	ownership: "user" | "system";
+	skillKind?: "user_skill" | "skill_pack" | "skill_variant";
 	displayName: string;
+	baseSkillId?: string | null;
+	baseSkillDisplayName?: string | null;
+	unavailable?: boolean;
 }
 
 export type SkillSessionStatus = "active" | "paused" | "ended";
@@ -1182,6 +1189,7 @@ export interface SkillSession {
 	conversationId: string;
 	skillId: string;
 	skillOwnership: "user" | "system";
+	skillKind: "user_skill" | "skill_pack" | "skill_variant";
 	status: SkillSessionStatus;
 	pauseReason: string | null;
 	endReason: string | null;
@@ -1193,6 +1201,11 @@ export interface SkillSession {
 	notesPolicy: "none" | "create_private_notes";
 	sourceScope: "current_conversation" | "selected_sources_only";
 	skillVersion: number;
+	packSkillId: string | null;
+	packSkillVersion: number | null;
+	variantSkillId: string | null;
+	variantSkillVersion: number | null;
+	effectiveInstructionsHash: string | null;
 	startedFrom: "pending_skill";
 	startedAt: number;
 	updatedAt: number;

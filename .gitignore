@@ -41,7 +41,11 @@ data/test.db.bak
 
 # Runtime data directories (generated files, knowledge uploads)
 data/chat-files/
+data/campaign-assets/
 data/knowledge/
+
+# Local upstream reference copy; adapted AlfyAI guidance lives in source.
+docs/spreadsheets skill/
 
 # Python
 __pycache__/

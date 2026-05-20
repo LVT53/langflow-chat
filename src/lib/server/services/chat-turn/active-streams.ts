@@ -1,8 +1,6 @@
-import { getConfig } from '$lib/server/config-store';
-import type {
-	EvidenceSourceType,
-	ToolEvidenceCandidate,
-} from '$lib/types';
+import { getConfig } from "$lib/server/config-store";
+import type { EvidenceSourceType, ToolEvidenceCandidate } from "$lib/types";
+import { toolCallInputKey } from "$lib/utils/tool-calls";
 
 const STOP_REQUEST_TTL_MS = 30_000;
 
@@ -26,9 +24,10 @@ interface StreamTokenBuffer {
 	tokens: string[];
 	thinking: string[];
 	toolCalls: Array<{
+		callId?: string;
 		name: string;
 		input: Record<string, unknown>;
-		status: 'running' | 'done';
+		status: "running" | "done";
 		outputSummary?: string | null;
 		sourceType?: EvidenceSourceType | null;
 		candidates?: ToolEvidenceCandidate[];
@@ -43,7 +42,9 @@ const BUFFER_CLEANUP_MS = 5 * 60 * 1000;
 
 let bufferCleanupTimer: ReturnType<typeof setInterval> | null = null;
 
-function unrefTimer(timer: ReturnType<typeof setInterval> | ReturnType<typeof setTimeout>) {
+function unrefTimer(
+	timer: ReturnType<typeof setInterval> | ReturnType<typeof setTimeout>,
+) {
 	timer.unref?.();
 }
 
@@ -73,10 +74,19 @@ export function getStreamBuffer(streamId: string): StreamTokenBuffer | null {
 	return streamBuffers.get(streamId) ?? null;
 }
 
-export function getOrCreateStreamBuffer(streamId: string, userMessage: string): StreamTokenBuffer {
+export function getOrCreateStreamBuffer(
+	streamId: string,
+	userMessage: string,
+): StreamTokenBuffer {
 	let buffer = streamBuffers.get(streamId);
 	if (!buffer) {
-		buffer = { userMessage, tokens: [], thinking: [], toolCalls: [], listeners: new Set() };
+		buffer = {
+			userMessage,
+			tokens: [],
+			thinking: [],
+			toolCalls: [],
+			listeners: new Set(),
+		};
 		streamBuffers.set(streamId, buffer);
 		startBufferCleanupTimer();
 	}
@@ -85,38 +95,53 @@ export function getOrCreateStreamBuffer(streamId: string, userMessage: string): 
 
 export function appendToStreamBuffer(
 	streamId: string,
-	event: 'token' | 'thinking' | 'tool_call',
+	event: "token" | "thinking" | "tool_call",
 	data: {
 		text?: string;
+		callId?: string;
 		name?: string;
 		input?: Record<string, unknown>;
-		status?: 'running' | 'done';
+		status?: "running" | "done";
 		outputSummary?: string | null;
 		sourceType?: EvidenceSourceType | null;
 		candidates?: ToolEvidenceCandidate[];
 		metadata?: Record<string, string | number | boolean | null>;
-	}
+	},
 ) {
 	const buffer = streamBuffers.get(streamId);
 	if (!buffer) return;
 
-	if (event === 'token' && data.text) {
+	if (event === "token" && data.text) {
 		buffer.tokens.push(data.text);
 		// Cap buffer size
-		if (buffer.tokens.join('').length > BUFFER_MAX_TOKENS) {
+		if (buffer.tokens.join("").length > BUFFER_MAX_TOKENS) {
 			buffer.tokens = buffer.tokens.slice(-Math.floor(BUFFER_MAX_TOKENS / 10));
 		}
-	} else if (event === 'thinking' && data.text) {
+	} else if (event === "thinking" && data.text) {
 		buffer.thinking.push(data.text);
-		if (buffer.thinking.join('').length > BUFFER_MAX_TOKENS) {
-			buffer.thinking = buffer.thinking.slice(-Math.floor(BUFFER_MAX_TOKENS / 10));
+		if (buffer.thinking.join("").length > BUFFER_MAX_TOKENS) {
+			buffer.thinking = buffer.thinking.slice(
+				-Math.floor(BUFFER_MAX_TOKENS / 10),
+			);
 		}
-	} else if (event === 'tool_call' && data.name) {
-		if (data.status === 'running') {
+	} else if (event === "tool_call" && data.name) {
+		if (data.status === "running") {
+			const input = data.input ?? {};
+			const inputKey = toolCallInputKey(input);
+			const duplicateRunning = buffer.toolCalls.some(
+				(toolCall) =>
+					toolCall.status === "running" &&
+					toolCall.name === data.name &&
+					(data.callId
+						? toolCall.callId === data.callId
+						: toolCallInputKey(toolCall.input) === inputKey),
+			);
+			if (duplicateRunning) return;
 			buffer.toolCalls.push({
+				...(data.callId ? { callId: data.callId } : {}),
 				name: data.name,
-				input: data.input ?? {},
-				status: 'running',
+				input,
+				status: "running",
 				sourceType: data.sourceType,
 				candidates: data.candidates,
 				metadata: data.metadata,
@@ -124,11 +149,18 @@ export function appendToStreamBuffer(
 		} else {
 			// Mark last matching tool_call as done
 			for (let i = buffer.toolCalls.length - 1; i >= 0; i--) {
-				if (buffer.toolCalls[i].name === data.name && buffer.toolCalls[i].status === 'running') {
+				if (
+					buffer.toolCalls[i].name === data.name &&
+					buffer.toolCalls[i].status === "running" &&
+					(data.callId ? buffer.toolCalls[i].callId === data.callId : true)
+				) {
 					buffer.toolCalls[i] = {
+						...(buffer.toolCalls[i].callId
+							? { callId: buffer.toolCalls[i].callId }
+							: {}),
 						name: data.name,
 						input: buffer.toolCalls[i].input,
-						status: 'done',
+						status: "done",
 						outputSummary: data.outputSummary ?? null,
 						sourceType: data.sourceType ?? buffer.toolCalls[i].sourceType,
 						candidates: data.candidates ?? buffer.toolCalls[i].candidates,
@@ -148,14 +180,20 @@ export function clearStreamBuffer(streamId: string) {
 	}
 }
 
-export function subscribeToStream(streamId: string, listener: (chunk: string) => void) {
+export function subscribeToStream(
+	streamId: string,
+	listener: (chunk: string) => void,
+) {
 	const buffer = streamBuffers.get(streamId);
 	if (buffer) {
 		buffer.listeners.add(listener);
 	}
 }
 
-export function unsubscribeFromStream(streamId: string, listener: (chunk: string) => void) {
+export function unsubscribeFromStream(
+	streamId: string,
+	listener: (chunk: string) => void,
+) {
 	const buffer = streamBuffers.get(streamId);
 	if (buffer) {
 		buffer.listeners.delete(listener);
@@ -223,7 +261,10 @@ export function registerActiveChatStream(params: {
 	return true;
 }
 
-export function unregisterActiveChatStream(streamId: string, controller?: AbortController) {
+export function unregisterActiveChatStream(
+	streamId: string,
+	controller?: AbortController,
+) {
 	const activeStream = activeStreams.get(streamId);
 	if (!activeStream) {
 		clearPendingStop(streamId);
@@ -279,13 +320,15 @@ export function requestActiveChatStreamStop(params: {
 	return true;
 }
 
-export function wasActiveChatStreamStopRequested(streamId: string | undefined): boolean {
+export function wasActiveChatStreamStopRequested(
+	streamId: string | undefined,
+): boolean {
 	return Boolean(streamId) && pendingStops.has(streamId);
 }
 
 export interface StreamCapacityCheck {
 	allowed: boolean;
-	reason?: 'global_limit' | 'user_limit';
+	reason?: "global_limit" | "user_limit";
 	retryAfterSeconds?: number;
 	currentGlobalCount?: number;
 	currentUserCount?: number;
@@ -309,7 +352,7 @@ export function checkStreamCapacity(userId: string): StreamCapacityCheck {
 	if (currentGlobalCount >= maxGlobal) {
 		return {
 			allowed: false,
-			reason: 'global_limit',
+			reason: "global_limit",
 			retryAfterSeconds: 10,
 			currentGlobalCount,
 			currentUserCount,
@@ -319,7 +362,7 @@ export function checkStreamCapacity(userId: string): StreamCapacityCheck {
 	if (currentUserCount >= maxPerUser) {
 		return {
 			allowed: false,
-			reason: 'user_limit',
+			reason: "user_limit",
 			retryAfterSeconds: 5,
 			currentGlobalCount,
 			currentUserCount,

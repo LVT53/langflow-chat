@@ -15,7 +15,7 @@ import type {
 	SkillSessionMilestone,
 	SkillSessionMilestoneKind,
 } from "$lib/types";
-import { getAvailableSkillDefinition } from "./user-skills";
+import { resolveEffectiveSkillDefinition } from "./user-skills";
 
 export class SkillSessionError extends Error {
 	constructor(
@@ -89,6 +89,14 @@ function toSession(
 		conversationId: row.conversationId,
 		skillId: row.skillId,
 		skillOwnership: row.skillOwnership as "user" | "system",
+		skillKind:
+			row.skillKind === "user_skill" ||
+			row.skillKind === "skill_pack" ||
+			row.skillKind === "skill_variant"
+				? row.skillKind
+				: row.skillOwnership === "system"
+					? "skill_pack"
+					: "user_skill",
 		status: row.status as SkillSession["status"],
 		pauseReason: row.pauseReason,
 		endReason: row.endReason,
@@ -101,6 +109,11 @@ function toSession(
 		notesPolicy: row.notesPolicy as SkillSession["notesPolicy"],
 		sourceScope: row.sourceScope as SkillSession["sourceScope"],
 		skillVersion: row.skillVersion,
+		packSkillId: row.packSkillId,
+		packSkillVersion: row.packSkillVersion,
+		variantSkillId: row.variantSkillId,
+		variantSkillVersion: row.variantSkillVersion,
+		effectiveInstructionsHash: row.effectiveInstructionsHash || null,
 		startedFrom: row.startedFrom as "pending_skill",
 		startedAt: toUnixSeconds(row.startedAt) ?? 0,
 		updatedAt: toUnixSeconds(row.updatedAt) ?? 0,
@@ -204,6 +217,26 @@ async function appendMilestone(
 	});
 }
 
+async function pauseUnavailableSession(row: typeof skillSessions.$inferSelect) {
+	const [paused] = await db
+		.update(skillSessions)
+		.set({
+			status: "paused",
+			pauseReason: "unavailable",
+			pausedAt: new Date(),
+			updatedAt: new Date(),
+		})
+		.where(eq(skillSessions.id, row.id))
+		.returning();
+	if (!paused) return null;
+	await appendMilestone(
+		paused,
+		"unavailable",
+		"skillSessions.milestones.unavailable",
+	);
+	return hydrateSession(paused);
+}
+
 export async function startSkillSession(
 	userId: string,
 	conversationId: string,
@@ -224,11 +257,20 @@ export async function startSkillSession(
 				409,
 			);
 		}
+		const skill = await resolveEffectiveSkillDefinition(userId, pendingSkill);
+		if (!skill.available) {
+			await pauseUnavailableSession(existing);
+			throw new SkillSessionError(
+				"skill_unavailable",
+				"Selected skill is no longer available.",
+				409,
+			);
+		}
 		return hydrateSession(existing);
 	}
 
-	const skill = await getAvailableSkillDefinition(userId, pendingSkill);
-	if (!skill) {
+	const skill = await resolveEffectiveSkillDefinition(userId, pendingSkill);
+	if (!skill.available) {
 		throw new SkillSessionError(
 			"skill_unavailable",
 			"Selected skill is no longer available.",
@@ -245,16 +287,24 @@ export async function startSkillSession(
 				conversationId,
 				skillId: skill.id,
 				skillOwnership: skill.ownership,
+				skillKind: skill.skillKind,
+				packSkillId: skill.sourceIds.packSkillId,
+				packSkillVersion: skill.sourceIds.packSkillVersion,
+				variantSkillId: skill.sourceIds.variantSkillId,
+				variantSkillVersion: skill.sourceIds.variantSkillVersion,
 				status: "active",
 				skillDisplayName: skill.displayName,
 				skillDescription: skill.description,
-				skillInstructions: skill.instructions,
-				activationExamplesJson: JSON.stringify(skill.activationExamples),
+				skillInstructions: skill.effectiveInstructions,
+				activationExamplesJson: JSON.stringify(
+					skill.publicSummary.activationExamples,
+				),
 				durationPolicy: skill.durationPolicy,
 				questionPolicy: skill.questionPolicy,
 				notesPolicy: skill.notesPolicy,
 				sourceScope: skill.sourceScope,
-				skillVersion: skill.version,
+				skillVersion: skill.sourceIds.skillVersion,
+				effectiveInstructionsHash: skill.effectiveInstructionsHash,
 				startedFrom: "pending_skill",
 			})
 			.run();
@@ -297,28 +347,14 @@ export async function getActiveSkillSession(
 	if (!row) return null;
 
 	if (row.status === "active") {
-		const skill = await getAvailableSkillDefinition(userId, {
+		const skill = await resolveEffectiveSkillDefinition(userId, {
 			id: row.skillId,
 			ownership: row.skillOwnership as "user" | "system",
 		});
-		if (!skill) {
-			const [paused] = await db
-				.update(skillSessions)
-				.set({
-					status: "paused",
-					pauseReason: "unavailable",
-					pausedAt: new Date(),
-					updatedAt: new Date(),
-				})
-				.where(eq(skillSessions.id, row.id))
-				.returning();
+		if (!skill.available) {
+			const paused = await pauseUnavailableSession(row);
 			if (paused) {
-				await appendMilestone(
-					paused,
-					"unavailable",
-					"skillSessions.milestones.unavailable",
-				);
-				return hydrateSession(paused);
+				return paused;
 			}
 		}
 	}

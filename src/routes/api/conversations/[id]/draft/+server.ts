@@ -1,17 +1,18 @@
-import { json } from '@sveltejs/kit';
-import type { RequestHandler } from './$types';
-import { requireAuth } from '$lib/server/auth/hooks';
-import { getConfig } from '$lib/server/config-store';
+import { json } from "@sveltejs/kit";
+import { requireAuth } from "$lib/server/auth/hooks";
+import { getConfig } from "$lib/server/config-store";
 import {
 	clearConversationDraft,
+	parsePendingSkillSelection,
 	upsertConversationDraft,
-} from '$lib/server/services/conversation-drafts';
-import { getConversation } from '$lib/server/services/conversations';
-import type { LinkedContextSource, PendingSkillSelection } from '$lib/types';
+} from "$lib/server/services/conversation-drafts";
+import { getConversation } from "$lib/server/services/conversations";
+import type { LinkedContextSource, PendingSkillSelection } from "$lib/types";
+import type { RequestHandler } from "./$types";
 
 function parseAttachmentIds(value: unknown): string[] | null {
 	if (!Array.isArray(value)) return null;
-	return value.filter((item): item is string => typeof item === 'string');
+	return value.filter((item): item is string => typeof item === "string");
 }
 
 function parseLinkedSources(value: unknown): LinkedContextSource[] | null {
@@ -19,14 +20,15 @@ function parseLinkedSources(value: unknown): LinkedContextSource[] | null {
 	if (!Array.isArray(value)) return null;
 	const sources: LinkedContextSource[] = [];
 	for (const item of value) {
-		if (typeof item !== 'object' || item === null) return null;
+		if (typeof item !== "object" || item === null) return null;
 		const record = item as Record<string, unknown>;
 		if (
-			typeof record.displayArtifactId !== 'string' ||
-			(record.promptArtifactId !== null && typeof record.promptArtifactId !== 'string') ||
+			typeof record.displayArtifactId !== "string" ||
+			(record.promptArtifactId !== null &&
+				typeof record.promptArtifactId !== "string") ||
 			!Array.isArray(record.familyArtifactIds) ||
-			typeof record.name !== 'string' ||
-			record.type !== 'document'
+			typeof record.name !== "string" ||
+			record.type !== "document"
 		) {
 			return null;
 		}
@@ -34,13 +36,14 @@ function parseLinkedSources(value: unknown): LinkedContextSource[] | null {
 			displayArtifactId: record.displayArtifactId,
 			promptArtifactId: record.promptArtifactId,
 			familyArtifactIds: record.familyArtifactIds.filter(
-				(value): value is string => typeof value === 'string'
+				(value): value is string => typeof value === "string",
 			),
 			name: record.name,
-			type: 'document',
-			mimeType: typeof record.mimeType === 'string' ? record.mimeType : null,
+			type: "document",
+			mimeType: typeof record.mimeType === "string" ? record.mimeType : null,
 			documentOrigin:
-				record.documentOrigin === 'uploaded' || record.documentOrigin === 'generated'
+				record.documentOrigin === "uploaded" ||
+				record.documentOrigin === "generated"
 					? record.documentOrigin
 					: undefined,
 		});
@@ -48,22 +51,11 @@ function parseLinkedSources(value: unknown): LinkedContextSource[] | null {
 	return sources;
 }
 
-function parsePendingSkill(value: unknown): PendingSkillSelection | null | undefined {
+function parsePendingSkill(
+	value: unknown,
+): PendingSkillSelection | null | undefined {
 	if (value === undefined || value === null) return null;
-	if (typeof value !== 'object') return undefined;
-	const record = value as Record<string, unknown>;
-	if (
-		typeof record.id !== 'string' ||
-		(record.ownership !== 'user' && record.ownership !== 'system') ||
-		typeof record.displayName !== 'string'
-	) {
-		return undefined;
-	}
-	return {
-		id: record.id,
-		ownership: record.ownership,
-		displayName: record.displayName,
-	};
+	return parsePendingSkillSelection(value) ?? undefined;
 }
 
 export const PUT: RequestHandler = async (event) => {
@@ -73,42 +65,54 @@ export const PUT: RequestHandler = async (event) => {
 
 	const conversation = await getConversation(user.id, id);
 	if (!conversation) {
-		return json({ error: 'Conversation not found' }, { status: 404 });
+		return json({ error: "Conversation not found" }, { status: 404 });
 	}
 
 	const body = await event.request.json().catch(() => null);
-	if (!body || typeof body !== 'object') {
-		return json({ error: 'Invalid draft payload' }, { status: 400 });
+	if (!body || typeof body !== "object") {
+		return json({ error: "Invalid draft payload" }, { status: 400 });
 	}
+	const record = body as Record<string, unknown>;
 
 	const draftText =
-		typeof (body as Record<string, unknown>).draftText === 'string'
-			? (body as Record<string, unknown>).draftText
-			: '';
+		typeof record.draftText === "string" ? record.draftText : "";
 	const selectedAttachmentIds = parseAttachmentIds(
-		(body as Record<string, unknown>).selectedAttachmentIds
+		record.selectedAttachmentIds,
 	);
 	if (!selectedAttachmentIds) {
-		return json({ error: 'selectedAttachmentIds must be an array of strings' }, { status: 400 });
+		return json(
+			{ error: "selectedAttachmentIds must be an array of strings" },
+			{ status: 400 },
+		);
 	}
 	const selectedLinkedSources = parseLinkedSources(
-		(body as Record<string, unknown>).selectedLinkedSources
+		record.selectedLinkedSources,
 	);
 	if (!selectedLinkedSources) {
-		return json({ error: 'selectedLinkedSources must be an array of linked documents' }, { status: 400 });
+		return json(
+			{ error: "selectedLinkedSources must be an array of linked documents" },
+			{ status: 400 },
+		);
 	}
-	const pendingSkill = parsePendingSkill((body as Record<string, unknown>).pendingSkill);
+	const pendingSkill = parsePendingSkill(record.pendingSkill);
 	if (pendingSkill === undefined) {
-		return json({ error: 'pendingSkill must be a selected skill summary or null' }, { status: 400 });
+		return json(
+			{ error: "pendingSkill must be a selected skill summary or null" },
+			{ status: 400 },
+		);
 	}
-	const composerCommandRegistryEnabled = getConfig().composerCommandRegistryEnabled;
-	if ((pendingSkill || selectedLinkedSources.length > 0) && !composerCommandRegistryEnabled) {
+	const composerCommandRegistryEnabled =
+		getConfig().composerCommandRegistryEnabled;
+	if (
+		(pendingSkill || selectedLinkedSources.length > 0) &&
+		!composerCommandRegistryEnabled
+	) {
 		return json(
 			{
-				error: 'Composer Command Registry is disabled.',
-				code: 'composer_commands_disabled',
+				error: "Composer Command Registry is disabled.",
+				code: "composer_commands_disabled",
 			},
-			{ status: 403 }
+			{ status: 403 },
 		);
 	}
 

@@ -36,6 +36,7 @@ from typing import Any
 import hmac
 import hashlib
 import base64
+import uuid
 
 import requests
 
@@ -234,8 +235,11 @@ class ImageSearchToolComponent(Component):
                 "error": "No search query provided.",
             })
 
+        call_id = f"image_search:{uuid.uuid4().hex}"
+
         # Emit TOOL_START marker
         self._emit_tool_marker("TOOL_START", {
+            "callId": call_id,
             "name": "image_search",
             "input": {"query": query},
         })
@@ -257,6 +261,7 @@ class ImageSearchToolComponent(Component):
 
             # Emit TOOL_END marker
             self._emit_tool_marker("TOOL_END", {
+                "callId": call_id,
                 "name": "image_search",
                 "sourceType": "web",
                 "outputSummary": result.get("message", "Search completed"),
@@ -275,6 +280,7 @@ class ImageSearchToolComponent(Component):
 
             # Emit TOOL_END marker even on error
             self._emit_tool_marker("TOOL_END", {
+                "callId": call_id,
                 "name": "image_search",
                 "sourceType": "web",
                 "outputSummary": None,

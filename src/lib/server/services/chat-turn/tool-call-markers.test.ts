@@ -161,4 +161,47 @@ describe("processToolCallMarkers", () => {
 			},
 		]);
 	});
+
+	it("preserves tool call ids on start and end markers", () => {
+		const emitted: Array<{
+			name: string;
+			status: "running" | "done";
+			details?: StreamToolCallDetails;
+		}> = [];
+		const startPayload = JSON.stringify({
+			callId: "tool-call-1",
+			name: "research_web",
+			input: { query: "SvelteKit streaming docs" },
+		});
+		const endPayload = JSON.stringify({
+			callId: "tool-call-1",
+			name: "research_web",
+			sourceType: "web",
+		});
+
+		processToolCallMarkers(
+			`\u0002TOOL_START\u001f${startPayload}\u0003\u0002TOOL_END\u001f${endPayload}\u0003`,
+			(name, _input, status, details) => {
+				emitted.push({ name, status, details });
+			},
+		);
+
+		expect(emitted).toEqual([
+			{
+				name: "research_web",
+				status: "running",
+				details: { callId: "tool-call-1" },
+			},
+			{
+				name: "research_web",
+				status: "done",
+				details: {
+					callId: "tool-call-1",
+					outputSummary: null,
+					sourceType: "web",
+					candidates: [],
+				},
+			},
+		]);
+	});
 });

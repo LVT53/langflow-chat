@@ -3,14 +3,14 @@ import type { LegacyContextTraceSectionInput } from "$lib/server/services/chat-t
 import type {
 	ContextDebugState,
 	ConversationContextStatus,
+	DeepResearchDepth,
 	HonchoContextInfo,
 	HonchoContextSnapshot,
-	DeepResearchDepth,
 	LinkedContextSource,
 	ModelId,
 	PendingSkillSelection,
-	ThinkingMode,
 	TaskState,
+	ThinkingMode,
 	ToolCallEntry,
 	WebCitationAudit,
 } from "$lib/types";
@@ -51,12 +51,23 @@ export interface SkillPromptLinkedSource {
 	documentOrigin?: LinkedContextSource["documentOrigin"];
 }
 
+export interface SkillPromptResource {
+	id: string;
+	title: string;
+	kind: "guidance" | "domain_template";
+	summary: string;
+	whenToUse: string;
+	content: string;
+	inclusionReason: "always" | "matched_request";
+}
+
 export interface SkillPromptContext {
 	source: "pending_skill" | "active_session";
 	sessionId?: string;
 	sessionStatus?: "active" | "paused";
 	skillId: string;
 	skillOwnership: "user" | "system";
+	skillKind: "user_skill" | "skill_pack" | "skill_variant";
 	skillDisplayName: string;
 	skillDescription: string;
 	skillInstructions: string;
@@ -65,6 +76,12 @@ export interface SkillPromptContext {
 	notesPolicy: "none" | "create_private_notes";
 	sourceScope: "current_conversation" | "selected_sources_only";
 	skillVersion: number;
+	packSkillId?: string | null;
+	packSkillVersion?: number | null;
+	variantSkillId?: string | null;
+	variantSkillVersion?: number | null;
+	effectiveInstructionsHash?: string | null;
+	skillResources?: SkillPromptResource[];
 	linkedSources: SkillPromptLinkedSource[];
 }
 

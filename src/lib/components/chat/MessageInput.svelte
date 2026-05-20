@@ -2,13 +2,16 @@
 import { onMount } from "svelte";
 import { goto } from "$app/navigation";
 import { fetchKnowledgeLibrary } from "$lib/client/api/knowledge";
-import { discoverSkills, type SkillDiscoverySummary } from "$lib/client/api/skills";
+import {
+	discoverSkills,
+	type SkillDiscoverySummary,
+} from "$lib/client/api/skills";
 import {
 	COMPOSER_COMMAND_VISIBLE_RESULT_LIMIT,
 	STATIC_COMPOSER_COMMANDS,
 	type ComposerCommandDefinition,
 } from "$lib/composer-commands";
-import { t } from "$lib/i18n";
+import { t, type I18nKey } from "$lib/i18n";
 import { currentConversationId } from "$lib/stores/ui";
 import ContextUsageRing from "./ContextUsageRing.svelte";
 import ComposerToolsMenu from "./ComposerToolsMenu.svelte";
@@ -143,7 +146,11 @@ let {
 		| undefined;
 	totalCostUsd?: number;
 	totalTokens?: number;
-	personalityProfiles?: Array<{ id: string; name: string; description: string }>;
+	personalityProfiles?: Array<{
+		id: string;
+		name: string;
+		description: string;
+	}>;
 	selectedPersonalityId?: string | null;
 	onPersonalityChange?: ((id: string | null) => void) | undefined;
 	thinkingMode?: ThinkingMode;
@@ -241,9 +248,9 @@ let commandTrayRows = $derived(getCommandTrayRows(commandToken));
 let commandTokenKey = $derived(getCommandTokenKey(commandToken));
 let commandTrayCanOpen = $derived(
 	composerCommandRegistryEnabled &&
-	Boolean(commandToken) &&
-	commandTokenKey !== dismissedCommandTokenKey &&
-	(commandTrayRows.length > 0 || commandToken?.prefix === "$"),
+		Boolean(commandToken) &&
+		commandTokenKey !== dismissedCommandTokenKey &&
+		(commandTrayRows.length > 0 || commandToken?.prefix === "$"),
 );
 let showCommandTray = $derived(commandTrayMounted);
 let commandTrayInteractive = $derived(
@@ -255,11 +262,16 @@ let visibleCommandTrayRows = $derived(
 let activeCommandRow = $derived(
 	visibleCommandTrayRows[highlightedCommandIndex] ?? null,
 );
+function asI18nKey(key: string): I18nKey {
+	return key as I18nKey;
+}
+
 let activeCommandAnnouncement = $derived(
 	activeCommandRow
 		? $t("composerCommands.activeAnnouncement", {
 				token: activeCommandRow.tokenLabel ?? activeCommandRow.token,
-				label: activeCommandRow.label ?? $t(activeCommandRow.labelKey),
+				label:
+					activeCommandRow.label ?? $t(asI18nKey(activeCommandRow.labelKey)),
 			})
 		: "",
 );
@@ -331,7 +343,12 @@ $effect(() => {
 				? {
 						id: draftPendingSkill.id,
 						ownership: draftPendingSkill.ownership,
+						skillKind: draftPendingSkill.skillKind,
 						displayName: draftPendingSkill.displayName,
+						baseSkillId: draftPendingSkill.baseSkillId ?? null,
+						baseSkillDisplayName:
+							draftPendingSkill.baseSkillDisplayName ?? null,
+						unavailable: draftPendingSkill.unavailable === true,
 					}
 				: null;
 		attachmentError = "";
@@ -458,7 +475,10 @@ function handleInput(event: Event) {
 	if (disabled) return;
 	const target = event.currentTarget as HTMLTextAreaElement;
 	syncTextareaValue(target.value, true);
-	updateCommandTrayFromText(target.value, target.selectionStart ?? target.value.length);
+	updateCommandTrayFromText(
+		target.value,
+		target.selectionStart ?? target.value.length,
+	);
 }
 
 function handleSelect() {
@@ -470,7 +490,8 @@ function handleKeyup() {
 }
 
 function handleTextareaScroll(event: Event) {
-	linkHighlightScrollTop = (event.currentTarget as HTMLTextAreaElement).scrollTop;
+	linkHighlightScrollTop = (event.currentTarget as HTMLTextAreaElement)
+		.scrollTop;
 }
 
 function handleKeydown(event: KeyboardEvent) {
@@ -531,7 +552,10 @@ function getInteractiveCommandRows(): CommandTrayRow[] {
 	) {
 		return [];
 	}
-	return getCommandTrayRows(commandToken).slice(0, COMPOSER_COMMAND_VISIBLE_RESULT_LIMIT);
+	return getCommandTrayRows(commandToken).slice(
+		0,
+		COMPOSER_COMMAND_VISIBLE_RESULT_LIMIT,
+	);
 }
 
 function buildSendPayload(): SendPayload {
@@ -551,7 +575,9 @@ function buildSendPayload(): SendPayload {
 				}))
 			: [],
 		pendingSkill:
-			composerCommandRegistryEnabled && !selectedDeepResearchDepth ? pendingSkill : null,
+			composerCommandRegistryEnabled && !selectedDeepResearchDepth
+				? pendingSkill
+				: null,
 		conversationId: resolvedConversationId,
 		personalityProfileId: selectedPersonalityId,
 		deepResearchDepth: deepResearchEnabled ? selectedDeepResearchDepth : null,
@@ -617,7 +643,7 @@ function stop() {
 	sourceManagerOpen = false;
 	closeCommandTray();
 	if (isMobile()) {
-		textarea.blur();
+		textarea?.blur();
 	}
 }
 
@@ -643,7 +669,9 @@ function tokenizeComposerLinks(text: string): ComposerTextSegment[] {
 		segments.push({
 			kind: "link",
 			text: visibleUrl,
-			href: visibleUrl.startsWith("www.") ? `https://${visibleUrl}` : visibleUrl,
+			href: visibleUrl.startsWith("www.")
+				? `https://${visibleUrl}`
+				: visibleUrl,
 		});
 		hasLink = true;
 		currentIndex = visibleEnd;
@@ -752,35 +780,63 @@ function toggleDeepResearchMenu() {
 }
 
 function selectDeepResearchDepth(depth: DeepResearchDepth) {
-	selectedDeepResearchDepth = selectedDeepResearchDepth === depth ? null : depth;
+	selectedDeepResearchDepth =
+		selectedDeepResearchDepth === depth ? null : depth;
 	showDeepResearchMenu = false;
 }
 
-type CommandTrayRow = ComposerCommandDefinition & {
+type CommandTrayRow = Omit<
+	ComposerCommandDefinition,
+	"id" | "labelKey" | "descriptionKey" | "token"
+> & {
+	id: string;
+	token: ComposerCommandDefinition["token"] | "$";
+	labelKey: I18nKey;
+	descriptionKey: I18nKey;
 	disabled: boolean;
-	statusKey?: string;
+	statusKey?: I18nKey;
 	skill?: SkillDiscoverySummary;
 	tokenLabel?: string;
 	label?: string;
 	description?: string;
 };
 
+function pendingSkillKindLabelKey(
+	skill: Pick<PendingSkillSelection, "ownership" | "skillKind">,
+) {
+	if (skill.skillKind === "skill_variant") return "pendingSkill.variant";
+	if (skill.skillKind === "skill_pack" || skill.ownership === "system")
+		return "pendingSkill.pack";
+	return "pendingSkill.user";
+}
+
+function skillDiscoveryDescription(skill: SkillDiscoverySummary): string {
+	if (skill.skillKind === "skill_variant" && skill.baseSkillDisplayName) {
+		return `${skill.description} · ${$t("pendingSkill.variantBasedOn", {
+			name: skill.baseSkillDisplayName,
+		})}`;
+	}
+	return skill.description;
+}
+
 function getCommandTokenKey(token: ComposerCommandToken | null): string | null {
 	if (!token) return null;
 	return `${token.prefix}:${token.start}:${token.end}:${token.token}`;
 }
 
-function getCommandTrayRows(token: ComposerCommandToken | null): CommandTrayRow[] {
+function getCommandTrayRows(
+	token: ComposerCommandToken | null,
+): CommandTrayRow[] {
 	if (!composerCommandRegistryEnabled || !token) return [];
 	if (token.prefix === "$") {
 		return skillDiscoveryResults.map((skill) => ({
 			id: `skill:${skill.id}`,
 			token: "$",
-			tokenLabel: skill.ownership === "user" ? $t("pendingSkill.user") : $t("pendingSkill.system"),
-			labelKey: "composerCommands.skillDiscovery.label",
-			descriptionKey: "composerCommands.skillDiscovery.description",
+			tokenLabel: $t(pendingSkillKindLabelKey(skill)),
+			labelKey: "composerCommands.skillDiscovery.label" as I18nKey,
+			descriptionKey: "composerCommands.skillDiscovery.description" as I18nKey,
 			label: skill.displayName,
-			description: skill.description,
+			description: skillDiscoveryDescription(skill),
 			availability: "available",
 			disabled: false,
 			skill,
@@ -793,6 +849,8 @@ function getCommandTrayRows(token: ComposerCommandToken | null): CommandTrayRow[
 		(command) => commandQuery === "" || command.id.startsWith(commandQuery),
 	).map((command) => ({
 		...command,
+		labelKey: asI18nKey(command.labelKey),
+		descriptionKey: asI18nKey(command.descriptionKey),
 		disabled:
 			command.availability !== "available" ||
 			(command.id === "attach" && !canAttach) ||
@@ -872,11 +930,15 @@ function updateCommandTrayFromText(text: string, cursor: number) {
 
 async function loadSkillDiscovery(query: string) {
 	const normalizedQuery = query.trim();
-	if (normalizedQuery === skillDiscoveryQuery && (skillDiscoveryLoading || skillDiscoveryResults.length > 0)) {
+	if (
+		normalizedQuery === skillDiscoveryQuery &&
+		(skillDiscoveryLoading || skillDiscoveryResults.length > 0)
+	) {
 		return;
 	}
 	skillDiscoveryQuery = normalizedQuery;
-	const requestId = (skillDiscoveryRequestId += 1);
+	skillDiscoveryRequestId += 1;
+	const requestId = skillDiscoveryRequestId;
 	skillDiscoveryLoading = true;
 	try {
 		const skills = await discoverSkills(normalizedQuery);
@@ -970,10 +1032,13 @@ function consumeActiveCommandToken(): boolean {
 	return true;
 }
 
-function getMessageWithoutActiveCommandToken(activeToken = commandToken): { text: string; cursor: number } | null {
+function getMessageWithoutActiveCommandToken(
+	activeToken = commandToken,
+): { text: string; cursor: number } | null {
 	if (activeToken) {
 		return {
-			text: message.slice(0, activeToken.start) + message.slice(activeToken.end),
+			text:
+				message.slice(0, activeToken.start) + message.slice(activeToken.end),
 			cursor: activeToken.start,
 		};
 	}
@@ -1009,7 +1074,16 @@ function selectSkill(skill: SkillDiscoverySummary) {
 	pendingSkill = {
 		id: skill.id,
 		ownership: skill.ownership,
+		skillKind: skill.skillKind,
 		displayName: skill.displayName,
+		baseSkillId:
+			skill.skillKind === "skill_variant" && "baseSkillId" in skill
+				? skill.baseSkillId
+				: null,
+		baseSkillDisplayName:
+			skill.skillKind === "skill_variant" && "baseSkillDisplayName" in skill
+				? skill.baseSkillDisplayName
+				: null,
 	};
 	draftEmissionVersion += 1;
 	void emitDraftChange();
@@ -1106,7 +1180,9 @@ function closeCommandTrayOnOutsideInteraction(node: HTMLElement) {
 	};
 }
 
-function sourceOverlapsPendingAttachments(source: LinkedContextSource): boolean {
+function sourceOverlapsPendingAttachments(
+	source: LinkedContextSource,
+): boolean {
 	const attachmentIds = new Set<string>();
 	for (const attachment of pendingAttachments) {
 		attachmentIds.add(attachment.artifact.id);
@@ -1115,18 +1191,25 @@ function sourceOverlapsPendingAttachments(source: LinkedContextSource): boolean 
 		}
 	}
 	if (attachmentIds.size === 0) return false;
-	return [source.displayArtifactId, source.promptArtifactId, ...source.familyArtifactIds]
+	return [
+		source.displayArtifactId,
+		source.promptArtifactId,
+		...source.familyArtifactIds,
+	]
 		.filter((id): id is string => typeof id === "string" && id.length > 0)
 		.some((id) => attachmentIds.has(id));
 }
 
 function isPromptReadyLinkedSource(source: LinkedContextSource): boolean {
 	return (
-		typeof source.promptArtifactId === "string" && source.promptArtifactId.length > 0
+		typeof source.promptArtifactId === "string" &&
+		source.promptArtifactId.length > 0
 	);
 }
 
-function isPromptReadyKnowledgeDocument(document: KnowledgeDocumentItem): boolean {
+function isPromptReadyKnowledgeDocument(
+	document: KnowledgeDocumentItem,
+): boolean {
 	return (
 		document.normalizedAvailable &&
 		typeof document.promptArtifactId === "string" &&
@@ -1146,7 +1229,9 @@ async function openDocumentPicker(initialQuery = "") {
 	documentPickerError = "";
 	try {
 		const library = await fetchKnowledgeLibrary();
-		documentPickerDocuments = library.documents.filter(isPromptReadyKnowledgeDocument);
+		documentPickerDocuments = library.documents.filter(
+			isPromptReadyKnowledgeDocument,
+		);
 	} catch {
 		documentPickerError = $t("linkedSources.picker.error");
 	} finally {
@@ -1263,7 +1348,7 @@ async function uploadFiles(files: FileList | null) {
 }
 
 let pendingUploadCount = $state(0);
-let preparingTimer = $state<ReturnType<typeof setTimeout> | null>(null);
+let preparingTimer = $state<number | null>(null);
 
 function addUploadedAttachment(
 	result:
@@ -1371,7 +1456,11 @@ async function emitDraftChange(force = false) {
 			? {
 					id: pendingSkill.id,
 					ownership: pendingSkill.ownership,
+					skillKind: pendingSkill.skillKind,
 					displayName: pendingSkill.displayName,
+					baseSkillId: pendingSkill.baseSkillId ?? null,
+					baseSkillDisplayName: pendingSkill.baseSkillDisplayName ?? null,
+					unavailable: pendingSkill.unavailable === true,
 				}
 			: null;
 	const hasMeaningfulDraft =
@@ -1528,9 +1617,12 @@ async function emitDraftChange(force = false) {
 					<span class="pending-skill-chip__marker" aria-hidden="true"></span>
 					<span class="pending-skill-chip__copy">
 						<span class="pending-skill-chip__label">
-							{pendingSkill.ownership === 'system' ? $t('pendingSkill.system') : $t('pendingSkill.user')}
+							{$t(pendingSkillKindLabelKey(pendingSkill))}
 						</span>
 						<span class="pending-skill-chip__name">{pendingSkill.displayName}</span>
+						{#if pendingSkill.unavailable}
+							<span class="pending-skill-chip__status">{$t('pendingSkill.unavailable')}</span>
+						{/if}
 					</span>
 					<button
 						type="button"
@@ -1921,6 +2013,12 @@ async function emitDraftChange(force = false) {
 		text-overflow: ellipsis;
 		white-space: nowrap;
 		font-size: 0.78rem;
+		font-weight: 600;
+	}
+
+	.pending-skill-chip__status {
+		color: var(--danger);
+		font-size: 0.72rem;
 		font-weight: 600;
 	}
 

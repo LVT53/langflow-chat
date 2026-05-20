@@ -3,6 +3,7 @@ export interface ReconnectBuffer {
 	tokens: string[];
 	thinking: string[];
 	toolCalls: Array<{
+		callId?: string;
 		name: string;
 		input: Record<string, unknown>;
 		status: "running" | "done";
@@ -87,6 +88,7 @@ export function doReconnect(targetStreamId: string, deps: ReconnectDeps): void {
 				for (const toolCall of buffer.toolCalls) {
 					enqueueChunk(
 						`event: tool_call\ndata: ${JSON.stringify({
+							callId: toolCall.callId,
 							name: toolCall.name,
 							input: toolCall.input,
 							status: toolCall.status,

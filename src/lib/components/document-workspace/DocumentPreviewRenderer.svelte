@@ -123,12 +123,17 @@ $effect(() => {
 
 	const targetPage = Math.max(1, Math.min(currentPage, totalPages));
 	void tick().then(() => {
-		if (fileType !== "pptx" || !officePreviewRef || currentPage !== targetPage) {
+		if (
+			fileType !== "pptx" ||
+			!officePreviewRef ||
+			currentPage !== targetPage
+		) {
 			return;
 		}
-		const slide = officePreviewRef.querySelectorAll<HTMLElement>(".pptx-slide")[
-			targetPage - 1
-		];
+		const slide =
+			officePreviewRef.querySelectorAll<HTMLElement>(".pptx-slide")[
+				targetPage - 1
+			];
 		slide?.scrollIntoView?.({ behavior: "smooth", block: "start" });
 	});
 });
@@ -421,7 +426,10 @@ function buildStaticHtmlPreview(content: string): string {
 	return `<!doctype html><html><head><base target="_blank"><meta charset="utf-8">${styleBlock}</head><body>${safeHtml}</body></html>`;
 }
 
-function extractLocalStyleBlocks(content: string): { html: string; css: string } {
+function extractLocalStyleBlocks(content: string): {
+	html: string;
+	css: string;
+} {
 	let css = "";
 	const html = content.replace(
 		/<style\b[^>]*>([\s\S]*?)<\/style>/gi,
@@ -897,6 +905,80 @@ async function renderDocx(blob: Blob) {
 	}
 }
 
+type XlsxCellLike = {
+	value?: unknown;
+	text?: string;
+	formula?: string;
+	result?: unknown;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null;
+}
+
+function formatXlsxCellValue(value: unknown): string {
+	if (value == null) return "";
+	if (value instanceof Date) return value.toISOString().slice(0, 10);
+	if (typeof value === "string") return value;
+	if (
+		typeof value === "number" ||
+		typeof value === "boolean" ||
+		typeof value === "bigint"
+	) {
+		return String(value);
+	}
+	if (Array.isArray(value)) {
+		return value.map(formatXlsxCellValue).filter(Boolean).join(", ");
+	}
+	if (!isRecord(value)) {
+		return "";
+	}
+
+	if (Array.isArray(value.richText)) {
+		return value.richText
+			.map((part) =>
+				isRecord(part) && typeof part.text === "string" ? part.text : "",
+			)
+			.join("");
+	}
+	if (typeof value.text === "string") {
+		return value.text;
+	}
+	if (typeof value.error === "string") {
+		return value.error;
+	}
+	const formula = typeof value.formula === "string" ? value.formula : null;
+	const result = "result" in value ? value.result : null;
+	if (result != null) {
+		return formatXlsxCellValue(result);
+	}
+	if (formula) {
+		return `=${formula}`;
+	}
+	if (typeof value.hyperlink === "string") {
+		return value.hyperlink;
+	}
+
+	return "";
+}
+
+function formatXlsxCell(cell: XlsxCellLike): string {
+	if (
+		typeof cell.text === "string" &&
+		cell.text.trim() &&
+		cell.text !== "[object Object]"
+	) {
+		return cell.text;
+	}
+	if (cell.result != null) {
+		return formatXlsxCellValue(cell.result);
+	}
+	if (cell.formula) {
+		return `=${cell.formula}`;
+	}
+	return formatXlsxCellValue(cell.value);
+}
+
 async function renderXlsx(blob: Blob) {
 	try {
 		const ExcelJS = await import("exceljs");
@@ -907,12 +989,12 @@ async function renderXlsx(blob: Blob) {
 		let html = '<div class="xlsx-container">';
 		workbook.eachSheet((worksheet, sheetId) => {
 			const sheetName = worksheet.name || `Sheet ${sheetId}`;
-			html += `<div class="sheet"><h4>${sheetName}</h4><table class="xlsx-table">`;
+			html += `<div class="sheet"><h4>${escapeHtml(sheetName)}</h4><table class="xlsx-table">`;
 
 			worksheet.eachRow((row) => {
 				html += "<tr>";
 				row.eachCell((cell) => {
-					const value = cell.value ?? "";
+					const value = escapeHtml(formatXlsxCell(cell));
 					html += `<td>${value}</td>`;
 				});
 				html += "</tr>";

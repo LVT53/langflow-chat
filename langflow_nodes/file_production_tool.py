@@ -23,6 +23,7 @@ import hmac
 import json
 import os
 import time
+import uuid
 from typing import Any
 
 import requests
@@ -319,10 +320,12 @@ class FileProductionToolComponent(Component):
         if isinstance(payload_or_error, str):
             return Data(data={"success": False, "error": payload_or_error})
         payload = payload_or_error
+        call_id = f"produce_file:{uuid.uuid4().hex}"
 
         self._emit_tool_marker(
             "TOOL_START",
             {
+                "callId": call_id,
                 "name": "produce_file",
                 "input": {
                     "requestTitle": payload.get("requestTitle"),
@@ -345,6 +348,7 @@ class FileProductionToolComponent(Component):
             self._emit_tool_marker(
                 "TOOL_END",
                 {
+                    "callId": call_id,
                     "name": "produce_file",
                     "sourceType": "tool",
                     "outputSummary": summary,
@@ -366,6 +370,7 @@ class FileProductionToolComponent(Component):
         self._emit_tool_marker(
             "TOOL_END",
             {
+                "callId": call_id,
                 "name": "produce_file",
                 "sourceType": "tool",
                 "outputSummary": None,

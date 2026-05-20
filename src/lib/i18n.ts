@@ -278,32 +278,49 @@ const dictionary = {
 		"admin.campaigns.publishChecklist": "Publish checklist",
 		"admin.campaigns.noValidationErrors": "No backend validation errors.",
 		"admin.campaigns.validation.nameRequired": "Campaign name is required.",
-		"admin.campaigns.validation.typeInvalid": "Campaign type must be first-run onboarding or release update.",
-		"admin.campaigns.validation.releaseVersionRequired": "Release/update campaigns require a linked app version.",
-		"admin.campaigns.validation.slideRequired": "At least one slide is required.",
-		"admin.campaigns.validation.slideLayoutInvalid": "Slide layout must be setup or standard.",
-		"admin.campaigns.validation.semanticRoleInvalid": "Slide semantic role is invalid.",
-		"admin.campaigns.validation.sortOrderInvalid": "Slide order must use unique positive integers.",
-		"admin.campaigns.validation.localizedContentRequired": "Localized EN/HU title, body, and alt text are required.",
-		"admin.campaigns.validation.desktopAssetRequired": "Desktop crop asset is required.",
-		"admin.campaigns.validation.mobileAssetRequired": "Mobile crop asset is required.",
-		"admin.campaigns.validation.actionDestinationInvalid": "Action destination must be an allowlisted internal route.",
-		"admin.campaigns.validation.actionLabelsRequired": "Action labels are required in English and Hungarian when an action is configured.",
-		"admin.campaigns.validation.setupControlsPlacementInvalid": "Setup controls are only allowed on first-run setup slides.",
-		"admin.campaigns.validation.setupControlsUnsupported": "Setup controls include an unsupported preference control.",
-		"admin.campaigns.validation.setupSlideRequired": "First-run onboarding requires exactly one setup slide.",
-		"admin.campaigns.validation.dataDisclosureRequired": "First-run onboarding requires at least one data-disclosure standard slide.",
+		"admin.campaigns.validation.typeInvalid":
+			"Campaign type must be first-run onboarding or release update.",
+		"admin.campaigns.validation.releaseVersionRequired":
+			"Release/update campaigns require a linked app version.",
+		"admin.campaigns.validation.slideRequired":
+			"At least one slide is required.",
+		"admin.campaigns.validation.slideLayoutInvalid":
+			"Slide layout must be setup or standard.",
+		"admin.campaigns.validation.semanticRoleInvalid":
+			"Slide semantic role is invalid.",
+		"admin.campaigns.validation.sortOrderInvalid":
+			"Slide order must use unique positive integers.",
+		"admin.campaigns.validation.localizedContentRequired":
+			"Localized EN/HU title, body, and alt text are required.",
+		"admin.campaigns.validation.desktopAssetRequired":
+			"Desktop crop asset is required.",
+		"admin.campaigns.validation.mobileAssetRequired":
+			"Mobile crop asset is required.",
+		"admin.campaigns.validation.actionDestinationInvalid":
+			"Action destination must be an allowlisted internal route.",
+		"admin.campaigns.validation.actionLabelsRequired":
+			"Action labels are required in English and Hungarian when an action is configured.",
+		"admin.campaigns.validation.setupControlsPlacementInvalid":
+			"Setup controls are only allowed on first-run setup slides.",
+		"admin.campaigns.validation.setupControlsUnsupported":
+			"Setup controls include an unsupported preference control.",
+		"admin.campaigns.validation.setupSlideRequired":
+			"First-run onboarding requires exactly one setup slide.",
+		"admin.campaigns.validation.dataDisclosureRequired":
+			"First-run onboarding requires at least one data-disclosure standard slide.",
 		"admin.campaigns.saveDraft": "Save draft",
 		"admin.campaigns.duplicate": "Duplicate",
 		"admin.campaigns.deleteDraft": "Delete draft",
 		"admin.campaigns.archive": "Archive",
 		"admin.campaigns.publish": "Publish",
-		"admin.campaigns.deleteDraftConfirm": "Delete this draft campaign? This cannot be undone.",
+		"admin.campaigns.deleteDraftConfirm":
+			"Delete this draft campaign? This cannot be undone.",
 		"admin.campaigns.archiveConfirm": "Archive this campaign?",
 		"admin.campaigns.selectCampaign": "Select a campaign to edit.",
 		"admin.campaigns.previewLabel": "Campaign preview and history",
 		"admin.campaigns.preview": "Preview",
-		"admin.campaigns.previewNote": "Admin preview only. No analytics or user state is written.",
+		"admin.campaigns.previewNote":
+			"Admin preview only. No analytics or user state is written.",
 		"admin.campaigns.previewLanguage": "Preview language",
 		"admin.campaigns.history": "History",
 		"admin.campaigns.createdAt": "Created",
@@ -334,11 +351,32 @@ const dictionary = {
 		"admin.campaigns.errors.archive": "Failed to archive campaign.",
 		"admin.campaigns.errors.delete": "Failed to delete campaign draft.",
 		"admin.campaigns.errors.duplicate": "Failed to duplicate campaign.",
-		"admin.campaigns.errors.assetUpload": "Failed to upload campaign screenshot.",
+		"admin.campaigns.errors.assetUpload":
+			"Failed to upload campaign screenshot.",
 		"admin.campaigns.moveUpA11y": "Move {title} up",
 		"admin.campaigns.moveDownA11y": "Move {title} down",
 		"skills.title": "Private skills",
 		"skills.newSkill": "New skill",
+		"skills.kindTabs": "Skill type",
+		"skills.kind.userSkill": "User Skill",
+		"skills.kind.variant": "Skill Variant",
+		"skills.variant.new": "New variant",
+		"skills.variant.pack": "Skill Pack",
+		"skills.variant.packPlaceholder": "Choose a Skill Pack",
+		"skills.variant.packsLoading": "Loading Skill Packs...",
+		"skills.variant.noPacks": "No Skill Packs are available.",
+		"skills.variant.packUnavailable": "Selected Skill Pack is unavailable.",
+		"skills.variant.unknownPack": "Unavailable pack",
+		"skills.variant.basedOn": "Based on {name}",
+		"skills.variant.overlay": "Variant overlay guidance",
+		"skills.variant.overlayPlaceholder":
+			"What should this variant add or adapt?",
+		"skills.variant.inheritedPolicies":
+			"Inherits activation policy, source scope, and notes behavior from the selected Skill Pack.",
+		"skills.variant.inheritedPolicyCopy":
+			"Policy controls are inherited from the selected Skill Pack and cannot be edited on variants.",
+		"skills.variant.validation.packRequired": "Choose a Skill Pack.",
+		"skills.variant.deleteConfirm": "Delete variant {name}?",
 		"skills.disabled": "Skills are disabled by your workspace administrator.",
 		"skills.displayName": "Display name",
 		"skills.displayNamePlaceholder": "Meeting critic",
@@ -486,8 +524,7 @@ const dictionary = {
 			"Hide model 2 from the app and force fallbacks to model 1",
 		// Admin - Composer Command Registry
 		"admin.composerCommandRegistry": "Composer Command Registry",
-		"admin.composerCommandRegistryEnabled":
-			"Enable Composer Command Registry",
+		"admin.composerCommandRegistryEnabled": "Enable Composer Command Registry",
 		"admin.composerCommandRegistryDescription":
 			"Expose the Normal Chat command registry shell. Runtime skill behavior stays inactive until later slices are enabled.",
 		"admin.appVersion": "Application version",
@@ -504,7 +541,8 @@ const dictionary = {
 		"admin.systemSkills.editTitle": "Edit Skill",
 		"admin.systemSkills.displayNamePlaceholder": "Review partner",
 		"admin.systemSkills.descriptionPlaceholder": "Short purpose shown to users",
-		"admin.systemSkills.instructionsPlaceholder": "Admin-only instructions for this Skill",
+		"admin.systemSkills.instructionsPlaceholder":
+			"Admin-only instructions for this Skill",
 		"admin.systemSkills.published": "Published",
 		"admin.systemSkills.publish": "Publish",
 		"admin.systemSkills.publishA11y": "Publish {name}",
@@ -515,8 +553,7 @@ const dictionary = {
 		"admin.systemSkills.status.draft": "Draft",
 		"admin.systemSkills.errors.load": "Failed to load Skills.",
 		"admin.systemSkills.errors.save": "Failed to save Skill.",
-		"composerCommandRegistry.empty":
-			"Composer commands are not available yet.",
+		"composerCommandRegistry.empty": "Composer commands are not available yet.",
 		"composerCommandRegistry.disabled":
 			"Composer Command Registry is disabled.",
 		"composerCommands.trayLabel": "Composer commands",
@@ -532,13 +569,13 @@ const dictionary = {
 		"composerCommands.thinking.label": "Thinking",
 		"composerCommands.thinking.description": "Open thinking mode controls.",
 		"composerCommands.attach.label": "Attach file",
-		"composerCommands.attach.description": "Open the existing file attachment flow.",
+		"composerCommands.attach.description":
+			"Open the existing file attachment flow.",
 		"composerCommands.document.label": "Document",
 		"composerCommands.document.description":
 			"Link a Library document as context.",
 		"composerCommands.source.label": "Sources",
-		"composerCommands.source.description":
-			"Manage linked context sources.",
+		"composerCommands.source.description": "Manage linked context sources.",
 		"sourceManager.title": "Sources",
 		"sourceManager.description": "{count} linked source(s) selected.",
 		"sourceManager.close": "Close sources",
@@ -567,8 +604,14 @@ const dictionary = {
 		"linkedSources.promptReady": "ready for prompt context",
 		"pendingSkill.chipsLabel": "Pending skill",
 		"pendingSkill.removeA11y": "Remove pending skill {name}",
-		"pendingSkill.user": "Skill",
-		"pendingSkill.system": "Skill",
+		"pendingSkill.user": "User Skill",
+		"pendingSkill.pack": "Skill Pack",
+		"pendingSkill.system": "Skill Pack",
+		"pendingSkill.variant": "Skill Variant",
+		"pendingSkill.variantBasedOn": "Based on {name}",
+		"pendingSkill.unavailable": "Unavailable",
+		"pendingSkill.recoveryError":
+			"Selected skill is no longer available. Your message was restored so you can remove it or choose another skill.",
 		"pendingSkill.discoveryLoading": "Loading skills...",
 		"pendingSkill.discoveryError": "Failed to load skills.",
 		"skillSessions.panelLabel": "Skill session",
@@ -576,7 +619,8 @@ const dictionary = {
 		"skillSessions.status.active": "Active",
 		"skillSessions.status.paused": "Paused",
 		"skillSessions.status.ended": "Ended",
-		"skillSessions.expectedNextAction": "Expected next action: continue the chat with this skill active.",
+		"skillSessions.expectedNextAction":
+			"Expected next action: continue the chat with this skill active.",
 		"skillSessions.finish": "Mark done",
 		"skillSessions.dismiss": "Stop skill",
 		"skillSessions.errors.start": "Failed to start skill session.",
@@ -1537,7 +1581,8 @@ const dictionary = {
 		"sidebar.unorganizedDropArea": "Rendezetlen beszélgetések célterülete",
 		"sidebar.projectDropArea": "{name} projekt célterülete",
 		"sidebar.conversationOptions": "Beszélgetés beállításai",
-		"sidebar.forkIndicatorTooltip": "Elágazás innen: {title}, {sequence}. elágazás",
+		"sidebar.forkIndicatorTooltip":
+			"Elágazás innen: {title}, {sequence}. elágazás",
 		"sidebar.projectOptions": "Projekt beállításai",
 		"sidebar.newChatInProject": "Új beszélgetés",
 		"sidebar.createChatInProject": "Új beszélgetés létrehozása itt: {name}",
@@ -1687,8 +1732,10 @@ const dictionary = {
 		"campaignCrop.zoom": "Nagyítás",
 		"campaignCrop.reset": "Visszaállítás",
 		"campaignCrop.save": "Kivágás mentése",
-		"campaignCrop.prepareError": "A kampány képernyőkép kivágása nem készíthető elő.",
-		"campaignCrop.saveError": "A kampány képernyőkép kivágásának mentése sikertelen.",
+		"campaignCrop.prepareError":
+			"A kampány képernyőkép kivágása nem készíthető elő.",
+		"campaignCrop.saveError":
+			"A kampány képernyőkép kivágásának mentése sikertelen.",
 		"admin.campaigns.title": "Kampányok",
 		"admin.campaigns.description":
 			"Első indítási és kiadási kampánymodálok szerkesztése lokalizált szöveggel, képernyőképekkel, publikálási ellenőrzéssel és pontos felhasználói előnézettel.",
@@ -1738,21 +1785,35 @@ const dictionary = {
 		"admin.campaigns.publishChecklist": "Publikálási ellenőrzés",
 		"admin.campaigns.noValidationErrors": "Nincs backend validációs hiba.",
 		"admin.campaigns.validation.nameRequired": "A kampány neve kötelező.",
-		"admin.campaigns.validation.typeInvalid": "A kampány típusa csak első indítási vagy kiadási kampány lehet.",
-		"admin.campaigns.validation.releaseVersionRequired": "A kiadási kampányhoz kapcsolt appverzió szükséges.",
+		"admin.campaigns.validation.typeInvalid":
+			"A kampány típusa csak első indítási vagy kiadási kampány lehet.",
+		"admin.campaigns.validation.releaseVersionRequired":
+			"A kiadási kampányhoz kapcsolt appverzió szükséges.",
 		"admin.campaigns.validation.slideRequired": "Legalább egy dia szükséges.",
-		"admin.campaigns.validation.slideLayoutInvalid": "A dia elrendezése csak beállítás vagy általános lehet.",
-		"admin.campaigns.validation.semanticRoleInvalid": "A dia szemantikai szerepe érvénytelen.",
-		"admin.campaigns.validation.sortOrderInvalid": "A diasorrendnek egyedi pozitív egész számokat kell használnia.",
-		"admin.campaigns.validation.localizedContentRequired": "Az angol/magyar cím, törzsszöveg és képhelyettesítő szöveg kötelező.",
-		"admin.campaigns.validation.desktopAssetRequired": "Az asztali kivágott kép kötelező.",
-		"admin.campaigns.validation.mobileAssetRequired": "A mobil kivágott kép kötelező.",
-		"admin.campaigns.validation.actionDestinationInvalid": "A művelet célja csak engedélyezett belső útvonal lehet.",
-		"admin.campaigns.validation.actionLabelsRequired": "Beállított művelethez angol és magyar műveletcímke szükséges.",
-		"admin.campaigns.validation.setupControlsPlacementInvalid": "Beállítási vezérlők csak első indítási beállítási dián használhatók.",
-		"admin.campaigns.validation.setupControlsUnsupported": "A beállítási vezérlők között nem támogatott opció szerepel.",
-		"admin.campaigns.validation.setupSlideRequired": "Az első indítási kampányhoz pontosan egy beállítási dia szükséges.",
-		"admin.campaigns.validation.dataDisclosureRequired": "Az első indítási kampányhoz legalább egy adatkezelési általános dia szükséges.",
+		"admin.campaigns.validation.slideLayoutInvalid":
+			"A dia elrendezése csak beállítás vagy általános lehet.",
+		"admin.campaigns.validation.semanticRoleInvalid":
+			"A dia szemantikai szerepe érvénytelen.",
+		"admin.campaigns.validation.sortOrderInvalid":
+			"A diasorrendnek egyedi pozitív egész számokat kell használnia.",
+		"admin.campaigns.validation.localizedContentRequired":
+			"Az angol/magyar cím, törzsszöveg és képhelyettesítő szöveg kötelező.",
+		"admin.campaigns.validation.desktopAssetRequired":
+			"Az asztali kivágott kép kötelező.",
+		"admin.campaigns.validation.mobileAssetRequired":
+			"A mobil kivágott kép kötelező.",
+		"admin.campaigns.validation.actionDestinationInvalid":
+			"A művelet célja csak engedélyezett belső útvonal lehet.",
+		"admin.campaigns.validation.actionLabelsRequired":
+			"Beállított művelethez angol és magyar műveletcímke szükséges.",
+		"admin.campaigns.validation.setupControlsPlacementInvalid":
+			"Beállítási vezérlők csak első indítási beállítási dián használhatók.",
+		"admin.campaigns.validation.setupControlsUnsupported":
+			"A beállítási vezérlők között nem támogatott opció szerepel.",
+		"admin.campaigns.validation.setupSlideRequired":
+			"Az első indítási kampányhoz pontosan egy beállítási dia szükséges.",
+		"admin.campaigns.validation.dataDisclosureRequired":
+			"Az első indítási kampányhoz legalább egy adatkezelési általános dia szükséges.",
 		"admin.campaigns.saveDraft": "Piszkozat mentése",
 		"admin.campaigns.duplicate": "Duplikálás",
 		"admin.campaigns.deleteDraft": "Piszkozat törlése",
@@ -1782,7 +1843,8 @@ const dictionary = {
 		"admin.campaigns.messages.saved": "Kampánypiszkozat mentve.",
 		"admin.campaigns.messages.created": "Kampány létrehozva.",
 		"admin.campaigns.messages.seeded": "Első indítási kampány létrehozva.",
-		"admin.campaigns.messages.seedExists": "Az első indítási kampány már létezik.",
+		"admin.campaigns.messages.seedExists":
+			"Az első indítási kampány már létezik.",
 		"admin.campaigns.messages.published": "Kampány publikálva.",
 		"admin.campaigns.messages.archived": "Kampány archiválva.",
 		"admin.campaigns.messages.deleted": "Kampánypiszkozat törölve.",
@@ -1791,16 +1853,39 @@ const dictionary = {
 		"admin.campaigns.errors.detail": "A kampány betöltése sikertelen.",
 		"admin.campaigns.errors.save": "A kampány mentése sikertelen.",
 		"admin.campaigns.errors.create": "A kampány létrehozása sikertelen.",
-		"admin.campaigns.errors.seed": "Az első indítási kampány létrehozása sikertelen.",
+		"admin.campaigns.errors.seed":
+			"Az első indítási kampány létrehozása sikertelen.",
 		"admin.campaigns.errors.publish": "A kampány publikálása sikertelen.",
 		"admin.campaigns.errors.archive": "A kampány archiválása sikertelen.",
 		"admin.campaigns.errors.delete": "A kampánypiszkozat törlése sikertelen.",
 		"admin.campaigns.errors.duplicate": "A kampány duplikálása sikertelen.",
-		"admin.campaigns.errors.assetUpload": "A kampány képernyőkép feltöltése sikertelen.",
+		"admin.campaigns.errors.assetUpload":
+			"A kampány képernyőkép feltöltése sikertelen.",
 		"admin.campaigns.moveUpA11y": "{title} mozgatása fel",
 		"admin.campaigns.moveDownA11y": "{title} mozgatása le",
 		"skills.title": "Privát skillek",
 		"skills.newSkill": "Új skill",
+		"skills.kindTabs": "Skill típus",
+		"skills.kind.userSkill": "Felhasználói skill",
+		"skills.kind.variant": "Skill változat",
+		"skills.variant.new": "Új változat",
+		"skills.variant.pack": "Skill csomag",
+		"skills.variant.packPlaceholder": "Válassz skill csomagot",
+		"skills.variant.packsLoading": "Skill csomagok betöltése...",
+		"skills.variant.noPacks": "Nincs elérhető skill csomag.",
+		"skills.variant.packUnavailable":
+			"A kiválasztott skill csomag nem érhető el.",
+		"skills.variant.unknownPack": "Nem elérhető csomag",
+		"skills.variant.basedOn": "{name} alapján",
+		"skills.variant.overlay": "Változat kiegészítő útmutatása",
+		"skills.variant.overlayPlaceholder":
+			"Mit adjon hozzá vagy módosítson ez a változat?",
+		"skills.variant.inheritedPolicies":
+			"Az aktiválási szabályt, forráskört és jegyzetviselkedést a kiválasztott skill csomagtól örökli.",
+		"skills.variant.inheritedPolicyCopy":
+			"A szabályvezérlők a kiválasztott skill csomagtól öröklődnek, változatokon nem szerkeszthetők.",
+		"skills.variant.validation.packRequired": "Válassz skill csomagot.",
+		"skills.variant.deleteConfirm": "Törlöd ezt a változatot: {name}?",
 		"skills.disabled": "A skilleket a munkaterület rendszergazdája letiltotta.",
 		"skills.displayName": "Megjelenített név",
 		"skills.displayNamePlaceholder": "Értekezletkritikus",
@@ -1823,7 +1908,8 @@ const dictionary = {
 		"skills.sourceScope": "Forráskör",
 		"skills.source.currentConversation": "Aktuális beszélgetés",
 		"skills.source.selectedSourcesOnly": "Csak kijelölt források",
-		"skills.duplicateWarning": "Már létezik skill ezzel a megjelenített névvel.",
+		"skills.duplicateWarning":
+			"Már létezik skill ezzel a megjelenített névvel.",
 		"skills.validation.displayNameRequired": "A megjelenített név kötelező.",
 		"skills.validation.instructionsRequired": "Az utasítások kötelezők.",
 		"skills.created": "Skill mentve.",
@@ -1967,7 +2053,8 @@ const dictionary = {
 		"admin.systemSkills.createTitle": "Skill létrehozása",
 		"admin.systemSkills.editTitle": "Skill szerkesztése",
 		"admin.systemSkills.displayNamePlaceholder": "Review partner",
-		"admin.systemSkills.descriptionPlaceholder": "Felhasználóknak megjelenő rövid cél",
+		"admin.systemSkills.descriptionPlaceholder":
+			"Felhasználóknak megjelenő rövid cél",
 		"admin.systemSkills.instructionsPlaceholder":
 			"Csak adminoknak látható utasítások ehhez a skillhez",
 		"admin.systemSkills.published": "Közzétéve",
@@ -1980,8 +2067,7 @@ const dictionary = {
 		"admin.systemSkills.status.draft": "Vázlat",
 		"admin.systemSkills.errors.load": "Nem sikerült betölteni a skilleket.",
 		"admin.systemSkills.errors.save": "Nem sikerült menteni a skillt.",
-		"composerCommandRegistry.empty":
-			"A beviteli parancsok még nem érhetők el.",
+		"composerCommandRegistry.empty": "A beviteli parancsok még nem érhetők el.",
 		"composerCommandRegistry.disabled":
 			"A beviteli parancsregiszter le van tiltva.",
 		"composerCommands.trayLabel": "Beviteli parancsok",
@@ -2022,8 +2108,10 @@ const dictionary = {
 		"linkedSources.picker.results": "Könyvtári dokumentumok",
 		"linkedSources.picker.loading": "Dokumentumok betöltése...",
 		"linkedSources.picker.empty": "Még nincsenek könyvtári dokumentumok.",
-		"linkedSources.picker.noMatches": "Nincs a keresésnek megfelelő dokumentum.",
-		"linkedSources.picker.error": "Nem sikerült betölteni a könyvtári dokumentumokat.",
+		"linkedSources.picker.noMatches":
+			"Nincs a keresésnek megfelelő dokumentum.",
+		"linkedSources.picker.error":
+			"Nem sikerült betölteni a könyvtári dokumentumokat.",
 		"linkedSources.picker.apply": "Kijelölt dokumentumok kapcsolása",
 		"linkedSources.selectedList": "Kijelölt kapcsolt dokumentumok",
 		"linkedSources.chipsLabel": "Kapcsolt kontextusforrások",
@@ -2034,8 +2122,14 @@ const dictionary = {
 		"linkedSources.promptReady": "beemelhető a promptkontextusba",
 		"pendingSkill.chipsLabel": "Függőben lévő skill",
 		"pendingSkill.removeA11y": "Függőben lévő skill eltávolítása: {name}",
-		"pendingSkill.user": "Skill",
-		"pendingSkill.system": "Skill",
+		"pendingSkill.user": "Felhasználói skill",
+		"pendingSkill.pack": "Skill csomag",
+		"pendingSkill.system": "Skill csomag",
+		"pendingSkill.variant": "Skill változat",
+		"pendingSkill.variantBasedOn": "{name} alapján",
+		"pendingSkill.unavailable": "Nem érhető el",
+		"pendingSkill.recoveryError":
+			"A kiválasztott skill már nem érhető el. Az üzenetet visszaállítottuk, így eltávolíthatod vagy másik skillt választhatsz.",
 		"pendingSkill.discoveryLoading": "Skillek betöltése...",
 		"pendingSkill.discoveryError": "Nem sikerült betölteni a skilleket.",
 		"skillSessions.panelLabel": "Skill munkamenet",
@@ -2043,10 +2137,12 @@ const dictionary = {
 		"skillSessions.status.active": "Aktív",
 		"skillSessions.status.paused": "Szüneteltetve",
 		"skillSessions.status.ended": "Lezárva",
-		"skillSessions.expectedNextAction": "Várt következő lépés: folytasd a chatet ezzel az aktív skillel.",
+		"skillSessions.expectedNextAction":
+			"Várt következő lépés: folytasd a chatet ezzel az aktív skillel.",
 		"skillSessions.finish": "Késznek jelölés",
 		"skillSessions.dismiss": "Skill leállítása",
-		"skillSessions.errors.start": "Nem sikerült elindítani a skill munkamenetet.",
+		"skillSessions.errors.start":
+			"Nem sikerült elindítani a skill munkamenetet.",
 		"skillSessions.errors.end": "Nem sikerült lezárni a skill munkamenetet.",
 		"skillSessions.errors.activeConflict":
 			"Jelöld késznek vagy állítsd le az aktív skillt, mielőtt másikat indítasz.",
@@ -2055,7 +2151,8 @@ const dictionary = {
 		"skillSessions.milestones.ended": "Skill munkamenet lezárva.",
 		"skillSessions.milestones.dismissed": "Skill munkamenet elvetve.",
 		"skillSessions.milestones.unavailable": "A skill már nem elérhető.",
-		"skillSessions.milestones.failedNote": "A skill jegyzet frissítése sikertelen.",
+		"skillSessions.milestones.failedNote":
+			"A skill jegyzet frissítése sikertelen.",
 		"skillSessions.noteFailure": "A jegyzet frissítése sikertelen",
 		"skillSessions.noteFailureFallback": "A jegyzetet nem sikerült frissíteni.",
 		"skillDrafts.cardLabel": "Skill vázlat: {name}",
@@ -2096,9 +2193,11 @@ const dictionary = {
 		"composerCommands.skillDiscovery.description":
 			"A skill felfedezés egy későbbi szelet számára van fenntartva.",
 		"composerCommands.settings.label": "Beállítások",
-		"composerCommands.settings.description": "Megnyitja az alkalmazás beállításait.",
+		"composerCommands.settings.description":
+			"Megnyitja az alkalmazás beállításait.",
 		"composerCommands.clear.label": "Törlés",
-		"composerCommands.clear.description": "Törli az aktuális beviteli piszkozatot.",
+		"composerCommands.clear.description":
+			"Törli az aktuális beviteli piszkozatot.",
 		"composerCommands.clear.confirm":
 			"Törlöd az aktuális piszkozatot és a függőben lévő beviteli kijelöléseket?",
 		"composerCommands.research.label": "Mély kutatás",
@@ -2986,7 +3085,7 @@ export type I18nKey = keyof typeof dictionary.en;
 export const t = derived(uiLanguage, ($uiLanguage) => {
 	const lang = dictionary[$uiLanguage] ?? dictionary.en;
 	return (key: I18nKey, params?: Record<string, string | number>) => {
-		let value = lang[key] ?? dictionary.en[key] ?? key;
+		let value: string = lang[key] ?? dictionary.en[key] ?? key;
 		for (const [name, replacement] of Object.entries(params ?? {})) {
 			value = value.replaceAll(`{${name}}`, String(replacement));
 		}

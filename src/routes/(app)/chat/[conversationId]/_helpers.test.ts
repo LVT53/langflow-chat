@@ -1,29 +1,40 @@
-import { describe, expect, it } from 'vitest';
-import type { I18nKey } from '$lib/i18n';
+import { describe, expect, it } from "vitest";
+import type { I18nKey } from "$lib/i18n";
+import type {
+	ChatMessage,
+	DeepResearchJob,
+	FileProductionJob,
+	SkillDraftProposal,
+} from "$lib/types";
 import {
 	applyToolCallUpdateToMessageList,
 	attachUnassignedFileProductionJobsToAssistant,
 	cloneSendPayload,
 	createAssistantPlaceholder,
+	finalizeStreamingMessageList,
 	getWorkspacePresentationAfterDocumentOpen,
 	hasActiveDeepResearchJobs,
 	hasActiveFileProductionJobs,
 	isConversationReadOnly,
+	isPendingSkillUnavailableError,
+	markPendingSkillUnavailable,
 	mergeDeepResearchJobsForHydration,
-	shouldStartDeepResearchJob,
-	shouldDeleteConversationAfterCancellingDeepResearch,
 	mergeFileProductionJob,
 	patchSkillDraftInMessageList,
+	shouldDeleteConversationAfterCancellingDeepResearch,
 	shouldHydrateFileProductionJobsOnToolCall,
+	shouldStartDeepResearchJob,
 	toFriendlySendError,
-} from './_helpers';
-import type { ChatMessage, DeepResearchJob, FileProductionJob, SkillDraftProposal } from '$lib/types';
+} from "./_helpers";
 
-function makeJob(id: string, status: FileProductionJob['status']): FileProductionJob {
+function makeJob(
+	id: string,
+	status: FileProductionJob["status"],
+): FileProductionJob {
 	return {
 		id,
-		conversationId: 'conv-1',
-		assistantMessageId: 'assistant-1',
+		conversationId: "conv-1",
+		assistantMessageId: "assistant-1",
 		title: id,
 		status,
 		stage: null,
@@ -37,21 +48,23 @@ function makeJob(id: string, status: FileProductionJob['status']): FileProductio
 
 function makeUnassignedJob(
 	id: string,
-	overrides: Partial<FileProductionJob> = {}
+	overrides: Partial<FileProductionJob> = {},
 ): FileProductionJob {
 	return {
-		...makeJob(id, 'succeeded'),
+		...makeJob(id, "succeeded"),
 		assistantMessageId: null,
 		...overrides,
 	};
 }
 
-function makeDeepResearchJob(status: DeepResearchJob['status']): DeepResearchJob {
+function makeDeepResearchJob(
+	status: DeepResearchJob["status"],
+): DeepResearchJob {
 	return {
 		id: `research-${status}`,
-		conversationId: 'conv-1',
-		triggerMessageId: 'user-1',
-		depth: 'standard',
+		conversationId: "conv-1",
+		triggerMessageId: "user-1",
+		depth: "standard",
 		status,
 		stage: status,
 		title: `${status} research`,
@@ -59,23 +72,23 @@ function makeDeepResearchJob(status: DeepResearchJob['status']): DeepResearchJob
 		createdAt: 1,
 		updatedAt: 1,
 		completedAt: null,
-		cancelledAt: status === 'cancelled' ? 2 : null,
+		cancelledAt: status === "cancelled" ? 2 : null,
 	};
 }
 
 function makeHydrationDeepResearchJob(
 	id: string,
-	overrides: Partial<DeepResearchJob> = {}
+	overrides: Partial<DeepResearchJob> = {},
 ): DeepResearchJob {
 	return {
 		id,
-		conversationId: 'conv-1',
-		triggerMessageId: 'user-1',
-		depth: 'standard',
-		status: 'awaiting_plan',
-		stage: 'plan_generation',
+		conversationId: "conv-1",
+		triggerMessageId: "user-1",
+		depth: "standard",
+		status: "awaiting_plan",
+		stage: "plan_generation",
 		title: id,
-		userRequest: 'Research battery recycling',
+		userRequest: "Research battery recycling",
 		createdAt: 1,
 		updatedAt: 1,
 		completedAt: null,
@@ -84,117 +97,165 @@ function makeHydrationDeepResearchJob(
 	};
 }
 
-describe('toFriendlySendError', () => {
+describe("toFriendlySendError", () => {
 	const translate = (key: I18nKey) => `translated:${key}`;
 
-	it('uses localized messages for known stream error codes', () => {
-		const error = new Error('Stream error') as Error & { code?: string };
-		error.code = 'timeout';
+	it("uses localized messages for known stream error codes", () => {
+		const error = new Error("Stream error") as Error & { code?: string };
+		error.code = "timeout";
 
-		expect(toFriendlySendError(error, translate)).toBe('translated:chat.error.timeout');
-	});
-
-	it('maps unknown generation failures to the descriptive backend message', () => {
-		expect(toFriendlySendError(new Error('Langflow down'), translate)).toBe(
-			'translated:chat.error.backend'
+		expect(toFriendlySendError(error, translate)).toBe(
+			"translated:chat.error.timeout",
 		);
 	});
 
-	it('maps missing linked source preflight failures to a specific localized message', () => {
-		const error = new Error('Linked source is no longer available') as Error & { code?: string };
-		error.code = 'linked_source_not_found';
+	it("maps unknown generation failures to the descriptive backend message", () => {
+		expect(toFriendlySendError(new Error("Langflow down"), translate)).toBe(
+			"translated:chat.error.backend",
+		);
+	});
 
-		expect(toFriendlySendError(error, translate)).toBe('translated:chat.error.linkedSourceNotFound');
+	it("maps missing linked source preflight failures to a specific localized message", () => {
+		const error = new Error("Linked source is no longer available") as Error & {
+			code?: string;
+		};
+		error.code = "linked_source_not_found";
+
+		expect(toFriendlySendError(error, translate)).toBe(
+			"translated:chat.error.linkedSourceNotFound",
+		);
 	});
 });
 
-describe('workspace presentation helpers', () => {
-	it('defaults new document opens to the docked workspace from chat rows and cards', () => {
-		expect(getWorkspacePresentationAfterDocumentOpen('expanded')).toBe('docked');
+describe("workspace presentation helpers", () => {
+	it("defaults new document opens to the docked workspace from chat rows and cards", () => {
+		expect(getWorkspacePresentationAfterDocumentOpen("expanded")).toBe(
+			"docked",
+		);
 	});
 
-	it('preserves expanded presentation for document opens initiated inside the workspace', () => {
+	it("preserves expanded presentation for document opens initiated inside the workspace", () => {
 		expect(
-			getWorkspacePresentationAfterDocumentOpen('expanded', {
+			getWorkspacePresentationAfterDocumentOpen("expanded", {
 				preservePresentation: true,
-			})
-		).toBe('expanded');
+			}),
+		).toBe("expanded");
 	});
 });
 
-describe('send payload helpers', () => {
-	it('preserves Deep Research depth when cloning queued turns', () => {
-		const cloned = cloneSendPayload({
-			message: 'Research battery recycling',
+describe("send payload helpers", () => {
+	it("marks stale pending skills unavailable while preserving the draft payload", () => {
+		const error = new Error(
+			"Selected skill is no longer available.",
+		) as Error & { code?: string };
+		error.code = "pending_skill_unavailable";
+		const payload = markPendingSkillUnavailable({
+			message: "Use this",
 			attachmentIds: [],
 			attachments: [],
 			pendingAttachments: [],
-			conversationId: 'conv-1',
-			deepResearchDepth: 'focused',
+			pendingSkill: {
+				id: "variant-1",
+				ownership: "user",
+				skillKind: "skill_variant",
+				displayName: "Pack variant",
+				baseSkillId: "system:pack",
+				baseSkillDisplayName: "Pack",
+			},
+		});
+
+		expect(isPendingSkillUnavailableError(error)).toBe(true);
+		expect(payload).toEqual(
+			expect.objectContaining({
+				message: "Use this",
+				pendingSkill: expect.objectContaining({
+					id: "variant-1",
+					skillKind: "skill_variant",
+					baseSkillDisplayName: "Pack",
+					unavailable: true,
+				}),
+			}),
+		);
+	});
+
+	it("preserves Deep Research depth when cloning queued turns", () => {
+		const cloned = cloneSendPayload({
+			message: "Research battery recycling",
+			attachmentIds: [],
+			attachments: [],
+			pendingAttachments: [],
+			conversationId: "conv-1",
+			deepResearchDepth: "focused",
 		});
 
 		expect(cloned).toEqual(
 			expect.objectContaining({
-				message: 'Research battery recycling',
-				deepResearchDepth: 'focused',
-			})
+				message: "Research battery recycling",
+				deepResearchDepth: "focused",
+			}),
 		);
 	});
 
-	it('routes composer-selected Deep Research through the job-start path', () => {
+	it("routes composer-selected Deep Research through the job-start path", () => {
 		const payload = {
-			message: 'Research battery recycling',
+			message: "Research battery recycling",
 			attachmentIds: [],
 			attachments: [],
 			pendingAttachments: [],
-			conversationId: 'conv-1',
-			deepResearchDepth: 'focused' as const,
+			conversationId: "conv-1",
+			deepResearchDepth: "focused" as const,
 		};
 
 		expect(shouldStartDeepResearchJob(payload)).toBe(true);
-		expect(shouldStartDeepResearchJob({ ...payload, deepResearchDepth: null })).toBe(false);
-		expect(shouldStartDeepResearchJob(payload, 'assistant-retry-1')).toBe(false);
+		expect(
+			shouldStartDeepResearchJob({ ...payload, deepResearchDepth: null }),
+		).toBe(false);
+		expect(shouldStartDeepResearchJob(payload, "assistant-retry-1")).toBe(
+			false,
+		);
 	});
 });
 
-describe('Skill Draft message helpers', () => {
-	function makeSkillDraft(overrides: Partial<SkillDraftProposal> = {}): SkillDraftProposal {
+describe("Skill Draft message helpers", () => {
+	function makeSkillDraft(
+		overrides: Partial<SkillDraftProposal> = {},
+	): SkillDraftProposal {
 		return {
-			id: 'draft-1',
-			status: 'proposed',
-			displayName: 'Meeting critic',
-			description: 'Review meeting notes.',
-			instructions: 'Find missing owners.',
+			id: "draft-1",
+			status: "proposed",
+			displayName: "Meeting critic",
+			description: "Review meeting notes.",
+			instructions: "Find missing owners.",
 			activationExamples: [],
-			durationPolicy: 'next_message',
-			questionPolicy: 'none',
-			notesPolicy: 'none',
-			sourceScope: 'selected_sources_only',
+			durationPolicy: "next_message",
+			questionPolicy: "none",
+			notesPolicy: "none",
+			sourceScope: "selected_sources_only",
 			...overrides,
 		};
 	}
 
-	it('patches the matching assistant Skill Draft without replacing unrelated messages', () => {
+	it("patches the matching assistant Skill Draft without replacing unrelated messages", () => {
 		const userMessage: ChatMessage = {
-			id: 'user-1',
-			role: 'user',
-			content: 'Review this.',
+			id: "user-1",
+			role: "user",
+			content: "Review this.",
 			timestamp: 1,
 		};
 		const assistantMessage: ChatMessage = {
-			id: 'assistant-1',
-			role: 'assistant',
-			content: 'I can make this reusable.',
+			id: "assistant-1",
+			role: "assistant",
+			content: "I can make this reusable.",
 			timestamp: 2,
 			skillDrafts: [makeSkillDraft()],
 		};
-		const updatedDraft = makeSkillDraft({ status: 'saved' });
+		const updatedDraft = makeSkillDraft({ status: "saved" });
 
 		expect(
 			patchSkillDraftInMessageList([userMessage, assistantMessage], {
-				messageId: 'assistant-1',
+				messageId: "assistant-1",
 				draft: updatedDraft,
-			})
+			}),
 		).toEqual([
 			userMessage,
 			{
@@ -204,28 +265,28 @@ describe('Skill Draft message helpers', () => {
 		]);
 	});
 
-	it('does not patch a same-id draft on a different assistant message', () => {
+	it("does not patch a same-id draft on a different assistant message", () => {
 		const firstMessage: ChatMessage = {
-			id: 'assistant-1',
-			role: 'assistant',
-			content: 'First',
+			id: "assistant-1",
+			role: "assistant",
+			content: "First",
 			timestamp: 1,
 			skillDrafts: [makeSkillDraft()],
 		};
 		const secondMessage: ChatMessage = {
-			id: 'assistant-2',
-			role: 'assistant',
-			content: 'Second',
+			id: "assistant-2",
+			role: "assistant",
+			content: "Second",
 			timestamp: 2,
 			skillDrafts: [makeSkillDraft()],
 		};
-		const updatedDraft = makeSkillDraft({ status: 'dismissed' });
+		const updatedDraft = makeSkillDraft({ status: "dismissed" });
 
 		expect(
 			patchSkillDraftInMessageList([firstMessage, secondMessage], {
-				messageId: 'assistant-2',
+				messageId: "assistant-2",
 				draft: updatedDraft,
-			})
+			}),
 		).toEqual([
 			firstMessage,
 			{
@@ -236,218 +297,310 @@ describe('Skill Draft message helpers', () => {
 	});
 });
 
-describe('Deep Research cancellation helpers', () => {
-	it('deletes a brand-new unstarted Deep Research conversation after cancellation', () => {
+describe("Deep Research cancellation helpers", () => {
+	it("deletes a brand-new unstarted Deep Research conversation after cancellation", () => {
 		expect(
 			shouldDeleteConversationAfterCancellingDeepResearch({
-				jobBeforeCancel: makeDeepResearchJob('awaiting_approval'),
+				jobBeforeCancel: makeDeepResearchJob("awaiting_approval"),
 				messageCount: 1,
 				deepResearchJobCount: 1,
-			})
+			}),
 		).toBe(true);
 	});
 
-	it('keeps conversations with started research or prior chat history', () => {
+	it("keeps conversations with started research or prior chat history", () => {
 		expect(
 			shouldDeleteConversationAfterCancellingDeepResearch({
-				jobBeforeCancel: makeDeepResearchJob('running'),
+				jobBeforeCancel: makeDeepResearchJob("running"),
 				messageCount: 1,
 				deepResearchJobCount: 1,
-			})
+			}),
 		).toBe(false);
 		expect(
 			shouldDeleteConversationAfterCancellingDeepResearch({
-				jobBeforeCancel: makeDeepResearchJob('awaiting_approval'),
+				jobBeforeCancel: makeDeepResearchJob("awaiting_approval"),
 				messageCount: 2,
 				deepResearchJobCount: 1,
-			})
+			}),
 		).toBe(false);
 		expect(
 			shouldDeleteConversationAfterCancellingDeepResearch({
-				jobBeforeCancel: makeDeepResearchJob('awaiting_approval'),
+				jobBeforeCancel: makeDeepResearchJob("awaiting_approval"),
 				messageCount: 1,
 				deepResearchJobCount: 2,
-			})
+			}),
 		).toBe(false);
 	});
 });
 
-describe('Deep Research hydration helpers', () => {
-	it('preserves an optimistic planning card when a stale hydration payload has no jobs yet', () => {
-		const optimisticJob = makeHydrationDeepResearchJob('pending-deep-research-1');
+describe("Deep Research hydration helpers", () => {
+	it("preserves an optimistic planning card when a stale hydration payload has no jobs yet", () => {
+		const optimisticJob = makeHydrationDeepResearchJob(
+			"pending-deep-research-1",
+		);
 
 		expect(mergeDeepResearchJobsForHydration([optimisticJob], [])).toEqual([
 			optimisticJob,
 		]);
 	});
 
-	it('preserves an active server job when a stale hydration payload temporarily misses it', () => {
-		const activeJob = makeHydrationDeepResearchJob('research-1', {
-			status: 'awaiting_plan',
+	it("preserves an active server job when a stale hydration payload temporarily misses it", () => {
+		const activeJob = makeHydrationDeepResearchJob("research-1", {
+			status: "awaiting_plan",
 		});
 
-		expect(mergeDeepResearchJobsForHydration([activeJob], [])).toEqual([activeJob]);
+		expect(mergeDeepResearchJobsForHydration([activeJob], [])).toEqual([
+			activeJob,
+		]);
 	});
 
-	it('does not preserve completed local jobs that are absent from the hydrated payload', () => {
-		const completedJob = makeHydrationDeepResearchJob('research-1', {
-			status: 'completed',
-			stage: 'report_ready',
-			reportArtifactId: 'artifact-1',
+	it("does not preserve completed local jobs that are absent from the hydrated payload", () => {
+		const completedJob = makeHydrationDeepResearchJob("research-1", {
+			status: "completed",
+			stage: "report_ready",
+			reportArtifactId: "artifact-1",
 			completedAt: 2,
 		});
 
 		expect(mergeDeepResearchJobsForHydration([completedJob], [])).toEqual([]);
 	});
 
-	it('replaces an optimistic equivalent once the server job is present', () => {
-		const optimisticJob = makeHydrationDeepResearchJob('pending-deep-research-1');
-		const serverJob = makeHydrationDeepResearchJob('research-1', {
-			triggerMessageId: 'server-user-1',
-			status: 'awaiting_approval',
-			stage: 'plan_drafted',
+	it("replaces an optimistic equivalent once the server job is present", () => {
+		const optimisticJob = makeHydrationDeepResearchJob(
+			"pending-deep-research-1",
+		);
+		const serverJob = makeHydrationDeepResearchJob("research-1", {
+			triggerMessageId: "server-user-1",
+			status: "awaiting_approval",
+			stage: "plan_drafted",
 		});
 
-		expect(mergeDeepResearchJobsForHydration([optimisticJob], [serverJob])).toEqual([
-			serverJob,
-		]);
+		expect(
+			mergeDeepResearchJobsForHydration([optimisticJob], [serverJob]),
+		).toEqual([serverJob]);
 	});
 });
 
-describe('conversation read-only helpers', () => {
-	it('treats sealed conversations as read-only for chat input', () => {
-		expect(isConversationReadOnly({ status: 'sealed' })).toBe(true);
-		expect(isConversationReadOnly({ status: 'open' })).toBe(false);
+describe("conversation read-only helpers", () => {
+	it("treats sealed conversations as read-only for chat input", () => {
+		expect(isConversationReadOnly({ status: "sealed" })).toBe(true);
+		expect(isConversationReadOnly({ status: "open" })).toBe(false);
 		expect(isConversationReadOnly({ status: undefined })).toBe(false);
 	});
 
-	it('does not infer read-only mode from cancelled or failed Deep Research jobs', () => {
-		const jobs = [makeDeepResearchJob('cancelled'), makeDeepResearchJob('failed')];
+	it("does not infer read-only mode from cancelled or failed Deep Research jobs", () => {
+		const jobs = [
+			makeDeepResearchJob("cancelled"),
+			makeDeepResearchJob("failed"),
+		];
 
-		expect(isConversationReadOnly({ status: 'open' }, jobs)).toBe(false);
+		expect(isConversationReadOnly({ status: "open" }, jobs)).toBe(false);
 	});
 });
 
-describe('file production chat helpers', () => {
-	it('detects only queued and running jobs as active polling candidates', () => {
-		expect(hasActiveFileProductionJobs([makeJob('queued', 'queued')])).toBe(true);
-		expect(hasActiveFileProductionJobs([makeJob('running', 'running')])).toBe(true);
+describe("file production chat helpers", () => {
+	it("detects only queued and running jobs as active polling candidates", () => {
+		expect(hasActiveFileProductionJobs([makeJob("queued", "queued")])).toBe(
+			true,
+		);
+		expect(hasActiveFileProductionJobs([makeJob("running", "running")])).toBe(
+			true,
+		);
 		expect(
 			hasActiveFileProductionJobs([
-				makeJob('succeeded', 'succeeded'),
-				makeJob('failed', 'failed'),
-				makeJob('cancelled', 'cancelled'),
-			])
+				makeJob("succeeded", "succeeded"),
+				makeJob("failed", "failed"),
+				makeJob("cancelled", "cancelled"),
+			]),
 		).toBe(false);
 	});
 
-	it('merges an updated job into the existing chat state without duplicating cards', () => {
-		const current = [makeJob('job-1', 'running'), makeJob('job-2', 'queued')];
+	it("merges an updated job into the existing chat state without duplicating cards", () => {
+		const current = [makeJob("job-1", "running"), makeJob("job-2", "queued")];
 		const merged = mergeFileProductionJob(current, {
-			...makeJob('job-1', 'failed'),
+			...makeJob("job-1", "failed"),
 			error: {
-				code: 'renderer_timeout',
-				message: 'Renderer timed out.',
+				code: "renderer_timeout",
+				message: "Renderer timed out.",
 				retryable: true,
 			},
 		});
 
 		expect(merged).toHaveLength(2);
 		expect(merged[0]).toMatchObject({
-			id: 'job-1',
-			status: 'failed',
+			id: "job-1",
+			status: "failed",
 			error: {
-				code: 'renderer_timeout',
+				code: "renderer_timeout",
 			},
 		});
-		expect(merged[1].id).toBe('job-2');
+		expect(merged[1].id).toBe("job-2");
 	});
 
-	it('hydrates file-production jobs once the produce_file tool call has created a job', () => {
-		expect(shouldHydrateFileProductionJobsOnToolCall('produce_file', 'done')).toBe(true);
-		expect(shouldHydrateFileProductionJobsOnToolCall('file_production', 'done')).toBe(true);
-		expect(shouldHydrateFileProductionJobsOnToolCall('produce_file', 'running')).toBe(false);
-		expect(shouldHydrateFileProductionJobsOnToolCall('web_search', 'done')).toBe(false);
+	it("hydrates file-production jobs once the produce_file tool call has created a job", () => {
+		expect(
+			shouldHydrateFileProductionJobsOnToolCall("produce_file", "done"),
+		).toBe(true);
+		expect(
+			shouldHydrateFileProductionJobsOnToolCall("file_production", "done"),
+		).toBe(true);
+		expect(
+			shouldHydrateFileProductionJobsOnToolCall("produce_file", "running"),
+		).toBe(false);
+		expect(
+			shouldHydrateFileProductionJobsOnToolCall("web_search", "done"),
+		).toBe(false);
 	});
 
-	it('keeps produce_file events out of visible thinking segments', () => {
-		const list = [createAssistantPlaceholder('assistant-1')];
+	it("keeps produce_file events out of visible thinking segments", () => {
+		const list = [createAssistantPlaceholder("assistant-1")];
 		const running = applyToolCallUpdateToMessageList(list, {
-			placeholderId: 'assistant-1',
-			name: 'produce_file',
-			input: { requestTitle: 'Quarterly report' },
-			status: 'running',
+			placeholderId: "assistant-1",
+			name: "produce_file",
+			input: { requestTitle: "Quarterly report" },
+			status: "running",
 		});
 		const done = applyToolCallUpdateToMessageList(running, {
-			placeholderId: 'assistant-1',
-			name: 'produce_file',
+			placeholderId: "assistant-1",
+			name: "produce_file",
 			input: {},
-			status: 'done',
+			status: "done",
 		});
 
 		expect(done[0].thinkingSegments).toBeUndefined();
 	});
 
-	it('keeps non-file tool calls visible in thinking segments', () => {
-		const list = [createAssistantPlaceholder('assistant-1')];
+	it("keeps non-file tool calls visible in thinking segments", () => {
+		const list = [createAssistantPlaceholder("assistant-1")];
 		const updated = applyToolCallUpdateToMessageList(list, {
-			placeholderId: 'assistant-1',
-			name: 'web_search',
-			input: { query: 'Svelte docs' },
-			status: 'running',
+			placeholderId: "assistant-1",
+			name: "web_search",
+			input: { query: "Svelte docs" },
+			status: "running",
 		});
 
 		expect(updated[0].thinkingSegments).toEqual([
 			{
-				type: 'tool_call',
-				name: 'web_search',
-				input: { query: 'Svelte docs' },
-				status: 'running',
+				type: "tool_call",
+				name: "web_search",
+				input: { query: "Svelte docs" },
+				status: "running",
 			},
 		]);
 	});
 
-	it('keeps newly produced files attached when the streaming placeholder becomes the server assistant message', () => {
+	it("coalesces duplicate running tool-call updates with the same call id", () => {
+		const list = [createAssistantPlaceholder("assistant-1")];
+		const firstRunning = applyToolCallUpdateToMessageList(list, {
+			placeholderId: "assistant-1",
+			name: "research_web",
+			input: { query: "SvelteKit streaming docs" },
+			status: "running",
+			details: { callId: "tool-call-1" },
+		});
+		const duplicateRunning = applyToolCallUpdateToMessageList(firstRunning, {
+			placeholderId: "assistant-1",
+			name: "research_web",
+			input: { query: "SvelteKit streaming docs" },
+			status: "running",
+			details: { callId: "tool-call-1" },
+		});
+		const done = applyToolCallUpdateToMessageList(duplicateRunning, {
+			placeholderId: "assistant-1",
+			name: "research_web",
+			input: {},
+			status: "done",
+			details: {
+				callId: "tool-call-1",
+				sourceType: "web",
+				outputSummary: "Found sources",
+			},
+		});
+
+		expect(done[0].thinkingSegments).toEqual([
+			expect.objectContaining({
+				callId: "tool-call-1",
+				type: "tool_call",
+				name: "research_web",
+				status: "done",
+				outputSummary: "Found sources",
+			}),
+		]);
+	});
+
+	it("closes stale running tool rows when the stream finalizes", () => {
+		const list = [createAssistantPlaceholder("assistant-1")];
+		const running = applyToolCallUpdateToMessageList(list, {
+			placeholderId: "assistant-1",
+			name: "research_web",
+			input: { query: "SvelteKit streaming docs" },
+			status: "running",
+		});
+
+		const finalized = finalizeStreamingMessageList(running, {
+			placeholderId: "assistant-1",
+			clientUserMessageId: null,
+			metadata: { assistantMessageId: "server-assistant-1" },
+		});
+
+		expect(finalized[0].thinkingSegments).toEqual([
+			expect.objectContaining({
+				type: "tool_call",
+				name: "research_web",
+				status: "done",
+			}),
+		]);
+	});
+
+	it("keeps newly produced files attached when the streaming placeholder becomes the server assistant message", () => {
 		const jobs = [
-			makeUnassignedJob('job-new'),
-			makeUnassignedJob('job-other-conversation', { conversationId: 'conv-2' }),
-			makeJob('job-existing', 'succeeded'),
+			makeUnassignedJob("job-new"),
+			makeUnassignedJob("job-other-conversation", { conversationId: "conv-2" }),
+			makeJob("job-existing", "succeeded"),
 		];
 
 		const attached = attachUnassignedFileProductionJobsToAssistant(jobs, {
-			conversationId: 'conv-1',
-			assistantMessageId: 'assistant-server',
+			conversationId: "conv-1",
+			assistantMessageId: "assistant-server",
 		});
 
 		expect(attached).toEqual([
 			expect.objectContaining({
-				id: 'job-new',
-				assistantMessageId: 'assistant-server',
+				id: "job-new",
+				assistantMessageId: "assistant-server",
 			}),
 			expect.objectContaining({
-				id: 'job-other-conversation',
+				id: "job-other-conversation",
 				assistantMessageId: null,
 			}),
 			expect.objectContaining({
-				id: 'job-existing',
-				assistantMessageId: 'assistant-1',
+				id: "job-existing",
+				assistantMessageId: "assistant-1",
 			}),
 		]);
 	});
 });
 
-describe('Deep Research chat helpers', () => {
-	it('detects research jobs that still need chat card refreshes', () => {
-		expect(hasActiveDeepResearchJobs([makeDeepResearchJob('awaiting_plan')])).toBe(true);
-		expect(hasActiveDeepResearchJobs([makeDeepResearchJob('awaiting_approval')])).toBe(true);
-		expect(hasActiveDeepResearchJobs([makeDeepResearchJob('approved')])).toBe(true);
-		expect(hasActiveDeepResearchJobs([makeDeepResearchJob('running')])).toBe(true);
+describe("Deep Research chat helpers", () => {
+	it("detects research jobs that still need chat card refreshes", () => {
+		expect(
+			hasActiveDeepResearchJobs([makeDeepResearchJob("awaiting_plan")]),
+		).toBe(true);
+		expect(
+			hasActiveDeepResearchJobs([makeDeepResearchJob("awaiting_approval")]),
+		).toBe(true);
+		expect(hasActiveDeepResearchJobs([makeDeepResearchJob("approved")])).toBe(
+			true,
+		);
+		expect(hasActiveDeepResearchJobs([makeDeepResearchJob("running")])).toBe(
+			true,
+		);
 		expect(
 			hasActiveDeepResearchJobs([
-				makeDeepResearchJob('completed'),
-				makeDeepResearchJob('failed'),
-				makeDeepResearchJob('cancelled'),
-			])
+				makeDeepResearchJob("completed"),
+				makeDeepResearchJob("failed"),
+				makeDeepResearchJob("cancelled"),
+			]),
 		).toBe(false);
 	});
 });

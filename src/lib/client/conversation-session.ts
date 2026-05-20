@@ -1,3 +1,9 @@
+import {
+	deleteConversationDraft,
+	deletePreparedConversation,
+	persistConversationDraft,
+} from "$lib/client/api/conversations";
+import type { FetchLike } from "$lib/client/api/http";
 import type {
 	ArtifactSummary,
 	ConversationDraft,
@@ -7,18 +13,12 @@ import type {
 	PendingAttachment,
 	PendingSkillSelection,
 	ThinkingMode,
-} from '$lib/types';
-import {
-	deleteConversationDraft,
-	deletePreparedConversation,
-	persistConversationDraft,
-} from '$lib/client/api/conversations';
-import type { FetchLike } from '$lib/client/api/http';
+} from "$lib/types";
 
-const PREVIOUS_CONVERSATION_KEY = 'previous-conversation-id';
-const LANDING_DRAFT_CONVERSATION_KEY = 'landing-draft-conversation-id';
-const PENDING_MESSAGE_PREFIX = 'pending-chat-message:';
-const CONVERSATION_PERSONALITY_PREFIX = 'conversation-personality:';
+const PREVIOUS_CONVERSATION_KEY = "previous-conversation-id";
+const LANDING_DRAFT_CONVERSATION_KEY = "landing-draft-conversation-id";
+const PENDING_MESSAGE_PREFIX = "pending-chat-message:";
+const CONVERSATION_PERSONALITY_PREFIX = "conversation-personality:";
 
 export type PendingConversationMessage = {
 	message: string;
@@ -33,7 +33,7 @@ export type PendingConversationMessage = {
 };
 
 function getSessionStorage(): Storage | null {
-	if (typeof window === 'undefined') return null;
+	if (typeof window === "undefined") return null;
 	try {
 		return window.sessionStorage;
 	} catch {
@@ -53,10 +53,10 @@ function toArtifactSummaryList(value: unknown): ArtifactSummary[] {
 	if (!Array.isArray(value)) return [];
 	return value.filter(
 		(artifact): artifact is ArtifactSummary =>
-			typeof artifact === 'object' &&
+			typeof artifact === "object" &&
 			artifact !== null &&
-			'id' in artifact &&
-			typeof artifact.id === 'string'
+			"id" in artifact &&
+			typeof artifact.id === "string",
 	);
 }
 
@@ -64,42 +64,58 @@ function toLinkedContextSourceList(value: unknown): LinkedContextSource[] {
 	if (!Array.isArray(value)) return [];
 	return value.filter(
 		(source): source is LinkedContextSource =>
-			typeof source === 'object' &&
+			typeof source === "object" &&
 			source !== null &&
-			'displayArtifactId' in source &&
-			typeof source.displayArtifactId === 'string' &&
-			'name' in source &&
-			typeof source.name === 'string' &&
-			'type' in source &&
-			source.type === 'document'
+			"displayArtifactId" in source &&
+			typeof source.displayArtifactId === "string" &&
+			"name" in source &&
+			typeof source.name === "string" &&
+			"type" in source &&
+			source.type === "document",
 	);
 }
 
 function toPendingSkillSelection(value: unknown): PendingSkillSelection | null {
-	if (typeof value !== 'object' || value === null) return null;
+	if (typeof value !== "object" || value === null) return null;
 	const record = value as Record<string, unknown>;
 	if (
-		typeof record.id !== 'string' ||
-		(record.ownership !== 'user' && record.ownership !== 'system') ||
-		typeof record.displayName !== 'string'
+		typeof record.id !== "string" ||
+		(record.ownership !== "user" && record.ownership !== "system") ||
+		typeof record.displayName !== "string"
 	) {
 		return null;
 	}
 	return {
 		id: record.id,
 		ownership: record.ownership,
+		skillKind:
+			record.skillKind === "user_skill" ||
+			record.skillKind === "skill_pack" ||
+			record.skillKind === "skill_variant"
+				? record.skillKind
+				: undefined,
 		displayName: record.displayName,
+		baseSkillId:
+			typeof record.baseSkillId === "string" ? record.baseSkillId : null,
+		baseSkillDisplayName:
+			typeof record.baseSkillDisplayName === "string"
+				? record.baseSkillDisplayName
+				: null,
+		unavailable: record.unavailable === true,
 	};
 }
 
-export function markPreviousConversationId(conversationId: string | null): void {
+export function markPreviousConversationId(
+	conversationId: string | null,
+): void {
 	if (!conversationId) return;
 	getSessionStorage()?.setItem(PREVIOUS_CONVERSATION_KEY, conversationId);
 }
 
 export function consumePreviousConversationId(): string | null {
 	const storage = getSessionStorage();
-	const previousConversationId = storage?.getItem(PREVIOUS_CONVERSATION_KEY) ?? null;
+	const previousConversationId =
+		storage?.getItem(PREVIOUS_CONVERSATION_KEY) ?? null;
 	if (previousConversationId) {
 		storage?.removeItem(PREVIOUS_CONVERSATION_KEY);
 	}
@@ -110,7 +126,9 @@ export function getLandingDraftConversationId(): string | null {
 	return getSessionStorage()?.getItem(LANDING_DRAFT_CONVERSATION_KEY) ?? null;
 }
 
-export function setLandingDraftConversationId(conversationId: string | null): void {
+export function setLandingDraftConversationId(
+	conversationId: string | null,
+): void {
 	const storage = getSessionStorage();
 	if (!storage) return;
 	if (conversationId) {
@@ -122,7 +140,7 @@ export function setLandingDraftConversationId(conversationId: string | null): vo
 
 export function getConversationPersonalitySelection(
 	conversationId: string,
-	profileDefault: string | null
+	profileDefault: string | null,
 ): string | null {
 	const storage = getSessionStorage();
 	const key = getConversationPersonalityKey(conversationId);
@@ -131,8 +149,8 @@ export function getConversationPersonalitySelection(
 	}
 
 	try {
-		const parsed = JSON.parse(storage.getItem(key) ?? 'null') as unknown;
-		return typeof parsed === 'string' ? parsed : null;
+		const parsed = JSON.parse(storage.getItem(key) ?? "null") as unknown;
+		return typeof parsed === "string" ? parsed : null;
 	} catch {
 		return profileDefault;
 	}
@@ -140,17 +158,17 @@ export function getConversationPersonalitySelection(
 
 export function setConversationPersonalitySelection(
 	conversationId: string,
-	personalityProfileId: string | null
+	personalityProfileId: string | null,
 ): void {
 	getSessionStorage()?.setItem(
 		getConversationPersonalityKey(conversationId),
-		JSON.stringify(personalityProfileId)
+		JSON.stringify(personalityProfileId),
 	);
 }
 
 export function storePendingConversationMessage(
 	conversationId: string,
-	payload: PendingConversationMessage
+	payload: PendingConversationMessage,
 ): void {
 	getSessionStorage()?.setItem(
 		getPendingMessageKey(conversationId),
@@ -164,16 +182,18 @@ export function storePendingConversationMessage(
 			personalityProfileId: payload.personalityProfileId,
 			deepResearchDepth: payload.deepResearchDepth,
 			thinkingMode: payload.thinkingMode,
-		})
+		}),
 	);
 }
 
 export function hasPendingConversationMessage(conversationId: string): boolean {
-	return Boolean(getSessionStorage()?.getItem(getPendingMessageKey(conversationId)));
+	return Boolean(
+		getSessionStorage()?.getItem(getPendingMessageKey(conversationId)),
+	);
 }
 
 export function consumePendingConversationMessage(
-	conversationId: string
+	conversationId: string,
 ): PendingConversationMessage | null {
 	const storage = getSessionStorage();
 	const key = getPendingMessageKey(conversationId);
@@ -187,36 +207,38 @@ export function consumePendingConversationMessage(
 	try {
 		const parsed = JSON.parse(rawValue) as Record<string, unknown>;
 		return {
-			message: typeof parsed.message === 'string' ? parsed.message : '',
+			message: typeof parsed.message === "string" ? parsed.message : "",
 			attachmentIds: Array.isArray(parsed.attachmentIds)
-				? parsed.attachmentIds.filter((value): value is string => typeof value === 'string')
+				? parsed.attachmentIds.filter(
+						(value): value is string => typeof value === "string",
+					)
 				: [],
 			attachments: toArtifactSummaryList(parsed.attachments),
 			linkedSources: toLinkedContextSourceList(parsed.linkedSources),
 			pendingSkill: toPendingSkillSelection(parsed.pendingSkill),
 			modelId:
-				typeof parsed.modelId === 'string' &&
-				(parsed.modelId === 'model1' ||
-					parsed.modelId === 'model2' ||
-					parsed.modelId.startsWith('provider:'))
+				typeof parsed.modelId === "string" &&
+				(parsed.modelId === "model1" ||
+					parsed.modelId === "model2" ||
+					parsed.modelId.startsWith("provider:"))
 					? (parsed.modelId as ModelId)
 					: undefined,
 			personalityProfileId:
-				typeof parsed.personalityProfileId === 'string'
+				typeof parsed.personalityProfileId === "string"
 					? parsed.personalityProfileId
 					: null,
 			deepResearchDepth:
-				parsed.deepResearchDepth === 'focused' ||
-				parsed.deepResearchDepth === 'standard' ||
-				parsed.deepResearchDepth === 'max'
+				parsed.deepResearchDepth === "focused" ||
+				parsed.deepResearchDepth === "standard" ||
+				parsed.deepResearchDepth === "max"
 					? parsed.deepResearchDepth
 					: null,
 			thinkingMode:
-				parsed.thinkingMode === 'auto' ||
-				parsed.thinkingMode === 'on' ||
-				parsed.thinkingMode === 'off'
+				parsed.thinkingMode === "auto" ||
+				parsed.thinkingMode === "on" ||
+				parsed.thinkingMode === "off"
 					? parsed.thinkingMode
-					: 'auto',
+					: "auto",
 		};
 	} catch {
 		return {
@@ -226,7 +248,7 @@ export function consumePendingConversationMessage(
 			linkedSources: [],
 			pendingSkill: null,
 			deepResearchDepth: null,
-			thinkingMode: 'auto',
+			thinkingMode: "auto",
 		};
 	}
 }
@@ -235,7 +257,7 @@ export function hasMeaningfulDraft(
 	draftText: string,
 	selectedAttachmentIds: string[],
 	selectedLinkedSources: LinkedContextSource[] = [],
-	pendingSkill: PendingSkillSelection | null = null
+	pendingSkill: PendingSkillSelection | null = null,
 ): boolean {
 	return (
 		draftText.trim().length > 0 ||
@@ -262,14 +284,15 @@ export function createConversationDraftRecord(params: {
 			params.draftText,
 			params.selectedAttachmentIds,
 			selectedLinkedSources,
-			pendingSkill
+			pendingSkill,
 		)
 	) {
 		return null;
 	}
 
 	return {
-		conversationId: params.conversationId ?? params.fallbackConversationId ?? 'draft',
+		conversationId:
+			params.conversationId ?? params.fallbackConversationId ?? "draft",
 		draftText: params.draftText,
 		selectedAttachmentIds: params.selectedAttachmentIds,
 		selectedAttachments: params.selectedAttachments,
@@ -279,18 +302,19 @@ export function createConversationDraftRecord(params: {
 	};
 }
 
-export function createDraftPersistence(fetchImpl: FetchLike = fetch, delayMs = 400) {
+export function createDraftPersistence(
+	fetchImpl: FetchLike = fetch,
+	delayMs = 400,
+) {
 	let draftPersistTimer: ReturnType<typeof setTimeout> | null = null;
-	let lastPersistKey = '';
-	let pendingRequest:
-		| {
-				conversationId: string;
-				draftText: string;
-				selectedAttachmentIds: string[];
-				selectedLinkedSources?: LinkedContextSource[];
-				pendingSkill?: PendingSkillSelection | null;
-		  }
-		| null = null;
+	let lastPersistKey = "";
+	let pendingRequest: {
+		conversationId: string;
+		draftText: string;
+		selectedAttachmentIds: string[];
+		selectedLinkedSources?: LinkedContextSource[];
+		pendingSkill?: PendingSkillSelection | null;
+	} | null = null;
 
 	async function runPersist(request: {
 		conversationId: string;
@@ -307,7 +331,7 @@ export function createDraftPersistence(fetchImpl: FetchLike = fetch, delayMs = 4
 					request.draftText,
 					request.selectedAttachmentIds,
 					selectedLinkedSources,
-					pendingSkill
+					pendingSkill,
 				)
 			) {
 				await deleteConversationDraft(request.conversationId, fetchImpl);
@@ -322,7 +346,7 @@ export function createDraftPersistence(fetchImpl: FetchLike = fetch, delayMs = 4
 					selectedLinkedSources,
 					pendingSkill,
 				},
-				fetchImpl
+				fetchImpl,
 			);
 		} catch {
 			// Ignore transient persistence failures in the composer.
@@ -351,7 +375,7 @@ export function createDraftPersistence(fetchImpl: FetchLike = fetch, delayMs = 4
 				selectedLinkedSources?: LinkedContextSource[];
 				pendingSkill?: PendingSkillSelection | null;
 			},
-			immediate = false
+			immediate = false,
 		): Promise<void> {
 			const key = `${request.conversationId}:${JSON.stringify({
 				draftText: request.draftText,
@@ -371,7 +395,7 @@ export function createDraftPersistence(fetchImpl: FetchLike = fetch, delayMs = 4
 					request.draftText,
 					request.selectedAttachmentIds,
 					request.selectedLinkedSources ?? [],
-					request.pendingSkill ?? null
+					request.pendingSkill ?? null,
 				);
 
 			if (draftPersistTimer) {
@@ -411,7 +435,7 @@ export function createDraftPersistence(fetchImpl: FetchLike = fetch, delayMs = 4
 				draftPersistTimer = null;
 			}
 			pendingRequest = null;
-			lastPersistKey = '';
+			lastPersistKey = "";
 		},
 	};
 }

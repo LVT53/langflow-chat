@@ -1,5 +1,5 @@
 import type { SkillDraftProposal } from "$lib/types";
-import { requestJson, requestVoid, type FetchLike } from "./http";
+import { type FetchLike, requestJson, requestVoid } from "./http";
 
 export type SkillDurationPolicy = "next_message" | "session";
 export type SkillQuestionPolicy = "none" | "ask_when_needed";
@@ -10,6 +10,10 @@ export type SkillCreationSource = "user_created" | "ai_draft" | "system_seed";
 export interface UserSkill {
 	id: string;
 	ownership: "user";
+	skillKind?: "user_skill" | "skill_variant";
+	baseSkillId?: string | null;
+	baseSkillVersion?: number | null;
+	baseSkillDisplayName?: string | null;
 	displayName: string;
 	description: string;
 	instructions: string;
@@ -27,9 +31,21 @@ export interface UserSkill {
 
 export type UserSkillSummary = Omit<UserSkill, "instructions">;
 
+export interface UserSkillVariant extends UserSkill {
+	skillKind: "skill_variant";
+	baseSkillId: string;
+	baseSkillVersion: number | null;
+	baseSkillDisplayName: string | null;
+	baseSkillAvailable?: boolean;
+	baseSkillAvailabilityReason?: string;
+}
+
+export type UserSkillVariantSummary = Omit<UserSkillVariant, "instructions">;
+
 export interface SystemSkillSummary {
 	id: string;
 	ownership: "system";
+	skillKind?: "skill_pack";
 	displayName: string;
 	description: string;
 	localizedDefaults?: {
@@ -70,7 +86,24 @@ export interface UserSkillDraft {
 
 export type UserSkillUpdate = Partial<UserSkillDraft>;
 
-export type SkillDiscoverySummary = UserSkillSummary | SystemSkillSummary;
+export interface UserSkillVariantDraft {
+	baseSkillId: string;
+	displayName: string;
+	description: string;
+	instructions: string;
+	activationExamples: string[];
+	enabled?: boolean;
+	creationSource?: SkillCreationSource;
+}
+
+export type UserSkillVariantUpdate = Partial<
+	Omit<UserSkillVariantDraft, "baseSkillId">
+>;
+
+export type SkillDiscoverySummary =
+	| UserSkillSummary
+	| UserSkillVariantSummary
+	| SystemSkillSummary;
 
 export interface SkillDraftActionResponse {
 	skill?: UserSkill;
@@ -80,6 +113,7 @@ export interface SkillDraftActionResponse {
 
 interface SkillListResponse {
 	skills: UserSkill[];
+	variants?: UserSkillVariant[];
 	systemSkills?: SystemSkillSummary[];
 }
 
@@ -87,7 +121,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
 }
 
-function instructionFreeLocalizedDefaults(value: unknown): SystemSkillSummary["localizedDefaults"] {
+function instructionFreeLocalizedDefaults(
+	value: unknown,
+): SystemSkillSummary["localizedDefaults"] {
 	if (!isRecord(value)) return undefined;
 	const en = isRecord(value.en) ? value.en : {};
 	const hu = isRecord(value.hu) ? value.hu : {};
@@ -103,29 +139,64 @@ function instructionFreeLocalizedDefaults(value: unknown): SystemSkillSummary["l
 	};
 }
 
-function publicSystemSkillSummary(skill: SystemSkillSummary): SystemSkillSummary {
-	const { instructions: _instructions, localizedDefaults, ...summary } = skill as SystemSkillSummary & {
+function publicSystemSkillSummary(
+	skill: SystemSkillSummary,
+): SystemSkillSummary {
+	const {
+		instructions: _instructions,
+		localizedDefaults,
+		...summary
+	} = skill as SystemSkillSummary & {
 		instructions?: unknown;
 	};
-	const safeLocalizedDefaults = instructionFreeLocalizedDefaults(localizedDefaults);
+	const safeLocalizedDefaults =
+		instructionFreeLocalizedDefaults(localizedDefaults);
 	return safeLocalizedDefaults
 		? { ...summary, localizedDefaults: safeLocalizedDefaults }
 		: summary;
 }
 
 function publicUserSkillSummary(skill: UserSkillSummary): UserSkillSummary {
-	const { instructions: _instructions, ...summary } = skill as UserSkillSummary & {
-		instructions?: unknown;
-	};
+	const { instructions: _instructions, ...summary } =
+		skill as UserSkillSummary & {
+			instructions?: unknown;
+		};
 	return summary;
 }
 
-function publicDiscoverySummary(skill: SkillDiscoverySummary): SkillDiscoverySummary {
+function publicUserSkillVariantSummary(
+	skill: UserSkillVariantSummary,
+): UserSkillVariantSummary {
+	const { instructions: _instructions, ...summary } =
+		skill as UserSkillVariantSummary & {
+			instructions?: unknown;
+		};
+	return summary;
+}
+
+function isUserSkillVariantSummary(
+	skill: SkillDiscoverySummary,
+): skill is UserSkillVariantSummary {
+	return (
+		skill.ownership === "user" &&
+		skill.skillKind === "skill_variant" &&
+		typeof (skill as { baseSkillId?: unknown }).baseSkillId === "string"
+	);
+}
+
+function publicDiscoverySummary(
+	skill: SkillDiscoverySummary,
+): SkillDiscoverySummary {
 	if (skill.ownership === "system") return publicSystemSkillSummary(skill);
+	if (isUserSkillVariantSummary(skill)) {
+		return publicUserSkillVariantSummary(skill);
+	}
 	return publicUserSkillSummary(skill);
 }
 
-export async function fetchUserSkills(fetchImpl?: FetchLike): Promise<UserSkill[]> {
+export async function fetchUserSkills(
+	fetchImpl?: FetchLike,
+): Promise<UserSkill[]> {
 	const data = await requestJson<SkillListResponse>(
 		"/api/skills",
 		undefined,
@@ -144,7 +215,21 @@ export async function fetchSystemSkillSummaries(
 		"Failed to load skills",
 		fetchImpl,
 	);
-	return Array.isArray(data.systemSkills) ? data.systemSkills.map(publicSystemSkillSummary) : [];
+	return Array.isArray(data.systemSkills)
+		? data.systemSkills.map(publicSystemSkillSummary)
+		: [];
+}
+
+export async function fetchUserSkillVariants(
+	fetchImpl?: FetchLike,
+): Promise<UserSkillVariant[]> {
+	const data = await requestJson<SkillListResponse>(
+		"/api/skills",
+		undefined,
+		"Failed to load skills",
+		fetchImpl,
+	);
+	return Array.isArray(data.variants) ? data.variants : [];
 }
 
 export async function discoverSkills(
@@ -161,7 +246,9 @@ export async function discoverSkills(
 		"Failed to discover skills",
 		fetchImpl,
 	);
-	return Array.isArray(data.skills) ? data.skills.map(publicDiscoverySummary) : [];
+	return Array.isArray(data.skills)
+		? data.skills.map(publicDiscoverySummary)
+		: [];
 }
 
 export async function createUserSkill(
@@ -179,6 +266,58 @@ export async function createUserSkill(
 		fetchImpl,
 	);
 	return data.skill;
+}
+
+function variantCreateBody(
+	input: UserSkillVariantDraft,
+): Record<string, unknown> {
+	return {
+		skillKind: "skill_variant",
+		baseSkillId: input.baseSkillId,
+		displayName: input.displayName,
+		description: input.description,
+		instructions: input.instructions,
+		activationExamples: input.activationExamples,
+		enabled: input.enabled,
+		creationSource: input.creationSource,
+	};
+}
+
+function variantUpdateBody(
+	input: UserSkillVariantUpdate,
+): Record<string, unknown> {
+	return {
+		skillKind: "skill_variant",
+		displayName: input.displayName,
+		description: input.description,
+		instructions: input.instructions,
+		activationExamples: input.activationExamples,
+		enabled: input.enabled,
+		creationSource: input.creationSource,
+	};
+}
+
+function compactBody(input: Record<string, unknown>): Record<string, unknown> {
+	return Object.fromEntries(
+		Object.entries(input).filter(([, value]) => value !== undefined),
+	);
+}
+
+export async function createUserSkillVariant(
+	input: UserSkillVariantDraft,
+	fetchImpl?: FetchLike,
+): Promise<UserSkillVariant> {
+	const data = await requestJson<{ variant: UserSkillVariant }>(
+		"/api/skills",
+		{
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(compactBody(variantCreateBody(input))),
+		},
+		"Failed to save skill",
+		fetchImpl,
+	);
+	return data.variant;
 }
 
 export async function updateUserSkill(
@@ -199,7 +338,28 @@ export async function updateUserSkill(
 	return data.skill;
 }
 
-export async function deleteUserSkill(id: string, fetchImpl?: FetchLike): Promise<void> {
+export async function updateUserSkillVariant(
+	id: string,
+	input: UserSkillVariantUpdate,
+	fetchImpl?: FetchLike,
+): Promise<UserSkillVariant> {
+	const data = await requestJson<{ variant: UserSkillVariant }>(
+		`/api/skills/${encodeURIComponent(id)}`,
+		{
+			method: "PATCH",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(compactBody(variantUpdateBody(input))),
+		},
+		"Failed to save skill",
+		fetchImpl,
+	);
+	return data.variant;
+}
+
+export async function deleteUserSkill(
+	id: string,
+	fetchImpl?: FetchLike,
+): Promise<void> {
 	await requestVoid(
 		`/api/skills/${encodeURIComponent(id)}`,
 		{
@@ -208,6 +368,13 @@ export async function deleteUserSkill(id: string, fetchImpl?: FetchLike): Promis
 		"Failed to delete skill",
 		fetchImpl,
 	);
+}
+
+export async function deleteUserSkillVariant(
+	id: string,
+	fetchImpl?: FetchLike,
+): Promise<void> {
+	await deleteUserSkill(id, fetchImpl);
 }
 
 function skillDraftUrl(

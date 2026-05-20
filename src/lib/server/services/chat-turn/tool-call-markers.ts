@@ -8,6 +8,7 @@ const TOOL_CALL_END_RE = /\u0002TOOL_END\u001f([^\u0003]*)\u0003/g;
 export { TOOL_CALL_END_RE, TOOL_CALL_START_RE };
 
 export type StreamToolCallDetails = {
+	callId?: string;
 	outputSummary?: string | null;
 	sourceType?: EvidenceSourceType | null;
 	candidates?: ToolEvidenceCandidate[];
@@ -15,6 +16,11 @@ export type StreamToolCallDetails = {
 };
 
 type StreamToolCallPayload = {
+	callId?: unknown;
+	toolCallId?: unknown;
+	tool_call_id?: unknown;
+	runId?: unknown;
+	id?: unknown;
 	name?: string;
 	input?: Record<string, unknown>;
 	outputSummary?: string;
@@ -35,6 +41,23 @@ function normalizeEvidenceSourceType(
 		return value;
 	}
 	return null;
+}
+
+function normalizeToolCallId(
+	payload: StreamToolCallPayload,
+): string | undefined {
+	for (const value of [
+		payload.callId,
+		payload.toolCallId,
+		payload.tool_call_id,
+		payload.runId,
+		payload.id,
+	]) {
+		if (typeof value !== "string") continue;
+		const trimmed = value.trim();
+		if (trimmed) return trimmed;
+	}
+	return undefined;
 }
 
 function normalizeToolCandidates(
@@ -117,7 +140,13 @@ export function processToolCallMarkers(
 	result = result.replace(TOOL_CALL_START_RE, (_, payload) => {
 		try {
 			const parsed = JSON.parse(payload) as StreamToolCallPayload;
-			emit(parsed.name ?? "tool", parsed.input ?? {}, "running");
+			const callId = normalizeToolCallId(parsed);
+			emit(
+				parsed.name ?? "tool",
+				parsed.input ?? {},
+				"running",
+				callId ? { callId } : undefined,
+			);
 		} catch {
 			emit("tool", {}, "running");
 		}
@@ -127,9 +156,11 @@ export function processToolCallMarkers(
 	result = result.replace(TOOL_CALL_END_RE, (_, payload) => {
 		try {
 			const parsed = JSON.parse(payload) as StreamToolCallPayload;
+			const callId = normalizeToolCallId(parsed);
 			const sourceType = normalizeEvidenceSourceType(parsed.sourceType);
 			const metadata = normalizeToolMetadata(parsed.metadata);
 			emit(parsed.name ?? "tool", {}, "done", {
+				...(callId ? { callId } : {}),
 				outputSummary:
 					typeof parsed.outputSummary === "string"
 						? parsed.outputSummary

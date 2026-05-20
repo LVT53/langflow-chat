@@ -3,10 +3,11 @@ import type {
 	PreflightedChatTurn,
 	SkillPromptContext,
 	SkillPromptLinkedSource,
+	SkillPromptResource,
 } from "$lib/server/services/chat-turn/types";
-import type { LinkedContextSource } from "$lib/types";
+import type { LinkedContextSource, SkillSessionInternal } from "$lib/types";
 import { getActiveSkillSession } from "./sessions";
-import { getAvailableSkillDefinition } from "./user-skills";
+import { resolveEffectiveSkillDefinition } from "./user-skills";
 
 function linkedSourceForPrompt(
 	source: LinkedContextSource,
@@ -22,6 +23,72 @@ function linkedSourceForPrompt(
 	};
 }
 
+const maxPromptResources = 3;
+const maxResourceContentLength = 700;
+
+function includesKeyword(text: string, keyword: string): boolean {
+	const normalizedKeyword = keyword.trim().toLowerCase();
+	return Boolean(normalizedKeyword && text.includes(normalizedKeyword));
+}
+
+function truncateResourceContent(value: string): string {
+	const normalized = value.trim().replace(/\s+/g, " ");
+	if (normalized.length <= maxResourceContentLength) return normalized;
+	return `${normalized.slice(0, maxResourceContentLength - 1).trimEnd()}...`;
+}
+
+function selectSkillResources(
+	resources:
+		| Array<
+				Omit<SkillPromptResource, "inclusionReason"> & {
+					keywords?: string[];
+				}
+		  >
+		| undefined,
+	requestText: string,
+): SkillPromptResource[] {
+	if (!resources?.length) return [];
+	const normalizedRequest = requestText.toLowerCase();
+	const selected: SkillPromptResource[] = [];
+
+	for (const resource of resources) {
+		if (resource.kind !== "guidance") continue;
+		selected.push({
+			id: resource.id,
+			title: resource.title,
+			kind: resource.kind,
+			summary: resource.summary,
+			whenToUse: resource.whenToUse,
+			content: truncateResourceContent(resource.content),
+			inclusionReason: "always",
+		});
+		if (selected.length >= maxPromptResources) return selected;
+	}
+
+	for (const resource of resources) {
+		if (resource.kind !== "domain_template") continue;
+		if (
+			!(resource.keywords ?? []).some((keyword) =>
+				includesKeyword(normalizedRequest, keyword),
+			)
+		) {
+			continue;
+		}
+		selected.push({
+			id: resource.id,
+			title: resource.title,
+			kind: resource.kind,
+			summary: resource.summary,
+			whenToUse: resource.whenToUse,
+			content: truncateResourceContent(resource.content),
+			inclusionReason: "matched_request",
+		});
+		if (selected.length >= maxPromptResources) return selected;
+	}
+
+	return selected;
+}
+
 export async function resolveSkillPromptContext(params: {
 	userId: string;
 	turn: PreflightedChatTurn;
@@ -33,23 +100,33 @@ export async function resolveSkillPromptContext(params: {
 	const linkedSources = turn.linkedSources.map(linkedSourceForPrompt);
 
 	if (turn.pendingSkill) {
-		const skill = await getAvailableSkillDefinition(userId, {
+		const skill = await resolveEffectiveSkillDefinition(userId, {
 			id: turn.pendingSkill.id,
 			ownership: turn.pendingSkill.ownership,
 		});
-		if (skill) {
+		if (skill.available) {
 			return {
 				source: "pending_skill",
 				skillId: skill.id,
 				skillOwnership: skill.ownership,
+				skillKind: skill.skillKind,
 				skillDisplayName: skill.displayName,
 				skillDescription: skill.description,
-				skillInstructions: skill.instructions,
+				skillInstructions: skill.effectiveInstructions,
 				durationPolicy: skill.durationPolicy,
 				questionPolicy: skill.questionPolicy,
 				notesPolicy: skill.notesPolicy,
 				sourceScope: skill.sourceScope,
-				skillVersion: skill.version,
+				skillVersion: skill.sourceIds.skillVersion,
+				packSkillId: skill.sourceIds.packSkillId,
+				packSkillVersion: skill.sourceIds.packSkillVersion,
+				variantSkillId: skill.sourceIds.variantSkillId,
+				variantSkillVersion: skill.sourceIds.variantSkillVersion,
+				effectiveInstructionsHash: skill.effectiveInstructionsHash,
+				skillResources: selectSkillResources(
+					skill.promptResources,
+					turn.normalizedMessage,
+				),
 				linkedSources,
 			};
 		}
@@ -58,12 +135,33 @@ export async function resolveSkillPromptContext(params: {
 	const session = await getActiveSkillSession(userId, turn.conversationId);
 	if (!session || session.status !== "active") return null;
 
+	return skillSessionToPromptContext({
+		session,
+		linkedSources,
+	});
+}
+
+export function skillSessionToPromptContext(params: {
+	session: SkillSessionInternal;
+	linkedSources: SkillPromptLinkedSource[];
+	skillResources?: SkillPromptResource[];
+}): SkillPromptContext {
+	const { session, linkedSources, skillResources = [] } = params;
+	const skillKind =
+		session.skillKind === "user_skill" ||
+		session.skillKind === "skill_pack" ||
+		session.skillKind === "skill_variant"
+			? session.skillKind
+			: session.skillOwnership === "system"
+				? "skill_pack"
+				: "user_skill";
 	return {
 		source: "active_session",
 		sessionId: session.id,
-		sessionStatus: session.status,
+		sessionStatus: session.status === "paused" ? "paused" : "active",
 		skillId: session.skillId,
 		skillOwnership: session.skillOwnership,
+		skillKind,
 		skillDisplayName: session.skillDisplayName,
 		skillDescription: session.skillDescription,
 		skillInstructions: session.skillInstructions,
@@ -72,6 +170,12 @@ export async function resolveSkillPromptContext(params: {
 		notesPolicy: session.notesPolicy,
 		sourceScope: session.sourceScope,
 		skillVersion: session.skillVersion,
+		packSkillId: session.packSkillId ?? null,
+		packSkillVersion: session.packSkillVersion ?? null,
+		variantSkillId: session.variantSkillId ?? null,
+		variantSkillVersion: session.variantSkillVersion ?? null,
+		effectiveInstructionsHash: session.effectiveInstructionsHash ?? null,
+		skillResources,
 		linkedSources,
 	};
 }
@@ -111,6 +215,19 @@ function buildQuestionPolicyLines(context: SkillPromptContext): string[] {
 	];
 }
 
+function buildSkillResourceLines(resources: SkillPromptResource[] | undefined) {
+	if (!resources?.length) return [];
+	return [
+		"Managed pack resources included:",
+		...resources.flatMap((resource) => [
+			`- ${resource.id} (${resource.kind}, ${resource.inclusionReason}): ${resource.title}`,
+			`  Summary: ${resource.summary}`,
+			`  Guidance: ${resource.content}`,
+		]),
+		"",
+	];
+}
+
 function buildSkillOperatingRuleLines(context: SkillPromptContext): string[] {
 	const sourceScopeLine =
 		context.sourceScope === "selected_sources_only"
@@ -138,6 +255,16 @@ export function buildSkillSystemPromptAppendix(
 			? `Session: ${context.sessionId} (${context.sessionStatus})`
 			: null,
 		`Skill: ${context.skillDisplayName} (${context.skillOwnership}:${context.skillId}, version ${context.skillVersion})`,
+		`Kind: ${context.skillKind}`,
+		context.packSkillId
+			? `Pack source: ${context.packSkillId}, version ${context.packSkillVersion ?? "unknown"}`
+			: null,
+		context.variantSkillId
+			? `Variant source: ${context.variantSkillId}, version ${context.variantSkillVersion ?? "unknown"}`
+			: null,
+		context.effectiveInstructionsHash
+			? `Effective instructions hash: ${context.effectiveInstructionsHash}`
+			: null,
 		context.skillDescription
 			? `Description: ${context.skillDescription}`
 			: null,
@@ -157,6 +284,7 @@ export function buildSkillSystemPromptAppendix(
 		"Skill instructions:",
 		context.skillInstructions.trim(),
 		"",
+		...buildSkillResourceLines(context.skillResources),
 		"Skill operating rules:",
 		...operatingRuleLines,
 	].join("\n");

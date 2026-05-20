@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { unlinkSync } from "node:fs";
 import Database from "better-sqlite3";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -132,6 +133,290 @@ describe("skill sessions", () => {
 			skillDisplayName: "Meeting critic",
 		});
 		expect(publicSession).not.toHaveProperty("skillInstructions");
+	});
+
+	it("snapshots variant effective instructions and revalidates availability when the same active variant is selected again", async () => {
+		seedBaseData();
+		const { createSystemSkillDefinition, updateSystemSkillDefinition } =
+			await import("./user-skills");
+		const { getActiveSkillSession, startSkillSession } = await import(
+			"./sessions"
+		);
+		const { db } = await import("$lib/server/db");
+
+		const pack = await createSystemSkillDefinition("user-1", {
+			displayName: "Research Pack",
+			description: "Grounds answers in selected sources.",
+			instructions: "BASE_V1: Use only selected sources.",
+			activationExamples: ["research this"],
+			published: true,
+			durationPolicy: "next_message",
+			questionPolicy: "ask_when_needed",
+			notesPolicy: "none",
+			sourceScope: "selected_sources_only",
+		});
+		await db
+			.insert(schema.userSkillDefinitions)
+			.values({
+				id: "variant-1",
+				userId: "user-1",
+				ownership: "user",
+				skillKind: "skill_variant",
+				baseSkillId: pack.id,
+				baseSkillVersion: pack.version,
+				displayName: "Research Pack with my voice",
+				description: "Personal overlay.",
+				instructions: "OVERLAY_V1: Use a terse executive voice.",
+				activationExamplesJson: JSON.stringify(["research in my voice"]),
+				enabled: true,
+				published: false,
+				durationPolicy: "session",
+				questionPolicy: "none",
+				notesPolicy: "create_private_notes",
+				sourceScope: "current_conversation",
+				creationSource: "user_created",
+			})
+			.run();
+
+		const started = await startSkillSession("user-1", "conv-1", {
+			id: "variant-1",
+			ownership: "user",
+			skillKind: "skill_variant",
+			displayName: "Research Pack with my voice",
+		});
+
+		expect(started).toMatchObject({
+			status: "active",
+			skillId: "variant-1",
+			skillOwnership: "user",
+			skillKind: "skill_variant",
+			skillDisplayName: "Research Pack with my voice",
+			skillDescription: "Personal overlay.",
+			skillInstructions:
+				"BASE_V1: Use only selected sources.\n\nOVERLAY_V1: Use a terse executive voice.",
+			activationExamples: ["research in my voice"],
+			durationPolicy: "next_message",
+			questionPolicy: "ask_when_needed",
+			notesPolicy: "none",
+			sourceScope: "selected_sources_only",
+			skillVersion: 1,
+			packSkillId: pack.id,
+			packSkillVersion: 1,
+			variantSkillId: "variant-1",
+			variantSkillVersion: 1,
+		});
+		expect(started.effectiveInstructionsHash).toMatch(/^[a-f0-9]{64}$/);
+
+		await updateSystemSkillDefinition(pack.id, {
+			instructions: "BASE_V2: Updated pack base.",
+		});
+		await db
+			.update(schema.userSkillDefinitions)
+			.set({
+				instructions: "OVERLAY_V2: Ask in bullet points.",
+				version: 2,
+				updatedAt: new Date(),
+			})
+			.where(eq(schema.userSkillDefinitions.id, "variant-1"))
+			.run();
+
+		await expect(
+			getActiveSkillSession("user-1", "conv-1"),
+		).resolves.toMatchObject({
+			id: started.id,
+			status: "active",
+			skillInstructions:
+				"BASE_V1: Use only selected sources.\n\nOVERLAY_V1: Use a terse executive voice.",
+			packSkillVersion: 1,
+			variantSkillVersion: 1,
+			effectiveInstructionsHash: started.effectiveInstructionsHash,
+		});
+
+		await updateSystemSkillDefinition(pack.id, { enabled: false });
+		await expect(
+			startSkillSession("user-1", "conv-1", {
+				id: "variant-1",
+				ownership: "user",
+				skillKind: "skill_variant",
+				displayName: "Research Pack with my voice",
+			}),
+		).rejects.toMatchObject({
+			code: "skill_unavailable",
+			status: 409,
+		});
+		await expect(
+			getActiveSkillSession("user-1", "conv-1"),
+		).resolves.toMatchObject({
+			id: started.id,
+			status: "paused",
+			pauseReason: "unavailable",
+		});
+	});
+
+	it("pauses active variant sessions when the backing variant or pack becomes unavailable", async () => {
+		seedBaseData();
+		const { createSystemSkillDefinition, updateSystemSkillDefinition } =
+			await import("./user-skills");
+		const { getActiveSkillSession, startSkillSession } = await import(
+			"./sessions"
+		);
+		const { db } = await import("$lib/server/db");
+
+		await db
+			.insert(schema.conversations)
+			.values([
+				{
+					id: "conv-disabled-variant",
+					userId: "user-1",
+					title: "Disabled variant",
+				},
+				{
+					id: "conv-missing-variant",
+					userId: "user-1",
+					title: "Missing variant",
+				},
+				{
+					id: "conv-unpublished-pack",
+					userId: "user-1",
+					title: "Unpublished pack",
+				},
+				{
+					id: "conv-missing-pack",
+					userId: "user-1",
+					title: "Missing pack",
+				},
+			])
+			.run();
+
+		const makePack = async (displayName: string) =>
+			createSystemSkillDefinition("user-1", {
+				displayName,
+				description: "Pack guidance.",
+				instructions: `${displayName} base.`,
+				published: true,
+				durationPolicy: "session",
+			});
+		const insertVariant = async (
+			id: string,
+			packId: string,
+			packVersion: number,
+		) =>
+			db
+				.insert(schema.userSkillDefinitions)
+				.values({
+					id,
+					userId: "user-1",
+					ownership: "user",
+					skillKind: "skill_variant",
+					baseSkillId: packId,
+					baseSkillVersion: packVersion,
+					displayName: `${id} display`,
+					description: "Variant overlay.",
+					instructions: `${id} overlay.`,
+					activationExamplesJson: "[]",
+					enabled: true,
+					published: false,
+					durationPolicy: "session",
+					questionPolicy: "none",
+					notesPolicy: "none",
+					sourceScope: "current_conversation",
+					creationSource: "user_created",
+				})
+				.run();
+		const startVariant = (conversationId: string, variantId: string) =>
+			startSkillSession("user-1", conversationId, {
+				id: variantId,
+				ownership: "user",
+				skillKind: "skill_variant",
+				displayName: `${variantId} display`,
+			});
+
+		const disabledVariantPack = await makePack("Disabled Variant Pack");
+		await insertVariant(
+			"variant-disabled",
+			disabledVariantPack.id,
+			disabledVariantPack.version,
+		);
+		const disabledVariant = await startVariant(
+			"conv-disabled-variant",
+			"variant-disabled",
+		);
+		await db
+			.update(schema.userSkillDefinitions)
+			.set({ enabled: false, updatedAt: new Date() })
+			.where(eq(schema.userSkillDefinitions.id, "variant-disabled"))
+			.run();
+
+		const missingVariantPack = await makePack("Missing Variant Pack");
+		await insertVariant(
+			"variant-missing",
+			missingVariantPack.id,
+			missingVariantPack.version,
+		);
+		const missingVariant = await startVariant(
+			"conv-missing-variant",
+			"variant-missing",
+		);
+		await db
+			.delete(schema.userSkillDefinitions)
+			.where(eq(schema.userSkillDefinitions.id, "variant-missing"))
+			.run();
+
+		const unpublishedPack = await makePack("Unpublished Pack");
+		await insertVariant(
+			"variant-unpublished-pack",
+			unpublishedPack.id,
+			unpublishedPack.version,
+		);
+		const unpublishedPackSession = await startVariant(
+			"conv-unpublished-pack",
+			"variant-unpublished-pack",
+		);
+		await updateSystemSkillDefinition(unpublishedPack.id, { published: false });
+
+		const missingPack = await makePack("Missing Pack");
+		await insertVariant(
+			"variant-missing-pack",
+			missingPack.id,
+			missingPack.version,
+		);
+		const missingPackSession = await startVariant(
+			"conv-missing-pack",
+			"variant-missing-pack",
+		);
+		await db
+			.delete(schema.userSkillDefinitions)
+			.where(eq(schema.userSkillDefinitions.id, missingPack.id))
+			.run();
+
+		await expect(
+			getActiveSkillSession("user-1", "conv-disabled-variant"),
+		).resolves.toMatchObject({
+			id: disabledVariant.id,
+			status: "paused",
+			pauseReason: "unavailable",
+		});
+		await expect(
+			getActiveSkillSession("user-1", "conv-missing-variant"),
+		).resolves.toMatchObject({
+			id: missingVariant.id,
+			status: "paused",
+			pauseReason: "unavailable",
+		});
+		await expect(
+			getActiveSkillSession("user-1", "conv-unpublished-pack"),
+		).resolves.toMatchObject({
+			id: unpublishedPackSession.id,
+			status: "paused",
+			pauseReason: "unavailable",
+		});
+		await expect(
+			getActiveSkillSession("user-1", "conv-missing-pack"),
+		).resolves.toMatchObject({
+			id: missingPackSession.id,
+			status: "paused",
+			pauseReason: "unavailable",
+		});
 	});
 
 	it("rejects starting a different active skill in the same conversation", async () => {

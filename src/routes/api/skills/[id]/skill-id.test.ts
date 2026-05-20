@@ -10,24 +10,42 @@ vi.mock("$lib/server/auth/hooks", () => ({
 
 vi.mock("$lib/server/services/skills/user-skills", () => ({
 	deleteUserSkillDefinition: vi.fn(),
+	deleteUserSkillVariantDefinition: vi.fn(),
 	getUserSkillDefinition: vi.fn(),
+	getUserSkillVariantDefinition: vi.fn(),
 	updateUserSkillDefinition: vi.fn(),
+	updateUserSkillVariantDefinition: vi.fn(),
 }));
 
-import { getConfig } from "$lib/server/config-store";
 import { requireAuth } from "$lib/server/auth/hooks";
+import { getConfig } from "$lib/server/config-store";
 import {
 	deleteUserSkillDefinition,
+	deleteUserSkillVariantDefinition,
 	getUserSkillDefinition,
+	getUserSkillVariantDefinition,
 	updateUserSkillDefinition,
+	updateUserSkillVariantDefinition,
 } from "$lib/server/services/skills/user-skills";
 import { DELETE, GET, PATCH } from "./+server";
 
 const mockGetConfig = getConfig as ReturnType<typeof vi.fn>;
 const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
-const mockDeleteUserSkillDefinition = deleteUserSkillDefinition as ReturnType<typeof vi.fn>;
-const mockGetUserSkillDefinition = getUserSkillDefinition as ReturnType<typeof vi.fn>;
-const mockUpdateUserSkillDefinition = updateUserSkillDefinition as ReturnType<typeof vi.fn>;
+const mockDeleteUserSkillDefinition = deleteUserSkillDefinition as ReturnType<
+	typeof vi.fn
+>;
+const mockDeleteUserSkillVariantDefinition =
+	deleteUserSkillVariantDefinition as ReturnType<typeof vi.fn>;
+const mockGetUserSkillDefinition = getUserSkillDefinition as ReturnType<
+	typeof vi.fn
+>;
+const mockGetUserSkillVariantDefinition =
+	getUserSkillVariantDefinition as ReturnType<typeof vi.fn>;
+const mockUpdateUserSkillDefinition = updateUserSkillDefinition as ReturnType<
+	typeof vi.fn
+>;
+const mockUpdateUserSkillVariantDefinition =
+	updateUserSkillVariantDefinition as ReturnType<typeof vi.fn>;
 
 function makeEvent(body?: unknown) {
 	return {
@@ -40,7 +58,9 @@ function makeEvent(body?: unknown) {
 		params: { id: "skill-1" },
 		url: new URL("http://localhost/api/skills/skill-1"),
 		route: { id: "/api/skills/[id]" },
-	} as Parameters<typeof GET>[0] & Parameters<typeof PATCH>[0] & Parameters<typeof DELETE>[0];
+	} as Parameters<typeof GET>[0] &
+		Parameters<typeof PATCH>[0] &
+		Parameters<typeof DELETE>[0];
 }
 
 describe("/api/skills/[id]", () => {
@@ -48,6 +68,10 @@ describe("/api/skills/[id]", () => {
 		vi.clearAllMocks();
 		mockRequireAuth.mockReturnValue(undefined);
 		mockGetConfig.mockReturnValue({ composerCommandRegistryEnabled: true });
+		mockGetUserSkillDefinition.mockResolvedValue(null);
+		mockGetUserSkillVariantDefinition.mockResolvedValue(null);
+		mockDeleteUserSkillDefinition.mockResolvedValue(false);
+		mockDeleteUserSkillVariantDefinition.mockResolvedValue(false);
 	});
 
 	it("rejects updates when Composer Command Registry is disabled", async () => {
@@ -70,10 +94,14 @@ describe("/api/skills/[id]", () => {
 		expect(response.status).toBe(404);
 		expect(data.errorKey).toBe("composerCommandRegistry.disabled");
 		expect(mockDeleteUserSkillDefinition).not.toHaveBeenCalled();
+		expect(mockDeleteUserSkillVariantDefinition).not.toHaveBeenCalled();
 	});
 
 	it("reads and updates only through the authenticated owner", async () => {
-		mockGetUserSkillDefinition.mockResolvedValue({ id: "skill-1", displayName: "Skill" });
+		mockGetUserSkillDefinition.mockResolvedValue({
+			id: "skill-1",
+			displayName: "Skill",
+		});
 		mockUpdateUserSkillDefinition.mockResolvedValue({
 			id: "skill-1",
 			displayName: "Updated skill",
@@ -82,12 +110,17 @@ describe("/api/skills/[id]", () => {
 
 		const getResponse = await GET(makeEvent());
 		const getData = await getResponse.json();
-		const patchResponse = await PATCH(makeEvent({ userId: "attacker-user", enabled: false }));
+		const patchResponse = await PATCH(
+			makeEvent({ userId: "attacker-user", enabled: false }),
+		);
 		const patchData = await patchResponse.json();
 
 		expect(getResponse.status).toBe(200);
 		expect(getData.skill).toEqual({ id: "skill-1", displayName: "Skill" });
-		expect(mockGetUserSkillDefinition).toHaveBeenCalledWith("owner-user", "skill-1");
+		expect(mockGetUserSkillDefinition).toHaveBeenCalledWith(
+			"owner-user",
+			"skill-1",
+		);
 		expect(patchResponse.status).toBe(200);
 		expect(patchData.skill).toEqual({
 			id: "skill-1",
@@ -112,6 +145,68 @@ describe("/api/skills/[id]", () => {
 		expect(getResponse.status).toBe(404);
 		expect(deleteResponse.status).toBe(200);
 		expect(deleteData.success).toBe(true);
-		expect(mockDeleteUserSkillDefinition).toHaveBeenCalledWith("owner-user", "skill-1");
+		expect(mockDeleteUserSkillDefinition).toHaveBeenCalledWith(
+			"owner-user",
+			"skill-1",
+		);
+	});
+
+	it("reads, updates, and deletes owner-editable user variants", async () => {
+		mockGetUserSkillDefinition.mockResolvedValue(null);
+		mockGetUserSkillVariantDefinition.mockResolvedValue({
+			id: "skill-1",
+			displayName: "Variant",
+			skillKind: "skill_variant",
+			baseSkillId: "system:pack",
+			instructions: "LEAKED_OVERLAY",
+		});
+		mockUpdateUserSkillVariantDefinition.mockResolvedValue({
+			id: "skill-1",
+			displayName: "Updated variant",
+			skillKind: "skill_variant",
+			baseSkillId: "system:pack",
+			instructions: "UPDATED_OVERLAY",
+		});
+		mockDeleteUserSkillDefinition.mockResolvedValue(false);
+		mockDeleteUserSkillVariantDefinition.mockResolvedValue(true);
+
+		const getResponse = await GET(makeEvent());
+		const getData = await getResponse.json();
+		const patchResponse = await PATCH(
+			makeEvent({
+				skillKind: "skill_variant",
+				instructions: "UPDATED_OVERLAY",
+				durationPolicy: "session",
+			}),
+		);
+		const patchData = await patchResponse.json();
+		const deleteResponse = await DELETE(makeEvent());
+
+		expect(getResponse.status).toBe(200);
+		expect(getData.variant).toEqual({
+			id: "skill-1",
+			displayName: "Variant",
+			skillKind: "skill_variant",
+			baseSkillId: "system:pack",
+			instructions: "LEAKED_OVERLAY",
+		});
+		expect(patchResponse.status).toBe(200);
+		expect(patchData.variant).toEqual({
+			id: "skill-1",
+			displayName: "Updated variant",
+			skillKind: "skill_variant",
+			baseSkillId: "system:pack",
+			instructions: "UPDATED_OVERLAY",
+		});
+		expect(mockUpdateUserSkillVariantDefinition).toHaveBeenCalledWith(
+			"owner-user",
+			"skill-1",
+			expect.not.objectContaining({ durationPolicy: "session" }),
+		);
+		expect(deleteResponse.status).toBe(200);
+		expect(mockDeleteUserSkillVariantDefinition).toHaveBeenCalledWith(
+			"owner-user",
+			"skill-1",
+		);
 	});
 });

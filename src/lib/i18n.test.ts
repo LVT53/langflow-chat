@@ -1,40 +1,43 @@
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
-import ts from 'typescript';
-import { describe, expect, it } from 'vitest';
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import ts from "typescript";
+import { describe, expect, it } from "vitest";
 
 const auditedPrefixes = [
-	'admin.composerCommandRegistry',
-	'admin.systemSkills.',
-	'composerCommandRegistry.',
-	'composerCommands.',
-	'linkedSources.',
-	'fork.',
-	'pendingSkill.',
-	'skillDrafts.',
-	'skillSessions.',
-	'skills.',
-	'sourceManager.',
-	'sidebar.forkIndicatorTooltip',
+	"admin.composerCommandRegistry",
+	"admin.systemSkills.",
+	"composerCommandRegistry.",
+	"composerCommands.",
+	"linkedSources.",
+	"fork.",
+	"pendingSkill.",
+	"skillDrafts.",
+	"skillSessions.",
+	"skills.",
+	"sourceManager.",
+	"sidebar.forkIndicatorTooltip",
 ] as const;
 
-function collectDictionaryKeys(): Record<'en' | 'hu', string[]> {
-	const sourcePath = resolve(dirname(new URL(import.meta.url).pathname), 'i18n.ts');
+function collectDictionaryKeys(): Record<"en" | "hu", string[]> {
+	const sourcePath = resolve(
+		dirname(new URL(import.meta.url).pathname),
+		"i18n.ts",
+	);
 	const sourceFile = ts.createSourceFile(
 		sourcePath,
-		readFileSync(sourcePath, 'utf8'),
+		readFileSync(sourcePath, "utf8"),
 		ts.ScriptTarget.Latest,
 		true,
 		ts.ScriptKind.TS,
 	);
 
 	let dictionary: ts.ObjectLiteralExpression | null = null;
-	sourceFile.forEachChild((node) => {
-		if (!ts.isVariableStatement(node)) return;
+	for (const node of sourceFile.statements) {
+		if (!ts.isVariableStatement(node)) continue;
 		for (const declaration of node.declarationList.declarations) {
 			if (
 				ts.isIdentifier(declaration.name) &&
-				declaration.name.text === 'dictionary' &&
+				declaration.name.text === "dictionary" &&
 				declaration.initializer
 			) {
 				const initializer = ts.isAsExpression(declaration.initializer)
@@ -45,14 +48,14 @@ function collectDictionaryKeys(): Record<'en' | 'hu', string[]> {
 				}
 			}
 		}
-	});
+	}
 
 	if (!dictionary) {
-		throw new Error('Could not find i18n dictionary object');
+		throw new Error("Could not find i18n dictionary object");
 	}
 
 	const keys = { en: [] as string[], hu: [] as string[] };
-	for (const language of ['en', 'hu'] as const) {
+	for (const language of ["en", "hu"] as const) {
 		const property = dictionary.properties.find(
 			(prop): prop is ts.PropertyAssignment =>
 				ts.isPropertyAssignment(prop) &&
@@ -79,25 +82,25 @@ function collectDictionaryKeys(): Record<'en' | 'hu', string[]> {
 	return keys;
 }
 
-describe('i18n composer and skills namespaces', () => {
-	it('keeps English and Hungarian keys in parity', () => {
+describe("i18n composer and skills namespaces", () => {
+	it("keeps English and Hungarian keys in parity", () => {
 		const keys = collectDictionaryKeys();
 
 		expect(keys.hu).toEqual(keys.en);
 		expect(keys.en.length).toBeGreaterThan(0);
 	});
 
-	it('localizes every conversation fork creation failure code', () => {
+	it("localizes every conversation fork creation failure code", () => {
 		const keys = collectDictionaryKeys();
 		const expectedForkErrorKeys = [
-			'fork.errors.emptySourceMessage',
-			'fork.errors.invalidSourceMessage',
-			'fork.errors.requiredArtifactUnauthorized',
-			'fork.errors.requiredArtifactUnavailable',
-			'fork.errors.requiredGeneratedWorkUnavailable',
-			'fork.errors.sequenceConflict',
-			'fork.errors.sourceConversationNotFound',
-			'fork.errors.stoppedSourceMessage',
+			"fork.errors.emptySourceMessage",
+			"fork.errors.invalidSourceMessage",
+			"fork.errors.requiredArtifactUnauthorized",
+			"fork.errors.requiredArtifactUnavailable",
+			"fork.errors.requiredGeneratedWorkUnavailable",
+			"fork.errors.sequenceConflict",
+			"fork.errors.sourceConversationNotFound",
+			"fork.errors.stoppedSourceMessage",
 		];
 
 		for (const key of expectedForkErrorKeys) {
@@ -106,10 +109,10 @@ describe('i18n composer and skills namespaces', () => {
 		}
 	});
 
-	it('localizes the inherited Skill Draft copy guard', () => {
+	it("localizes the inherited Skill Draft copy guard", () => {
 		const keys = collectDictionaryKeys();
 
-		expect(keys.en).toContain('skillDrafts.inheritedCopyBlocked');
-		expect(keys.hu).toContain('skillDrafts.inheritedCopyBlocked');
+		expect(keys.en).toContain("skillDrafts.inheritedCopyBlocked");
+		expect(keys.hu).toContain("skillDrafts.inheritedCopyBlocked");
 	});
 });

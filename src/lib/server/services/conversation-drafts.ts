@@ -1,7 +1,7 @@
-import { parseJsonStringArray } from '$lib/server/utils/json';
-import { and, eq } from 'drizzle-orm';
-import { db } from '$lib/server/db';
-import { conversationDrafts } from '$lib/server/db/schema';
+import { and, eq } from "drizzle-orm";
+import { db } from "$lib/server/db";
+import { conversationDrafts } from "$lib/server/db/schema";
+import { parseJsonStringArray } from "$lib/server/utils/json";
 import type {
 	Artifact,
 	ArtifactSummary,
@@ -9,9 +9,8 @@ import type {
 	LinkedContextSource,
 	PendingAttachment,
 	PendingSkillSelection,
-} from '$lib/types';
-import { resolvePromptAttachmentArtifacts } from './knowledge';
-
+} from "$lib/types";
+import { resolvePromptAttachmentArtifacts } from "./knowledge";
 
 function toArtifactSummary(artifact: Artifact): ArtifactSummary {
 	return {
@@ -35,38 +34,64 @@ function parseLinkedSourcesJson(value: string | null): LinkedContextSource[] {
 		if (!Array.isArray(parsed)) return [];
 		return parsed.filter(
 			(source): source is LinkedContextSource =>
-				typeof source === 'object' &&
+				typeof source === "object" &&
 				source !== null &&
-				'displayArtifactId' in source &&
-				typeof source.displayArtifactId === 'string' &&
-				'name' in source &&
-				typeof source.name === 'string' &&
-				'type' in source &&
-				source.type === 'document'
+				"displayArtifactId" in source &&
+				typeof source.displayArtifactId === "string" &&
+				"name" in source &&
+				typeof source.name === "string" &&
+				"type" in source &&
+				source.type === "document",
 		);
 	} catch {
 		return [];
 	}
 }
 
-function parsePendingSkillJson(value: string | null): PendingSkillSelection | null {
+export function parsePendingSkillSelection(
+	value: unknown,
+): PendingSkillSelection | null {
+	if (typeof value !== "object" || value === null) return null;
+	const record = value as Record<string, unknown>;
+	if (
+		typeof record.id !== "string" ||
+		(record.ownership !== "user" && record.ownership !== "system") ||
+		typeof record.displayName !== "string"
+	) {
+		return null;
+	}
+	const skillKind =
+		record.skillKind === "user_skill" ||
+		record.skillKind === "skill_pack" ||
+		record.skillKind === "skill_variant"
+			? record.skillKind
+			: undefined;
+	const selection: PendingSkillSelection = {
+		id: record.id,
+		ownership: record.ownership,
+		displayName: record.displayName,
+	};
+	if (skillKind) selection.skillKind = skillKind;
+	if ("baseSkillId" in record) {
+		selection.baseSkillId =
+			typeof record.baseSkillId === "string" ? record.baseSkillId : null;
+	}
+	if ("baseSkillDisplayName" in record) {
+		selection.baseSkillDisplayName =
+			typeof record.baseSkillDisplayName === "string"
+				? record.baseSkillDisplayName
+				: null;
+	}
+	if (record.unavailable === true) selection.unavailable = true;
+	return selection;
+}
+
+function parsePendingSkillJson(
+	value: string | null,
+): PendingSkillSelection | null {
 	if (!value) return null;
 	try {
-		const parsed = JSON.parse(value) as unknown;
-		if (typeof parsed !== 'object' || parsed === null) return null;
-		const record = parsed as Record<string, unknown>;
-		if (
-			typeof record.id !== 'string' ||
-			(record.ownership !== 'user' && record.ownership !== 'system') ||
-			typeof record.displayName !== 'string'
-		) {
-			return null;
-		}
-		return {
-			id: record.id,
-			ownership: record.ownership,
-			displayName: record.displayName,
-		};
+		return parsePendingSkillSelection(JSON.parse(value) as unknown);
 	} catch {
 		return null;
 	}
@@ -76,7 +101,7 @@ function hasMeaningfulDraft(
 	draftText: string,
 	selectedAttachmentIds: string[],
 	selectedLinkedSources: LinkedContextSource[],
-	pendingSkill: PendingSkillSelection | null
+	pendingSkill: PendingSkillSelection | null,
 ): boolean {
 	return (
 		draftText.trim().length > 0 ||
@@ -88,7 +113,7 @@ function hasMeaningfulDraft(
 
 export async function getConversationDraft(
 	userId: string,
-	conversationId: string
+	conversationId: string,
 ): Promise<ConversationDraft | null> {
 	const [row] = await db
 		.select()
@@ -96,19 +121,26 @@ export async function getConversationDraft(
 		.where(
 			and(
 				eq(conversationDrafts.userId, userId),
-				eq(conversationDrafts.conversationId, conversationId)
-			)
+				eq(conversationDrafts.conversationId, conversationId),
+			),
 		)
 		.limit(1);
 
 	if (!row) return null;
 
-	const selectedAttachmentIds = parseJsonStringArray(row.selectedAttachmentIdsJson);
-	const selectedLinkedSources = parseLinkedSourcesJson(row.selectedLinkedSourcesJson);
+	const selectedAttachmentIds = parseJsonStringArray(
+		row.selectedAttachmentIdsJson,
+	);
+	const selectedLinkedSources = parseLinkedSourcesJson(
+		row.selectedLinkedSourcesJson,
+	);
 	const pendingSkill = parsePendingSkillJson(row.pendingSkillJson);
 	const resolved =
 		selectedAttachmentIds.length > 0
-			? await resolvePromptAttachmentArtifacts(userId, selectedAttachmentIds).catch(() => null)
+			? await resolvePromptAttachmentArtifacts(
+					userId,
+					selectedAttachmentIds,
+				).catch(() => null)
 			: null;
 	const pendingAttachments: PendingAttachment[] =
 		resolved?.items
@@ -125,7 +157,7 @@ export async function getConversationDraft(
 
 	return {
 		conversationId: row.conversationId,
-		draftText: row.draftText ?? '',
+		draftText: row.draftText ?? "",
 		selectedAttachmentIds,
 		selectedAttachments: pendingAttachments,
 		selectedLinkedSources,
@@ -142,12 +174,21 @@ export async function upsertConversationDraft(params: {
 	selectedLinkedSources?: LinkedContextSource[];
 	pendingSkill?: PendingSkillSelection | null;
 }): Promise<ConversationDraft | null> {
-	const selectedAttachmentIds = Array.from(new Set(params.selectedAttachmentIds));
+	const selectedAttachmentIds = Array.from(
+		new Set(params.selectedAttachmentIds),
+	);
 	const selectedLinkedSources = params.selectedLinkedSources ?? [];
 	const pendingSkill = params.pendingSkill ?? null;
 	const draftText = params.draftText;
 
-	if (!hasMeaningfulDraft(draftText, selectedAttachmentIds, selectedLinkedSources, pendingSkill)) {
+	if (
+		!hasMeaningfulDraft(
+			draftText,
+			selectedAttachmentIds,
+			selectedLinkedSources,
+			pendingSkill,
+		)
+	) {
 		await clearConversationDraft(params.userId, params.conversationId);
 		return null;
 	}
@@ -178,13 +219,16 @@ export async function upsertConversationDraft(params: {
 	return getConversationDraft(params.userId, params.conversationId);
 }
 
-export async function clearConversationDraft(userId: string, conversationId: string): Promise<void> {
+export async function clearConversationDraft(
+	userId: string,
+	conversationId: string,
+): Promise<void> {
 	await db
 		.delete(conversationDrafts)
 		.where(
 			and(
 				eq(conversationDrafts.userId, userId),
-				eq(conversationDrafts.conversationId, conversationId)
-			)
+				eq(conversationDrafts.conversationId, conversationId),
+			),
 		);
 }

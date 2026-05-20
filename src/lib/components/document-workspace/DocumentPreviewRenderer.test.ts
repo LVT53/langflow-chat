@@ -8,6 +8,12 @@ const mockJsZipLoadAsync = vi.fn();
 const mockPptxLoadFile = vi.fn();
 const mockPptxGoToSlide = vi.fn();
 const mockPptxDestroy = vi.fn();
+const mockXlsxRows = vi.hoisted(() => ({
+	rows: [
+		[{ value: "Header1" }, { value: "Header2" }],
+		[{ value: "Value1" }, { value: "Value2" }],
+	] as Array<Array<{ value: unknown; text?: string }>>,
+}));
 
 vi.mock("$lib/services/markdown", () => ({
 	renderHighlightedText: vi.fn(
@@ -38,21 +44,18 @@ vi.mock("exceljs", () => ({
 					name: "Sheet1",
 					eachRow: (
 						cb: (row: {
-							eachCell: (cb2: (cell: { value: unknown }) => void) => void;
+							eachCell: (cb2: (cell: MockExcelCell) => void) => void;
 						}) => void,
 					) => {
-						cb({
-							eachCell: (cellCb: (cell: { value: unknown }) => void) => {
-								cellCb({ value: "Header1" });
-								cellCb({ value: "Header2" });
-							},
-						});
-						cb({
-							eachCell: (cellCb: (cell: { value: unknown }) => void) => {
-								cellCb({ value: "Value1" });
-								cellCb({ value: "Value2" });
-							},
-						});
+						for (const cells of mockXlsxRows.rows) {
+							cb({
+								eachCell: (cellCb: (cell: MockExcelCell) => void) => {
+									for (const cell of cells) {
+										cellCb(cell);
+									}
+								},
+							});
+						}
 					},
 				},
 				1,
@@ -117,11 +120,16 @@ vi.mock("pdfjs-dist", () => ({
 	})),
 }));
 
+interface MockExcelCell {
+	value: unknown;
+	text?: string;
+}
+
 interface MockWorksheet {
 	name: string;
 	eachRow: (
 		callback: (row: {
-			eachCell: (cb: (cell: { value: unknown }) => void) => void;
+			eachCell: (cb: (cell: MockExcelCell) => void) => void;
 		}) => void,
 	) => void;
 }
@@ -129,7 +137,9 @@ interface MockWorksheet {
 function expectPageIndicator(page: string, total: number) {
 	expect(screen.getByTestId("preview-page-input")).toHaveDisplayValue(page);
 	expect(screen.getByText(`of ${total}`)).toBeInTheDocument();
-	expect(document.querySelector(".preview-toolbar-page-summary")).not.toBeInTheDocument();
+	expect(
+		document.querySelector(".preview-toolbar-page-summary"),
+	).not.toBeInTheDocument();
 }
 
 describe("DocumentPreviewRenderer", () => {
@@ -137,6 +147,10 @@ describe("DocumentPreviewRenderer", () => {
 
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mockXlsxRows.rows = [
+			[{ value: "Header1" }, { value: "Header2" }],
+			[{ value: "Value1" }, { value: "Value2" }],
+		];
 		global.fetch = vi.fn();
 		HTMLCanvasElement.prototype.toDataURL = vi
 			.fn()
@@ -480,16 +494,13 @@ describe("DocumentPreviewRenderer", () => {
 			deltaY: -120,
 			ctrlKey: true,
 		});
-		const zoomWheelPreventDefault = vi.spyOn(
-			zoomWheelEvent,
-			"preventDefault",
-		);
+		const zoomWheelPreventDefault = vi.spyOn(zoomWheelEvent, "preventDefault");
 		scrollRegion.dispatchEvent(zoomWheelEvent);
 		expect(zoomWheelPreventDefault).toHaveBeenCalled();
 		await waitFor(() => {
-			expect(screen.getByRole("button", { name: "Reset zoom" })).toHaveTextContent(
-				"112%",
-			);
+			expect(
+				screen.getByRole("button", { name: "Reset zoom" }),
+			).toHaveTextContent("112%");
 		});
 
 		scrollRegion.focus();
@@ -871,6 +882,38 @@ describe("DocumentPreviewRenderer", () => {
 		});
 	});
 
+	it("renders XLSX formula cells using their text or calculated result", async () => {
+		mockXlsxRows.rows = [
+			[{ value: "Metric" }, { value: "Total" }],
+			[{ value: "Revenue" }, { value: { formula: "SUM(B2:C2)", result: 225 } }],
+			[{ value: "Forecast" }, { value: { formula: "SUM(B3:C3)" } }],
+		];
+		const mockBlob = new Blob(["xlsx content"], {
+			type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+		});
+		(global.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
+			ok: true,
+			blob: () => Promise.resolve(mockBlob),
+		});
+
+		render(DocumentPreviewRenderer, {
+			props: {
+				open: true,
+				artifactId: "test-123",
+				filename: "spreadsheet.xlsx",
+				mimeType:
+					"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+				onClose: mockOnClose,
+			},
+		});
+
+		await waitFor(() => {
+			expect(screen.getByText("225")).toBeInTheDocument();
+			expect(screen.getByText("=SUM(B3:C3)")).toBeInTheDocument();
+		});
+		expect(screen.queryByText("[object Object]")).not.toBeInTheDocument();
+	});
+
 	it("renders PPTX files as slide images", async () => {
 		const mockBlob = new Blob(["pptx content"], {
 			type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
@@ -969,9 +1012,7 @@ describe("DocumentPreviewRenderer", () => {
 			"utf8",
 		);
 
-		expect(componentSource).toContain(
-			"--preview-toolbar-jump-offset: 4rem;",
-		);
+		expect(componentSource).toContain("--preview-toolbar-jump-offset: 4rem;");
 		expect(componentSource).toContain(
 			"scroll-margin-top: var(--preview-toolbar-jump-offset);",
 		);

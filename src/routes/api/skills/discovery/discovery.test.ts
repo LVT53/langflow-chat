@@ -14,25 +14,32 @@ vi.mock("$lib/server/services/skills/user-skills", () => ({
 	seedBuiltInSystemSkillDefinitions: vi.fn(),
 }));
 
-import { getConfig } from "$lib/server/config-store";
 import { requireAuth } from "$lib/server/auth/hooks";
+import { getConfig } from "$lib/server/config-store";
 import {
 	discoverSkillSummaries,
+	localizeSkillDiscoverySummary,
 	seedBuiltInSystemSkillDefinitions,
 } from "$lib/server/services/skills/user-skills";
 import { GET } from "./+server";
 
 const mockGetConfig = getConfig as ReturnType<typeof vi.fn>;
 const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
-const mockDiscoverSkillSummaries = discoverSkillSummaries as ReturnType<typeof vi.fn>;
-const mockSeedBuiltInSystemSkillDefinitions = seedBuiltInSystemSkillDefinitions as ReturnType<
+const mockDiscoverSkillSummaries = discoverSkillSummaries as ReturnType<
 	typeof vi.fn
 >;
+const mockLocalizeSkillDiscoverySummary =
+	localizeSkillDiscoverySummary as ReturnType<typeof vi.fn>;
+const mockSeedBuiltInSystemSkillDefinitions =
+	seedBuiltInSystemSkillDefinitions as ReturnType<typeof vi.fn>;
 
-function makeEvent(url = "http://localhost/api/skills/discovery?q=interview") {
+function makeEvent(
+	url = "http://localhost/api/skills/discovery?q=interview",
+	uiLanguage: "en" | "hu" = "en",
+) {
 	return {
 		request: new Request(url),
-		locals: { user: { id: "owner-user", role: "user", uiLanguage: "en" } },
+		locals: { user: { id: "owner-user", role: "user", uiLanguage } },
 		params: {},
 		url: new URL(url),
 		route: { id: "/api/skills/discovery" },
@@ -44,6 +51,7 @@ describe("/api/skills/discovery", () => {
 		vi.clearAllMocks();
 		mockRequireAuth.mockReturnValue(undefined);
 		mockGetConfig.mockReturnValue({ composerCommandRegistryEnabled: true });
+		mockLocalizeSkillDiscoverySummary.mockImplementation((skill) => skill);
 		mockDiscoverSkillSummaries.mockResolvedValue([
 			{
 				id: "skill-1",
@@ -69,14 +77,59 @@ describe("/api/skills/discovery", () => {
 			}),
 		]);
 		expect(JSON.stringify(data.skills)).not.toContain("instructions");
-		expect(mockSeedBuiltInSystemSkillDefinitions).toHaveBeenCalledWith("owner-user");
-		expect(mockDiscoverSkillSummaries).toHaveBeenCalledWith("owner-user", "interview");
+		expect(mockSeedBuiltInSystemSkillDefinitions).toHaveBeenCalledWith(
+			"owner-user",
+		);
+		expect(mockDiscoverSkillSummaries).toHaveBeenCalledWith(
+			"owner-user",
+			"interview",
+		);
+	});
+
+	it("localizes variant base pack labels for discovery results", async () => {
+		mockDiscoverSkillSummaries.mockResolvedValueOnce([
+			{
+				id: "variant-1",
+				ownership: "user",
+				skillKind: "skill_variant",
+				baseSkillId: "system:spreadsheet-builder",
+				baseSkillDisplayName: "Spreadsheet Builder",
+				displayName: "Daily workbook variant",
+				description: "User overlay.",
+				activationExamples: [],
+				enabled: true,
+			},
+		]);
+		mockLocalizeSkillDiscoverySummary.mockImplementation((skill, language) => ({
+			...skill,
+			baseSkillDisplayName:
+				language === "hu" ? "Táblázatkészítő" : skill.baseSkillDisplayName,
+		}));
+
+		const response = await GET(
+			makeEvent("http://localhost/api/skills/discovery?q=spreadsheet", "hu"),
+		);
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(data.skills).toEqual([
+			expect.objectContaining({
+				id: "variant-1",
+				baseSkillDisplayName: "Táblázatkészítő",
+			}),
+		]);
+		expect(mockLocalizeSkillDiscoverySummary).toHaveBeenCalledWith(
+			expect.objectContaining({ id: "variant-1" }),
+			"hu",
+		);
 	});
 
 	it("rejects discovery when Composer Command Registry is disabled", async () => {
 		mockGetConfig.mockReturnValue({ composerCommandRegistryEnabled: false });
 
-		const response = await GET(makeEvent("http://localhost/api/skills/discovery"));
+		const response = await GET(
+			makeEvent("http://localhost/api/skills/discovery"),
+		);
 		const data = await response.json();
 
 		expect(response.status).toBe(404);

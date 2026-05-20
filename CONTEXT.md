@@ -359,12 +359,20 @@ An explicitly activated guided behavior that can shape a Normal Chat turn or sho
 _Avoid_: Langflow tool, system prompt, slash command, agent mode
 
 **System Skill**:
-A **Skill** managed by an administrator and available to eligible users.
+A **Skill** managed by an administrator and available to eligible users, often through an admin-maintained **Skill Pack**.
 _Avoid_: built-in prompt, hardcoded skill, Langflow tool
 
 **User Skill**:
-A **Skill** created or customized by an individual user for their own Normal Chat use.
+A **Skill** owned by an individual user for their own Normal Chat use. It may be standalone user-authored guidance or a **Skill Variant** that customizes a **Skill Pack**.
 _Avoid_: private command, personal prompt snippet, user tool
+
+**Skill Pack**:
+Admin-maintained reusable base skill guidance, potentially backed by internal resources for high-quality system or admin-managed skills.
+_Avoid_: copied prompt template, marketplace package, plugin install
+
+**Skill Variant**:
+A user-owned overlay on a **Skill Pack** that customizes the pack for that user's Normal Chat use without copying the pack's base instructions.
+_Avoid_: cloned skill, forked system skill, private copy
 
 **Skill Draft**:
 A proposed **Skill** definition created by a user or by AlfyAI that is not active in the `$` skill list until the owning user saves it.
@@ -541,6 +549,10 @@ _Avoid_: uploaded attachment, file copy, hidden retrieval hint
 - A **Skill** may shape the next Normal Chat behavior, but it is not a Langflow tool and should not be treated as a Deep Research mode.
 - A **Skill** may be a **System Skill** or a **User Skill**.
 - **System Skills** and **User Skills** share the same activation surface, but ownership controls who can edit, publish, disable, or delete them.
+- A **Skill Pack** is the admin-maintained base for reusable skill guidance, including system-quality guidance and any internal resources managed with it.
+- A **Skill Variant** stores only user-owned overlay guidance and references the current **Skill Pack** rather than copying or pinning its base instructions.
+- Admin updates to a **Skill Pack** silently update the base guidance used by future direct pack activations and future **Skill Variant** activations.
+- The **Skills Settings Surface** should keep **Skill Variant** editing overlay-only; admin pack content and resources are managed separately.
 - Users may hide **System Skills** from their own `$` discovery without disabling them system-wide.
 - Hidden **System Skills** should remain restorable from the **Skills Settings Surface**.
 - Users should not edit shared **System Skill** definitions unless they are an admin.
@@ -559,11 +571,12 @@ _Avoid_: uploaded attachment, file copy, hidden retrieval hint
 - V1 should not expose a model-facing Langflow `create_skill` tool.
 - A v1 **Skill Definition** should be declarative configuration, not executable code or an arbitrary plugin surface.
 - A v1 **Skill Definition** should include display name, description, instructions, activation examples, visibility, ownership, enabled state, duration policy, question policy, notes policy, source scope, creation source, version, and update timestamp.
-- V1 should not include skill sharing, copying, duplicating, import, package install, remote marketplace, or plugin-style export flows.
-- Users may create new **User Skills** manually, but v1 should not offer clone, copy, or personalize-from-system-skill workflows.
+- V1 should not include generic skill sharing, copying, duplicating, import, package install, remote marketplace, or plugin-style export flows.
+- Users may create new **User Skills** manually, and v1 may support deliberate personalization of admin-maintained **Skill Packs** through **Skill Variants** instead of clone, copy, or forked personalized-system-skill workflows.
 - V1 should ship a small initial **System Skill** set rather than a large catalog.
 - Initial **System Skills** should include Interview, Grill With Docs, Code Review, and Writing Coach.
 - Built-in **System Skills** exist to prove the framework and provide useful defaults; users and admins should still be able to create personalized skills.
+- Spreadsheet-oriented **Skill Packs** should preserve quality, style, and domain guidance while routing file creation through AlfyAI **File Production Requests** and durable **File Production Cards**.
 - Built-in **System Skill** display names, descriptions, and default instructions should support English and Hungarian where practical.
 - **User Skills** should remain in the user-authored language rather than being automatically translated.
 - AI-created **Skill Drafts** should default to the current UI or chat language unless the user asks otherwise.
@@ -654,8 +667,8 @@ _Avoid_: uploaded attachment, file copy, hidden retrieval hint
 - V1 allows at most one active **Skill Session** per conversation composer.
 - Starting another **Skill Session** while one is active should require replacing, finishing, or dismissing the current session rather than stacking skill instructions.
 - Multi-turn **Skill Sessions** should be durable and scoped to a conversation.
-- A **Skill Session** should snapshot its **Skill Definition** instructions, policies, source scope, display name, and version when the session starts.
-- Editing a **Skill Definition** should affect future sessions, not already-running **Skill Sessions**, unless the user explicitly restarts or updates the session.
+- A **Skill Session** should snapshot its effective **Skill** instructions, policies, source scope, display name, and version when the session starts, including current **Skill Pack** base guidance plus **Skill Variant** overlay guidance when applicable.
+- Editing a **Skill Definition**, **Skill Pack**, or **Skill Variant** should affect future sessions, not already-running **Skill Sessions**, unless the user explicitly restarts or updates the session.
 - Skill-definition snapshots are backend continuity records and should not add visible UI clutter by default.
 - Durable v1 storage should distinguish saved **Skill Definitions**, per-user skill preferences, conversation-scoped **Skill Sessions**, sparse **Skill Session Milestones**, living **Skill Notes**, and bounded **Skill Note Checkpoints**.
 - **Skill Session Milestones** should be persisted as separate skill-session event rows, not synthetic user or assistant messages.

@@ -347,6 +347,7 @@ export function runChatStreamOrchestrator(
 				onToolCall: (name, input, status, outputSummary, details) => {
 					if (streamId) {
 						appendToStreamBuffer(streamId, "tool_call", {
+							callId: details?.callId,
 							name,
 							input,
 							status,
@@ -369,6 +370,7 @@ export function runChatStreamOrchestrator(
 				input: Record<string, unknown>,
 				status: "running" | "done",
 				details?: {
+					callId?: string;
 					outputSummary?: string | null;
 					sourceType?: import("$lib/types").EvidenceSourceType | null;
 					candidates?: import("$lib/types").ToolEvidenceCandidate[];
@@ -849,8 +851,7 @@ export function runChatStreamOrchestrator(
 						initialContextDebug = latestContextDebug;
 						latestHonchoContext = langflowResponse.honchoContext ?? null;
 						latestHonchoSnapshot = langflowResponse.honchoSnapshot ?? null;
-						latestContextTraceSections =
-							langflowResponse.contextTraceSections;
+						latestContextTraceSections = langflowResponse.contextTraceSections;
 						initialContextTraceSections = latestContextTraceSections;
 
 						if (

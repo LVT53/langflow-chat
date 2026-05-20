@@ -46,7 +46,10 @@ import {
 	researchFurtherFromDeepResearchReport as researchFurtherFromDeepResearchReportRequest,
 	startDeepResearchChatJob as startDeepResearchChatJobRequest,
 } from "$lib/client/api/deep-research";
-import { recordDocumentWorkspaceOpen, uploadKnowledgeAttachment } from "$lib/client/api/knowledge";
+import {
+	recordDocumentWorkspaceOpen,
+	uploadKnowledgeAttachment,
+} from "$lib/client/api/knowledge";
 import { fetchPublicPersonalityProfiles } from "$lib/client/api/admin";
 import { currentConversationId } from "$lib/stores/ui";
 import {
@@ -131,8 +134,10 @@ import {
 	toFriendlySendError,
 	updateMessageById,
 	cloneSendPayload,
+	isPendingSkillUnavailableError,
 	isConversationReadOnly,
 	isOsFileDropEvent,
+	markPendingSkillUnavailable,
 	shouldStartDeepResearchJob,
 	shouldDeleteConversationAfterCancellingDeepResearch,
 	shouldHydrateFileProductionJobsOnToolCall,
@@ -229,7 +234,9 @@ let deepResearchJobs = $state<DeepResearchJob[]>(initialDeepResearchJobs);
 let activeSkillSession = $state<SkillSession | null>(initialActiveSkillSession);
 let skillSessionBusy = $state(false);
 let skillSessionError = $state<string | null>(null);
-let skillDraftActionState = $state<Record<string, { busy?: boolean; error?: string | null }>>({});
+let skillDraftActionState = $state<
+	Record<string, { busy?: boolean; error?: string | null }>
+>({});
 let forkingMessageId = $state<string | null>(null);
 let forkOpening = $state(Boolean(initialForkOrigin));
 let forkOpeningTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -249,7 +256,9 @@ let workspacePresentation = $state<"docked" | "expanded">(
 	initialWorkspaceState?.presentation ?? "docked",
 );
 let evidenceManagerOpen = $state(false);
-let personalityProfiles = $state<Array<{ id: string; name: string; description: string }>>([]);
+let personalityProfiles = $state<
+	Array<{ id: string; name: string; description: string }>
+>([]);
 let selectedPersonalityId = $state<string | null>(
 	getConversationPersonalitySelection(
 		initialConversationId,
@@ -933,7 +942,8 @@ async function reconnectToOrphanedStream(
 							deepResearchJobs,
 							detail.deepResearchJobs ?? [],
 						);
-						conversationStatus = detail.conversation?.status ?? conversationStatus;
+						conversationStatus =
+							detail.conversation?.status ?? conversationStatus;
 						conversationDraft = null;
 						// Clear sessionStorage draft to prevent restoration
 						const pending = consumePendingConversationMessage(
@@ -944,8 +954,8 @@ async function reconnectToOrphanedStream(
 					.catch((e) => {
 						console.error("[CHAT] Failed to fetch fresh data:", e);
 					});
-				},
 			},
+		},
 		{
 			reconnectToStreamId: streamId,
 			reconnectUserMessage: userMessage,
@@ -993,7 +1003,9 @@ onMount(() => {
 	);
 	void checkForOrphanedStreamOnMount();
 	void recoverPendingEvidence();
-	void fetchPublicPersonalityProfiles().then(p => personalityProfiles = p).catch(() => {});
+	void fetchPublicPersonalityProfiles()
+		.then((p) => (personalityProfiles = p))
+		.catch(() => {});
 });
 
 onDestroy(() => {
@@ -1055,7 +1067,10 @@ async function hydrateConversationDetail(conversationId: string) {
 		generatedFiles = payload.generatedFiles ?? generatedFiles;
 		fileProductionJobs = payload.fileProductionJobs ?? fileProductionJobs;
 		deepResearchJobs = payload.deepResearchJobs
-			? mergeDeepResearchJobsForHydration(deepResearchJobs, payload.deepResearchJobs)
+			? mergeDeepResearchJobsForHydration(
+					deepResearchJobs,
+					payload.deepResearchJobs,
+				)
 			: deepResearchJobs;
 		activeSkillSession = payload.activeSkillSession ?? null;
 		conversationStatus = payload.conversation?.status ?? conversationStatus;
@@ -1093,7 +1108,9 @@ async function endCurrentSkillSession(reason: "ended" | "dismissed") {
 	}
 }
 
-function attachFileProductionJobsToAssistantMessage(assistantMessageId: string) {
+function attachFileProductionJobsToAssistantMessage(
+	assistantMessageId: string,
+) {
 	fileProductionJobs = attachUnassignedFileProductionJobsToAssistant(
 		fileProductionJobs,
 		{
@@ -1125,7 +1142,10 @@ function replaceOptimisticDeepResearchJob(
 	);
 }
 
-function removeDeepResearchJob(jobs: DeepResearchJob[], jobId: string): DeepResearchJob[] {
+function removeDeepResearchJob(
+	jobs: DeepResearchJob[],
+	jobId: string,
+): DeepResearchJob[] {
 	return jobs.filter((job) => job.id !== jobId);
 }
 
@@ -1136,7 +1156,8 @@ function createOptimisticDeepResearchJob(params: {
 	message: string;
 }): DeepResearchJob {
 	const now = Date.now();
-	const title = params.message.trim().replace(/\s+/g, " ").slice(0, 96) || "Deep Research";
+	const title =
+		params.message.trim().replace(/\s+/g, " ").slice(0, 96) || "Deep Research";
 	return {
 		id: `pending-deep-research-${crypto.randomUUID()}`,
 		conversationId: params.conversationId,
@@ -1164,7 +1185,8 @@ async function handleRetryFileProductionJob(jobId: string) {
 		const job = await retryFileProductionJobRequest(jobId);
 		fileProductionJobs = mergeFileProductionJob(fileProductionJobs, job);
 	} catch (err) {
-		sendError = err instanceof Error ? err.message : "Failed to retry file production";
+		sendError =
+			err instanceof Error ? err.message : "Failed to retry file production";
 	}
 }
 
@@ -1173,22 +1195,26 @@ async function handleCancelFileProductionJob(jobId: string) {
 		const job = await cancelFileProductionJobRequest(jobId);
 		fileProductionJobs = mergeFileProductionJob(fileProductionJobs, job);
 	} catch (err) {
-		sendError = err instanceof Error ? err.message : "Failed to cancel file production";
+		sendError =
+			err instanceof Error ? err.message : "Failed to cancel file production";
 	}
 }
 
 async function handleCancelDeepResearchJob(jobId: string) {
 	const jobBeforeCancel = deepResearchJobs.find((job) => job.id === jobId);
-	const shouldDeleteConversation = shouldDeleteConversationAfterCancellingDeepResearch({
-		jobBeforeCancel,
-		messageCount: $messages.length,
-		deepResearchJobCount: deepResearchJobs.length,
-	});
+	const shouldDeleteConversation =
+		shouldDeleteConversationAfterCancellingDeepResearch({
+			jobBeforeCancel,
+			messageCount: $messages.length,
+			deepResearchJobCount: deepResearchJobs.length,
+		});
 	try {
 		const job = await cancelDeepResearchJobRequest(jobId);
 		if (shouldDeleteConversation) {
 			draftPersistence.clear();
-			await deleteConversationDraft(data.conversation.id).catch(() => undefined);
+			await deleteConversationDraft(data.conversation.id).catch(
+				() => undefined,
+			);
 			await deleteConversation(data.conversation.id);
 			removeConversationLocal(data.conversation.id);
 			await invalidateAll();
@@ -1197,7 +1223,8 @@ async function handleCancelDeepResearchJob(jobId: string) {
 		}
 		deepResearchJobs = mergeDeepResearchJob(deepResearchJobs, job);
 	} catch (err) {
-		sendError = err instanceof Error ? err.message : "Failed to cancel Deep Research";
+		sendError =
+			err instanceof Error ? err.message : "Failed to cancel Deep Research";
 	}
 }
 
@@ -1207,10 +1234,15 @@ async function handleEditDeepResearchPlan(
 	reportIntent?: DeepResearchReportIntent,
 ) {
 	try {
-		const job = await editDeepResearchPlanRequest(jobId, instructions, reportIntent);
+		const job = await editDeepResearchPlanRequest(
+			jobId,
+			instructions,
+			reportIntent,
+		);
 		deepResearchJobs = mergeDeepResearchJob(deepResearchJobs, job);
 	} catch (err) {
-		sendError = err instanceof Error ? err.message : "Failed to edit Research Plan";
+		sendError =
+			err instanceof Error ? err.message : "Failed to edit Research Plan";
 		throw err;
 	}
 }
@@ -1220,7 +1252,8 @@ async function handleApproveDeepResearchPlan(jobId: string) {
 		const job = await approveDeepResearchPlanRequest(jobId);
 		deepResearchJobs = mergeDeepResearchJob(deepResearchJobs, job);
 	} catch (err) {
-		sendError = err instanceof Error ? err.message : "Failed to approve Research Plan";
+		sendError =
+			err instanceof Error ? err.message : "Failed to approve Research Plan";
 		throw err;
 	}
 }
@@ -1241,7 +1274,10 @@ async function handleDiscussDeepResearchReport(jobId: string) {
 		}
 		await goto(`/chat/${action.conversation.id}?view=bootstrap`);
 	} catch (err) {
-		sendError = err instanceof Error ? err.message : "Failed to discuss Deep Research artifact";
+		sendError =
+			err instanceof Error
+				? err.message
+				: "Failed to discuss Deep Research artifact";
 		throw err;
 	}
 }
@@ -1251,7 +1287,10 @@ async function handleResearchFurtherFromDeepResearchReport(
 	options?: { depth?: DeepResearchDepth },
 ) {
 	try {
-		const action = await researchFurtherFromDeepResearchReportRequest(jobId, options);
+		const action = await researchFurtherFromDeepResearchReportRequest(
+			jobId,
+			options,
+		);
 		upsertConversationLocal(action.conversation);
 		await goto(`/chat/${action.conversation.id}`);
 	} catch (err) {
@@ -1324,9 +1363,13 @@ async function startDeepResearchTurn(params: {
 		isSending = false;
 		initialStreamPending = false;
 		activeStream = null;
-		deepResearchJobs = removeDeepResearchJob(deepResearchJobs, optimisticJob.id);
+		deepResearchJobs = removeDeepResearchJob(
+			deepResearchJobs,
+			optimisticJob.id,
+		);
 		restoreQueuedTurnToDraft();
-		sendError = err instanceof Error ? err.message : "Failed to start Deep Research";
+		sendError =
+			err instanceof Error ? err.message : "Failed to start Deep Research";
 		canRetry = false;
 	}
 }
@@ -1418,7 +1461,9 @@ function restorePayloadToDraft(payload: SendPayload) {
 		selectedAttachmentIds: payload.attachmentIds,
 		selectedAttachments: payload.pendingAttachments ?? [],
 		selectedLinkedSources: payload.linkedSources ?? [],
-		pendingSkill: payload.deepResearchDepth ? null : payload.pendingSkill ?? null,
+		pendingSkill: payload.deepResearchDepth
+			? null
+			: (payload.pendingSkill ?? null),
 	});
 	void draftPersistence.persist(
 		{
@@ -1426,7 +1471,9 @@ function restorePayloadToDraft(payload: SendPayload) {
 			draftText: payload.message,
 			selectedAttachmentIds: payload.attachmentIds,
 			selectedLinkedSources: payload.linkedSources ?? [],
-			pendingSkill: payload.deepResearchDepth ? null : payload.pendingSkill ?? null,
+			pendingSkill: payload.deepResearchDepth
+				? null
+				: (payload.pendingSkill ?? null),
 		},
 		true,
 	);
@@ -1543,7 +1590,8 @@ async function refreshMessageCost(messageId: string) {
 				updateMessageById(list, messageId, (message) => ({
 					...message,
 					costUsd: msg.costUsd ?? message.costUsd,
-					generationDurationMs: msg.generationDurationMs ?? message.generationDurationMs,
+					generationDurationMs:
+						msg.generationDurationMs ?? message.generationDurationMs,
 					modelDisplayName: msg.modelDisplayName ?? message.modelDisplayName,
 				})),
 			);
@@ -1584,7 +1632,10 @@ function setSkillDraftActionState(
 	};
 }
 
-function localizedSkillDraftActionError(error: unknown, fallbackKey: I18nKey): string {
+function localizedSkillDraftActionError(
+	error: unknown,
+	fallbackKey: I18nKey,
+): string {
 	const translate = get(t);
 	if (error instanceof ApiError && error.errorKey) {
 		const localizedKey = skillDraftLocalizedApiErrorKeys[error.errorKey];
@@ -1593,7 +1644,10 @@ function localizedSkillDraftActionError(error: unknown, fallbackKey: I18nKey): s
 	return translate(fallbackKey);
 }
 
-function localizedSkillSessionError(error: unknown, fallbackKey: I18nKey): string {
+function localizedSkillSessionError(
+	error: unknown,
+	fallbackKey: I18nKey,
+): string {
 	const translate = get(t);
 	if (error instanceof ApiError && error.errorKey) {
 		const localizedKey = skillSessionLocalizedApiErrorKeys[error.errorKey];
@@ -1611,7 +1665,10 @@ function localizedForkCreationError(error: unknown): string {
 	return error instanceof Error ? error.message : translate("fork.failed");
 }
 
-async function handleSaveSkillDraft(payload: { messageId: string; draftId: string }) {
+async function handleSaveSkillDraft(payload: {
+	messageId: string;
+	draftId: string;
+}) {
 	setSkillDraftActionState(payload, { busy: true, error: null });
 	try {
 		const response = await saveSkillDraftRequest(
@@ -1629,7 +1686,10 @@ async function handleSaveSkillDraft(payload: { messageId: string; draftId: strin
 	}
 }
 
-async function handleDismissSkillDraft(payload: { messageId: string; draftId: string }) {
+async function handleDismissSkillDraft(payload: {
+	messageId: string;
+	draftId: string;
+}) {
 	setSkillDraftActionState(payload, { busy: true, error: null });
 	try {
 		const response = await dismissSkillDraftRequest(
@@ -1647,7 +1707,10 @@ async function handleDismissSkillDraft(payload: { messageId: string; draftId: st
 	}
 }
 
-async function handlePublishSkillDraft(payload: { messageId: string; draftId: string }) {
+async function handlePublishSkillDraft(payload: {
+	messageId: string;
+	draftId: string;
+}) {
 	setSkillDraftActionState(payload, { busy: true, error: null });
 	try {
 		const response = await publishSkillDraftRequest(
@@ -1713,7 +1776,13 @@ async function handleSend(
 		payload.personalityProfileId !== undefined
 			? payload.personalityProfileId
 			: selectedPersonalityId;
-	if (!text.trim() || isConversationReadOnlyForChat || isSending || isEditResendPending) return;
+	if (
+		!text.trim() ||
+		isConversationReadOnlyForChat ||
+		isSending ||
+		isEditResendPending
+	)
+		return;
 	const deepResearchDepthForTurn = shouldStartDeepResearchJob(
 		payload,
 		retryAssistantMessageId,
@@ -1730,10 +1799,16 @@ async function handleSend(
 				payload.pendingSkill,
 			);
 		} catch (error) {
-			skillSessionError = localizedSkillSessionError(
-				error,
-				"skillSessions.errors.start",
-			);
+			if (isPendingSkillUnavailableError(error)) {
+				const restoredPayload = markPendingSkillUnavailable(payload);
+				restorePayloadToDraft(restoredPayload);
+				skillSessionError = $t("pendingSkill.recoveryError");
+			} else {
+				skillSessionError = localizedSkillSessionError(
+					error,
+					"skillSessions.errors.start",
+				);
+			}
 			sendError = skillSessionError;
 			canRetry = false;
 			isSending = false;
@@ -1777,9 +1852,7 @@ async function handleSend(
 			attachmentIds,
 			attachedArtifacts: sentAttachments,
 		});
-		messages.update((list) =>
-			[...list, userMessage],
-		);
+		messages.update((list) => [...list, userMessage]);
 	}
 
 	if (deepResearchDepthForTurn) {
@@ -1889,6 +1962,16 @@ async function handleSend(
 				isSending = false;
 				restoreQueuedTurnToDraft();
 
+				if (isPendingSkillUnavailableError(err)) {
+					if (clientUserMsgId) {
+						messages.update((list) => removeMessageById(list, clientUserMsgId));
+					}
+					restorePayloadToDraft(markPendingSkillUnavailable(payload));
+					sendError = $t("pendingSkill.recoveryError");
+					canRetry = false;
+					return;
+				}
+
 				if (
 					retryAssistantMessageId &&
 					!confirmForkedSourceHistoryMutation &&
@@ -1921,7 +2004,9 @@ async function handleSend(
 			skipPersistUserMessage,
 			attachmentIds,
 			linkedSources: payload.linkedSources ?? [],
-			pendingSkill: payload.deepResearchDepth ? null : payload.pendingSkill ?? null,
+			pendingSkill: payload.deepResearchDepth
+				? null
+				: (payload.pendingSkill ?? null),
 			deepResearchDepth: payload.deepResearchDepth ?? null,
 			thinkingMode: payload.thinkingMode ?? $selectedThinkingMode,
 			activeDocumentArtifactId: getActiveWorkspaceArtifactId(),
@@ -2031,11 +2116,11 @@ function handleRetry() {
 					isSending = false;
 					activeStream = null;
 					canRetry = false;
-				if (serverAssistantId) {
-					void pollMessageEvidence(serverAssistantId);
-					// Refresh cost data after analytics recording completes
-					setTimeout(() => refreshMessageCost(serverAssistantId), 1500);
-				}
+					if (serverAssistantId) {
+						void pollMessageEvidence(serverAssistantId);
+						// Refresh cost data after analytics recording completes
+						setTimeout(() => refreshMessageCost(serverAssistantId), 1500);
+					}
 
 					if (metadata?.wasStopped) {
 						restoreQueuedTurnToDraft();
@@ -2196,7 +2281,12 @@ function handleStop() {
 }
 
 function handleQueue(payload: SendPayload) {
-	if (isConversationReadOnlyForChat || !isSending || queuedTurn || !payload.message.trim()) {
+	if (
+		isConversationReadOnlyForChat ||
+		!isSending ||
+		queuedTurn ||
+		!payload.message.trim()
+	) {
 		return;
 	}
 
@@ -2264,7 +2354,7 @@ function handleUploadReady(
 }
 
 type UploadFileResult =
-	| { success: true; attachment: import('$lib/types').PendingAttachment }
+	| { success: true; attachment: import("$lib/types").PendingAttachment }
 	| { success: false; fileName: string; error: string };
 
 async function uploadSingleFile(
@@ -2280,23 +2370,23 @@ async function uploadSingleFile(
 					artifact: result.artifact,
 					promptReady: Boolean(result.promptReady),
 					promptArtifactId:
-						typeof result.promptArtifactId === 'string'
+						typeof result.promptArtifactId === "string"
 							? result.promptArtifactId
 							: null,
 					readinessError:
-						typeof result.readinessError === 'string' &&
+						typeof result.readinessError === "string" &&
 						result.readinessError.trim()
 							? result.readinessError
 							: null,
 				},
 			};
 		}
-		return { success: false, fileName: file.name, error: 'Upload failed' };
+		return { success: false, fileName: file.name, error: "Upload failed" };
 	} catch (err) {
 		return {
 			success: false,
 			fileName: file.name,
-			error: err instanceof Error ? err.message : 'Upload failed',
+			error: err instanceof Error ? err.message : "Upload failed",
 		};
 	}
 }
