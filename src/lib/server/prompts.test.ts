@@ -64,6 +64,40 @@ describe("prompts", () => {
 		expect(ALFYAI_NEMOTRON_PROMPT).not.toContain("Terracotta Crown");
 	});
 
+	it("does not force English-only answers in the built-in assistant prompt", () => {
+		expect(ALFYAI_NEMOTRON_PROMPT).not.toMatch(
+			/always respond in english|every word you write must be in english|never attempt to generate text in hungarian|non-english language/i,
+		);
+	});
+
+	it("removes the obsolete translation contract from stored prompt bodies", () => {
+		const obsoleteTranslationContract = [
+			"## Translation Layer Contract — Critical",
+			"",
+			"You ALWAYS respond in English. Every word you write must be in English.",
+			"Never attempt to generate text in Hungarian, German, French, or any other non-English language, even if the user asks you to.",
+		].join("\n");
+		const oldBuiltInPrompt = ALFYAI_NEMOTRON_PROMPT.replace(
+			"## Content Preservation",
+			`${obsoleteTranslationContract}\n\n## Content Preservation`,
+		);
+		const customPrompt = [
+			"You are a custom assistant.",
+			"",
+			obsoleteTranslationContract,
+			"",
+			"Respect the user's requested response language.",
+		].join("\n");
+
+		expect(normalizeSystemPromptReference(oldBuiltInPrompt)).toBe(
+			"alfyai-nemotron",
+		);
+		expect(getSystemPrompt(oldBuiltInPrompt)).toBe(ALFYAI_NEMOTRON_PROMPT);
+		expect(getSystemPrompt(customPrompt)).toBe(
+			"You are a custom assistant.\n\nRespect the user's requested response language.",
+		);
+	});
+
 	it("removes deprecated wrapper-tag instructions from custom prompt bodies", () => {
 		const legacyTagName = "preserve";
 		const customPrompt = [

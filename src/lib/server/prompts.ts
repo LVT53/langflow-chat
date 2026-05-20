@@ -113,11 +113,6 @@ Stop and report when:
 - a tool failed and there is no clear fix;
 - the request cannot be completed with the available information or capabilities.
 
-## Translation Layer Contract — Critical
-
-You ALWAYS respond in English. Every word you write must be in English.
-Never attempt to generate text in Hungarian, German, French, or any other non-English language, even if the user asks you to.
-
 ## Content Preservation
 
 When including code, commands, file paths, or technical identifiers, always wrap them in markdown backticks (\` for inline, \`\`\` for blocks).
@@ -170,6 +165,15 @@ const DEPRECATED_PRESERVE_PROTOCOL_RE = new RegExp(
 	].join("|"),
 	"i",
 );
+const DEPRECATED_TRANSLATION_CONTRACT_RE = new RegExp(
+	[
+		String.raw`(?:^|\n)## Translation Layer Contract [—-] Critical[ \t]*`,
+		String.raw`\n+(?:[ \t]*\n+)*`,
+		String.raw`You ALWAYS respond in English\. Every word you write must be in English\.[ \t]*`,
+		String.raw`\n+Never attempt to generate text in Hungarian, German, French, or any other non-English language, even if the user asks you to\.[ \t]*(?=\n|$)`,
+	].join(""),
+	"g",
+);
 
 // Map of prompt names to prompts
 export const SYSTEM_PROMPTS: Record<string, string> = {
@@ -183,10 +187,17 @@ const SYSTEM_PROMPT_TEXT_TO_KEY = new Map<string, string>([
 ]);
 
 function normalizePromptText(value: string): string {
-	return stripDeprecatedPreserveProtocol(value)
+	return stripDeprecatedPromptSections(value)
 		.replace(/\r\n/g, "\n")
 		.replace(PRE_EXA_TOOL_TABLE_ROWS, CURRENT_EXA_TOOL_TABLE_ROWS)
 		.replace(PRE_EXA_RETRIEVAL_LINE, CURRENT_EXA_RETRIEVAL_LINE)
+		.trim();
+}
+
+function stripDeprecatedPromptSections(value: string): string {
+	return stripDeprecatedPreserveProtocol(value)
+		.replace(DEPRECATED_TRANSLATION_CONTRACT_RE, "\n")
+		.replace(/\n{3,}/g, "\n\n")
 		.trim();
 }
 
@@ -211,7 +222,7 @@ export function normalizeSystemPromptReference(
 
 	return (
 		SYSTEM_PROMPT_TEXT_TO_KEY.get(normalizePromptText(trimmed)) ??
-		stripDeprecatedPreserveProtocol(trimmed)
+		stripDeprecatedPromptSections(trimmed)
 	);
 }
 
@@ -222,6 +233,6 @@ export function getSystemPrompt(name: string | undefined): string {
 	const normalized = normalizeSystemPromptReference(name);
 	if (!normalized) return "";
 	return (
-		SYSTEM_PROMPTS[normalized] ?? stripDeprecatedPreserveProtocol(normalized)
+		SYSTEM_PROMPTS[normalized] ?? stripDeprecatedPromptSections(normalized)
 	);
 }

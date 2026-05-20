@@ -199,7 +199,7 @@ describe("buildOutboundSystemPrompt", () => {
 		expect(prompt).toContain("Be extremely concise.");
 	});
 
-	it("uses the raw latest user-message language for visible response guidance", () => {
+	it("uses the raw latest user-message language as a permissive response signal", () => {
 		const prompt = buildOutboundSystemPrompt({
 			basePrompt: "Base system prompt",
 			inputValue:
@@ -213,7 +213,33 @@ describe("buildOutboundSystemPrompt", () => {
 		expect(prompt).toContain(
 			"Tool outputs, web research briefs, source snippets, source titles, citations, and diagnostics may be in another language",
 		);
-		expect(prompt).toContain("Do not mix English and Hungarian");
+		expect(prompt).toContain(
+			"matching the latest user-message language is a useful default, not a hard requirement",
+		);
+		expect(prompt).toContain(
+			"choose the response language that best serves the answer",
+		);
+		expect(prompt).toContain(
+			"Avoid confusing or accidental language switching",
+		);
+		expect(prompt).not.toContain("write the entire visible answer");
+		expect(prompt).not.toContain("Do not mix English and Hungarian");
+	});
+
+	it("does not include obsolete English-only prohibitions when assembling the built-in prompt", async () => {
+		const { ALFYAI_NEMOTRON_PROMPT } =
+			await vi.importActual<typeof import("../prompts")>("../prompts");
+
+		const prompt = buildOutboundSystemPrompt({
+			basePrompt: ALFYAI_NEMOTRON_PROMPT,
+			inputValue: "Kérlek foglald össze magyarul.",
+			responseLanguage: "hu",
+		});
+
+		expect(prompt).toContain("Detected latest user-message language: Hungarian");
+		expect(prompt).not.toMatch(
+			/always respond in english|every word you write must be in english|never attempt to generate text in hungarian|non-english language/i,
+		);
 	});
 });
 
