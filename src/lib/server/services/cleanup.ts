@@ -1,7 +1,4 @@
-export {
-	ConversationDeleteBlockedByDeepResearchError,
-	deleteConversationWithCleanup,
-} from "./cleanup/conversation-cleanup";
+export { deleteConversationWithCleanup } from "./cleanup/conversation-cleanup";
 export { resetKnowledgeBaseState } from "./cleanup/knowledge-cleanup";
 export {
 	type DeleteUserAccountResult,
