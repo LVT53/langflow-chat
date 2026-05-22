@@ -8,7 +8,7 @@ import {
 import { readable } from "svelte/store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { conversations } from "$lib/stores/conversations";
-import { projects } from "$lib/stores/projects";
+import { clearProjectStore, projects } from "$lib/stores/projects";
 import {
 	clearProjectFolderExpanded,
 	setProjectFolderExpanded,
@@ -40,8 +40,15 @@ describe("ConversationList sidebar pinning", () => {
 			),
 		);
 		conversations.set([]);
-		projects.set([]);
-		clearProjectFolderExpanded("project-1");
+		clearProjectStore();
+		for (const projectId of [
+			"project-1",
+			"project-first",
+			"project-later",
+			"project-third",
+		]) {
+			clearProjectFolderExpanded(projectId);
+		}
 	});
 
 	it("renders global pinned conversations once with project labels and sidebar order", () => {
@@ -156,6 +163,99 @@ describe("ConversationList sidebar pinning", () => {
 		expect(
 			screen.queryByRole("button", { name: /Move Project first/i }),
 		).not.toBeInTheDocument();
+		expect(projectIds()).toEqual([
+			"project-later",
+			"project-first",
+			"project-third",
+		]);
+		await waitFor(() =>
+			expect(fetch).toHaveBeenCalledWith(
+				"/api/projects/sidebar-order",
+				expect.objectContaining({
+					method: "PATCH",
+					body: JSON.stringify({
+						ids: ["project-later", "project-first", "project-third"],
+					}),
+				}),
+			),
+		);
+	});
+
+	it("reorders an open project folder from its expanded drop area with an insert line", async () => {
+		const projectRows: Project[] = [
+			{
+				id: "project-first",
+				name: "Project first",
+				sortOrder: 0,
+				createdAt: 1,
+				updatedAt: 1,
+			},
+			{
+				id: "project-later",
+				name: "Project later",
+				sortOrder: 1,
+				createdAt: 2,
+				updatedAt: 2,
+			},
+			{
+				id: "project-third",
+				name: "Project third",
+				sortOrder: 2,
+				createdAt: 3,
+				updatedAt: 3,
+			},
+		];
+		projects.set(projectRows);
+		conversations.set([
+			{
+				id: "inside-third",
+				title: "Inside third",
+				projectId: "project-third",
+				updatedAt: 100,
+				sidebarPinned: false,
+				sidebarSortOrder: null,
+			},
+		]);
+		setProjectFolderExpanded("project-third", true);
+
+		render(ConversationList, { initialProjects: projectRows });
+
+		const projectIds = () =>
+			screen
+				.getAllByTestId("project-drop-target")
+				.map((row) => row.dataset.projectId);
+		const getReorderRow = (id: string) =>
+			screen
+				.getAllByTestId("sidebar-reorder-row")
+				.find((row) => row.dataset.reorderId === id) as HTMLElement;
+		const thirdFolderZone = screen
+			.getAllByTestId("project-folder-drop-zone")
+			.find(
+				(zone) => zone.dataset.projectId === "project-third",
+			) as HTMLElement;
+		vi.spyOn(thirdFolderZone, "getBoundingClientRect").mockReturnValue({
+			x: 0,
+			y: 0,
+			width: 240,
+			height: 120,
+			top: 0,
+			right: 240,
+			bottom: 120,
+			left: 0,
+			toJSON: () => ({}),
+		} as DOMRect);
+
+		await fireEvent.dragStart(getReorderRow("project-first"));
+		await fireEvent.dragOver(thirdFolderZone);
+
+		await waitFor(() =>
+			expect(
+				screen.getByTestId("project-reorder-line-project-third-before"),
+			).toHaveClass("project-reorder-insert-line-active"),
+		);
+
+		await fireEvent.drop(thirdFolderZone);
+
 		expect(projectIds()).toEqual([
 			"project-later",
 			"project-first",

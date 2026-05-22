@@ -73,7 +73,7 @@ const dictionary = {
 		"sidebar.projectName": "Project name",
 		"sidebar.noProjectsYet": "No projects yet",
 		"sidebar.groupChatsCreateOne": "Group your chats - click to create one",
-		"sidebar.chats": "Unorganized",
+		"sidebar.chats": "Chats",
 		"sidebar.noConversationsYet": "No conversations yet",
 		"sidebar.unorganizedDropArea": "Unorganized conversations drop area",
 		"sidebar.projectDropArea": "{name} project drop area",
@@ -1601,7 +1601,7 @@ const dictionary = {
 		"sidebar.noProjectsYet": "Még nincsenek projektek",
 		"sidebar.groupChatsCreateOne":
 			"Rendezd projektekbe a beszélgetéseidet - kattints a létrehozáshoz",
-		"sidebar.chats": "Rendezetlen",
+		"sidebar.chats": "Beszélgetések",
 		"sidebar.noConversationsYet": "Még nincsenek beszélgetések",
 		"sidebar.unorganizedDropArea": "Rendezetlen beszélgetések célterülete",
 		"sidebar.projectDropArea": "{name} projekt célterülete",

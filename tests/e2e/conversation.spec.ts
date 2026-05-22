@@ -253,7 +253,7 @@ test.describe('Conversation CRUD operations', () => {
     expect(moveIntoProjectRequest.postDataJSON()).toEqual({ projectId });
 
     const movedConversationItem = page.locator(`[data-conversation-id="${conversationId}"]`);
-    await expect(unorganizedTarget).toContainText('Unorganized');
+    await expect(unorganizedTarget).toContainText('Chats');
 
     const moveBackRequestPromise = page.waitForRequest((request) => {
       return (

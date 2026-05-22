@@ -65,6 +65,11 @@ type SidebarDropTarget =
 	| { kind: "unorganized" }
 	| null;
 let dropTarget = $state<SidebarDropTarget>(null);
+type ReorderInsertPosition = "before" | "after";
+let projectReorderDropTarget = $state<{
+	targetId: string;
+	position: ReorderInsertPosition;
+} | null>(null);
 type OpenSidebarMenu =
 	| { kind: "conversation"; id: string }
 	| { kind: "project"; id: string }
@@ -201,6 +206,38 @@ function moveId(ids: string[], sourceId: string, targetId: string) {
 	return next;
 }
 
+function areIdsEqual(left: string[], right: string[]) {
+	return (
+		left.length === right.length &&
+		left.every((id, index) => id === right[index])
+	);
+}
+
+function moveIdToPosition(
+	ids: string[],
+	sourceId: string,
+	targetId: string,
+	position: ReorderInsertPosition,
+) {
+	if (sourceId === targetId) return ids;
+	const next = ids.filter((id) => id !== sourceId);
+	const targetIndex = next.indexOf(targetId);
+	if (targetIndex === -1) return ids;
+	next.splice(
+		position === "after" ? targetIndex + 1 : targetIndex,
+		0,
+		sourceId,
+	);
+	return areIdsEqual(next, ids) ? ids : next;
+}
+
+function getReorderInsertPosition(event: DragEvent): ReorderInsertPosition {
+	const currentTarget = event.currentTarget as HTMLElement | null;
+	if (!currentTarget) return "before";
+	const rect = currentTarget.getBoundingClientRect();
+	return event.clientY > rect.top + rect.height / 2 ? "after" : "before";
+}
+
 function isConversationMenuOpen(id: string) {
 	return openSidebarMenu?.kind === "conversation" && openSidebarMenu.id === id;
 }
@@ -290,6 +327,7 @@ function handlePinnedConversationReorderStart(payload: { id: string }) {
 
 function handleSidebarReorderEnd() {
 	activeSidebarReorder = null;
+	projectReorderDropTarget = null;
 }
 
 function handlePinnedConversationReorderDragOver(event: DragEvent) {
@@ -517,7 +555,7 @@ function handleProjectReorderStart(payload: { id: string }) {
 
 function handleProjectReorderDragOver(
 	event: DragEvent,
-	_targetProject: SidebarProject,
+	targetProject: SidebarProject,
 ) {
 	if (activeSidebarReorder?.kind !== "project") return;
 	event.preventDefault();
@@ -525,6 +563,13 @@ function handleProjectReorderDragOver(
 	if (event.dataTransfer) {
 		event.dataTransfer.dropEffect = "move";
 	}
+	projectReorderDropTarget =
+		activeSidebarReorder.id === targetProject.id
+			? null
+			: {
+					targetId: targetProject.id,
+					position: getReorderInsertPosition(event),
+				};
 }
 
 async function persistProjectOrder(ids: string[]) {
@@ -539,14 +584,39 @@ async function persistProjectOrder(ids: string[]) {
 async function handleProjectReorderDrop(targetProject: SidebarProject) {
 	if (activeSidebarReorder?.kind !== "project") return;
 	const projectIds = sortedProjects.map((project) => project.id);
-	const nextGroupIds = moveId(
+	const insertPosition =
+		projectReorderDropTarget?.targetId === targetProject.id
+			? projectReorderDropTarget.position
+			: "before";
+	const nextGroupIds = moveIdToPosition(
 		projectIds,
 		activeSidebarReorder.id,
 		targetProject.id,
+		insertPosition,
 	);
 	activeSidebarReorder = null;
+	projectReorderDropTarget = null;
 	if (nextGroupIds === projectIds) return;
 	await persistProjectOrder(nextGroupIds);
+}
+
+function isProjectReorderLineActive(
+	projectId: string,
+	previousProjectId: string | null,
+) {
+	if (!projectReorderDropTarget) return false;
+	if (projectReorderDropTarget.position === "before") {
+		return projectReorderDropTarget.targetId === projectId;
+	}
+	return projectReorderDropTarget.targetId === previousProjectId;
+}
+
+function isProjectReorderEndLineActive() {
+	const lastProject = sortedProjects[sortedProjects.length - 1];
+	return (
+		projectReorderDropTarget?.position === "after" &&
+		projectReorderDropTarget.targetId === lastProject?.id
+	);
 }
 
 function handleProjectMenuToggle(payload: { id: string; open: boolean }) {
@@ -670,14 +740,26 @@ function handleNewProjectKeydown(e: KeyboardEvent) {
 
 			<!-- Project list -->
 			<div class="flex flex-col gap-0 px-1">
-				{#each sortedProjects as project (project.id)}
+				{#each sortedProjects as project, index (project.id)}
+					{@const previousProject = sortedProjects[index - 1] ?? null}
 					<div
+						data-testid={`project-reorder-line-${project.id}-before`}
+						class="project-reorder-insert-line"
+						class:project-reorder-insert-line-active={isProjectReorderLineActive(project.id, previousProject?.id ?? null)}
+						aria-hidden="true"
+					></div>
+					<div
+						data-testid="project-folder-drop-zone"
+						data-project-id={project.id}
 						class="project-drop-zone rounded-xl border border-transparent"
 						class:project-drop-zone-active={dropTarget?.kind === 'project' && dropTarget.projectId === project.id}
 						role="group"
 						aria-label={$t('sidebar.projectDropArea', { name: project.name })}
 						ondragover={(event) => {
-							if (activeSidebarReorder?.kind === 'project') return;
+							if (activeSidebarReorder?.kind === 'project') {
+								handleProjectReorderDragOver(event, project);
+								return;
+							}
 							setMoveDropEffect(event);
 							if (activeSidebarReorder?.kind === 'pinned-conversation') {
 								handlePinnedConversationRegularDragOver({
@@ -689,12 +771,23 @@ function handleNewProjectKeydown(e: KeyboardEvent) {
 							handleProjectDragOver({ id: project.id });
 						}}
 						ondragleave={(event) => {
+							if (activeSidebarReorder?.kind === 'project') {
+								if (leftCurrentDropTarget(event) && projectReorderDropTarget?.targetId === project.id) {
+									projectReorderDropTarget = null;
+								}
+								return;
+							}
 							if (leftCurrentDropTarget(event)) {
 								handleProjectDragLeave({ id: project.id });
 							}
 						}}
 						ondrop={(event) => {
-							if (activeSidebarReorder?.kind === 'project') return;
+							if (activeSidebarReorder?.kind === 'project') {
+								event.preventDefault();
+								event.stopPropagation();
+								void handleProjectReorderDrop(project);
+								return;
+							}
 							setMoveDropEffect(event);
 							if (activeSidebarReorder?.kind === 'pinned-conversation') {
 								void handlePinnedConversationDropToRegularArea({
@@ -771,6 +864,12 @@ function handleNewProjectKeydown(e: KeyboardEvent) {
 						{/if}
 					</div>
 				{/each}
+				<div
+					data-testid="project-reorder-line-end"
+					class="project-reorder-insert-line"
+					class:project-reorder-insert-line-active={isProjectReorderEndLineActive()}
+					aria-hidden="true"
+				></div>
 			</div>
 		</div>
 
@@ -909,6 +1008,23 @@ function handleNewProjectKeydown(e: KeyboardEvent) {
 			background-color 150ms cubic-bezier(0.4, 0, 0.2, 1),
 			border-color 150ms cubic-bezier(0.4, 0, 0.2, 1),
 			box-shadow 150ms cubic-bezier(0.4, 0, 0.2, 1);
+	}
+
+	.project-reorder-insert-line {
+		height: 2px;
+		margin: 0;
+		border-radius: 999px;
+		background: transparent;
+		opacity: 0;
+		pointer-events: none;
+		transition:
+			background-color 100ms cubic-bezier(0.4, 0, 0.2, 1),
+			opacity 100ms cubic-bezier(0.4, 0, 0.2, 1);
+	}
+
+	.project-reorder-insert-line-active {
+		background: var(--accent);
+		opacity: 1;
 	}
 
 	.empty-projects-btn {
