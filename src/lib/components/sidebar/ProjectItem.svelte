@@ -9,11 +9,6 @@ import {
 } from "$lib/utils/popup-menu";
 import ConfirmDialog from "../ui/ConfirmDialog.svelte";
 
-type SidebarProject = Project & {
-	sidebarPinned?: boolean;
-	sidebarSortOrder?: number | null;
-};
-
 let {
 	project,
 	expanded = true,
@@ -24,11 +19,10 @@ let {
 	onCreateConversation,
 	onRename,
 	onDelete,
-	onTogglePin,
 	onMenuToggle,
 	onMenuClose,
 }: {
-	project: SidebarProject;
+	project: Project;
 	expanded?: boolean;
 	menuOpen?: boolean;
 	dropActive?: boolean;
@@ -37,7 +31,6 @@ let {
 	onCreateConversation?: (payload: { id: string }) => void;
 	onRename?: (payload: { id: string; name: string }) => void;
 	onDelete?: (payload: { id: string }) => void;
-	onTogglePin?: (payload: { id: string; pinned: boolean }) => void;
 	onMenuToggle?: (payload: { id: string; open: boolean }) => void;
 	onMenuClose?: (payload: { id: string }) => void;
 } = $props();
@@ -169,12 +162,6 @@ function handleDelete(e: MouseEvent) {
 	showDeleteConfirm = true;
 }
 
-function handleTogglePin(e: MouseEvent) {
-	e.stopPropagation();
-	onMenuClose?.({ id: project.id });
-	onTogglePin?.({ id: project.id, pinned: !project.sidebarPinned });
-}
-
 function confirmDelete() {
 	showDeleteConfirm = false;
 	onDelete?.({ id: project.id });
@@ -246,20 +233,6 @@ function createConversation(e: MouseEvent) {
 		{/if}
 	</div>
 
-	{#if project.sidebarPinned}
-		<span
-			class="project-pin-indicator mr-1 flex shrink-0 items-center justify-center text-icon-muted"
-			aria-label={$t('sidebar.pinned')}
-			title={$t('sidebar.pinned')}
-		>
-			<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-				<path d="M12 17v5"/>
-				<path d="M7 7l10 10"/>
-				<path d="M8 4h8l-1 6 3 3v2H6v-2l3-3z"/>
-			</svg>
-		</span>
-	{/if}
-
 	<div class="project-row-actions flex shrink-0 items-center justify-end gap-px">
 		<button
 			class="project-row-action-button project-inline-action btn-icon-bare flex shrink-0 cursor-pointer items-center justify-center rounded-md text-icon-muted opacity-100 transition-colors duration-150 hover:bg-surface-page hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent md:opacity-0 md:group-hover:opacity-100"
@@ -305,18 +278,6 @@ function createConversation(e: MouseEvent) {
 			class="project-menu z-[9999] overflow-hidden rounded-lg border p-1"
 			style={`${menuPositionStyle} --project-menu-bg: ${menuBaseBackground};`}
 		>
-			<button
-				role="menuitem"
-				class="project-option flex min-h-[32px] w-full items-center text-left font-sans text-[12px] text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
-				onclick={handleTogglePin}
-			>
-				<svg class="project-option-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-					<path d="M12 17v5"/>
-					<path d="M7 7l10 10"/>
-					<path d="M8 4h8l-1 6 3 3v2H6v-2l3-3z"/>
-				</svg>
-				<span>{project.sidebarPinned ? $t('sidebar.unpinFromSidebar') : $t('sidebar.pinToSidebar')}</span>
-			</button>
 			<button
 				role="menuitem"
 				class="project-option flex min-h-[32px] w-full items-center text-left font-sans text-[12px] text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
@@ -385,10 +346,6 @@ function createConversation(e: MouseEvent) {
 		width: 28px;
 		min-width: 28px;
 		padding: 0;
-	}
-
-	.project-pin-indicator {
-		opacity: 0.76;
 	}
 
 	.project-row-drop-active,

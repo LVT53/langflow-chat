@@ -20,7 +20,6 @@ import {
 	renameProject,
 	deleteProject,
 	reconcileProjectSnapshot,
-	toggleProjectSidebarPin,
 	saveProjectOrder,
 } from "$lib/stores/projects";
 import {
@@ -35,19 +34,14 @@ import { t } from "$lib/i18n";
 import type { ConversationListItem, Project } from "$lib/types";
 import ConversationItem from "./ConversationItem.svelte";
 import ProjectItem from "./ProjectItem.svelte";
-import SidebarReorderControls from "./SidebarReorderControls.svelte";
+import SidebarReorderRow from "./SidebarReorderRow.svelte";
 
 type SidebarConversationListItem = ConversationListItem & {
 	sidebarPinned?: boolean;
 	sidebarSortOrder?: number | null;
 };
 
-type SidebarProject = Project & {
-	sidebarPinned?: boolean;
-};
-
-type SidebarReorderMove = { id: string; direction: "up" | "down" };
-type ProjectReorderGroup = "pinned" | "unpinned";
+type SidebarProject = Project;
 
 let {
 	initialConversations = [],
@@ -63,7 +57,7 @@ let supportsDragAndDrop = $state(true);
 let draggedConversationId = $state<string | null>(null);
 type SidebarReorderState =
 	| { kind: "pinned-conversation"; id: string }
-	| { kind: "project"; id: string; group: ProjectReorderGroup }
+	| { kind: "project"; id: string }
 	| null;
 let activeSidebarReorder = $state<SidebarReorderState>(null);
 type SidebarDropTarget =
@@ -111,10 +105,6 @@ const projectsById = $derived.by(
 	() => new Map(allProjects.map((project) => [project.id, project])),
 );
 
-function getProjectReorderGroup(project: SidebarProject): ProjectReorderGroup {
-	return project.sidebarPinned ? "pinned" : "unpinned";
-}
-
 function compareSidebarSortOrder(
 	leftOrder: number | null | undefined,
 	rightOrder: number | null | undefined,
@@ -140,30 +130,10 @@ const pinnedConversations = $derived.by(() =>
 
 const sortedProjects = $derived.by(() =>
 	[...allProjects].sort((left, right) => {
-		const pinOrder =
-			Number(Boolean(right.sidebarPinned)) -
-			Number(Boolean(left.sidebarPinned));
-		if (pinOrder) return pinOrder;
 		const order = left.sortOrder - right.sortOrder;
 		return order || left.createdAt - right.createdAt;
 	}),
 );
-
-const projectReorderMeta = $derived.by(() => {
-	const map = new Map<
-		string,
-		{ group: ProjectReorderGroup; index: number; total: number }
-	>();
-	for (const group of ["pinned", "unpinned"] as const) {
-		const groupProjects = sortedProjects.filter(
-			(project) => getProjectReorderGroup(project) === group,
-		);
-		groupProjects.forEach((project, index) => {
-			map.set(project.id, { group, index, total: groupProjects.length });
-		});
-	}
-	return map;
-});
 
 const conversationsByProject = $derived.by(() => {
 	const map: Record<string, SidebarConversationListItem[]> = {};
@@ -228,20 +198,6 @@ function moveId(ids: string[], sourceId: string, targetId: string) {
 	const targetIndex = next.indexOf(targetId);
 	if (targetIndex === -1) return ids;
 	next.splice(targetIndex, 0, sourceId);
-	return next;
-}
-
-function moveIdByDirection(
-	ids: string[],
-	id: string,
-	direction: "up" | "down",
-) {
-	const currentIndex = ids.indexOf(id);
-	if (currentIndex === -1) return ids;
-	const nextIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
-	if (nextIndex < 0 || nextIndex >= ids.length) return ids;
-	const next = [...ids];
-	[next[currentIndex], next[nextIndex]] = [next[nextIndex], next[currentIndex]];
 	return next;
 }
 
@@ -363,11 +319,30 @@ async function handlePinnedConversationReorderDrop(targetId: string) {
 	await persistPinnedConversationOrder(nextIds);
 }
 
-async function handlePinnedConversationMove(payload: SidebarReorderMove) {
-	const ids = pinnedConversations.map((conversation) => conversation.id);
-	const nextIds = moveIdByDirection(ids, payload.id, payload.direction);
-	if (nextIds === ids) return;
-	await persistPinnedConversationOrder(nextIds);
+function handlePinnedConversationRegularDragOver(target: SidebarDropTarget) {
+	if (activeSidebarReorder?.kind !== "pinned-conversation") return;
+	dropTarget = target;
+}
+
+async function handlePinnedConversationDropToRegularArea(payload: {
+	projectId: string | null;
+}) {
+	if (activeSidebarReorder?.kind !== "pinned-conversation") return;
+	const conversationId = activeSidebarReorder.id;
+	activeSidebarReorder = null;
+	dropTarget = null;
+
+	try {
+		const conversation = getConversationById(conversationId);
+		if (!conversation) return;
+		if (conversation?.projectId !== payload.projectId) {
+			await moveConversationToProject(conversationId, payload.projectId);
+		}
+		await toggleConversationSidebarPin(conversationId, false);
+	} catch (e) {
+		console.error("Pinned conversation drop failed", e);
+		alert($t("sidebar.failedUpdateConversationPin"));
+	}
 }
 
 function handleMenuToggle(payload: { id: string; open: boolean }) {
@@ -529,28 +504,12 @@ async function handleCreateConversationInProject(payload: { id: string }) {
 	}
 }
 
-async function handleProjectTogglePin(payload: {
-	id: string;
-	pinned: boolean;
-}) {
-	const { id, pinned } = payload;
-	closeAllMenus();
-	clearDragState();
-	try {
-		await toggleProjectSidebarPin(id, pinned);
-	} catch (e) {
-		console.error("Project pin update failed", e);
-		alert($t("sidebar.failedUpdateProjectPin"));
-	}
-}
-
 function handleProjectReorderStart(payload: { id: string }) {
 	const project = allProjects.find((candidate) => candidate.id === payload.id);
 	if (!project) return;
 	activeSidebarReorder = {
 		kind: "project",
 		id: payload.id,
-		group: getProjectReorderGroup(project),
 	};
 	closeAllMenus();
 	clearDragState();
@@ -558,11 +517,9 @@ function handleProjectReorderStart(payload: { id: string }) {
 
 function handleProjectReorderDragOver(
 	event: DragEvent,
-	targetProject: SidebarProject,
+	_targetProject: SidebarProject,
 ) {
 	if (activeSidebarReorder?.kind !== "project") return;
-	if (activeSidebarReorder.group !== getProjectReorderGroup(targetProject))
-		return;
 	event.preventDefault();
 	event.stopPropagation();
 	if (event.dataTransfer) {
@@ -570,30 +527,9 @@ function handleProjectReorderDragOver(
 	}
 }
 
-function buildProjectOrderWithGroup(
-	group: ProjectReorderGroup,
-	groupIds: string[],
-) {
-	const pinnedIds = sortedProjects
-		.filter((project) => getProjectReorderGroup(project) === "pinned")
-		.map((project) => project.id);
-	const unpinnedIds = sortedProjects
-		.filter((project) => getProjectReorderGroup(project) === "unpinned")
-		.map((project) => project.id);
-	return group === "pinned"
-		? [...groupIds, ...unpinnedIds]
-		: [...pinnedIds, ...groupIds];
-}
-
 async function persistProjectOrder(ids: string[]) {
 	try {
-		const projectById = new Map(
-			allProjects.map((project) => [project.id, project]),
-		);
-		await saveProjectOrder({
-			pinnedIds: ids.filter((id) => projectById.get(id)?.sidebarPinned),
-			unpinnedIds: ids.filter((id) => !projectById.get(id)?.sidebarPinned),
-		});
+		await saveProjectOrder({ ids });
 	} catch (e) {
 		console.error("Project reorder failed", e);
 		alert($t("sidebar.failedReorderSidebar"));
@@ -602,40 +538,15 @@ async function persistProjectOrder(ids: string[]) {
 
 async function handleProjectReorderDrop(targetProject: SidebarProject) {
 	if (activeSidebarReorder?.kind !== "project") return;
-	const targetGroup = getProjectReorderGroup(targetProject);
-	if (activeSidebarReorder.group !== targetGroup) {
-		activeSidebarReorder = null;
-		return;
-	}
-	const groupIds = sortedProjects
-		.filter((project) => getProjectReorderGroup(project) === targetGroup)
-		.map((project) => project.id);
+	const projectIds = sortedProjects.map((project) => project.id);
 	const nextGroupIds = moveId(
-		groupIds,
+		projectIds,
 		activeSidebarReorder.id,
 		targetProject.id,
 	);
 	activeSidebarReorder = null;
-	if (nextGroupIds === groupIds) return;
-	await persistProjectOrder(
-		buildProjectOrderWithGroup(targetGroup, nextGroupIds),
-	);
-}
-
-async function handleProjectMove(payload: SidebarReorderMove) {
-	const project = allProjects.find((candidate) => candidate.id === payload.id);
-	if (!project) return;
-	const group = getProjectReorderGroup(project);
-	const groupIds = sortedProjects
-		.filter((candidate) => getProjectReorderGroup(candidate) === group)
-		.map((candidate) => candidate.id);
-	const nextGroupIds = moveIdByDirection(
-		groupIds,
-		payload.id,
-		payload.direction,
-	);
-	if (nextGroupIds === groupIds) return;
-	await persistProjectOrder(buildProjectOrderWithGroup(group, nextGroupIds));
+	if (nextGroupIds === projectIds) return;
+	await persistProjectOrder(nextGroupIds);
 }
 
 function handleProjectMenuToggle(payload: { id: string; open: boolean }) {
@@ -689,46 +600,37 @@ function handleNewProjectKeydown(e: KeyboardEvent) {
 				<span class="text-[11px] font-medium uppercase tracking-wider text-text-muted">{$t('sidebar.pinned')}</span>
 			</div>
 			<div class="flex flex-col gap-0 px-1">
-				{#each pinnedConversations as conversation, i (conversation.id)}
-					<div
-						class="sidebar-reorder-row flex items-center gap-1 rounded-lg"
-						role="group"
-						aria-label={$t('sidebar.reorderItem', { label: conversation.title })}
-						ondragover={handlePinnedConversationReorderDragOver}
-						ondrop={(event) => {
+				{#each pinnedConversations as conversation (conversation.id)}
+					<SidebarReorderRow
+						id={conversation.id}
+						label={conversation.title}
+						active={activeSidebarReorder?.kind === 'pinned-conversation' && activeSidebarReorder.id === conversation.id}
+						onDragStart={handlePinnedConversationReorderStart}
+						onDragEnd={handleSidebarReorderEnd}
+						onDragOver={handlePinnedConversationReorderDragOver}
+						onDrop={(event) => {
 							event.preventDefault();
 							event.stopPropagation();
 							void handlePinnedConversationReorderDrop(conversation.id);
 						}}
 					>
-						<SidebarReorderControls
-							id={conversation.id}
-							label={conversation.title}
-							index={i}
-							total={pinnedConversations.length}
-							onMove={handlePinnedConversationMove}
-							onDragStart={handlePinnedConversationReorderStart}
-							onDragEnd={handleSidebarReorderEnd}
+						<ConversationItem
+							{conversation}
+							active={$currentConversationId === conversation.id}
+							menuOpen={isConversationMenuOpen(conversation.id)}
+							projects={allProjects}
+							projectLabel={conversation.projectId ? projectsById.get(conversation.projectId)?.name ?? null : null}
+							dragEnabled={false}
+							isDragging={activeSidebarReorder?.kind === 'pinned-conversation' && activeSidebarReorder.id === conversation.id}
+							onSelect={handleSelect}
+							onRename={handleRename}
+							onDelete={handleDelete}
+							onTogglePin={handleConversationTogglePin}
+							onMoveToProject={handleMoveToProject}
+							onMenuToggle={handleMenuToggle}
+							onMenuClose={handleMenuClose}
 						/>
-						<div class="min-w-0 flex-1">
-							<ConversationItem
-								{conversation}
-								active={$currentConversationId === conversation.id}
-								menuOpen={isConversationMenuOpen(conversation.id)}
-								projects={allProjects}
-								projectLabel={conversation.projectId ? projectsById.get(conversation.projectId)?.name ?? null : null}
-								dragEnabled={false}
-								isDragging={activeSidebarReorder?.kind === 'pinned-conversation' && activeSidebarReorder.id === conversation.id}
-								onSelect={handleSelect}
-								onRename={handleRename}
-								onDelete={handleDelete}
-								onTogglePin={handleConversationTogglePin}
-								onMoveToProject={handleMoveToProject}
-								onMenuToggle={handleMenuToggle}
-								onMenuClose={handleMenuClose}
-							/>
-						</div>
-					</div>
+					</SidebarReorderRow>
 				{/each}
 			</div>
 		</div>
@@ -769,102 +671,104 @@ function handleNewProjectKeydown(e: KeyboardEvent) {
 			<!-- Project list -->
 			<div class="flex flex-col gap-0 px-1">
 				{#each sortedProjects as project (project.id)}
-					{@const reorderMeta = projectReorderMeta.get(project.id)}
 					<div
-						class="sidebar-reorder-row flex items-start gap-1 rounded-lg"
+						class="project-drop-zone rounded-xl border border-transparent"
+						class:project-drop-zone-active={dropTarget?.kind === 'project' && dropTarget.projectId === project.id}
 						role="group"
-						aria-label={$t('sidebar.reorderItem', { label: project.name })}
+						aria-label={$t('sidebar.projectDropArea', { name: project.name })}
 						ondragover={(event) => {
-							handleProjectReorderDragOver(event, project);
+							if (activeSidebarReorder?.kind === 'project') return;
+							setMoveDropEffect(event);
+							if (activeSidebarReorder?.kind === 'pinned-conversation') {
+								handlePinnedConversationRegularDragOver({
+									kind: 'project',
+									projectId: project.id
+								});
+								return;
+							}
+							handleProjectDragOver({ id: project.id });
 						}}
-						ondrop={(event) => {
-							if (activeSidebarReorder?.kind === 'project') {
-								event.preventDefault();
-								event.stopPropagation();
-								void handleProjectReorderDrop(project);
+						ondragleave={(event) => {
+							if (leftCurrentDropTarget(event)) {
+								handleProjectDragLeave({ id: project.id });
 							}
 						}}
+						ondrop={(event) => {
+							if (activeSidebarReorder?.kind === 'project') return;
+							setMoveDropEffect(event);
+							if (activeSidebarReorder?.kind === 'pinned-conversation') {
+								void handlePinnedConversationDropToRegularArea({
+									projectId: project.id
+								});
+								return;
+							}
+							void handleProjectDropConversation({
+								projectId: project.id,
+								conversationId: getDraggedConversationId(event)
+							});
+						}}
 					>
-						<SidebarReorderControls
+						<SidebarReorderRow
 							id={project.id}
 							label={project.name}
-							index={reorderMeta?.index ?? 0}
-							total={reorderMeta?.total ?? sortedProjects.length}
-							onMove={handleProjectMove}
+							active={activeSidebarReorder?.kind === 'project' && activeSidebarReorder.id === project.id}
 							onDragStart={handleProjectReorderStart}
 							onDragEnd={handleSidebarReorderEnd}
-						/>
-						<div class="min-w-0 flex-1">
+							onDragOver={(event) => {
+								handleProjectReorderDragOver(event, project);
+							}}
+							onDrop={(event) => {
+								if (activeSidebarReorder?.kind === 'project') {
+									event.preventDefault();
+									event.stopPropagation();
+									void handleProjectReorderDrop(project);
+								}
+							}}
+						>
+							<ProjectItem
+								{project}
+								expanded={expandedProjects[project.id] ?? false}
+								menuOpen={isProjectMenuOpen(project.id)}
+								dropActive={dropTarget?.kind === 'project' && dropTarget.projectId === project.id}
+								creatingConversation={creatingProjectConversationId === project.id}
+								onToggle={handleProjectToggle}
+								onCreateConversation={handleCreateConversationInProject}
+								onRename={handleProjectRename}
+								onDelete={handleProjectDelete}
+								onMenuToggle={handleProjectMenuToggle}
+								onMenuClose={handleProjectMenuClose}
+							/>
+						</SidebarReorderRow>
+						<!-- Conversations inside this project -->
+						{#if expandedProjects[project.id] ?? false}
 							<div
-								class="project-drop-zone rounded-xl border border-transparent"
-								class:project-drop-zone-active={dropTarget?.kind === 'project' && dropTarget.projectId === project.id}
-								role="group"
-								aria-label={$t('sidebar.projectDropArea', { name: project.name })}
-								ondragover={(event) => {
-									if (activeSidebarReorder?.kind === 'project') return;
-									setMoveDropEffect(event);
-									handleProjectDragOver({ id: project.id });
-								}}
-								ondragleave={(event) => {
-									if (leftCurrentDropTarget(event)) {
-										handleProjectDragLeave({ id: project.id });
-									}
-								}}
-								ondrop={(event) => {
-									if (activeSidebarReorder?.kind === 'project') return;
-									setMoveDropEffect(event);
-									void handleProjectDropConversation({
-										projectId: project.id,
-										conversationId: getDraggedConversationId(event)
-									});
-								}}
+								data-testid={`project-conversations-${project.id}`}
+								class="overflow-hidden"
+								transition:slide={{ duration: 200 }}
 							>
-								<ProjectItem
-									{project}
-									expanded={expandedProjects[project.id] ?? false}
-									menuOpen={isProjectMenuOpen(project.id)}
-									dropActive={dropTarget?.kind === 'project' && dropTarget.projectId === project.id}
-									creatingConversation={creatingProjectConversationId === project.id}
-									onToggle={handleProjectToggle}
-									onCreateConversation={handleCreateConversationInProject}
-									onRename={handleProjectRename}
-									onDelete={handleProjectDelete}
-									onTogglePin={handleProjectTogglePin}
-									onMenuToggle={handleProjectMenuToggle}
-									onMenuClose={handleProjectMenuClose}
-								/>
-								<!-- Conversations inside this project -->
-								{#if expandedProjects[project.id] ?? false}
-									<div
-										data-testid={`project-conversations-${project.id}`}
-										class="overflow-hidden"
-										transition:slide={{ duration: 200 }}
-									>
-									{#each conversationsByProject.byProject[project.id] ?? [] as conversation, i (conversation.id)}
-										<div class="pl-4" in:fade={{ duration: 150, delay: i * 35 }}>
-											<ConversationItem
-												{conversation}
-												active={$currentConversationId === conversation.id}
-												menuOpen={isConversationMenuOpen(conversation.id)}
-												projects={allProjects}
-												dragEnabled={supportsDragAndDrop}
-												isDragging={draggedConversationId === conversation.id}
-												onSelect={handleSelect}
-												onRename={handleRename}
-												onDelete={handleDelete}
-												onTogglePin={handleConversationTogglePin}
-												onMoveToProject={handleMoveToProject}
-												onDragStart={handleConversationDragStart}
-												onDragEnd={handleConversationDragEnd}
-												onMenuToggle={handleMenuToggle}
-												onMenuClose={handleMenuClose}
-											/>
-										</div>
-									{/each}
+								{#each conversationsByProject.byProject[project.id] ?? [] as conversation, i (conversation.id)}
+									<div class="pl-4" in:fade={{ duration: 150, delay: i * 35 }}>
+										<ConversationItem
+											{conversation}
+											active={$currentConversationId === conversation.id}
+											menuOpen={isConversationMenuOpen(conversation.id)}
+											projects={allProjects}
+											dragEnabled={supportsDragAndDrop}
+											isDragging={draggedConversationId === conversation.id}
+											onSelect={handleSelect}
+											onRename={handleRename}
+											onDelete={handleDelete}
+											onTogglePin={handleConversationTogglePin}
+											onMoveToProject={handleMoveToProject}
+											onDragStart={handleConversationDragStart}
+											onDragEnd={handleConversationDragEnd}
+											onMenuToggle={handleMenuToggle}
+											onMenuClose={handleMenuClose}
+										/>
 									</div>
-								{/if}
+								{/each}
 							</div>
-						</div>
+						{/if}
 					</div>
 				{/each}
 			</div>
@@ -930,7 +834,12 @@ function handleNewProjectKeydown(e: KeyboardEvent) {
 		role="group"
 		aria-label={$t('sidebar.unorganizedDropArea')}
 		ondragover={(event) => {
+			if (activeSidebarReorder?.kind === 'project') return;
 			setMoveDropEffect(event);
+			if (activeSidebarReorder?.kind === 'pinned-conversation') {
+				handlePinnedConversationRegularDragOver({ kind: 'unorganized' });
+				return;
+			}
 			handleUnorganizedDragOver();
 		}}
 		ondragleave={(event) => {
@@ -939,7 +848,12 @@ function handleNewProjectKeydown(e: KeyboardEvent) {
 			}
 		}}
 		ondrop={(event) => {
+			if (activeSidebarReorder?.kind === 'project') return;
 			setMoveDropEffect(event);
+			if (activeSidebarReorder?.kind === 'pinned-conversation') {
+				void handlePinnedConversationDropToRegularArea({ projectId: null });
+				return;
+			}
 			void handleUnorganizedDropConversation(getDraggedConversationId(event));
 		}}
 	>

@@ -12,34 +12,26 @@ const project = {
 };
 
 describe("ProjectItem", () => {
-	it("offers pinning as the first project menu action", async () => {
-		const onTogglePin = vi.fn();
+	it("keeps project pinning out of the project menu", () => {
 		render(ProjectItem, {
 			project,
 			menuOpen: true,
-			onTogglePin,
 		});
 
 		const menuActions = screen
 			.getAllByRole("menuitem")
 			.map((button) => button.textContent?.trim());
-		expect(menuActions[0]).toBe("Pin to sidebar");
-
-		await fireEvent.click(
-			screen.getByRole("menuitem", { name: "Pin to sidebar" }),
-		);
-
-		expect(onTogglePin).toHaveBeenCalledWith({ id: "project-1", pinned: true });
+		expect(menuActions).toEqual(["New chat", "Rename", "Delete"]);
+		expect(
+			screen.queryByRole("menuitem", { name: "Pin to sidebar" }),
+		).not.toBeInTheDocument();
 	});
 
 	it("opens the project menu on right-click without toggling the folder", async () => {
 		const onToggle = vi.fn();
-		const onTogglePin = vi.fn();
-		const pinnedProject = { ...project, sidebarPinned: true };
 		render(ProjectItemWrapper, {
-			project: pinnedProject,
+			project,
 			onToggle,
-			onTogglePin,
 		});
 
 		await fireEvent.contextMenu(screen.getByTestId("project-drop-target"), {
@@ -48,22 +40,9 @@ describe("ProjectItem", () => {
 		});
 
 		expect(onToggle).not.toHaveBeenCalled();
-		await fireEvent.click(
-			screen.getByRole("menuitem", { name: "Unpin from sidebar" }),
-		);
-
-		expect(onTogglePin).toHaveBeenCalledWith({
-			id: "project-1",
-			pinned: false,
-		});
-	});
-
-	it("marks pinned project rows with a persistent indicator", () => {
-		render(ProjectItem, {
-			project: { ...project, sidebarPinned: true },
-		});
-
-		expect(screen.getByLabelText("Pinned")).toBeInTheDocument();
+		expect(
+			screen.getByRole("menuitem", { name: "Create chat in House tasks" }),
+		).toBeInTheDocument();
 	});
 
 	it("offers creating a new chat inside the project menu", async () => {

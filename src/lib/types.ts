@@ -87,7 +87,6 @@ export interface Project {
 	id: string;
 	name: string;
 	color?: string | null;
-	sidebarPinned: boolean;
 	sortOrder: number;
 	createdAt: number; // Unix timestamp
 	updatedAt: number; // Unix timestamp

@@ -5,7 +5,6 @@ import ProjectItem from "./ProjectItem.svelte";
 type TogglePayload = { id: string; expanded: boolean };
 type ProjectIdPayload = { id: string };
 type RenamePayload = { id: string; name: string };
-type TogglePinPayload = { id: string; pinned: boolean };
 
 let {
 	project,
@@ -14,7 +13,6 @@ let {
 	onCreateConversation = () => {},
 	onRename = () => {},
 	onDelete = () => {},
-	onTogglePin = () => {},
 }: {
 	project: Project;
 	expanded?: boolean;
@@ -22,7 +20,6 @@ let {
 	onCreateConversation?: (event: ProjectIdPayload) => void;
 	onRename?: (event: RenamePayload) => void;
 	onDelete?: (event: ProjectIdPayload) => void;
-	onTogglePin?: (event: TogglePinPayload) => void;
 } = $props();
 
 let menuOpen = $state(false);
@@ -36,7 +33,6 @@ let menuOpen = $state(false);
 	onCreateConversation={onCreateConversation}
 	onRename={onRename}
 	onDelete={onDelete}
-	onTogglePin={onTogglePin}
 	onMenuToggle={(payload) => (menuOpen = payload.open)}
 	onMenuClose={() => (menuOpen = false)}
 />

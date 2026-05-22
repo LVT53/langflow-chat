@@ -232,20 +232,18 @@ function seedProjectSidebarScenario() {
 	db.insert(schema.projects)
 		.values([
 			{
-				id: "pinned-folder",
+				id: "first-folder",
 				userId: "project-sidebar-user",
-				name: "Pinned folder",
-				sidebarPinned: true,
-				sortOrder: 5,
+				name: "First folder",
+				sortOrder: 0,
 				createdAt: now,
 				updatedAt: now,
 			},
 			{
-				id: "target-folder",
+				id: "second-folder",
 				userId: "project-sidebar-user",
-				name: "Target folder",
-				sidebarPinned: false,
-				sortOrder: 10,
+				name: "Second folder",
+				sortOrder: 1,
 				createdAt: new Date(now.getTime() + 1_000),
 				updatedAt: new Date(now.getTime() + 1_000),
 			},
@@ -253,7 +251,6 @@ function seedProjectSidebarScenario() {
 				id: "other-user-folder",
 				userId: "other-project-sidebar-user",
 				name: "Other user folder",
-				sidebarPinned: true,
 				sortOrder: 0,
 				createdAt: now,
 				updatedAt: now,
@@ -264,7 +261,7 @@ function seedProjectSidebarScenario() {
 	sqlite.close();
 }
 
-describe("project sidebar pinning", () => {
+describe("project sidebar ordering", () => {
 	beforeEach(() => {
 		dbPath = `/tmp/alfyai-project-sidebar-${randomUUID()}.db`;
 		process.env.DATABASE_PATH = dbPath;
@@ -285,81 +282,37 @@ describe("project sidebar pinning", () => {
 		}
 	});
 
-	it("inserts a newly pinned project at the top of the pinned folder group", async () => {
+	it("lists projects by persisted sidebar order", async () => {
 		seedProjectSidebarScenario();
-		const { listProjects, setProjectSidebarPinned } = await import(
-			"./projects"
-		);
-
-		const pinned = await setProjectSidebarPinned(
-			"project-sidebar-user",
-			"target-folder",
-			true,
-		);
+		const { listProjects } = await import("./projects");
 		const listed = await listProjects("project-sidebar-user");
 
-		expect(pinned).toMatchObject({
-			id: "target-folder",
-			sidebarPinned: true,
-			sortOrder: 4,
-		});
 		expect(listed.map((project) => project.id)).toEqual([
-			"target-folder",
-			"pinned-folder",
-		]);
-		expect(listed.map((project) => project.sidebarPinned)).toEqual([
-			true,
-			true,
+			"first-folder",
+			"second-folder",
 		]);
 	});
 
-	it("persists sidebar order inside pinned and unpinned project groups only", async () => {
+	it("persists sidebar order across all owned project folders", async () => {
 		seedProjectSidebarScenario();
-		const { listProjects, saveProjectSidebarOrder, setProjectSidebarPinned } =
-			await import("./projects");
-
-		await setProjectSidebarPinned(
-			"project-sidebar-user",
-			"target-folder",
-			true,
+		const { listProjects, saveProjectSidebarOrder } = await import(
+			"./projects"
 		);
+
 		await saveProjectSidebarOrder("project-sidebar-user", {
-			pinnedIds: ["pinned-folder", "target-folder"],
+			ids: ["second-folder", "first-folder"],
 		});
 		const listed = await listProjects("project-sidebar-user");
 
 		expect(listed.map((project) => [project.id, project.sortOrder])).toEqual([
-			["pinned-folder", 0],
-			["target-folder", 1],
+			["second-folder", 0],
+			["first-folder", 1],
 		]);
 		await expect(
 			saveProjectSidebarOrder("project-sidebar-user", {
-				pinnedIds: ["other-user-folder"],
+				ids: ["other-user-folder"],
 			}),
-		).rejects.toThrow("pinnedIds must contain only owned pinned projects");
-	});
-
-	it("preserves project sort order when unpinning", async () => {
-		seedProjectSidebarScenario();
-		const { setProjectSidebarPinned } = await import("./projects");
-
-		const pinned = await setProjectSidebarPinned(
-			"project-sidebar-user",
-			"target-folder",
-			true,
-		);
-		const unpinned = await setProjectSidebarPinned(
-			"project-sidebar-user",
-			"target-folder",
-			false,
-		);
-
-		expect(pinned?.sortOrder).toBe(4);
-		expect(unpinned).toMatchObject({
-			id: "target-folder",
-			sidebarPinned: false,
-			sortOrder: 4,
-		});
+		).rejects.toThrow("ids must contain only owned projects");
 	});
 });
 

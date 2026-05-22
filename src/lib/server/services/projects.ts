@@ -1,12 +1,11 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import { conversations, projects } from "$lib/server/db/schema";
 import type { Project } from "$lib/types";
 
 type SaveProjectSidebarOrderInput = {
-	pinnedIds?: string[];
-	unpinnedIds?: string[];
+	ids?: string[];
 };
 
 function toProject(row: typeof projects.$inferSelect): Project {
@@ -14,7 +13,6 @@ function toProject(row: typeof projects.$inferSelect): Project {
 		id: row.id,
 		name: row.name,
 		color: row.color,
-		sidebarPinned: row.sidebarPinned,
 		sortOrder: row.sortOrder,
 		createdAt: row.createdAt.getTime() / 1000,
 		updatedAt: row.updatedAt.getTime() / 1000,
@@ -23,9 +21,6 @@ function toProject(row: typeof projects.$inferSelect): Project {
 
 function sortProjectList(items: Project[]): Project[] {
 	return items.sort((a, b) => {
-		if (a.sidebarPinned !== b.sidebarPinned) {
-			return a.sidebarPinned ? -1 : 1;
-		}
 		return a.sortOrder - b.sortOrder || a.createdAt - b.createdAt;
 	});
 }
@@ -75,109 +70,42 @@ export async function updateProject(
 	return row ? toProject(row) : null;
 }
 
-export async function setProjectSidebarPinned(
-	userId: string,
-	projectId: string,
-	sidebarPinned: boolean,
-): Promise<Project | null> {
-	if (!sidebarPinned) {
-		const [row] = await db
-			.update(projects)
-			.set({ sidebarPinned: false, updatedAt: new Date() })
-			.where(and(eq(projects.id, projectId), eq(projects.userId, userId)))
-			.returning();
-		return row ? toProject(row) : null;
-	}
-
-	const [currentTop] = await db
-		.select({ sortOrder: projects.sortOrder })
-		.from(projects)
-		.where(and(eq(projects.userId, userId), eq(projects.sidebarPinned, true)))
-		.orderBy(asc(projects.sortOrder))
-		.limit(1);
-	const nextSortOrder = (currentTop?.sortOrder ?? 1) - 1;
-	const [row] = await db
-		.update(projects)
-		.set({
-			sidebarPinned: true,
-			sortOrder: nextSortOrder,
-			updatedAt: new Date(),
-		})
-		.where(and(eq(projects.id, projectId), eq(projects.userId, userId)))
-		.returning();
-	return row ? toProject(row) : null;
-}
-
 export async function saveProjectSidebarOrder(
 	userId: string,
 	input: SaveProjectSidebarOrderInput,
 ): Promise<void> {
-	const pinnedIds = input.pinnedIds ?? [];
-	const unpinnedIds = input.unpinnedIds ?? [];
-	const allIds = [...pinnedIds, ...unpinnedIds];
-	if (allIds.length === 0) return;
-	if (new Set(allIds).size !== allIds.length) {
+	const ids = input.ids ?? [];
+	if (ids.length === 0) return;
+	if (new Set(ids).size !== ids.length) {
 		throw new Error("sidebar order ids must not contain duplicates");
 	}
 
-	await validateProjectSidebarOrderGroup(userId, pinnedIds, true, "pinnedIds");
-	await validateProjectSidebarOrderGroup(
-		userId,
-		unpinnedIds,
-		false,
-		"unpinnedIds",
-	);
+	await validateProjectSidebarOrderIds(userId, ids);
 
 	db.transaction((tx) => {
-		for (const [index, projectId] of pinnedIds.entries()) {
+		for (const [index, projectId] of ids.entries()) {
 			tx.update(projects)
 				.set({ sortOrder: index, updatedAt: new Date() })
-				.where(
-					and(
-						eq(projects.id, projectId),
-						eq(projects.userId, userId),
-						eq(projects.sidebarPinned, true),
-					),
-				)
-				.run();
-		}
-		for (const [index, projectId] of unpinnedIds.entries()) {
-			tx.update(projects)
-				.set({ sortOrder: index, updatedAt: new Date() })
-				.where(
-					and(
-						eq(projects.id, projectId),
-						eq(projects.userId, userId),
-						eq(projects.sidebarPinned, false),
-					),
-				)
+				.where(and(eq(projects.id, projectId), eq(projects.userId, userId)))
 				.run();
 		}
 	});
 }
 
-async function validateProjectSidebarOrderGroup(
+async function validateProjectSidebarOrderIds(
 	userId: string,
 	ids: string[],
-	expectedPinned: boolean,
-	fieldName: "pinnedIds" | "unpinnedIds",
 ): Promise<void> {
 	if (ids.length === 0) return;
 	const rows = await db
 		.select({
 			id: projects.id,
-			sidebarPinned: projects.sidebarPinned,
 		})
 		.from(projects)
 		.where(and(eq(projects.userId, userId), inArray(projects.id, ids)));
 
-	if (
-		rows.length !== ids.length ||
-		rows.some((row) => row.sidebarPinned !== expectedPinned)
-	) {
-		throw new Error(
-			`${fieldName} must contain only owned ${expectedPinned ? "pinned" : "unpinned"} projects`,
-		);
+	if (rows.length !== ids.length) {
+		throw new Error("ids must contain only owned projects");
 	}
 }
 

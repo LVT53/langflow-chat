@@ -83,9 +83,7 @@ const dictionary = {
 		"sidebar.pinned": "Pinned",
 		"sidebar.pinToSidebar": "Pin to sidebar",
 		"sidebar.unpinFromSidebar": "Unpin from sidebar",
-		"sidebar.reorderItem": "Reorder {label}",
-		"sidebar.moveItemUp": "Move {label} up",
-		"sidebar.moveItemDown": "Move {label} down",
+		"sidebar.reorderItem": "Drag to reorder {label}",
 		"sidebar.newChatInProject": "New chat",
 		"sidebar.createChatInProject": "Create chat in {name}",
 		"sidebar.rename": "Rename",
@@ -114,8 +112,6 @@ const dictionary = {
 			"Failed to create chat in this project. Please try again.",
 		"sidebar.failedUpdateConversationPin":
 			"Failed to update conversation pin. Please try again.",
-		"sidebar.failedUpdateProjectPin":
-			"Failed to update project pin. Please try again.",
 		"sidebar.failedReorderSidebar":
 			"Failed to save sidebar order. Please try again.",
 		"appVersion.label": "App version {version}",
@@ -1616,9 +1612,7 @@ const dictionary = {
 		"sidebar.pinned": "Rögzítve",
 		"sidebar.pinToSidebar": "Rögzítés az oldalsávra",
 		"sidebar.unpinFromSidebar": "Rögzítés feloldása az oldalsávon",
-		"sidebar.reorderItem": "{label} átrendezése",
-		"sidebar.moveItemUp": "{label} mozgatása fel",
-		"sidebar.moveItemDown": "{label} mozgatása le",
+		"sidebar.reorderItem": "{label} átrendezése húzással",
 		"sidebar.newChatInProject": "Új beszélgetés",
 		"sidebar.createChatInProject": "Új beszélgetés létrehozása itt: {name}",
 		"sidebar.rename": "Átnevezés",
@@ -1647,8 +1641,6 @@ const dictionary = {
 			"Nem sikerült beszélgetést létrehozni ebben a projektben. Próbáld újra.",
 		"sidebar.failedUpdateConversationPin":
 			"Nem sikerült frissíteni a beszélgetés rögzítését. Próbáld újra.",
-		"sidebar.failedUpdateProjectPin":
-			"Nem sikerült frissíteni a projekt rögzítését. Próbáld újra.",
 		"sidebar.failedReorderSidebar":
 			"Nem sikerült menteni az oldalsáv sorrendjét. Próbáld újra.",
 		"appVersion.label": "Alkalmazásverzió: {version}",

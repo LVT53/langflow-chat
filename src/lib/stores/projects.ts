@@ -5,84 +5,31 @@ import {
 	fetchProjects,
 	renameProject as renameProjectRequest,
 	saveProjectSidebarOrder,
-	setProjectSidebarPinned,
 } from "$lib/client/api/projects";
 import type { Project } from "$lib/types";
 
 export const projects = writable<Project[]>([]);
 
-type SidebarProject = Project & { sidebarPinned?: boolean };
-
 const optimisticProjectIds = new Set<string>();
-const localProjectSidebarStates = new Map<
-	string,
-	{ sidebarPinned: boolean; sortOrder: number }
->();
+const localProjectSortOrders = new Map<string, number>();
 let projectSnapshotUserId: string | null = null;
 
-function isProjectSidebarPinned(project: Project): boolean {
-	return (project as SidebarProject).sidebarPinned === true;
-}
-
 function sortProjects(items: Project[]): Project[] {
-	return [...items].sort((left, right) => {
-		const leftPinned = isProjectSidebarPinned(left);
-		const rightPinned = isProjectSidebarPinned(right);
-		if (leftPinned !== rightPinned) return leftPinned ? -1 : 1;
-		return left.sortOrder - right.sortOrder || left.createdAt - right.createdAt;
-	});
-}
-
-function getProjectSidebarState(project: Project): {
-	sidebarPinned: boolean;
-	sortOrder: number;
-} {
-	return {
-		sidebarPinned: isProjectSidebarPinned(project),
-		sortOrder: project.sortOrder,
-	};
-}
-
-function projectSidebarStateMatches(
-	project: Project,
-	state: { sidebarPinned: boolean; sortOrder: number },
-): boolean {
-	return (
-		isProjectSidebarPinned(project) === state.sidebarPinned &&
-		project.sortOrder === state.sortOrder
+	return [...items].sort(
+		(left, right) =>
+			left.sortOrder - right.sortOrder || left.createdAt - right.createdAt,
 	);
 }
 
-function applyProjectSidebarState(
-	project: Project,
-	state: { sidebarPinned: boolean; sortOrder: number },
-): Project {
+function projectSortOrderMatches(project: Project, sortOrder: number): boolean {
+	return project.sortOrder === sortOrder;
+}
+
+function applyProjectSortOrder(project: Project, sortOrder: number): Project {
 	return {
 		...project,
-		sidebarPinned: state.sidebarPinned,
-		sortOrder: state.sortOrder,
+		sortOrder,
 	};
-}
-
-function nextTopProjectSortOrder(
-	items: Project[],
-	sidebarPinned: boolean,
-): number {
-	const orders = items
-		.filter((project) => isProjectSidebarPinned(project) === sidebarPinned)
-		.map((project) => project.sortOrder);
-	if (orders.length === 0) return 0;
-	return Math.min(...orders) - 1;
-}
-
-function applyProjectMutationResult(project: Project): void {
-	projects.update((list) =>
-		sortProjects(
-			list.map((item) =>
-				item.id === project.id ? { ...item, ...project } : item,
-			),
-		),
-	);
 }
 
 function applyProjectMutationResults(items: Project[]): void {
@@ -118,7 +65,7 @@ export function reconcileProjectSnapshot(
 	projects.update((current) => {
 		if (shouldReset) {
 			optimisticProjectIds.clear();
-			localProjectSidebarStates.clear();
+			localProjectSortOrders.clear();
 			projectSnapshotUserId = options.userId ?? null;
 			return sortProjects(items);
 		}
@@ -128,13 +75,13 @@ export function reconcileProjectSnapshot(
 		}
 
 		const mergedItems = items.map((item) => {
-			const localSidebarState = localProjectSidebarStates.get(item.id);
-			if (!localSidebarState) return item;
-			if (projectSidebarStateMatches(item, localSidebarState)) {
-				localProjectSidebarStates.delete(item.id);
+			const localSortOrder = localProjectSortOrders.get(item.id);
+			if (localSortOrder === undefined) return item;
+			if (projectSortOrderMatches(item, localSortOrder)) {
+				localProjectSortOrders.delete(item.id);
 				return item;
 			}
-			return applyProjectSidebarState(item, localSidebarState);
+			return applyProjectSortOrder(item, localSortOrder);
 		});
 
 		const next = new Map(mergedItems.map((item) => [item.id, item]));
@@ -154,7 +101,7 @@ export function reconcileProjectSnapshot(
 
 export function clearProjectStore(): void {
 	optimisticProjectIds.clear();
-	localProjectSidebarStates.clear();
+	localProjectSortOrders.clear();
 	projectSnapshotUserId = null;
 	projects.set([]);
 }
@@ -170,7 +117,7 @@ export async function loadProjects(): Promise<void> {
 export async function createProject(name: string): Promise<Project> {
 	const project = await createProjectRequest(name);
 	optimisticProjectIds.add(project.id);
-	projects.update((list) => [...list, project]);
+	projects.update((list) => sortProjects([...list, project]));
 	return project;
 }
 
@@ -181,110 +128,32 @@ export async function renameProject(id: string, name: string): Promise<void> {
 	);
 }
 
-export async function toggleProjectSidebarPin(
-	id: string,
-	sidebarPinned?: boolean,
-): Promise<void> {
-	let previousProject: Project | null = null;
-	let previousSidebarState:
-		| { sidebarPinned: boolean; sortOrder: number }
-		| undefined;
-	let hadPreviousSidebarState = false;
-	let nextPinned = Boolean(sidebarPinned);
-	let optimisticSidebarState:
-		| { sidebarPinned: boolean; sortOrder: number }
-		| undefined;
-
-	projects.update((list) => {
-		const current = list.find((project) => project.id === id);
-		if (!current) return list;
-		previousProject = current;
-		hadPreviousSidebarState = localProjectSidebarStates.has(id);
-		previousSidebarState = localProjectSidebarStates.get(id);
-		nextPinned = sidebarPinned ?? !isProjectSidebarPinned(current);
-		const nextSidebarState = {
-			sidebarPinned: nextPinned,
-			sortOrder: nextTopProjectSortOrder(list, nextPinned),
-		};
-		optimisticSidebarState = nextSidebarState;
-		localProjectSidebarStates.set(id, nextSidebarState);
-		return sortProjects(
-			list.map((project) =>
-				project.id === id
-					? applyProjectSidebarState(project, nextSidebarState)
-					: project,
-			),
-		);
-	});
-
-	try {
-		const project = await setProjectSidebarPinned(id, nextPinned);
-		localProjectSidebarStates.set(id, getProjectSidebarState(project));
-		applyProjectMutationResult(project);
-	} catch (error) {
-		if (
-			optimisticSidebarState &&
-			localProjectSidebarStates.get(id) === optimisticSidebarState
-		) {
-			if (hadPreviousSidebarState && previousSidebarState) {
-				localProjectSidebarStates.set(id, previousSidebarState);
-			} else {
-				localProjectSidebarStates.delete(id);
-			}
-		}
-		if (previousProject) {
-			projects.update((list) =>
-				sortProjects(
-					list.map((project) =>
-						project.id === id ? previousProject : project,
-					),
-				),
-			);
-		}
-		throw error;
-	}
-}
-
 export async function saveProjectOrder(payload: {
-	pinnedIds?: string[];
-	unpinnedIds?: string[];
+	ids: string[];
 }): Promise<void> {
-	const pinnedIds = payload.pinnedIds ?? [];
-	const unpinnedIds = payload.unpinnedIds ?? [];
-	const pinnedOrder = new Map(pinnedIds.map((id, index) => [id, index]));
-	const unpinnedOrder = new Map(unpinnedIds.map((id, index) => [id, index]));
+	const order = new Map(payload.ids.map((id, index) => [id, index]));
 	let previousItems: Project[] = [];
-	const previousSidebarStates = new Map<
+	const previousSortOrders = new Map<
 		string,
-		{ hadState: boolean; state?: { sidebarPinned: boolean; sortOrder: number } }
+		{ hadState: boolean; sortOrder?: number }
 	>();
-	const optimisticSidebarStates = new Map<
-		string,
-		{ sidebarPinned: boolean; sortOrder: number }
-	>();
+	const optimisticSortOrders = new Map<string, number>();
 
 	projects.update((list) => {
 		previousItems = list;
-		for (const id of [...pinnedIds, ...unpinnedIds]) {
-			previousSidebarStates.set(id, {
-				hadState: localProjectSidebarStates.has(id),
-				state: localProjectSidebarStates.get(id),
+		for (const id of payload.ids) {
+			previousSortOrders.set(id, {
+				hadState: localProjectSortOrders.has(id),
+				sortOrder: localProjectSortOrders.get(id),
 			});
 		}
 
 		const next = list.map((project) => {
-			const pinnedIndex = pinnedOrder.get(project.id);
-			const unpinnedIndex = unpinnedOrder.get(project.id);
-			if (pinnedIndex === undefined && unpinnedIndex === undefined) {
-				return project;
-			}
-			const nextSidebarState =
-				pinnedIndex !== undefined
-					? { sidebarPinned: true, sortOrder: pinnedIndex }
-					: { sidebarPinned: false, sortOrder: unpinnedIndex ?? 0 };
-			optimisticSidebarStates.set(project.id, nextSidebarState);
-			localProjectSidebarStates.set(project.id, nextSidebarState);
-			return applyProjectSidebarState(project, nextSidebarState);
+			const nextSortOrder = order.get(project.id);
+			if (nextSortOrder === undefined) return project;
+			optimisticSortOrders.set(project.id, nextSortOrder);
+			localProjectSortOrders.set(project.id, nextSortOrder);
+			return applyProjectSortOrder(project, nextSortOrder);
 		});
 
 		return sortProjects(next);
@@ -296,13 +165,13 @@ export async function saveProjectOrder(payload: {
 			applyProjectMutationResults(updatedProjects);
 		}
 	} catch (error) {
-		for (const [id, state] of optimisticSidebarStates) {
-			if (localProjectSidebarStates.get(id) !== state) continue;
-			const previous = previousSidebarStates.get(id);
-			if (previous?.hadState && previous.state) {
-				localProjectSidebarStates.set(id, previous.state);
+		for (const [id, sortOrder] of optimisticSortOrders) {
+			if (localProjectSortOrders.get(id) !== sortOrder) continue;
+			const previous = previousSortOrders.get(id);
+			if (previous?.hadState && previous.sortOrder !== undefined) {
+				localProjectSortOrders.set(id, previous.sortOrder);
 			} else {
-				localProjectSidebarStates.delete(id);
+				localProjectSortOrders.delete(id);
 			}
 		}
 		projects.set(previousItems);
@@ -313,6 +182,6 @@ export async function saveProjectOrder(payload: {
 export async function deleteProject(id: string): Promise<void> {
 	await deleteProjectRequest(id);
 	optimisticProjectIds.delete(id);
-	localProjectSidebarStates.delete(id);
+	localProjectSortOrders.delete(id);
 	projects.update((list) => list.filter((p) => p.id !== id));
 }

@@ -249,6 +249,7 @@ function handleDragStart(event: DragEvent) {
 		return;
 	}
 
+	event.stopPropagation();
 	showProjectSubmenu = false;
 	onMenuClose?.({ id: conversation.id });
 	event.dataTransfer?.setData(
@@ -262,7 +263,10 @@ function handleDragStart(event: DragEvent) {
 	onDragStart?.({ id: conversation.id });
 }
 
-function handleDragEnd() {
+function handleDragEnd(event: DragEvent) {
+	if (dragEnabled) {
+		event.stopPropagation();
+	}
 	onDragEnd?.({ id: conversation.id });
 }
 

@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, within } from "@testing-library/svelte";
+import {
+	fireEvent,
+	render,
+	screen,
+	waitFor,
+	within,
+} from "@testing-library/svelte";
 import { readable } from "svelte/store";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { conversations } from "$lib/stores/conversations";
@@ -43,7 +49,6 @@ describe("ConversationList sidebar pinning", () => {
 			{
 				id: "project-1",
 				name: "House tasks",
-				sidebarPinned: false,
 				sortOrder: 0,
 				createdAt: 1,
 				updatedAt: 1,
@@ -101,31 +106,28 @@ describe("ConversationList sidebar pinning", () => {
 		).toBeInTheDocument();
 	});
 
-	it("sorts pinned projects before unpinned projects and reorders inside the pinned group", async () => {
+	it("reorders project folders as one persisted list with whole-row drag", async () => {
 		const projectRows: Project[] = [
 			{
-				id: "unpinned-project",
-				name: "Unpinned project",
+				id: "project-first",
+				name: "Project first",
 				sortOrder: 0,
 				createdAt: 1,
 				updatedAt: 1,
-				sidebarPinned: false,
 			},
 			{
-				id: "pinned-later",
-				name: "Pinned later",
+				id: "project-later",
+				name: "Project later",
 				sortOrder: 1,
 				createdAt: 2,
 				updatedAt: 2,
-				sidebarPinned: true,
 			},
 			{
-				id: "pinned-first",
-				name: "Pinned first",
-				sortOrder: 0,
+				id: "project-third",
+				name: "Project third",
+				sortOrder: 2,
 				createdAt: 3,
 				updatedAt: 3,
-				sidebarPinned: true,
 			},
 		];
 		projects.set(projectRows);
@@ -138,19 +140,121 @@ describe("ConversationList sidebar pinning", () => {
 				.map((row) => row.dataset.projectId);
 
 		expect(projectIds()).toEqual([
-			"pinned-first",
-			"pinned-later",
-			"unpinned-project",
+			"project-first",
+			"project-later",
+			"project-third",
 		]);
 
-		await fireEvent.click(
-			screen.getByRole("button", { name: "Move Pinned first down" }),
-		);
+		const getReorderRow = (id: string) =>
+			screen
+				.getAllByTestId("sidebar-reorder-row")
+				.find((row) => row.dataset.reorderId === id);
+		await fireEvent.dragStart(getReorderRow("project-first") as HTMLElement);
+		await fireEvent.dragOver(getReorderRow("project-third") as HTMLElement);
+		await fireEvent.drop(getReorderRow("project-third") as HTMLElement);
 
+		expect(
+			screen.queryByRole("button", { name: /Move Project first/i }),
+		).not.toBeInTheDocument();
 		expect(projectIds()).toEqual([
-			"pinned-later",
-			"pinned-first",
-			"unpinned-project",
+			"project-later",
+			"project-first",
+			"project-third",
 		]);
+		await waitFor(() =>
+			expect(fetch).toHaveBeenCalledWith(
+				"/api/projects/sidebar-order",
+				expect.objectContaining({
+					method: "PATCH",
+					body: JSON.stringify({
+						ids: ["project-later", "project-first", "project-third"],
+					}),
+				}),
+			),
+		);
+	});
+
+	it("unpins a pinned chat when dropped into the unorganized chat area", async () => {
+		const fetchMock = vi.fn(
+			async (input: RequestInfo | URL, init?: RequestInit) => {
+				const url = String(input);
+				if (url === "/api/conversations/pinned-chat") {
+					const body = JSON.parse(String(init?.body ?? "{}")) as {
+						projectId?: string | null;
+						sidebarPinned?: boolean;
+					};
+					return new Response(
+						JSON.stringify({
+							id: "pinned-chat",
+							title: "Pinned chat",
+							projectId: body.projectId !== undefined ? body.projectId : null,
+							updatedAt: 200,
+							sidebarPinned: body.sidebarPinned ?? true,
+							sidebarSortOrder: body.sidebarPinned === false ? null : 0,
+						}),
+						{ status: 200, headers: { "Content-Type": "application/json" } },
+					);
+				}
+				return new Response(
+					JSON.stringify({ conversations: [], projects: [] }),
+					{
+						status: 200,
+						headers: { "Content-Type": "application/json" },
+					},
+				);
+			},
+		);
+		vi.stubGlobal("fetch", fetchMock);
+		const initialProjects: Project[] = [
+			{
+				id: "project-1",
+				name: "House tasks",
+				sortOrder: 0,
+				createdAt: 1,
+				updatedAt: 1,
+			},
+		];
+		projects.set(initialProjects);
+		conversations.set([
+			{
+				id: "pinned-chat",
+				title: "Pinned chat",
+				projectId: "project-1",
+				updatedAt: 200,
+				sidebarPinned: true,
+				sidebarSortOrder: 0,
+			},
+		]);
+
+		render(ConversationList, { initialProjects });
+
+		const pinnedRow = screen
+			.getAllByTestId("sidebar-reorder-row")
+			.find((row) => row.dataset.reorderId === "pinned-chat");
+		await fireEvent.dragStart(pinnedRow as HTMLElement);
+		await fireEvent.dragOver(screen.getByTestId("unorganized-drop-target"));
+		await fireEvent.drop(screen.getByTestId("unorganized-drop-target"));
+
+		await waitFor(() =>
+			expect(
+				within(screen.getByTestId("unorganized-drop-target")).getByText(
+					"Pinned chat",
+				),
+			).toBeInTheDocument(),
+		);
+		expect(fetchMock).toHaveBeenCalledWith(
+			"/api/conversations/pinned-chat",
+			expect.objectContaining({
+				method: "PATCH",
+				body: JSON.stringify({ projectId: null }),
+			}),
+		);
+		expect(fetchMock).toHaveBeenCalledWith(
+			"/api/conversations/pinned-chat",
+			expect.objectContaining({
+				method: "PATCH",
+				body: JSON.stringify({ sidebarPinned: false }),
+			}),
+		);
 	});
 });

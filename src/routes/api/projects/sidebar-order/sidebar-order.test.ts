@@ -44,9 +44,8 @@ describe("PATCH /api/projects/sidebar-order", () => {
 		mockListProjects.mockResolvedValue([
 			{
 				id: "project-2",
-				name: "Pinned",
+				name: "Ordered",
 				color: null,
-				sidebarPinned: true,
 				sortOrder: 0,
 				createdAt: 1,
 				updatedAt: 1,
@@ -54,35 +53,31 @@ describe("PATCH /api/projects/sidebar-order", () => {
 		]);
 	});
 
-	it("persists project order inside supplied sidebar groups", async () => {
+	it("persists project order inside the supplied sidebar list", async () => {
 		const response = await PATCH(
-			makePatchEvent({ pinnedIds: ["project-2"], unpinnedIds: ["project-1"] }),
+			makePatchEvent({ ids: ["project-2", "project-1"] }),
 		);
 		const data = await response.json();
 
 		expect(response.status).toBe(200);
 		expect(mockSaveProjectSidebarOrder).toHaveBeenCalledWith("user-1", {
-			pinnedIds: ["project-2"],
-			unpinnedIds: ["project-1"],
+			ids: ["project-2", "project-1"],
 		});
 		expect(data.projects).toEqual([
 			expect.objectContaining({
 				id: "project-2",
-				sidebarPinned: true,
 				sortOrder: 0,
 			}),
 		]);
 	});
 
 	it("rejects invalid group payloads before service calls", async () => {
-		const response = await PATCH(
-			makePatchEvent({ pinnedIds: ["project-1"], unpinnedIds: 12 }),
-		);
+		const response = await PATCH(makePatchEvent({ ids: 12 }));
 		const data = await response.json();
 
 		expect(response.status).toBe(400);
 		expect(data.error).toBe(
-			"pinnedIds and unpinnedIds must be arrays of project ids when provided",
+			"ids must be an array of project ids when provided",
 		);
 		expect(mockSaveProjectSidebarOrder).not.toHaveBeenCalled();
 	});

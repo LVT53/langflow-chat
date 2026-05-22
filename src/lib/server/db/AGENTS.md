@@ -27,7 +27,7 @@ SQLite persistence with Drizzle ORM. Schema definitions and connection bootstrap
 - `task_states` - Project continuity, checkpoints, evidence links
 - `memory_events` - State change log (deadlines, preferences, supersession)
 - `memory_projects` / `memory_project_task_links` - Continuity buckets and task associations
-- `projects` - Project folders with durable sidebar pin/order state; use direct project fields rather than a separate sidebar preferences table for first-party sidebar organization
+- `projects` - Project folders with durable sidebar order state; use direct project fields rather than a separate sidebar preferences table for first-party sidebar organization
 
 **Config Tables:**
 - `runtime_config` - Admin UI overrides for env vars

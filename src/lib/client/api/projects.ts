@@ -38,25 +38,8 @@ export async function renameProject(
 	);
 }
 
-export async function setProjectSidebarPinned(
-	id: string,
-	sidebarPinned: boolean,
-	fetchImpl: typeof fetch = fetch,
-): Promise<Project> {
-	return requestJson<Project>(
-		`/api/projects/${id}`,
-		{
-			method: "PATCH",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({ sidebarPinned }),
-		},
-		"Failed to update project pin",
-		fetchImpl,
-	);
-}
-
 export async function saveProjectSidebarOrder(
-	payload: { pinnedIds?: string[]; unpinnedIds?: string[] },
+	payload: { ids: string[] },
 	fetchImpl: typeof fetch = fetch,
 ): Promise<Project[]> {
 	const result = await requestJson<{ projects?: Project[] }>(

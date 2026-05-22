@@ -14,23 +14,24 @@ Primary references:
 
 Sidebar Pin v1 is done when a user can:
 
-- open the existing three-dots menu for a visible chat or Project Folder and choose `Pin to sidebar`;
+- open the existing three-dots menu for a visible chat and choose `Pin to sidebar`;
 - right-click a chat or Project Folder row and open the same details menu at the pointer position without selecting the chat or expanding/collapsing the Project Folder;
 - see pinned chats once in a global `Pinned` section above Projects, with a subtle project label when a pinned chat belongs to a Project Folder;
-- see pinned Project Folders remain in Projects and sort above unpinned Project Folders;
-- choose `Unpin from sidebar` and see the item return to its ordinary visual location;
+- reorder Project Folders as one always-on-top Projects list with whole-row drag;
+- choose `Unpin from sidebar` and see a pinned chat return to its ordinary visual location;
+- drag a pinned chat back into a normal chat area to unpin it into the targeted ordinary location;
 - refresh, sign out/in, or use another browser without losing Sidebar Pin state;
 - trust that Sidebar Pin does not pin Context Sources, change Prompt Context, or raise memory authority.
 
-Drag reorder is not required for v1, but the data model should not block it.
+Project Folders are already above ordinary chats, so they do not expose Sidebar Pin actions.
 
 ## User Stories
 
 - **US1 - Pin a chat**: As a user, I can pin an important visible chat and find it quickly without changing its Project Folder assignment.
-- **US2 - Pin a Project Folder**: As a user, I can keep important Project Folders at the top of Projects without moving their chats.
+- **US2 - Reorder Project Folders**: As a user, I can manually order Project Folders because they are already visually above ordinary chats.
 - **US3 - Use the same details menu everywhere**: As a desktop user, I can right-click a sidebar row to open the same menu I get from the three-dots control.
 - **US4 - Keep sidebar organization durable**: As a user, my pinned sidebar organization follows my account across refreshes and devices.
-- **US5 - Reorder priority work later**: As a user, I can later manually order pinned chats and Project Folders with the same sidebar reorder interaction.
+- **US5 - Reorder priority work**: As a user, I can manually order pinned chats and Project Folders with the same whole-row drag interaction.
 
 ## Slice 1: Sidebar-Pin Conversations End To End
 
@@ -64,7 +65,7 @@ Pin/unpin should use the existing conversation resource update flow. Newly pinne
 - Component tests for the Pinned section, project label display, no duplicate project row, menu ordering, and right-click behavior.
 - Localization parity test for new English and Hungarian sidebar keys.
 
-## Slice 2: Sidebar-Pin Project Folders End To End
+## Slice 2: Project Folder Sidebar Order End To End
 
 **Type**: AFK  
 **Blocked by**: Slice 1  
@@ -72,28 +73,23 @@ Pin/unpin should use the existing conversation resource update flow. Newly pinne
 
 ### What to build
 
-Add durable Sidebar Pin support for Project Folders using the same details-menu behavior and visual language as conversations. Pinned Project Folders stay in the Projects section, sort before unpinned Project Folders, show a subtle pin indicator, and do not move their conversations into the global Pinned section. Pin state is independent from Project Folder expansion state.
-
-Pin/unpin should use the existing project resource update flow. Newly pinned Project Folders enter at the top of the pinned Project Folder group.
+Add durable manual order support for Project Folders. Project Folders remain in the Projects section above ordinary chats, can be reordered with the same whole-row drag primitive used by pinned chats, and do not expose `Pin to sidebar` / `Unpin from sidebar`.
 
 ### Acceptance Criteria
 
-- [ ] A Project Folder can be pinned from the three-dots menu.
-- [ ] A Project Folder can be pinned from a row right-click menu that opens at the pointer position.
+- [ ] A Project Folder can be reordered by dragging the folder row itself.
 - [ ] Right-clicking a Project Folder row opens the details menu without expanding or collapsing the folder.
-- [ ] Pinned Project Folders remain in Projects and sort above unpinned Project Folders.
-- [ ] Pinning a Project Folder does not pin or visually move its conversations.
-- [ ] Deleting a pinned Project Folder removes that folder's Sidebar Pin with the folder.
+- [ ] Project Folder menus do not expose `Pin to sidebar` or `Unpin from sidebar`.
 - [ ] Deleting a Project Folder does not unpin conversations that were inside it; those conversations become unorganized while keeping their own Sidebar Pin if they had one.
-- [ ] Project Folder pinning survives refresh and account reload through durable server state.
-- [ ] Project Folder expansion state remains browser-local and independent from durable pin state.
+- [ ] Project Folder order survives refresh and account reload through durable server state.
+- [ ] Project Folder expansion state remains browser-local and independent from durable order state.
 
 ### Verification
 
-- Service and route tests for project pin/unpin ownership, returned list payload fields, and newly pinned top insertion.
-- Store tests for optimistic project pin/unpin, rollback on failure, snapshot reconciliation, and independence from local expansion state.
-- Component tests for pinned Project Folder sorting, subtle pin indicator, menu ordering, and right-click behavior.
-- Regression test proving Project Folder pinning does not alter Project Folder Awareness, Prompt Context, or conversation project assignment.
+- Service and route tests for project order ownership and returned list payload fields.
+- Store tests for optimistic project reorder, rollback on failure, snapshot reconciliation, and independence from local expansion state.
+- Component tests for whole-row Project Folder reorder, menu contents, and right-click behavior.
+- Regression test proving Project Folder reorder does not alter Project Folder Awareness, Prompt Context, or conversation project assignment.
 
 ## Slice 3: Shared Sidebar Reorder Primitive For Pinned Conversations
 
@@ -103,7 +99,7 @@ Pin/unpin should use the existing project resource update flow. Newly pinned Pro
 
 ### What to build
 
-Introduce a sidebar-specific reorder primitive and use it first for the global pinned conversation group. The primitive should support pointer drag reorder and keyboard-accessible reorder controls or equivalent accessible behavior. `ConversationList.svelte` remains the persistence and cross-group rule owner; row components remain event emitters.
+Introduce a sidebar-specific reorder primitive and use it first for the global pinned conversation group. The primitive should support whole-row pointer drag reorder. `ConversationList.svelte` remains the persistence and cross-group rule owner; row components remain event emitters.
 
 Pinned conversation reorder persists durable Sidebar Order. Reordering is limited to the pinned conversation group and does not affect unpinned activity sorting.
 
@@ -115,11 +111,12 @@ Pinned conversation reorder persists durable Sidebar Order. Reordering is limite
 - [ ] Activity updates do not change the manual order of pinned conversations.
 - [ ] Unpinned conversations remain ordered by recent activity.
 - [ ] Reorder does not move conversations into or out of Project Folders.
-- [ ] Keyboard or accessible reorder behavior is available and localized.
+- [ ] Dragging a pinned conversation into a normal chat drop area unpins it into that ordinary location.
+- [ ] The row exposes a localized drag-to-reorder accessible label.
 
 ### Verification
 
-- Component tests for pointer reorder and accessible reorder behavior in the pinned conversation group.
+- Component tests for whole-row pointer reorder and pinned-chat drop-to-unpin behavior.
 - Store/API tests for bulk or ordered-ID persistence and rollback on failure.
 - Regression tests proving unpinned activity ordering and Project Folder membership remain unchanged.
 - Visual or Playwright smoke test for desktop and narrow sidebar widths if the interaction affects layout.
@@ -132,15 +129,14 @@ Pinned conversation reorder persists durable Sidebar Order. Reordering is limite
 
 ### What to build
 
-Reuse the sidebar-specific reorder primitive for Project Folders. Pinned Project Folders remain above unpinned Project Folders. Manual reorder applies within the pinned Project Folder group and within the unpinned Project Folder group; changing pin state still happens through the menu action, not by dragging across groups.
+Reuse the sidebar-specific reorder primitive for Project Folders. Manual reorder applies to the single Project Folder list; there are no pinned/unpinned Project Folder groups.
 
 Project Folder reorder persists durable Sidebar Order and continues to coexist with browser-local expansion state and conversation drag-to-project behavior.
 
 ### Acceptance Criteria
 
-- [ ] Pinned Project Folders can be manually reordered within the pinned Project Folder group.
-- [ ] Unpinned Project Folders can be manually reordered within the unpinned Project Folder group.
-- [ ] Dragging to reorder a Project Folder does not pin or unpin it.
+- [ ] Project Folders can be manually reordered within the Projects section.
+- [ ] Dragging to reorder a Project Folder does not pin or unpin it because Project Folders do not support Sidebar Pin.
 - [ ] Reordered Project Folder order survives refresh and account reload.
 - [ ] Existing drag-to-project behavior for conversations still works.
 - [ ] Project Folder expansion state remains browser-local and is not reset by reorder.
@@ -148,10 +144,10 @@ Project Folder reorder persists durable Sidebar Order and continues to coexist w
 
 ### Verification
 
-- Component tests for Project Folder reorder in pinned and unpinned groups.
+- Component tests for Project Folder reorder in the single Projects list.
 - Regression tests for conversation drag-to-project after Project Folder reorder support lands.
 - Store/API tests for Project Folder order persistence and rollback on failure.
-- Accessibility tests or focused component tests for keyboard reorder labels in English and Hungarian.
+- Focused component tests for localized drag-to-reorder labels in English and Hungarian.
 
 ## Out Of Scope
 
@@ -160,5 +156,5 @@ Project Folder reorder persists durable Sidebar Order and continues to coexist w
 - Success toasts for pinning or unpinning.
 - Row right-click replacing three-dots click, tap, or keyboard access.
 - Generic app-wide sortable-list infrastructure.
-- Dragging Project Folders across pinned/unpinned boundaries to change pin state.
+- Sidebar Pin for Project Folders.
 - Reordering unpinned conversations by hand.

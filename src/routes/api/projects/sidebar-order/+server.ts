@@ -24,20 +24,18 @@ export const PATCH: RequestHandler = async (event) => {
 		return json({ error: "Unauthorized" }, { status: 401 });
 	}
 	const body = await event.request.json().catch(() => null);
-	const pinnedIds = parseOptionalIds(body?.pinnedIds);
-	const unpinnedIds = parseOptionalIds(body?.unpinnedIds);
-	if (!body || pinnedIds === null || unpinnedIds === null) {
+	const ids = parseOptionalIds(body?.ids);
+	if (!body || ids === null) {
 		return json(
 			{
-				error:
-					"pinnedIds and unpinnedIds must be arrays of project ids when provided",
+				error: "ids must be an array of project ids when provided",
 			},
 			{ status: 400 },
 		);
 	}
 
 	try {
-		await saveProjectSidebarOrder(user.id, { pinnedIds, unpinnedIds });
+		await saveProjectSidebarOrder(user.id, { ids });
 	} catch (error) {
 		return json(
 			{
