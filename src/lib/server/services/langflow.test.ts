@@ -931,15 +931,15 @@ describe("sendMessage provider routing", () => {
 		);
 	});
 
-	it("sends reasoning_effort for Mistral Medium 3.5 even when thinking.type is configured", async () => {
+	it("sends GPT-OSS reasoning effort without provider thinking.type tweaks", async () => {
 		mocks.getProviderWithSecrets.mockResolvedValueOnce({
 			id: "provider-1",
 			name: "local-vllm",
-			displayName: "Mistral Medium 3.5",
+			displayName: "GPT-OSS 120b",
 			baseUrl: "http://localhost:8000/v1",
 			apiKeyEncrypted: "encrypted",
 			apiKeyIv: "iv",
-			modelName: "mistralai/Mistral-Medium-3.5-128B",
+			modelName: "openai/gpt-oss-120b",
 			reasoningEffort: "high",
 			thinkingType: "enabled",
 			enabled: true,
@@ -958,7 +958,7 @@ describe("sendMessage provider routing", () => {
 		const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
 		expect(body.tweaks).toMatchObject({
 			"ModelNode-1": {
-				model_name: "mistralai/Mistral-Medium-3.5-128B",
+				model_name: "openai/gpt-oss-120b",
 				api_base: "http://localhost:8000/v1",
 				enable_thinking: false,
 				reasoning_effort: "high",
@@ -967,15 +967,15 @@ describe("sendMessage provider routing", () => {
 		expect(body.tweaks["ModelNode-1"]).not.toHaveProperty("thinking_type");
 	});
 
-	it("maps enabled Mistral Medium 3.5 thinking.type to high reasoning_effort", async () => {
+	it("omits provider thinking.type tweaks for GPT-OSS when reasoning effort is unset", async () => {
 		mocks.getProviderWithSecrets.mockResolvedValueOnce({
 			id: "provider-1",
 			name: "local-vllm",
-			displayName: "Mistral Medium 3.5",
+			displayName: "GPT-OSS 120b",
 			baseUrl: "http://localhost:8000/v1",
 			apiKeyEncrypted: "encrypted",
 			apiKeyIv: "iv",
-			modelName: "mistralai/Mistral-Medium-3.5-128B",
+			modelName: "openai/gpt-oss-120b",
 			reasoningEffort: null,
 			thinkingType: "enabled",
 			enabled: true,
@@ -993,75 +993,11 @@ describe("sendMessage provider routing", () => {
 
 		const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
 		expect(body.tweaks["ModelNode-1"]).toMatchObject({
+			model_name: "openai/gpt-oss-120b",
 			enable_thinking: false,
-			reasoning_effort: "high",
 		});
 		expect(body.tweaks["ModelNode-1"]).not.toHaveProperty("thinking_type");
-	});
-
-	it("detects provider model ids that spell Mistral Medium 3.5 as 3p5", async () => {
-		mocks.getProviderWithSecrets.mockResolvedValueOnce({
-			id: "provider-1",
-			name: "local-vllm",
-			displayName: "Mistral Medium 3p5",
-			baseUrl: "http://localhost:8000/v1",
-			apiKeyEncrypted: "encrypted",
-			apiKeyIv: "iv",
-			modelName: "mistral-medium-3p5",
-			reasoningEffort: null,
-			thinkingType: "enabled",
-			enabled: true,
-			sortOrder: 0,
-			maxModelContext: null,
-			compactionUiThreshold: null,
-			targetConstructedContext: null,
-			maxMessageLength: null,
-			maxTokens: null,
-			createdAt: new Date(),
-			updatedAt: new Date(),
-		});
-
-		await sendMessage("Think carefully", "conv-1", "provider:provider-1");
-
-		const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
-		expect(body.tweaks["ModelNode-1"]).toMatchObject({
-			model_name: "mistral-medium-3p5",
-			enable_thinking: false,
-			reasoning_effort: "high",
-		});
-		expect(body.tweaks["ModelNode-1"]).not.toHaveProperty("thinking_type");
-	});
-
-	it("maps disabled Mistral Medium 3.5 thinking.type to none reasoning_effort", async () => {
-		mocks.getProviderWithSecrets.mockResolvedValueOnce({
-			id: "provider-1",
-			name: "local-vllm",
-			displayName: "Mistral Medium 3.5",
-			baseUrl: "http://localhost:8000/v1",
-			apiKeyEncrypted: "encrypted",
-			apiKeyIv: "iv",
-			modelName: "mistralai/Mistral-Medium-3.5-128B",
-			reasoningEffort: null,
-			thinkingType: "disabled",
-			enabled: true,
-			sortOrder: 0,
-			maxModelContext: null,
-			compactionUiThreshold: null,
-			targetConstructedContext: null,
-			maxMessageLength: null,
-			maxTokens: null,
-			createdAt: new Date(),
-			updatedAt: new Date(),
-		});
-
-		await sendMessage("Answer directly", "conv-1", "provider:provider-1");
-
-		const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
-		expect(body.tweaks["ModelNode-1"]).toMatchObject({
-			enable_thinking: false,
-			reasoning_effort: "none",
-		});
-		expect(body.tweaks["ModelNode-1"]).not.toHaveProperty("thinking_type");
+		expect(body.tweaks["ModelNode-1"]).not.toHaveProperty("reasoning_effort");
 	});
 
 	it("enables reasoning capture for complex built-in Qwen turns routed through the custom Langflow node", async () => {
@@ -1143,26 +1079,6 @@ describe("sendMessage provider routing", () => {
 				"Compare options A and B, explain the tradeoffs, then propose an implementation plan.",
 			),
 		).toBe(true);
-	});
-
-	it("sends configured reasoning_effort for built-in Mistral Medium 3p5 models", async () => {
-		mockConfig({
-			modelName: "mistral-medium-3p5",
-			reasoningEffort: "high",
-			thinkingType: null,
-		});
-
-		await sendMessage("Think carefully", "conv-1", "model1");
-
-		const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
-		expect(body.tweaks).toMatchObject({
-			"ModelNode-1": {
-				model_name: "mistral-medium-3p5",
-				enable_thinking: false,
-				reasoning_effort: "high",
-			},
-		});
-		expect(body.tweaks["ModelNode-1"]).not.toHaveProperty("thinking_type");
 	});
 
 	it("retries a timed-out request with the configured failover model before returning", async () => {

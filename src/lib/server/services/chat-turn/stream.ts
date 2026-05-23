@@ -86,6 +86,25 @@ export type ServerStreamSegment =
 			metadata?: Record<string, string | number | boolean | null>;
 	  };
 
+type NativeToolCallFragment = {
+	key: string;
+	callId?: string;
+	name?: string;
+	argumentsText?: string;
+	input?: Record<string, unknown>;
+	done?: boolean;
+};
+
+type NativeToolCallAccumulator = {
+	key: string;
+	callId?: string;
+	name?: string;
+	argumentsText: string;
+	input?: Record<string, unknown>;
+	runningEmitted: boolean;
+	doneEmitted: boolean;
+};
+
 export const URL_LIST_TOOL_RECOVERY_APPENDIX = [
 	"Important retry guard for URL-processing tools:",
 	"- If a tool uses a field named `urls`, it must be a JSON array of strings.",
@@ -130,6 +149,159 @@ export function createSseHeartbeatComment(): string {
 	return SSE_HEARTBEAT_COMMENT;
 }
 
+function readNonEmptyString(value: unknown): string | undefined {
+	if (typeof value !== "string") return undefined;
+	const trimmed = value.trim();
+	return trimmed ? trimmed : undefined;
+}
+
+function readToolArgumentsText(value: unknown): string | undefined {
+	return typeof value === "string" ? value : undefined;
+}
+
+function readToolInput(value: unknown): Record<string, unknown> | undefined {
+	const parsed = typeof value === "string" ? parseMaybeJson(value) : value;
+	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+		return undefined;
+	}
+	return parsed as Record<string, unknown>;
+}
+
+function parseToolArguments(value: string): Record<string, unknown> | undefined {
+	const parsed = parseMaybeJson(value);
+	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+		return undefined;
+	}
+	return parsed as Record<string, unknown>;
+}
+
+function getFinishReason(payload: Record<string, unknown>): string | undefined {
+	return (
+		readNonEmptyString(payload.finish_reason) ??
+		readNonEmptyString(payload.finishReason)
+	);
+}
+
+function collectNativeToolCallFragments(
+	value: unknown,
+	path = "root",
+	seen = new Set<unknown>(),
+): { fragments: NativeToolCallFragment[]; shouldFlush: boolean } {
+	const data = parseMaybeJson(value);
+	const payload = getNestedObject(data);
+	if (!payload || seen.has(payload)) {
+		return { fragments: [], shouldFlush: false };
+	}
+	seen.add(payload);
+
+	const fragments: NativeToolCallFragment[] = [];
+	let shouldFlush = getFinishReason(payload) === "tool_calls";
+
+	const collectCall = (
+		call: unknown,
+		key: string,
+		options: { done?: boolean } = {},
+	) => {
+		const callRecord = getNestedObject(call);
+		if (!callRecord) return;
+		const functionRecord = getNestedObject(callRecord.function);
+		const callId =
+			readNonEmptyString(callRecord.id) ??
+			readNonEmptyString(callRecord.callId) ??
+			readNonEmptyString(callRecord.tool_call_id);
+		const name =
+			readNonEmptyString(functionRecord?.name) ??
+			readNonEmptyString(callRecord.name);
+		const argumentsText =
+			readToolArgumentsText(functionRecord?.arguments) ??
+			readToolArgumentsText(callRecord.arguments) ??
+			readToolArgumentsText(callRecord.args);
+		const input =
+			readToolInput(callRecord.input) ?? readToolInput(callRecord.args);
+
+		fragments.push({
+			key,
+			...(callId ? { callId } : {}),
+			...(name ? { name } : {}),
+			...(argumentsText !== undefined ? { argumentsText } : {}),
+			...(input ? { input } : {}),
+			...(options.done ? { done: true } : {}),
+		});
+	};
+
+	const collectCallArray = (
+		value: unknown,
+		basePath: string,
+		options: { done?: boolean } = {},
+	) => {
+		if (!Array.isArray(value)) return;
+		value.forEach((call, index) => {
+			const callRecord = getNestedObject(call);
+			const nativeIndex =
+				typeof callRecord?.index === "number" ||
+				typeof callRecord?.index === "string"
+					? String(callRecord.index)
+					: String(index);
+			collectCall(call, `${basePath}:${nativeIndex}`, options);
+		});
+	};
+
+	if (Array.isArray(payload.choices)) {
+		payload.choices.forEach((choice, choiceArrayIndex) => {
+			const choiceRecord = getNestedObject(choice);
+			if (!choiceRecord) return;
+			const choiceIndex =
+				typeof choiceRecord.index === "number" ||
+				typeof choiceRecord.index === "string"
+					? String(choiceRecord.index)
+					: String(choiceArrayIndex);
+			if (getFinishReason(choiceRecord) === "tool_calls") {
+				shouldFlush = true;
+			}
+
+			const delta = getNestedObject(choiceRecord.delta);
+			if (delta) {
+				collectCallArray(
+					delta.tool_calls,
+					`${path}:choice:${choiceIndex}:delta`,
+				);
+			}
+
+			const message = getNestedObject(choiceRecord.message);
+			if (message) {
+				collectCallArray(
+					message.tool_calls,
+					`${path}:choice:${choiceIndex}:message`,
+					{ done: true },
+				);
+			}
+		});
+	}
+
+	collectCallArray(payload.tool_calls, `${path}:tool_calls`, { done: true });
+	collectCallArray(payload.tool_call_chunks, `${path}:tool_call_chunks`);
+
+	for (const key of [
+		"additional_kwargs",
+		"chunk",
+		"data",
+		"kwargs",
+		"message",
+		"response_metadata",
+	]) {
+		if (!(key in payload)) continue;
+		const nested = collectNativeToolCallFragments(
+			payload[key],
+			`${path}:${key}`,
+			seen,
+		);
+		fragments.push(...nested.fragments);
+		shouldFlush ||= nested.shouldFlush;
+	}
+
+	return { fragments, shouldFlush };
+}
+
 export function createServerChunkRuntime({
 	enqueueChunk,
 	onToken,
@@ -158,6 +330,11 @@ export function createServerChunkRuntime({
 	const serverSegments: ServerStreamSegment[] = [];
 	const toolCallRecords: ToolCallEntry[] = [];
 	const toolCallAliases = new Map<string, string>();
+	const nativeToolCallAccumulators = new Map<
+		string,
+		NativeToolCallAccumulator
+	>();
+	const nativeToolCallKeysById = new Map<string, string>();
 	const skillControlEnvelopePayloads: string[] = [];
 	let pendingThinkingBuffer = "";
 	let leadingOutputState: "pending" | "thinking" | "done" = "pending";
@@ -421,6 +598,9 @@ export function createServerChunkRuntime({
 					(callId ? segment.callId === callId : true)
 				) {
 					segment.status = "done";
+					if (Object.keys(input).length > 0) {
+						segment.input = input;
+					}
 					segment.outputSummary = details?.outputSummary ?? null;
 					segment.sourceType = details?.sourceType ?? null;
 					segment.candidates = details?.candidates;
@@ -437,6 +617,7 @@ export function createServerChunkRuntime({
 				toolCallRecords[i] = {
 					...toolRecord,
 					...(callId ? { callId } : {}),
+					input: Object.keys(input).length > 0 ? input : toolRecord.input,
 					status: "done",
 					outputSummary: details?.outputSummary ?? null,
 					sourceType: details?.sourceType ?? null,
@@ -445,6 +626,101 @@ export function createServerChunkRuntime({
 				};
 				break;
 			}
+		}
+	};
+
+	const getNativeToolCallInput = (
+		accumulator: NativeToolCallAccumulator,
+	): Record<string, unknown> => {
+		if (accumulator.input) {
+			return accumulator.input;
+		}
+		if (accumulator.argumentsText.trim()) {
+			return parseToolArguments(accumulator.argumentsText) ?? {};
+		}
+		return {};
+	};
+
+	const getNativeAccumulator = (
+		fragment: NativeToolCallFragment,
+	): NativeToolCallAccumulator => {
+		const keyFromId = fragment.callId
+			? nativeToolCallKeysById.get(fragment.callId)
+			: undefined;
+		const key = keyFromId ?? fragment.key;
+		let accumulator = nativeToolCallAccumulators.get(key);
+		if (!accumulator) {
+			accumulator = {
+				key,
+				argumentsText: "",
+				runningEmitted: false,
+				doneEmitted: false,
+			};
+			nativeToolCallAccumulators.set(key, accumulator);
+		}
+		if (fragment.callId) {
+			accumulator.callId = fragment.callId;
+			nativeToolCallKeysById.set(fragment.callId, key);
+		}
+		if (fragment.name) {
+			accumulator.name = fragment.name;
+		}
+		if (fragment.argumentsText !== undefined) {
+			accumulator.argumentsText += fragment.argumentsText;
+		}
+		if (fragment.input) {
+			accumulator.input = fragment.input;
+		}
+		return accumulator;
+	};
+
+	const emitNativeToolCallRunning = (
+		accumulator: NativeToolCallAccumulator,
+	) => {
+		if (!accumulator.name || accumulator.runningEmitted) {
+			return;
+		}
+		emitToolCallEvent(
+			accumulator.name,
+			getNativeToolCallInput(accumulator),
+			"running",
+			accumulator.callId ? { callId: accumulator.callId } : undefined,
+		);
+		accumulator.runningEmitted = true;
+	};
+
+	const emitNativeToolCallDone = (accumulator: NativeToolCallAccumulator) => {
+		if (!accumulator.name || accumulator.doneEmitted) {
+			return;
+		}
+		emitNativeToolCallRunning(accumulator);
+		emitToolCallEvent(
+			accumulator.name,
+			getNativeToolCallInput(accumulator),
+			"done",
+			accumulator.callId ? { callId: accumulator.callId } : undefined,
+		);
+		accumulator.doneEmitted = true;
+	};
+
+	const flushNativeToolCalls = () => {
+		for (const accumulator of nativeToolCallAccumulators.values()) {
+			emitNativeToolCallDone(accumulator);
+		}
+	};
+
+	const processNativeToolCalls = (value: unknown) => {
+		const { fragments, shouldFlush } = collectNativeToolCallFragments(value);
+		for (const fragment of fragments) {
+			const accumulator = getNativeAccumulator(fragment);
+			if (fragment.done) {
+				emitNativeToolCallDone(accumulator);
+			} else {
+				emitNativeToolCallRunning(accumulator);
+			}
+		}
+		if (shouldFlush) {
+			flushNativeToolCalls();
 		}
 	};
 
@@ -552,6 +828,8 @@ export function createServerChunkRuntime({
 		emitInlineToken,
 		emitThinking,
 		emitToolCallEvent,
+		processNativeToolCalls,
+		flushNativeToolCalls,
 		flushInlineThinkingBuffer,
 		flushOutputBuffer,
 		flushPendingThinking,

@@ -909,6 +909,7 @@ export function runChatStreamOrchestrator(
 								latestProviderUsage = eventUsage;
 							}
 							if (data === "[DONE]" || eventType === "end") {
+								chunkRuntime.flushNativeToolCalls();
 								flushPendingThinking();
 								if (!flushInlineThinkingBuffer()) {
 									return;
@@ -971,6 +972,7 @@ export function runChatStreamOrchestrator(
 								return;
 							}
 
+							chunkRuntime.processNativeToolCalls(data);
 							const rawChunk = extractAssistantChunk(eventType, data);
 							const reasoningChunk = getReasoningContent(data);
 							if (reasoningChunk) {
@@ -1031,6 +1033,7 @@ export function runChatStreamOrchestrator(
 						clearUpstreamIdleTimeout();
 					}
 
+					chunkRuntime.flushNativeToolCalls();
 					flushPendingThinking();
 					if (!flushInlineThinkingBuffer()) {
 						return;

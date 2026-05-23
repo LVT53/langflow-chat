@@ -763,13 +763,17 @@ function supportsTurnScopedThinking(
 			modelConfig.reasoningEffort ||
 			modelConfig.providerThinkingType ||
 			modelConfig.thinkingType ||
-			isMistralMedium35Model(modelConfig.modelName) ||
+			isGptOssModel(modelConfig.modelName) ||
 			isKnownThinkingTypeModel(modelConfig.modelName),
 	);
 }
 
 function isKnownThinkingTypeModel(modelName: string): boolean {
 	return /\b(qwen3?|deepseek|nemotron|reasoning|r1)\b/i.test(modelName);
+}
+
+function isGptOssModel(modelName: string): boolean {
+	return /\bgpt[-_]?oss\b/i.test(modelName);
 }
 
 function isFireworksDeepSeekV4Model(
@@ -836,10 +840,6 @@ function shouldSendVllmChatTemplateThinking(
 	modelConfig: LangflowModelRunConfig,
 	effectiveThinkingType: EffectiveThinkingType,
 ): boolean {
-	if (isMistralMedium35Model(modelConfig.modelName)) {
-		return false;
-	}
-
 	if (modelConfig.providerId) {
 		return false;
 	}
@@ -854,13 +854,6 @@ function shouldSendVllmChatTemplateThinking(
 	return isKnownThinkingTypeModel(modelConfig.modelName);
 }
 
-function isMistralMedium35Model(modelName: string): boolean {
-	const normalized = modelName.toLowerCase();
-	return /mistral.*medium.*3[._-p]?5|medium.*3[._-p]?5.*mistral/.test(
-		normalized,
-	);
-}
-
 function getProviderReasoningEffort(
 	modelConfig: LangflowModelRunConfig,
 	effectiveThinkingType: EffectiveThinkingType,
@@ -870,15 +863,6 @@ function getProviderReasoningEffort(
 
 	if (configuredReasoningEffort && effectiveThinkingType !== "disabled") {
 		return configuredReasoningEffort;
-	}
-
-	if (isMistralMedium35Model(modelConfig.modelName)) {
-		if (effectiveThinkingType === "enabled") {
-			return "high";
-		}
-		if (effectiveThinkingType === "disabled") {
-			return "none";
-		}
 	}
 
 	if (
@@ -918,11 +902,11 @@ function buildLangflowTweaks(
 		Boolean(reasoningEffort) &&
 		((Boolean(configuredReasoningEffort) && !configuredThinkingType) ||
 			effectiveThinkingType !== "enabled" ||
-			isMistralMedium35Model(modelConfig.modelName));
+			isGptOssModel(modelConfig.modelName));
 	const shouldSendThinkingType =
 		Boolean(effectiveThinkingType) &&
-		!isMistralMedium35Model(modelConfig.modelName) &&
 		!shouldSendReasoningEffort &&
+		!isGptOssModel(modelConfig.modelName) &&
 		supportsThinkingTypeTweaks(modelConfig, configuredThinkingType);
 	const componentTweaks = {
 		model_name: modelConfig.modelName,

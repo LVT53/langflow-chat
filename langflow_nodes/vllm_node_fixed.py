@@ -85,32 +85,8 @@ def _is_fireworks_base_url(base_url: str) -> bool:
     return "api.fireworks.ai" in str(base_url or "").strip().lower()
 
 
-def _is_mistral_medium_35_model(model_name: str) -> bool:
-    normalized = str(model_name or "").strip().lower()
-    return (
-        "mistral" in normalized
-        and "medium" in normalized
-        and (
-            "3.5" in normalized
-            or "3-5" in normalized
-            or "3_5" in normalized
-            or "3p5" in normalized
-        )
-    )
-
-
-def _mistral_reasoning_effort(reasoning_effort: str, thinking_type: str) -> str:
-    effort = str(reasoning_effort or "").strip()
-    if effort:
-        return effort
-
-    thinking = str(thinking_type or "").strip()
-    if thinking == "enabled":
-        return "high"
-    if thinking == "disabled":
-        return "none"
-
-    return ""
+def _uses_gpt_oss_reasoning_field(model_name: str) -> bool:
+    return "gpt-oss" in str(model_name or "").strip().lower().replace("_", "-")
 
 
 class NemotronReasoningChatOpenAI(ChatOpenAI):
@@ -138,9 +114,9 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
     system_prompt: str = ""
     reasoning_effort: str = ""
     thinking_type: str = ""
-    mistral_reasoning_compat: bool = False
     enable_thinking: bool = True
     use_chat_template_kwargs: bool = True
+    reasoning_payload_field: str = "reasoning_content"
     _last_reasoning_content: str = ""
 
     @staticmethod
@@ -151,11 +127,7 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
 
     def _merge_reasoning_body(self, payload: dict[str, Any]) -> dict[str, Any]:
         payload = self._strip_blank_reasoning_fields(payload)
-        reasoning_effort = (
-            _mistral_reasoning_effort(self.reasoning_effort, self.thinking_type)
-            if self.mistral_reasoning_compat
-            else str(self.reasoning_effort or "").strip()
-        )
+        reasoning_effort = str(self.reasoning_effort or "").strip()
         if reasoning_effort:
             payload["reasoning_effort"] = reasoning_effort
 
@@ -170,12 +142,12 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
         return payload
 
     def _recover_reasoning_in_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
-        """Recover reasoning_content from <thinking> tags for APIs that require it (e.g. DeepSeek).
+        """Recover reasoning from <thinking> tags for APIs that require it.
 
         The classic Langchain AgentExecutor can reconstruct messages from strings,
         losing additional_kwargs. This last-mile patch scans the final payload
-        messages, extracts reasoning from embedded <thinking> tags, and injects
-        reasoning_content so the API accepts the request.
+        messages, extracts reasoning from embedded <thinking> tags, and injects the
+        provider-appropriate reasoning field so the API accepts the request.
         """
         open_tag = self.reasoning_open_tag
         close_tag = self.reasoning_close_tag
@@ -191,7 +163,7 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
             role = msg.get("role")
             has_tool_calls = bool(msg.get("tool_calls"))
             content = msg.get("content", "") or ""
-            has_reasoning = "reasoning_content" in msg
+            has_reasoning = self._normalize_existing_payload_reasoning(msg)
             logger.debug(
                 "[REASONING_RECOVER] msg[%d] role=%s content_len=%d has_reasoning=%s",
                 idx,
@@ -212,13 +184,9 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
                 inner_end = content.find(close_tag)
                 reasoning_text = content[inner_start:inner_end]
                 clean_content = content[:start] + content[end:]
-                if has_tool_calls and self.mistral_reasoning_compat:
-                    msg["content"] = None
-                    msg.pop("reasoning_content", None)
-                else:
-                    msg["content"] = clean_content if clean_content or not has_tool_calls else None
-                if not self.mistral_reasoning_compat and reasoning_text:
-                    msg["reasoning_content"] = reasoning_text
+                msg["content"] = clean_content if clean_content or not has_tool_calls else None
+                if reasoning_text:
+                    self._set_payload_reasoning(msg, reasoning_text)
                 # Cache for fallback on later turns
                 if reasoning_text:
                     self._last_reasoning_content = reasoning_text
@@ -229,11 +197,8 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
                 )
                 continue
 
-            if has_tool_calls and (self.mistral_reasoning_compat or not content):
+            if has_tool_calls and not content:
                 msg["content"] = None
-                if self.mistral_reasoning_compat:
-                    msg.pop("reasoning_content", None)
-                    continue
 
             # Case 2: message already has reasoning_content in additional_kwargs
             # (langchain_openai's _convert_message_to_dict does NOT preserve it,
@@ -246,7 +211,7 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
             # DeepSeek requires reasoning_content for any previous assistant turn
             # that had reasoning. Inject the cached last reasoning as a fallback.
             if has_tool_calls and self._last_reasoning_content:
-                msg["reasoning_content"] = self._last_reasoning_content
+                self._set_payload_reasoning(msg, self._last_reasoning_content)
                 logger.debug(
                     "[REASONING_RECOVER] msg[%d] injected cached reasoning len=%d",
                     idx,
@@ -255,6 +220,27 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
                 continue
 
         return payload
+
+    def _set_payload_reasoning(self, msg: dict[str, Any], reasoning_text: str) -> None:
+        msg[self.reasoning_payload_field] = reasoning_text
+        if self.reasoning_payload_field == "reasoning":
+            msg.pop("reasoning_content", None)
+
+    def _normalize_existing_payload_reasoning(self, msg: dict[str, Any]) -> bool:
+        existing = msg.get(self.reasoning_payload_field)
+        if isinstance(existing, str) and existing:
+            if self.reasoning_payload_field == "reasoning":
+                msg.pop("reasoning_content", None)
+            return True
+
+        if self.reasoning_payload_field == "reasoning":
+            fallback = msg.get("reasoning_content")
+            if isinstance(fallback, str) and fallback:
+                msg["reasoning"] = fallback
+                msg.pop("reasoning_content", None)
+                return True
+
+        return "reasoning_content" in msg
 
     def _reasoning_to_tagged_content(self, reasoning: str) -> str:
         return f"{self.reasoning_open_tag}{reasoning}{self.reasoning_close_tag}"
@@ -388,10 +374,13 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
             default_chunk_class = generation_chunk.message.__class__
             yield generation_chunk
 
-    def _generate(self, messages: Any, *args: Any, **kwargs: Any) -> ChatResult:
-        """Inject system prompt for non-streaming calls."""
+    def _generate(self, messages: Any, stop: Any = None, run_manager: Any = None, **kwargs: Any) -> ChatResult:  # noqa: ARG002
+        """Send non-streaming requests with the same reasoning body merge as streaming."""
         messages = self._merge_runtime_system_prompt(messages)
-        return super()._generate(messages, *args, **kwargs)
+        payload = self._get_request_payload(messages, stop=stop, **kwargs)
+        payload = self._merge_reasoning_body(payload)
+        response = self.client.create(**payload)
+        return self._create_chat_result(response)
 
     def _create_chat_result(self, response: Any, generation_info: dict[str, Any] | None = None) -> ChatResult:
         """Preserve non-stream reasoning by prepending tagged reasoning to content."""
@@ -406,14 +395,14 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
             current_content = getattr(message, "content", "") or ""
             tagged_reasoning = self._reasoning_to_tagged_content(reasoning)
 
-            if tagged_reasoning in current_content:
+            if self._content_has_tagged_reasoning(current_content, tagged_reasoning):
                 continue
 
             additional_kwargs = dict(getattr(message, "additional_kwargs", {}) or {})
             additional_kwargs["reasoning_content"] = reasoning
 
             generation.message = AIMessage(
-                content=f"{tagged_reasoning}{current_content}",
+                content=self._prepend_reasoning_to_content(current_content, tagged_reasoning),
                 additional_kwargs=additional_kwargs,
                 response_metadata=dict(getattr(message, "response_metadata", {}) or {}),
                 tool_calls=list(getattr(message, "tool_calls", []) or []),
@@ -422,6 +411,27 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
             )
 
         return result
+
+    @staticmethod
+    def _content_has_tagged_reasoning(content: Any, tagged_reasoning: str) -> bool:
+        if isinstance(content, str):
+            return tagged_reasoning in content
+        if isinstance(content, list):
+            for part in content:
+                if isinstance(part, str) and tagged_reasoning in part:
+                    return True
+                if isinstance(part, dict):
+                    text = part.get("text")
+                    if isinstance(text, str) and tagged_reasoning in text:
+                        return True
+            return False
+        return False
+
+    @staticmethod
+    def _prepend_reasoning_to_content(content: Any, tagged_reasoning: str) -> Any:
+        if isinstance(content, list):
+            return [{"type": "text", "text": tagged_reasoning}, *content]
+        return f"{tagged_reasoning}{content or ''}"
 
     @classmethod
     def _extract_reasoning_from_content(cls, content: Any) -> tuple[Any, str | None]:
@@ -647,12 +657,11 @@ class NemotronReasoningVllmComponent(LCModelComponent):
         
         logger.info(f"Building model with name={self.model_name}, base_url={normalized_api_base}")
 
-        is_mistral_medium_35 = _is_mistral_medium_35_model(self.model_name)
+        uses_gpt_oss_reasoning_field = _uses_gpt_oss_reasoning_field(self.model_name)
         user_extra_body = _clean_mapping(self.extra_body or {})
         use_chat_template_kwargs = (
             bool(self.enable_thinking)
             and _allows_chat_template_kwargs(normalized_api_base)
-            and not is_mistral_medium_35
         )
         if use_chat_template_kwargs:
             chat_template_kwargs = dict(user_extra_body.get("chat_template_kwargs") or {})
@@ -661,7 +670,7 @@ class NemotronReasoningVllmComponent(LCModelComponent):
 
         user_model_kwargs = _clean_mapping(self.model_kwargs or {})
         thinking_type = str(getattr(self, "thinking_type", "") or "").strip()
-        if thinking_type and not is_mistral_medium_35:
+        if thinking_type and not uses_gpt_oss_reasoning_field:
             thinking_config: dict[str, Any] = {"type": thinking_type}
             if thinking_type == "enabled" and _is_fireworks_base_url(normalized_api_base):
                 thinking_config["budget_tokens"] = 4096
@@ -684,16 +693,15 @@ class NemotronReasoningVllmComponent(LCModelComponent):
             "system_prompt": self.system_prompt or "",
             "enable_thinking": bool(self.enable_thinking),
             "use_chat_template_kwargs": use_chat_template_kwargs,
-            "mistral_reasoning_compat": is_mistral_medium_35,
         }
+        if uses_gpt_oss_reasoning_field:
+            parameters["reasoning_payload_field"] = "reasoning"
 
         reasoning_effort = str(getattr(self, "reasoning_effort", "") or "").strip()
-        if is_mistral_medium_35:
-            reasoning_effort = _mistral_reasoning_effort(reasoning_effort, thinking_type)
 
-        if reasoning_effort and (not thinking_type or is_mistral_medium_35):
+        if reasoning_effort and (not thinking_type or uses_gpt_oss_reasoning_field):
             parameters["reasoning_effort"] = reasoning_effort
-        if thinking_type:
+        if thinking_type and not uses_gpt_oss_reasoning_field:
             parameters["thinking_type"] = thinking_type
 
         if self.seed is not None and self.seed != -1:

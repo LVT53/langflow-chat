@@ -24,7 +24,7 @@ table-layout.ts      - Markdown table rendering
 
 | Shape | Purpose |
 |-------|---------|
-| `<thinking>`, `<think>`, ChatML thinking/analysis, `[THINK]` | Inline model thinking delimiters normalized into thinking vs visible output |
+| `<thinking>`, `<think>`, ChatML thinking/analysis | Inline model thinking delimiters normalized into thinking vs visible output |
 | Provider payload text/content fields | Extract assistant text from OpenAI-style choices, Langflow payloads, content parts, and content blocks |
 | Leading `response` markers and leaked web-research diagnostics | Strip provider/tool artifacts from visible assistant output |
 | `tool_call` SSE events | Browser-facing structured tool-call updates emitted by `chat-turn/tool-call-markers.ts`; do not introduce textual `<tool_calls>` as a new protocol |

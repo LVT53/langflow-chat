@@ -1,9 +1,9 @@
 import { getFirstChoice, getNestedObject } from "$lib/services/stream-protocol";
 
 const THINKING_BLOCK_RE =
-	/<thinking>[\s\S]*?<\/thinking>|<think>[\s\S]*?<\/think>|\[THINK\][\s\S]*?\[\/THINK\]|<\|im_start\|>\s*(?:think|analysis)[\s\S]*?<\|im_end\|>|\u597d[^\u4e00-\u9fff]*?\u5417/gi;
+	/<thinking>[\s\S]*?<\/thinking>|<think>[\s\S]*?<\/think>|<\|im_start\|>\s*(?:think|analysis)[\s\S]*?<\|im_end\|>|\u597d[^\u4e00-\u9fff]*?\u5417/gi;
 const THINKING_TAG_RE =
-	/<\/?thinking>|<\/?think>|\[\/?THINK\]|<\|im_start\|>\s*(?:think|analysis)?|<\|im_end\|>|\u597d|\u5417/gi;
+	/<\/?thinking>|<\/?think>|<\|im_start\|>\s*(?:think|analysis)?|<\|im_end\|>|\u597d|\u5417/gi;
 
 export { THINKING_BLOCK_RE, THINKING_TAG_RE };
 
@@ -21,6 +21,16 @@ export function normalizeVisibleAssistantText(value: string): string {
  * Extract reasoning/thinking content from an upstream event payload.
  */
 export function getReasoningContent(value: unknown): string | null {
+	if (Array.isArray(value)) {
+		for (const item of value) {
+			const nestedReasoning = getReasoningContent(item);
+			if (nestedReasoning) {
+				return nestedReasoning;
+			}
+		}
+		return null;
+	}
+
 	const payload = getNestedObject(value);
 	if (!payload) return null;
 
@@ -34,6 +44,15 @@ export function getReasoningContent(value: unknown): string | null {
 				}
 			}
 		}
+	}
+
+	if (
+		typeof payload.type === "string" &&
+		payload.type.toLowerCase() === "reasoning_text" &&
+		typeof payload.text === "string" &&
+		payload.text.trim()
+	) {
+		return payload.text.trim();
 	}
 
 	for (const key of [
@@ -63,6 +82,7 @@ export function getReasoningContent(value: unknown): string | null {
 	for (const key of [
 		"additional_kwargs",
 		"chunk",
+		"content",
 		"data",
 		"generation_info",
 		"kwargs",

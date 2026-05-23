@@ -1210,6 +1210,213 @@ describe("POST /api/chat/stream", () => {
 		expect(body).not.toContain('"text":"Tell me a story"');
 	});
 
+	it("aggregates native streamed tool call deltas into structured tool_call events", async () => {
+		const conversation = {
+			id: "conv-1",
+			title: "Test",
+			createdAt: 0,
+			updatedAt: 0,
+		};
+		mockGetConversation.mockResolvedValue(conversation);
+		mockSendMessageStream.mockResolvedValue(
+			buildSseStream([
+				`data: ${JSON.stringify({
+					choices: [
+						{
+							index: 0,
+							delta: {
+								tool_calls: [
+									{
+										index: 0,
+										id: "call-native-1",
+										type: "function",
+										function: {
+											name: "research_web",
+											arguments: '{"query":"Svelte',
+										},
+									},
+								],
+							},
+						},
+					],
+				})}\n\n`,
+				`data: ${JSON.stringify({
+					choices: [
+						{
+							index: 0,
+							delta: {
+								tool_calls: [
+									{
+										index: 0,
+										function: {
+											arguments: 'Kit docs"}',
+										},
+									},
+								],
+							},
+							finish_reason: "tool_calls",
+						},
+					],
+				})}\n\n`,
+				"data: [DONE]\n\n",
+			]),
+		);
+
+		const event = makeEvent({ message: "Hi", conversationId: "conv-1" });
+		const response = await POST(event);
+		const body = await readSseResponse(response);
+
+		expect(body).toContain("event: tool_call");
+		expect(body).toContain('"callId":"call-native-1"');
+		expect(body).toContain('"name":"research_web"');
+		expect(body).toContain('"status":"running"');
+		expect(body).toContain('"status":"done"');
+		expect(body).toContain('"query":"SvelteKit docs"');
+	});
+
+	it("extracts final native message tool calls into structured tool_call events", async () => {
+		const conversation = {
+			id: "conv-1",
+			title: "Test",
+			createdAt: 0,
+			updatedAt: 0,
+		};
+		mockGetConversation.mockResolvedValue(conversation);
+		mockSendMessageStream.mockResolvedValue(
+			buildSseStream([
+				`data: ${JSON.stringify({
+					choices: [
+						{
+							index: 0,
+							message: {
+								role: "assistant",
+								content: "",
+								tool_calls: [
+									{
+										id: "call-final-1",
+										type: "function",
+										function: {
+											name: "research_web",
+											arguments: JSON.stringify({
+												query: "OpenAI tool calls",
+											}),
+										},
+									},
+								],
+							},
+							finish_reason: "tool_calls",
+						},
+					],
+				})}\n\n`,
+				"data: [DONE]\n\n",
+			]),
+		);
+
+		const event = makeEvent({ message: "Hi", conversationId: "conv-1" });
+		const response = await POST(event);
+		const body = await readSseResponse(response);
+
+		expect(body).toContain("event: tool_call");
+		expect(body).toContain('"callId":"call-final-1"');
+		expect(body).toContain('"name":"research_web"');
+		expect(body).toContain('"status":"running"');
+		expect(body).toContain('"status":"done"');
+		expect(body).toContain('"query":"OpenAI tool calls"');
+	});
+
+	it("extracts LangChain tool_calls into structured tool_call events", async () => {
+		const conversation = {
+			id: "conv-1",
+			title: "Test",
+			createdAt: 0,
+			updatedAt: 0,
+		};
+		mockGetConversation.mockResolvedValue(conversation);
+		mockSendMessageStream.mockResolvedValue(
+			buildSseStream([
+				`data: ${JSON.stringify({
+					data: {
+						chunk: {
+							tool_calls: [
+								{
+									id: "lc-call-1",
+									name: "research_web",
+									args: {
+										query: "LangChain tool calls",
+									},
+								},
+							],
+						},
+					},
+				})}\n\n`,
+				"data: [DONE]\n\n",
+			]),
+		);
+
+		const event = makeEvent({ message: "Hi", conversationId: "conv-1" });
+		const response = await POST(event);
+		const body = await readSseResponse(response);
+
+		expect(body).toContain("event: tool_call");
+		expect(body).toContain('"callId":"lc-call-1"');
+		expect(body).toContain('"name":"research_web"');
+		expect(body).toContain('"status":"running"');
+		expect(body).toContain('"status":"done"');
+		expect(body).toContain('"query":"LangChain tool calls"');
+	});
+
+	it("aggregates LangChain tool_call_chunks into structured tool_call events", async () => {
+		const conversation = {
+			id: "conv-1",
+			title: "Test",
+			createdAt: 0,
+			updatedAt: 0,
+		};
+		mockGetConversation.mockResolvedValue(conversation);
+		mockSendMessageStream.mockResolvedValue(
+			buildSseStream([
+				`data: ${JSON.stringify({
+					data: {
+						chunk: {
+							tool_call_chunks: [
+								{
+									id: "lc-chunk-1",
+									index: 0,
+									name: "research_web",
+									args: '{"query":"Lang',
+								},
+							],
+						},
+					},
+				})}\n\n`,
+				`data: ${JSON.stringify({
+					data: {
+						chunk: {
+							tool_call_chunks: [
+								{
+									index: 0,
+									args: 'Chain chunks"}',
+								},
+							],
+						},
+					},
+				})}\n\n`,
+				"data: [DONE]\n\n",
+			]),
+		);
+
+		const event = makeEvent({ message: "Hi", conversationId: "conv-1" });
+		const response = await POST(event);
+		const body = await readSseResponse(response);
+
+		expect(body).toContain("event: tool_call");
+		expect(body).toContain('"callId":"lc-chunk-1"');
+		expect(body).toContain('"name":"research_web"');
+		expect(body).toContain('"status":"running"');
+		expect(body).toContain('"status":"done"');
+		expect(body).toContain('"query":"LangChain chunks"');
+	});
+
 	it("parses newline-delimited Langflow JSON events without blank separators", async () => {
 		const conversation = {
 			id: "conv-1",

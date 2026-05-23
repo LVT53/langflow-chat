@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { normalizeAssistantOutput } from "./normalizer";
-import { getReasoningContent } from "./thinking-normalizer";
+import {
+	getReasoningContent,
+	normalizeVisibleAssistantText,
+} from "./thinking-normalizer";
 
 describe("normalizeAssistantOutput", () => {
 	it("strips <thinking> blocks from text", () => {
@@ -17,11 +20,18 @@ describe("normalizeAssistantOutput", () => {
 		expect(result).toBe("Visible text");
 	});
 
-	it("strips Mistral [THINK] blocks from text", () => {
+	it("keeps bracketed THINK text in completed assistant output", () => {
 		const result = normalizeAssistantOutput(
 			"[THINK]Internal reasoning[/THINK]\nVisible text",
 		);
-		expect(result).toBe("Visible text");
+		expect(result).toBe("[THINK]Internal reasoning[/THINK]\nVisible text");
+	});
+
+	it("does not treat bracketed THINK text as a visible-text thinking delimiter", () => {
+		const result = normalizeVisibleAssistantText(
+			"[THINK]Internal reasoning[/THINK]\nVisible text",
+		);
+		expect(result).toBe("[THINK]Internal reasoning[/THINK]\nVisible text");
 	});
 
 	it("strips Qwen ChatML analysis blocks from text", () => {
@@ -169,5 +179,32 @@ describe("normalizeAssistantOutput", () => {
 		});
 
 		expect(result).toBe("Nested Qwen reasoning");
+	});
+
+	it("extracts reasoning from Responses-style output arrays", () => {
+		const output = [
+			{
+				type: "reasoning",
+				content: [
+					{
+						type: "reasoning_text",
+						text: "GPT-OSS hidden reasoning",
+					},
+				],
+			},
+			{
+				type: "message",
+				role: "assistant",
+				content: [
+					{
+						type: "output_text",
+						text: "Visible answer",
+					},
+				],
+			},
+		];
+
+		expect(getReasoningContent({ output })).toBe("GPT-OSS hidden reasoning");
+		expect(getReasoningContent(output)).toBe("GPT-OSS hidden reasoning");
 	});
 });

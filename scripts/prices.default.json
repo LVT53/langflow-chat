@@ -14,8 +14,6 @@
     { "id": "fw-llama-3-1-8b", "model_name": "accounts/fireworks/models/llama-v3-1-8b", "input": 0.20, "cached_input": 0.10, "output": 0.20 },
     { "id": "fw-llama-3-1-70b", "model_name": "accounts/fireworks/models/llama-v3-1-70b", "input": 0.90, "cached_input": 0.45, "output": 0.90 },
     { "id": "fw-llama-3-3-70b", "model_name": "accounts/fireworks/models/llama-v3-3-70b", "input": 0.90, "cached_input": 0.45, "output": 0.90 },
-    { "id": "fw-mixtral-8x7b", "model_name": "accounts/fireworks/models/mixtral-8x7b", "input": 0.50, "cached_input": 0.25, "output": 0.50 },
-    { "id": "fw-mixtral-8x22b", "model_name": "accounts/fireworks/models/mixtral-8x22b", "input": 1.20, "cached_input": 0.60, "output": 1.20 },
     { "id": "fw-dbrx-instruct", "model_name": "accounts/fireworks/models/dbrx-instruct", "input": 1.20, "cached_input": 0.60, "output": 1.20 },
     { "id": "fw-deepseek-v3", "model_name": "accounts/fireworks/models/deepseek-v3", "input": 0.56, "cached_input": 0.28, "output": 1.68 },
     { "id": "fw-qwen2-5-72b", "model_name": "accounts/fireworks/models/qwen2-5-72b", "input": 0.90, "cached_input": 0.45, "output": 0.90 },

@@ -88,22 +88,28 @@ describe("stream-protocol", () => {
 		expect(onThinking.mock.calls).toEqual([["\nTrace"], [" details"]]);
 	});
 
-	it("routes Mistral [THINK] traces into thinking emissions", () => {
+	it("treats bracketed THINK text as ordinary visible output", () => {
 		const state = createInlineThinkingState();
-		const onVisible = vi.fn();
+		const visibleChunks: string[] = [];
 		const onThinking = vi.fn();
 
 		processInlineThinkingChunk(state, "Before[TH", {
-			onVisible,
+			onVisible(chunk) {
+				visibleChunks.push(chunk);
+			},
 			onThinking,
 		});
-		processInlineThinkingChunk(state, "INK]Mistral plan[/THINK]After", {
-			onVisible,
+		processInlineThinkingChunk(state, "INK]Bracketed plan[/THINK]After", {
+			onVisible(chunk) {
+				visibleChunks.push(chunk);
+			},
 			onThinking,
 		});
 
-		expect(onVisible.mock.calls).toEqual([["Before"], ["After"]]);
-		expect(onThinking.mock.calls).toEqual([["Mistral plan"]]);
+		expect(visibleChunks.join("")).toBe(
+			"Before[THINK]Bracketed plan[/THINK]After",
+		);
+		expect(onThinking).not.toHaveBeenCalled();
 	});
 
 	it("drops a trailing partial open tag when flushing visible content", () => {
@@ -163,6 +169,50 @@ describe("stream-protocol", () => {
 				],
 			}),
 		).toBe("Part one and two");
+	});
+
+	it("extracts assistant text from Responses-style output arrays", () => {
+		const output = [
+			{
+				type: "reasoning",
+				content: [
+					{
+						type: "reasoning_text",
+						text: "Private reasoning",
+					},
+				],
+			},
+			{
+				type: "message",
+				role: "assistant",
+				content: [
+					{
+						type: "output_text",
+						text: "Visible answer",
+					},
+				],
+			},
+		];
+
+		expect(getTextContent({ output })).toBe("Visible answer");
+		expect(getTextContent(output)).toBe("Visible answer");
+	});
+
+	it("does not expose reasoning_text content parts as assistant text", () => {
+		expect(
+			getTextContent({
+				content: [
+					{
+						type: "reasoning_text",
+						text: "Private reasoning",
+					},
+					{
+						type: "output_text",
+						text: "Visible answer",
+					},
+				],
+			}),
+		).toBe("Visible answer");
 	});
 
 	it("strips a leading Langflow response marker before visible output", () => {
