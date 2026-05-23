@@ -170,7 +170,20 @@ const DEPRECATED_TRANSLATION_CONTRACT_RE = new RegExp(
 		String.raw`(?:^|\n)(?:## Translation Layer Contract [—-] Critical[ \t]*\n+(?:[ \t]*\n+)*)?`,
 		String.raw`You ALWAYS respond in English\. Every word you write must be in English\.[ \t]*`,
 		String.raw`\n+Never attempt to generate text in Hungarian, German, French, or any other non-English language, even if the user asks you to\.[ \t]*`,
-		String.raw`\n+The system has a dedicated translation layer that handles language conversion automatically\.[ \t]*(?=\n|$)`,
+		String.raw`\n+The system has a dedicated translation layer that handles language conversion automatically\.[ \t]*`,
+		String.raw`(?:\n+If you write in another language yourself, the output can be garbled\.[ \t]*)?(?=\n|$)`,
+	].join(""),
+	"g",
+);
+const DEPRECATED_TRANSLATION_CONTRACT_LINE_RE = new RegExp(
+	[
+		String.raw`(?:^|\n)[ \t]*(?:`,
+		String.raw`## Translation Layer Contract [—-] Critical|`,
+		String.raw`You ALWAYS respond in English\. Every word you write must be in English\.|`,
+		String.raw`Never attempt to generate text in Hungarian, German, French, or any other non-English language, even if the user asks you to\.|`,
+		String.raw`The system has a dedicated translation layer that handles language conversion automatically\.|`,
+		String.raw`If you write in another language yourself, the output can be garbled\.`,
+		String.raw`)[ \t]*(?=\n|$)`,
 	].join(""),
 	"g",
 );
@@ -194,9 +207,10 @@ function normalizePromptText(value: string): string {
 		.trim();
 }
 
-function stripDeprecatedPromptSections(value: string): string {
+export function stripDeprecatedPromptSections(value: string): string {
 	return stripDeprecatedPreserveProtocol(value)
 		.replace(DEPRECATED_TRANSLATION_CONTRACT_RE, "\n")
+		.replace(DEPRECATED_TRANSLATION_CONTRACT_LINE_RE, "\n")
 		.replace(/\n{3,}/g, "\n\n")
 		.trim();
 }

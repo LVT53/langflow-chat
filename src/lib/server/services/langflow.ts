@@ -9,7 +9,7 @@ import { isProviderModelId } from "$lib/types";
 import { estimateTokenCount } from "$lib/utils/tokens";
 import type { ModelConfig, RuntimeConfig } from "../config-store";
 import { getConfig } from "../config-store";
-import { getSystemPrompt } from "../prompts";
+import { getSystemPrompt, stripDeprecatedPromptSections } from "../prompts";
 import { truncateToTokenBudget } from "../utils/prompt-context";
 import { extractProviderUsage, type ProviderUsageSnapshot } from "./analytics";
 import {
@@ -391,7 +391,7 @@ export function buildOutboundSystemPrompt(params: {
 		);
 	}
 
-	return sections.join("\n\n");
+	return stripDeprecatedPromptSections(sections.join("\n\n"));
 }
 
 async function resolveLangflowRunConfig(

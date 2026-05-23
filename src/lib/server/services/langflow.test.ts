@@ -13,9 +13,13 @@ vi.mock("../config-store", () => ({
 	getConfig: mocks.getConfig,
 }));
 
-vi.mock("../prompts", () => ({
-	getSystemPrompt: mocks.getSystemPrompt,
-}));
+vi.mock("../prompts", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../prompts")>();
+	return {
+		...actual,
+		getSystemPrompt: mocks.getSystemPrompt,
+	};
+});
 
 vi.mock("./honcho", () => ({
 	buildConstructedContext: mocks.buildConstructedContext,
@@ -264,6 +268,28 @@ describe("buildOutboundSystemPrompt", () => {
 		expect(prompt).toContain("Detected latest user-message language: Hungarian");
 		expect(prompt).not.toMatch(
 			/always respond in english|every word you write must be in english|never attempt to generate text in hungarian|non-english language/i,
+		);
+	});
+
+	it("scrubs obsolete English-only translation contracts from final outbound guidance", () => {
+		const obsoleteTranslationContract = [
+			"You ALWAYS respond in English. Every word you write must be in English.",
+			"Never attempt to generate text in Hungarian, German, French, or any other non-English language, even if the user asks you to.",
+			"The system has a dedicated translation layer that handles language conversion automatically.",
+			"If you write in another language yourself, the output can be garbled.",
+		].join("\n");
+
+		const prompt = buildOutboundSystemPrompt({
+			basePrompt: "Base system prompt",
+			inputValue: "Írj egy rövid mesét magyarul.",
+			responseLanguage: "hu",
+			systemPromptAppendix: obsoleteTranslationContract,
+			personalityPrompt: obsoleteTranslationContract,
+		});
+
+		expect(prompt).toContain("Detected latest user-message language: Hungarian");
+		expect(prompt).not.toMatch(
+			/always respond in english|every word you write must be in english|never attempt to generate text in hungarian|dedicated translation layer|output can be garbled/i,
 		);
 	});
 });

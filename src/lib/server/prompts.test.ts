@@ -77,6 +77,7 @@ describe("prompts", () => {
 			"You ALWAYS respond in English. Every word you write must be in English.",
 			"Never attempt to generate text in Hungarian, German, French, or any other non-English language, even if the user asks you to.",
 			"The system has a dedicated translation layer that handles language conversion automatically.",
+			"If you write in another language yourself, the output can be garbled.",
 		].join("\n");
 		const oldBuiltInPrompt = ALFYAI_NEMOTRON_PROMPT.replace(
 			"## Content Preservation",
@@ -100,6 +101,9 @@ describe("prompts", () => {
 		expect(getSystemPrompt(customPrompt)).not.toContain(
 			"dedicated translation layer",
 		);
+		expect(getSystemPrompt(customPrompt)).not.toContain(
+			"output can be garbled",
+		);
 	});
 
 	it("removes the obsolete translation contract from stored prompts without the legacy heading", () => {
@@ -109,6 +113,7 @@ describe("prompts", () => {
 			"You ALWAYS respond in English. Every word you write must be in English.",
 			"Never attempt to generate text in Hungarian, German, French, or any other non-English language, even if the user asks you to.",
 			"The system has a dedicated translation layer that handles language conversion automatically.",
+			"If you write in another language yourself, the output can be garbled.",
 			"",
 			"Reply in the latest user-message language by default.",
 		].join("\n");
