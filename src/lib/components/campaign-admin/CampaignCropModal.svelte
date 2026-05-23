@@ -16,6 +16,8 @@
 		ratio,
 		variant = 'desktop',
 		title = undefined,
+		metadata = undefined,
+		outputFilename = undefined,
 		outputWidth,
 		outputHeight,
 		onSave,
@@ -25,6 +27,8 @@
 		ratio: number;
 		variant?: CampaignAssetVariant;
 		title?: string;
+		metadata?: string;
+		outputFilename?: string;
 		outputWidth?: number;
 		outputHeight?: number;
 		onSave?: (payload: SavePayload) => void | Promise<void>;
@@ -59,7 +63,7 @@
 	let frameHeight = $derived(ratio >= 1 ? Math.round(FRAME_LONG_EDGE / ratio) : FRAME_LONG_EDGE);
 	let dialogTitle = $derived(title ?? $t('campaignCrop.title'));
 	let cropMetadata = $derived(
-		variant === 'desktop' ? $t('campaignCrop.desktopMetadata') : $t('campaignCrop.mobileMetadata'),
+		metadata ?? (variant === 'desktop' ? $t('campaignCrop.desktopMetadata') : $t('campaignCrop.mobileMetadata')),
 	);
 	let defaultOutputWidth = $derived(variant === 'mobile' ? 1080 : 1600);
 	let finalOutputWidth = $derived(outputWidth ?? defaultOutputWidth);
@@ -179,7 +183,7 @@
 
 				try {
 					await onSave?.({
-						file: new File([blob], `${variant}-campaign-crop.webp`, { type: 'image/webp' }),
+						file: new File([blob], outputFilename ?? `${variant}-campaign-crop.webp`, { type: 'image/webp' }),
 						width: finalOutputWidth,
 						height: finalOutputHeight,
 						crop,

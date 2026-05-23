@@ -50,6 +50,7 @@ describe('GET /api/campaign-assets/[id]/content', () => {
 		expect(response.headers.get('Content-Type')).toBe('image/webp');
 		expect(response.headers.get('Content-Length')).toBe('10');
 		expect(response.headers.get('Cache-Control')).toBe('private, max-age=300');
+		expect(response.headers.get('X-Content-Type-Options')).toBe('nosniff');
 		expect(await response.text()).toBe('asset-data');
 		expect(mockGetCampaignAssetForServing).toHaveBeenCalledWith('asset-1', {
 			id: 'viewer-user',
@@ -69,5 +70,25 @@ describe('GET /api/campaign-assets/[id]/content', () => {
 
 		expect(response.status).toBe(403);
 		expect(body.error).toBe('Campaign asset is not published');
+	});
+
+	it('serves SVG assets with a sandboxing content security policy', async () => {
+		mockGetCampaignAssetForServing.mockResolvedValue({
+			ok: true,
+			asset: {
+				id: 'asset-svg',
+				mimeType: 'image/svg+xml',
+				sizeBytes: 11,
+				originalFilename: 'icon.svg',
+				status: 'published',
+			},
+			content: Buffer.from('<svg></svg>'),
+		});
+
+		const response = await GET(makeEvent(undefined, 'asset-svg'));
+
+		expect(response.status).toBe(200);
+		expect(response.headers.get('Content-Type')).toBe('image/svg+xml');
+		expect(response.headers.get('Content-Security-Policy')).toBe("sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline'");
 	});
 });

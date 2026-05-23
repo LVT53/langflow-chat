@@ -16,6 +16,7 @@ const ALLOWED_IMAGE_TYPES = new Set([
 	'image/heif',
 	'image/tiff',
 	'image/bmp',
+	'image/svg+xml',
 ]);
 
 const MIME_EXTENSIONS: Record<string, string> = {
@@ -28,6 +29,7 @@ const MIME_EXTENSIONS: Record<string, string> = {
 	'image/heif': 'heif',
 	'image/tiff': 'tiff',
 	'image/bmp': 'bmp',
+	'image/svg+xml': 'svg',
 };
 
 type CampaignAssetDb = typeof defaultDb;
@@ -121,7 +123,12 @@ function expectedRatioForVariant(variant: CampaignAssetVariant): number {
 	return variant === 'desktop' ? 16 / 10 : 9 / 16;
 }
 
-function validateCropGeometry(variant: CampaignAssetVariant, crop: CampaignCropGeometry): void {
+function validateCropGeometryForRatio(
+	crop: CampaignCropGeometry,
+	expectedRatio: number,
+	ratioLabel: string,
+	errorMessage = 'Invalid campaign crop.',
+): void {
 	const fieldErrors: Record<string, string> = {};
 	for (const [field, value] of Object.entries(crop)) {
 		if (typeof value !== 'number' || !Number.isFinite(value)) {
@@ -134,15 +141,30 @@ function validateCropGeometry(variant: CampaignAssetVariant, crop: CampaignCropG
 	if (crop.height <= 0) fieldErrors.height = 'Crop height must be greater than zero.';
 	if (crop.zoom <= 0) fieldErrors.zoom = 'Crop zoom must be greater than zero.';
 
-	const expected = expectedRatioForVariant(variant);
 	const actual = crop.width / crop.height;
-	if (Number.isFinite(actual) && Math.abs(actual - expected) > 0.01) {
-		fieldErrors.crop = `Crop must use the ${variant === 'desktop' ? '16:10' : '9:16'} ratio.`;
+	if (Number.isFinite(actual) && Math.abs(actual - expectedRatio) > 0.01) {
+		fieldErrors.crop = `Crop must use the ${ratioLabel} ratio.`;
 	}
 
 	if (Object.keys(fieldErrors).length > 0) {
-		throw new CampaignAssetValidationError('Invalid campaign crop.', fieldErrors);
+		throw new CampaignAssetValidationError(errorMessage, fieldErrors);
 	}
+}
+
+function validateCropGeometry(variant: CampaignAssetVariant, crop: CampaignCropGeometry): void {
+	validateCropGeometryForRatio(
+		crop,
+		expectedRatioForVariant(variant),
+		variant === 'desktop' ? '16:10' : '9:16',
+	);
+}
+
+function validateModelIconCropGeometry(crop: CampaignCropGeometry): void {
+	validateCropGeometryForRatio(crop, 1, '1:1', 'Invalid model icon crop.');
+}
+
+function isSvgImage(file: CampaignImageInput): boolean {
+	return file.mimeType === 'image/svg+xml';
 }
 
 function extensionForMime(mimeType: string): string {
@@ -280,12 +302,13 @@ export async function storeModelIconAsset(
 ): Promise<CampaignAssetRecord> {
 	validateImageFile(input.file);
 	validateDimensions(input.dimensions);
-	if (!input.dimensions) {
+	const isSvg = isSvgImage(input.file);
+	if (!input.dimensions && !isSvg) {
 		throw new CampaignAssetValidationError('Invalid model icon dimensions.', {
 			image: 'Model icon dimensions are required.',
 		});
 	}
-	if (input.dimensions.width !== input.dimensions.height) {
+	if (!isSvg && input.dimensions && input.dimensions.width !== input.dimensions.height) {
 		throw new CampaignAssetValidationError('Invalid model icon dimensions.', {
 			image: 'Model icon must use a 1:1 image ratio.',
 		});
@@ -309,6 +332,70 @@ export async function storeModelIconAsset(
 			storagePath,
 			width: input.dimensions?.width ?? null,
 			height: input.dimensions?.height ?? null,
+		})
+		.returning();
+
+	return row;
+}
+
+export async function saveModelIconAsset(
+	input: {
+		uploadedByUserId: string;
+		sourceAssetId: string;
+		file: CampaignImageInput;
+		dimensions?: CampaignImageDimensions;
+		crop: CampaignCropGeometry;
+	},
+	options: CampaignAssetServiceOptions = {},
+): Promise<CampaignAssetRecord> {
+	validateImageFile(input.file);
+	validateDimensions(input.dimensions);
+	validateModelIconCropGeometry(input.crop);
+
+	const database = options.db ?? defaultDb;
+	const sourceAsset = await getDraftSourceAssetForAdmin(input.sourceAssetId, options);
+	if (!sourceAsset) {
+		throw new CampaignAssetValidationError('Invalid model icon source.', {
+			sourceAssetId: 'Source asset was not found.',
+		});
+	}
+
+	const id = options.id ?? randomUUID();
+	const storagePath = scopedStoragePath('model-icons', id, input.file.mimeType);
+	await writeAssetContent(getStorageRoot(options), storagePath, input.file.content);
+
+	const cropMetadata = {
+		ratio: 1,
+		sourceAssetId: sourceAsset.id,
+		sourceWidth: sourceAsset.width,
+		sourceHeight: sourceAsset.height,
+		x: input.crop.x,
+		y: input.crop.y,
+		width: input.crop.width,
+		height: input.crop.height,
+		zoom: input.crop.zoom,
+	};
+
+	const [row] = await database
+		.insert(campaignAssets)
+		.values({
+			id,
+			uploadedByUserId: input.uploadedByUserId,
+			sourceAssetId: sourceAsset.id,
+			assetKind: 'model_icon',
+			status: 'published',
+			originalFilename: input.file.filename,
+			mimeType: input.file.mimeType,
+			sizeBytes: input.file.content.byteLength,
+			storagePath,
+			width: input.dimensions?.width ?? null,
+			height: input.dimensions?.height ?? null,
+			cropX: input.crop.x,
+			cropY: input.crop.y,
+			cropWidth: input.crop.width,
+			cropHeight: input.crop.height,
+			zoom: input.crop.zoom,
+			cropMetadataJson: JSON.stringify(cropMetadata),
 		})
 		.returning();
 

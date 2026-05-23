@@ -16,6 +16,8 @@ vi.mock("$lib/client/api/admin", () => ({
 }));
 
 vi.mock("$lib/client/api/campaign-assets", () => ({
+	saveModelIconAssetCrop: vi.fn(),
+	uploadCampaignAssetSource: vi.fn(),
 	uploadModelIconAsset: vi.fn(),
 }));
 
@@ -23,13 +25,21 @@ import {
 	createProvider,
 	fetchAdminSystemSkills,
 	fetchProviders,
+	updateAdminConfig,
 	updateAdminSystemSkill,
 } from "$lib/client/api/admin";
+import {
+	uploadCampaignAssetSource,
+	uploadModelIconAsset,
+} from "$lib/client/api/campaign-assets";
 
 const mockCreateProvider = createProvider as ReturnType<typeof vi.fn>;
 const mockFetchAdminSystemSkills = fetchAdminSystemSkills as ReturnType<typeof vi.fn>;
 const mockFetchProviders = fetchProviders as ReturnType<typeof vi.fn>;
+const mockUpdateAdminConfig = updateAdminConfig as ReturnType<typeof vi.fn>;
 const mockUpdateAdminSystemSkill = updateAdminSystemSkill as ReturnType<typeof vi.fn>;
+const mockUploadCampaignAssetSource = uploadCampaignAssetSource as ReturnType<typeof vi.fn>;
+const mockUploadModelIconAsset = uploadModelIconAsset as ReturnType<typeof vi.fn>;
 
 describe("SettingsAdminSystemPane", () => {
 	beforeEach(() => {
@@ -54,6 +64,17 @@ describe("SettingsAdminSystemPane", () => {
 		});
 		mockFetchAdminSystemSkills.mockResolvedValue([]);
 		mockFetchProviders.mockResolvedValue([]);
+		mockUpdateAdminConfig.mockResolvedValue(undefined);
+		mockUploadCampaignAssetSource.mockResolvedValue({ id: "source-1" });
+		mockUploadModelIconAsset.mockResolvedValue({ id: "icon-1" });
+		Object.defineProperty(URL, "createObjectURL", {
+			value: vi.fn(() => "blob:model-icon"),
+			configurable: true,
+		});
+		Object.defineProperty(URL, "revokeObjectURL", {
+			value: vi.fn(),
+			configurable: true,
+		});
 	});
 
 	it("lets admins enable the Composer Command Registry feature flag", async () => {
@@ -275,5 +296,73 @@ describe("SettingsAdminSystemPane", () => {
 		});
 
 		expect(adminConfig.DEFAULT_NEW_USER_MODEL).toBe("provider:fire-pass");
+	});
+
+	it("opens a 1:1 cropper for raster model icon uploads", async () => {
+		const { getAllByLabelText, getByText } = render(SettingsAdminSystemPane, {
+			adminConfig: {
+				COMPOSER_COMMAND_REGISTRY_ENABLED: "true",
+				MODEL_2_ENABLED: "true",
+				DEEP_RESEARCH_ENABLED: "false",
+				DEEP_RESEARCH_WORKER_ENABLED: "false",
+			},
+			availableModels: [{ id: "model1", displayName: "Model 1" }],
+			onCheckHonchoHealth: vi.fn(),
+			onSaveAdminConfig: vi.fn(),
+		});
+
+		await waitFor(() => {
+			expect(getAllByLabelText("Upload icon").length).toBeGreaterThan(0);
+		});
+
+		await fireEvent.change(getAllByLabelText("Upload icon")[0], {
+			target: {
+				files: [new File(["png"], "wide-icon.png", { type: "image/png" })],
+			},
+		});
+
+		await waitFor(() => {
+			expect(getByText("Crop model icon")).toBeInTheDocument();
+		});
+		expect(mockUploadCampaignAssetSource).toHaveBeenCalledWith({
+			image: expect.any(File),
+		});
+		expect(mockUploadModelIconAsset).not.toHaveBeenCalled();
+	});
+
+	it("stores SVG model icons directly without opening the cropper", async () => {
+		const adminConfig = {
+			COMPOSER_COMMAND_REGISTRY_ENABLED: "true",
+			MODEL_1_ICON_ASSET_ID: "",
+			MODEL_2_ENABLED: "true",
+			DEEP_RESEARCH_ENABLED: "false",
+			DEEP_RESEARCH_WORKER_ENABLED: "false",
+		};
+		const { getAllByLabelText, queryByText } = render(SettingsAdminSystemPane, {
+			adminConfig,
+			availableModels: [{ id: "model1", displayName: "Model 1" }],
+			onCheckHonchoHealth: vi.fn(),
+			onSaveAdminConfig: vi.fn(),
+		});
+
+		await waitFor(() => {
+			expect(getAllByLabelText("Upload icon").length).toBeGreaterThan(0);
+		});
+
+		await fireEvent.change(getAllByLabelText("Upload icon")[0], {
+			target: {
+				files: [new File(["<svg></svg>"], "icon.svg", { type: "image/svg+xml" })],
+			},
+		});
+
+		await waitFor(() => {
+			expect(mockUploadModelIconAsset).toHaveBeenCalledWith({
+				image: expect.any(File),
+			});
+		});
+		expect(mockUpdateAdminConfig).toHaveBeenCalledWith({ MODEL_1_ICON_ASSET_ID: "icon-1" });
+		expect(adminConfig.MODEL_1_ICON_ASSET_ID).toBe("icon-1");
+		expect(mockUploadCampaignAssetSource).not.toHaveBeenCalled();
+		expect(queryByText("Crop model icon")).not.toBeInTheDocument();
 	});
 });

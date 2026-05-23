@@ -81,6 +81,31 @@ export async function uploadModelIconAsset(
 	return response.asset;
 }
 
+export async function saveModelIconAssetCrop(
+	input: {
+		sourceAssetId: string;
+		image: File;
+		width?: number;
+		height?: number;
+		crop: CampaignAssetCropGeometry;
+	},
+	fetchImpl: FetchLike = fetch,
+): Promise<CampaignAsset> {
+	const formData = new FormData();
+	formData.set('image', input.image);
+	formData.set('crop', JSON.stringify(input.crop));
+	if (input.width) formData.set('width', String(input.width));
+	if (input.height) formData.set('height', String(input.height));
+
+	const response = await requestJson<CampaignAssetResponse>(
+		`/api/admin/model-icons/${encodeURIComponent(input.sourceAssetId)}/crop`,
+		{ method: 'POST', body: formData },
+		'Failed to save model icon crop',
+		fetchImpl,
+	);
+	return response.asset;
+}
+
 export async function saveCampaignAssetCrop(
 	input: {
 		sourceAssetId: string;

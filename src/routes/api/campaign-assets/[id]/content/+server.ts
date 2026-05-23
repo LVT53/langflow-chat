@@ -19,12 +19,18 @@ export const GET: RequestHandler = async (event) => {
 		return json({ error: result.error }, { status: result.status });
 	}
 
+	const headers = new Headers({
+		'Content-Type': result.asset.mimeType,
+		'Content-Length': result.content.length.toString(),
+		'Cache-Control': 'private, max-age=300',
+		'X-Content-Type-Options': 'nosniff',
+	});
+	if (result.asset.mimeType === 'image/svg+xml') {
+		headers.set('Content-Security-Policy', "sandbox; default-src 'none'; img-src data:; style-src 'unsafe-inline'");
+	}
+
 	return new Response(new Uint8Array(result.content), {
 		status: 200,
-		headers: {
-			'Content-Type': result.asset.mimeType,
-			'Content-Length': result.content.length.toString(),
-			'Cache-Control': 'private, max-age=300',
-		},
+		headers,
 	});
 };

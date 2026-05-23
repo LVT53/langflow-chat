@@ -15,7 +15,13 @@ import {
 	type InferenceProvider,
 	type PersonalityProfileSummary,
 } from "$lib/client/api/admin";
-import { uploadModelIconAsset } from "$lib/client/api/campaign-assets";
+import {
+	saveModelIconAssetCrop,
+	uploadCampaignAssetSource,
+	uploadModelIconAsset,
+	type CampaignAsset,
+	type CampaignAssetCropGeometry,
+} from "$lib/client/api/campaign-assets";
 import { get } from "svelte/store";
 import { t } from "$lib/i18n";
 import {
@@ -24,6 +30,7 @@ import {
 	type DeepResearchModelRoleDefinition,
 } from "$lib/deep-research-models";
 import type { ModelId } from "$lib/types";
+import CampaignCropModal from "$lib/components/campaign-admin/CampaignCropModal.svelte";
 import ModelIcon from "$lib/components/ui/ModelIcon.svelte";
 import ModelFormModal from "./ModelFormModal.svelte";
 
@@ -92,6 +99,19 @@ let iconUploading = $state<string | null>(null);
 let providersMessageTimer: ReturnType<typeof setTimeout> | undefined;
 let systemSkillsMessageTimer: ReturnType<typeof setTimeout> | undefined;
 
+type ModelIconTarget =
+	| { kind: "built-in"; modelName: "model1" | "model2" }
+	| { kind: "provider"; provider: InferenceProvider };
+
+type ModelIconCropJob = {
+	key: string;
+	target: ModelIconTarget;
+	imageSrc: string;
+	sourceUpload: Promise<CampaignAsset>;
+};
+
+let modelIconCropJob = $state<ModelIconCropJob | null>(null);
+
 function showProvidersMessage(text: string) {
 	clearTimeout(providersMessageTimer);
 	providersMessage = text;
@@ -133,70 +153,96 @@ function uploadKeyForProvider(provider: InferenceProvider): string {
 	return `provider:${provider.id}`;
 }
 
-function readImageDimensions(file: File): Promise<{ width: number; height: number }> {
-	return new Promise((resolve, reject) => {
-		const image = new Image();
-		const url = URL.createObjectURL(file);
-		image.onload = () => {
-			const dimensions = { width: image.naturalWidth, height: image.naturalHeight };
-			URL.revokeObjectURL(url);
-			resolve(dimensions);
-		};
-		image.onerror = () => {
-			URL.revokeObjectURL(url);
-			reject(new Error($t("admin.modelIconReadFailed")));
-		};
-		image.src = url;
-	});
+function uploadKeyForTarget(target: ModelIconTarget): string {
+	return target.kind === "built-in" ? target.modelName : uploadKeyForProvider(target.provider);
 }
 
-async function handleModelIconFile(
-	event: Event,
-	target:
-		| { kind: "built-in"; modelName: "model1" | "model2" }
-		| { kind: "provider"; provider: InferenceProvider },
-) {
+function isSvgFile(file: File): boolean {
+	return file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg");
+}
+
+async function applyModelIconAsset(target: ModelIconTarget, assetId: string) {
+	if (target.kind === "built-in") {
+		const configKey =
+			target.modelName === "model1"
+				? "MODEL_1_ICON_ASSET_ID"
+				: "MODEL_2_ICON_ASSET_ID";
+		adminConfig[configKey] = assetId;
+		await updateAdminConfig({ [configKey]: assetId });
+		return;
+	}
+
+	await updateProvider(target.provider.id, { iconAssetId: assetId });
+	await loadProviders();
+}
+
+async function handleModelIconFile(event: Event, target: ModelIconTarget) {
 	const input = event.currentTarget as HTMLInputElement;
 	const file = input.files?.[0] ?? null;
 	input.value = "";
 	if (!file) return;
 
-	const key =
-		target.kind === "built-in"
-			? target.modelName
-			: uploadKeyForProvider(target.provider);
+	const key = uploadKeyForTarget(target);
 	iconUploading = key;
 	providersError = "";
 	providersMessage = "";
 	try {
-		const dimensions = await readImageDimensions(file);
-		if (dimensions.width !== dimensions.height) {
-			throw new Error($t("admin.modelIconSquareRequired"));
+		if (isSvgFile(file)) {
+			const asset = await uploadModelIconAsset({ image: file });
+			await applyModelIconAsset(target, asset.id);
+			showProvidersMessage($t("admin.modelIconUpdated"));
+			return;
 		}
-		const asset = await uploadModelIconAsset({
-			image: file,
-			width: dimensions.width,
-			height: dimensions.height,
+
+		const imageSrc = URL.createObjectURL(file);
+		const sourceUpload = uploadCampaignAssetSource({ image: file });
+		sourceUpload.catch((error: unknown) => {
+			providersError = errorMessage(error, $t("admin.modelIconUploadFailed"));
 		});
-
-		if (target.kind === "built-in") {
-			const configKey =
-				target.modelName === "model1"
-					? "MODEL_1_ICON_ASSET_ID"
-					: "MODEL_2_ICON_ASSET_ID";
-			adminConfig[configKey] = asset.id;
-			await updateAdminConfig({ [configKey]: asset.id });
-		} else {
-			await updateProvider(target.provider.id, { iconAssetId: asset.id });
-			await loadProviders();
-		}
-
-		showProvidersMessage($t("admin.modelIconUpdated"));
+		modelIconCropJob = {
+			key,
+			target,
+			imageSrc,
+			sourceUpload,
+		};
 	} catch (error: unknown) {
 		providersError = errorMessage(error, $t("admin.modelIconUploadFailed"));
+		if (modelIconCropJob?.key === key) {
+			URL.revokeObjectURL(modelIconCropJob.imageSrc);
+			modelIconCropJob = null;
+		}
 	} finally {
 		iconUploading = null;
 	}
+}
+
+async function saveModelIconCrop(payload: { file: File; width: number; height: number; crop: CampaignAssetCropGeometry }) {
+	if (!modelIconCropJob) return;
+	const activeCrop = modelIconCropJob;
+	iconUploading = activeCrop.key;
+	try {
+		const source = await activeCrop.sourceUpload;
+		const asset = await saveModelIconAssetCrop({
+			sourceAssetId: source.id,
+			image: payload.file,
+			width: payload.width,
+			height: payload.height,
+			crop: payload.crop,
+		});
+		await applyModelIconAsset(activeCrop.target, asset.id);
+		showProvidersMessage($t("admin.modelIconUpdated"));
+		URL.revokeObjectURL(activeCrop.imageSrc);
+		modelIconCropJob = null;
+	} catch (error: unknown) {
+		throw new Error(errorMessage(error, $t("admin.modelIconUploadFailed")));
+	} finally {
+		if (modelIconCropJob === activeCrop) iconUploading = null;
+	}
+}
+
+function cancelModelIconCrop() {
+	if (modelIconCropJob) URL.revokeObjectURL(modelIconCropJob.imageSrc);
+	modelIconCropJob = null;
 }
 
 // Modal state
@@ -712,7 +758,7 @@ function placeholderFor(key: string): string {
 						<span class="text-xs text-text-muted">{$t('admin.builtIn')}</span>
 						<label class="btn-small cursor-pointer">
 							{iconUploading === 'model1' ? $t('admin.modelIconUploading') : $t('admin.uploadModelIcon')}
-							<input class="sr-only" type="file" accept="image/*" disabled={iconUploading !== null} onchange={(event) => handleModelIconFile(event, { kind: 'built-in', modelName: 'model1' })} />
+							<input class="sr-only" type="file" accept="image/*,.svg" disabled={iconUploading !== null} onchange={(event) => handleModelIconFile(event, { kind: 'built-in', modelName: 'model1' })} />
 						</label>
 						<button class="btn-small" onclick={() => openEditBuiltIn('model1')}>{$t('common.edit')}</button>
 					</div>
@@ -732,7 +778,7 @@ function placeholderFor(key: string): string {
 						<span class="text-xs text-text-muted">{$t('admin.builtIn')}</span>
 						<label class="btn-small cursor-pointer">
 							{iconUploading === 'model2' ? $t('admin.modelIconUploading') : $t('admin.uploadModelIcon')}
-							<input class="sr-only" type="file" accept="image/*" disabled={iconUploading !== null} onchange={(event) => handleModelIconFile(event, { kind: 'built-in', modelName: 'model2' })} />
+							<input class="sr-only" type="file" accept="image/*,.svg" disabled={iconUploading !== null} onchange={(event) => handleModelIconFile(event, { kind: 'built-in', modelName: 'model2' })} />
 						</label>
 						<button class="btn-small" onclick={() => openEditBuiltIn('model2')}>{$t('common.edit')}</button>
 					</div>
@@ -765,7 +811,7 @@ function placeholderFor(key: string): string {
 							<span class={`inline-block h-2 w-2 rounded-full ${provider.enabled ? 'bg-success' : 'bg-text-muted'}`}></span>
 							<label class="btn-small cursor-pointer">
 								{iconUploading === uploadKeyForProvider(provider) ? $t('admin.modelIconUploading') : $t('admin.uploadModelIcon')}
-								<input class="sr-only" type="file" accept="image/*" disabled={iconUploading !== null} onchange={(event) => handleModelIconFile(event, { kind: 'provider', provider })} />
+								<input class="sr-only" type="file" accept="image/*,.svg" disabled={iconUploading !== null} onchange={(event) => handleModelIconFile(event, { kind: 'provider', provider })} />
 							</label>
 							<button class="btn-small" onclick={() => handleValidate(provider)}>{$t('common.test')}</button>
 							<button class="btn-small" onclick={() => openEditProvider(provider)}>{$t('common.edit')}</button>
@@ -1484,6 +1530,20 @@ function placeholderFor(key: string): string {
 <button class="btn-primary mb-8 w-full" onclick={onSaveAdminConfig} disabled={adminSaving}>
 	{adminSaving ? $t('common.saving') : $t('admin.saveConfiguration')}
 </button>
+
+{#if modelIconCropJob}
+	<CampaignCropModal
+		imageSrc={modelIconCropJob.imageSrc}
+		ratio={1}
+		title={$t('admin.modelIconCropTitle')}
+		metadata={$t('campaignCrop.modelIconMetadata')}
+		outputFilename="model-icon.webp"
+		outputWidth={512}
+		outputHeight={512}
+		onSave={saveModelIconCrop}
+		onCancel={cancelModelIconCrop}
+	/>
+{/if}
 
 <style>
 	:global(.btn-small) {

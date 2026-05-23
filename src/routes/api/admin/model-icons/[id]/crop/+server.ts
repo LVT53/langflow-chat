@@ -3,7 +3,8 @@ import type { RequestHandler } from './$types';
 import { requireAdmin } from '$lib/server/auth/hooks';
 import {
 	CampaignAssetValidationError,
-	storeModelIconAsset,
+	saveModelIconAsset,
+	type CampaignCropGeometry,
 } from '$lib/server/services/campaign-assets';
 
 function parseOptionalPositiveInteger(value: FormDataEntryValue | null): number | undefined {
@@ -21,9 +22,29 @@ function isUploadFile(value: FormDataEntryValue | null): value is File {
 	);
 }
 
-function uploadMimeType(file: File): string {
-	if (file.type) return file.type;
-	return file.name.toLowerCase().endsWith('.svg') ? 'image/svg+xml' : file.type;
+function parseCropGeometry(value: FormDataEntryValue | null): CampaignCropGeometry | null {
+	if (typeof value !== 'string' || !value.trim()) return null;
+	try {
+		const parsed = JSON.parse(value) as Partial<CampaignCropGeometry>;
+		if (
+			typeof parsed.x !== 'number' ||
+			typeof parsed.y !== 'number' ||
+			typeof parsed.width !== 'number' ||
+			typeof parsed.height !== 'number' ||
+			typeof parsed.zoom !== 'number'
+		) {
+			return null;
+		}
+		return {
+			x: parsed.x,
+			y: parsed.y,
+			width: parsed.width,
+			height: parsed.height,
+			zoom: parsed.zoom,
+		};
+	} catch {
+		return null;
+	}
 }
 
 export const POST: RequestHandler = async (event) => {
@@ -39,7 +60,15 @@ export const POST: RequestHandler = async (event) => {
 	const image = formData.get('image');
 	if (!isUploadFile(image)) {
 		return json(
-			{ error: 'Invalid model icon upload', fieldErrors: { image: 'Model icon image is required.' } },
+			{ error: 'Invalid model icon crop', fieldErrors: { image: 'Model icon crop image is required.' } },
+			{ status: 400 },
+		);
+	}
+
+	const crop = parseCropGeometry(formData.get('crop'));
+	if (!crop) {
+		return json(
+			{ error: 'Invalid model icon crop', fieldErrors: { crop: 'Crop geometry is required.' } },
 			{ status: 400 },
 		);
 	}
@@ -47,14 +76,16 @@ export const POST: RequestHandler = async (event) => {
 	try {
 		const width = parseOptionalPositiveInteger(formData.get('width'));
 		const height = parseOptionalPositiveInteger(formData.get('height'));
-		const asset = await storeModelIconAsset({
+		const asset = await saveModelIconAsset({
 			uploadedByUserId: event.locals.user!.id,
+			sourceAssetId: event.params.id,
 			file: {
 				filename: image.name,
-				mimeType: uploadMimeType(image),
+				mimeType: image.type,
 				content: Buffer.from(await image.arrayBuffer()),
 			},
 			dimensions: width && height ? { width, height } : undefined,
+			crop,
 		});
 
 		return json({ asset }, { status: 201 });
@@ -65,7 +96,7 @@ export const POST: RequestHandler = async (event) => {
 				{ status: 400 },
 			);
 		}
-		console.error('[CAMPAIGN_ASSETS] Failed to upload model icon:', error);
-		return json({ error: 'Failed to upload model icon.' }, { status: 500 });
+		console.error('[CAMPAIGN_ASSETS] Failed to save model icon crop:', error);
+		return json({ error: 'Failed to save model icon crop.' }, { status: 500 });
 	}
 };

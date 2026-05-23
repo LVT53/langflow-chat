@@ -75,6 +75,24 @@ describe('POST /api/admin/model-icons/upload', () => {
 		});
 	});
 
+	it('accepts SVG model icons without raster dimensions', async () => {
+		const formData = new FormData();
+		formData.set('image', new File([Buffer.from('<svg></svg>')], 'icon.svg', { type: 'image/svg+xml' }));
+
+		const response = await POST(makeUploadEvent(formData));
+
+		expect(response.status).toBe(201);
+		expect(mockStoreModelIconAsset).toHaveBeenCalledWith({
+			uploadedByUserId: 'admin-user',
+			file: {
+				filename: 'icon.svg',
+				mimeType: 'image/svg+xml',
+				content: expect.any(Buffer),
+			},
+			dimensions: undefined,
+		});
+	});
+
 	it('returns field errors when the image field is missing', async () => {
 		const response = await POST(makeUploadEvent(new FormData()));
 		const body = await response.json();
