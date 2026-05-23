@@ -17,6 +17,7 @@
 		conversationId,
 		isThinkingActive,
 		contextDebug,
+		modelIcons = {},
 		fileProductionJobs = [],
 		deepResearchJobs = [],
 		hasActiveSkillSession = false,
@@ -47,6 +48,7 @@
 		conversationId: string;
 		isThinkingActive: boolean;
 		contextDebug: ContextDebugState | null;
+		modelIcons?: Record<string, string | null | undefined>;
 		fileProductionJobs?: FileProductionJob[];
 		deepResearchJobs?: DeepResearchJob[];
 		hasActiveSkillSession?: boolean;
@@ -93,6 +95,7 @@
 		{conversationId}
 		{isThinkingActive}
 		{contextDebug}
+		{modelIcons}
 		{fileProductionJobs}
 		{deepResearchJobs}
 		{hasActiveSkillSession}

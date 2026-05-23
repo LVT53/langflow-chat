@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { saveCampaignAssetCrop, uploadCampaignAssetSource } from './campaign-assets';
+import { saveCampaignAssetCrop, uploadCampaignAssetSource, uploadModelIconAsset } from './campaign-assets';
 
 describe('campaign asset client API', () => {
 	it('uploads campaign source screenshots as multipart form data', async () => {
@@ -55,5 +55,27 @@ describe('campaign asset client API', () => {
 		expect(body.get('variant')).toBe('desktop');
 		expect(body.get('image')).toBe(file);
 		expect(JSON.parse(String(body.get('crop')))).toEqual(crop);
+	});
+
+	it('uploads model icons as multipart form data', async () => {
+		const fetchImpl = vi.fn().mockResolvedValue(
+			new Response(JSON.stringify({ asset: { id: 'icon-1' } }), {
+				status: 201,
+				headers: { 'Content-Type': 'application/json' },
+			}),
+		);
+
+		const file = new File(['icon'], 'icon.png', { type: 'image/png' });
+		const asset = await uploadModelIconAsset({ image: file, width: 512, height: 512 }, fetchImpl);
+
+		expect(asset).toEqual({ id: 'icon-1' });
+		expect(fetchImpl).toHaveBeenCalledWith(
+			'/api/admin/model-icons/upload',
+			expect.objectContaining({ method: 'POST', body: expect.any(FormData) }),
+		);
+		const body = fetchImpl.mock.calls[0][1].body as FormData;
+		expect(body.get('image')).toBe(file);
+		expect(body.get('width')).toBe('512');
+		expect(body.get('height')).toBe('512');
 	});
 });

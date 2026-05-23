@@ -9,9 +9,14 @@ vi.mock("$lib/client/api/admin", () => ({
 	fetchAdminSystemSkills: vi.fn(() => Promise.resolve([])),
 	fetchPersonalityProfiles: vi.fn(() => Promise.resolve([])),
 	fetchProviders: vi.fn(() => Promise.resolve([])),
+	updateAdminConfig: vi.fn(),
 	updateAdminSystemSkill: vi.fn(),
 	updateProvider: vi.fn(),
 	validateProvider: vi.fn(),
+}));
+
+vi.mock("$lib/client/api/campaign-assets", () => ({
+	uploadModelIconAsset: vi.fn(),
 }));
 
 import {

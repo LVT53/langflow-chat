@@ -223,6 +223,49 @@ describe('announcement campaign service', () => {
 		});
 	});
 
+	it('publishes slides without uploaded images and leaves snapshot crop ids empty', async () => {
+		await createCampaignDraft(
+			{ type: 'first_run_onboarding', name: 'Image-free onboarding', createdByUserId: 'admin-user' },
+			{ db, ids: ['campaign-optional-images'] },
+		);
+		await updateCampaignDraft(
+			'campaign-optional-images',
+			{
+				slides: [
+					{
+						id: 'setup-slide',
+						layoutType: 'setup',
+						sortOrder: 1,
+						semanticRole: 'feature',
+						title: { en: 'Set up', hu: 'Beállítás' },
+						body: { en: 'Choose defaults.', hu: 'Válassz alapokat.' },
+						altText: { en: '', hu: '' },
+						setupControls: ['ui_language'],
+					},
+					{
+						id: 'disclosure-slide',
+						layoutType: 'standard',
+						sortOrder: 2,
+						semanticRole: 'data_disclosure',
+						title: { en: 'Data use', hu: 'Adathasználat' },
+						body: { en: 'Review data use.', hu: 'Tekintsd át az adathasználatot.' },
+						altText: { en: '', hu: '' },
+					},
+				],
+			},
+			{ db },
+		);
+
+		const published = await publishCampaign('campaign-optional-images', 'admin-user', {
+			db,
+			ids: ['snapshot-no-images', 'snapshot-slide-1', 'snapshot-slide-2'],
+		});
+
+		expect(published.status).toBe('published');
+		expect(published.snapshot?.slides.map((slide) => slide.desktopCropAssetId)).toEqual([null, null]);
+		expect(published.snapshot?.slides.map((slide) => slide.mobileCropAssetId)).toEqual([null, null]);
+	});
+
 	it('deletes draft campaigns but refuses to delete published history', async () => {
 		await createCampaignDraft(
 			{ type: 'release_update', name: 'Draft release', releaseVersion: '0.2.0', createdByUserId: 'admin-user' },

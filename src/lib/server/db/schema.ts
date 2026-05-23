@@ -1509,6 +1509,12 @@ export const inferenceProviders = sqliteTable("inference_providers", {
 	targetConstructedContext: integer("target_constructed_context"),
 	maxMessageLength: integer("max_message_length"),
 	maxTokens: integer("max_tokens"),
+	iconAssetId: text("icon_asset_id").references(
+		(): AnySQLiteColumn => campaignAssets.id,
+		{
+			onDelete: "set null",
+		},
+	),
 	rateLimitFallbackEnabled: integer("rate_limit_fallback_enabled", {
 		mode: "boolean",
 	})
@@ -2084,16 +2090,18 @@ export const announcementCampaignSnapshotSlides = sqliteTable(
 		actionLabelHu: text("action_label_hu"),
 		altTextEn: text("alt_text_en").notNull(),
 		altTextHu: text("alt_text_hu").notNull(),
-		desktopCropAssetId: text("desktop_crop_asset_id")
-			.notNull()
-			.references(() => campaignAssets.id, {
-				onDelete: "restrict",
-			}),
-		mobileCropAssetId: text("mobile_crop_asset_id")
-			.notNull()
-			.references(() => campaignAssets.id, {
-				onDelete: "restrict",
-			}),
+		desktopCropAssetId: text("desktop_crop_asset_id").references(
+			() => campaignAssets.id,
+			{
+				onDelete: "set null",
+			},
+		),
+		mobileCropAssetId: text("mobile_crop_asset_id").references(
+			() => campaignAssets.id,
+			{
+				onDelete: "set null",
+			},
+		),
 		actionDestination: text("action_destination"),
 		setupControlsJson: text("setup_controls_json"),
 		createdAt: integer("created_at", { mode: "timestamp" })

@@ -299,7 +299,9 @@ const dictionary = {
 		"admin.campaigns.validation.sortOrderInvalid":
 			"Slide order must use unique positive integers.",
 		"admin.campaigns.validation.localizedContentRequired":
-			"Localized EN/HU title, body, and alt text are required.",
+			"Localized EN/HU title and body are required.",
+		"admin.campaigns.validation.imageAltRequired":
+			"Localized EN/HU alt text is required when an image is uploaded.",
 		"admin.campaigns.validation.desktopAssetRequired":
 			"Desktop crop asset is required.",
 		"admin.campaigns.validation.mobileAssetRequired":
@@ -510,6 +512,12 @@ const dictionary = {
 		"admin.providerAdded": "Provider added.",
 		"admin.providerUpdated": "Provider updated.",
 		"admin.providerDeleted": "Provider deleted.",
+		"admin.uploadModelIcon": "Upload icon",
+		"admin.modelIconUploading": "Uploading...",
+		"admin.modelIconUpdated": "Model icon updated.",
+		"admin.modelIconSquareRequired": "Model icon must use a 1:1 image ratio.",
+		"admin.modelIconReadFailed": "Could not read the selected image.",
+		"admin.modelIconUploadFailed": "Failed to upload model icon.",
 		"admin.deleteProviderConfirm": 'Delete provider "{name}"?',
 		"admin.failedLoadProviders": "Failed to load providers.",
 		"admin.failedSave": "Failed to save.",
@@ -771,6 +779,7 @@ const dictionary = {
 		"admin.model1ApiKey": "Model 1 API Key",
 		"admin.model1Name": "Model 1 Name",
 		"admin.model1DisplayName": "Model 1 Display Name",
+		"admin.model1IconAssetId": "Model 1 Icon Asset ID",
 		"admin.model1SystemPrompt": "Model 1 System Prompt",
 		"admin.model1FlowId": "Model 1 Flow ID",
 		"admin.model1ComponentId": "Model 1 Component ID",
@@ -778,6 +787,7 @@ const dictionary = {
 		"admin.model2ApiKey": "Model 2 API Key",
 		"admin.model2Name": "Model 2 Name",
 		"admin.model2DisplayName": "Model 2 Display Name",
+		"admin.model2IconAssetId": "Model 2 Icon Asset ID",
 		"admin.model2SystemPrompt": "Model 2 System Prompt",
 		"admin.model2FlowId": "Model 2 Flow ID",
 		"admin.model2ComponentId": "Model 2 Component ID",
@@ -1830,7 +1840,9 @@ const dictionary = {
 		"admin.campaigns.validation.sortOrderInvalid":
 			"A diasorrendnek egyedi pozitív egész számokat kell használnia.",
 		"admin.campaigns.validation.localizedContentRequired":
-			"Az angol/magyar cím, törzsszöveg és képhelyettesítő szöveg kötelező.",
+			"Az angol/magyar cím és törzsszöveg kötelező.",
+		"admin.campaigns.validation.imageAltRequired":
+			"Feltöltött kép esetén az angol/magyar képhelyettesítő szöveg kötelező.",
 		"admin.campaigns.validation.desktopAssetRequired":
 			"Az asztali kivágott kép kötelező.",
 		"admin.campaigns.validation.mobileAssetRequired":
@@ -2046,6 +2058,12 @@ const dictionary = {
 		"admin.providerAdded": "Szolgáltató hozzáadva.",
 		"admin.providerUpdated": "Szolgáltató frissítve.",
 		"admin.providerDeleted": "Szolgáltató törölve.",
+		"admin.uploadModelIcon": "Ikon feltöltése",
+		"admin.modelIconUploading": "Feltöltés...",
+		"admin.modelIconUpdated": "Modellikon frissítve.",
+		"admin.modelIconSquareRequired": "A modellikon képarányának 1:1-nek kell lennie.",
+		"admin.modelIconReadFailed": "Nem sikerült beolvasni a kiválasztott képet.",
+		"admin.modelIconUploadFailed": "Nem sikerült feltölteni a modell ikonját.",
 		"admin.deleteProviderConfirm":
 			'Biztosan törlöd a(z) "{name}" szolgáltatót?',
 		"admin.failedLoadProviders": "Nem sikerült betölteni a szolgáltatókat.",
@@ -2320,6 +2338,7 @@ const dictionary = {
 		"admin.model1ApiKey": "1. modell API-kulcsa",
 		"admin.model1Name": "1. modell neve",
 		"admin.model1DisplayName": "1. modell megjelenített neve",
+		"admin.model1IconAssetId": "1. modell ikon eszközazonosítója",
 		"admin.model1SystemPrompt": "1. modell rendszerpromptja",
 		"admin.model1FlowId": "1. modell folyamatazonosító",
 		"admin.model1ComponentId": "1. modell komponensazonosító",
@@ -2327,6 +2346,7 @@ const dictionary = {
 		"admin.model2ApiKey": "2. modell API-kulcsa",
 		"admin.model2Name": "2. modell neve",
 		"admin.model2DisplayName": "2. modell megjelenített neve",
+		"admin.model2IconAssetId": "2. modell ikon eszközazonosítója",
 		"admin.model2SystemPrompt": "2. modell rendszerpromptja",
 		"admin.model2FlowId": "2. modell folyamatazonosító",
 		"admin.model2ComponentId": "2. modell komponensazonosító",

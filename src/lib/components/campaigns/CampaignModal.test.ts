@@ -83,6 +83,43 @@ describe('CampaignModal', () => {
 		expect(onSkip).not.toHaveBeenCalled();
 	});
 
+	it('uses app-native fallback images with empty alt text when a slide has no uploaded image', () => {
+		const fallbackCampaign: Campaign = {
+			id: 'campaign-fallback',
+			type: 'release_update',
+			status: 'published',
+			name: 'Fallback images',
+			slides: [
+				{
+					id: 'slide-no-image',
+					layoutType: 'standard',
+					sortOrder: 1,
+					title: { en: 'New release', hu: 'Új kiadás' },
+					body: { en: 'No screenshot needed.', hu: 'Nincs szükség képernyőképre.' },
+					altText: { en: '', hu: '' },
+				},
+			],
+		};
+
+		const { container } = render(CampaignModal, {
+			props: {
+				campaign: fallbackCampaign,
+				locale: 'en',
+			},
+		});
+
+		const image = container.querySelector('img');
+		const source = container.querySelector('source');
+		expect(image).not.toBeNull();
+		expect(source).not.toBeNull();
+		if (!(image instanceof HTMLImageElement) || !(source instanceof HTMLSourceElement)) {
+			throw new Error('Expected fallback campaign media elements to render.');
+		}
+		expect(image).toHaveAttribute('src', '/campaign-fallbacks/alfyai-brand-desktop.png');
+		expect(image).toHaveAttribute('alt', '');
+		expect(source).toHaveAttribute('srcset', '/campaign-fallbacks/alfyai-brand-mobile.png');
+	});
+
 	it('treats close as skip and renders setup controls through preference callbacks', async () => {
 		const onSkip = vi.fn();
 		const onChangeUiLanguage = vi.fn();

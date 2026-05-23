@@ -545,25 +545,31 @@ function validatePublishInput(
 			['title.hu', slide.titleHu],
 			['body.en', slide.bodyEn],
 			['body.hu', slide.bodyHu],
-			['altText.en', slide.altTextEn],
-			['altText.hu', slide.altTextHu],
 		]) {
 			if (!value.trim()) {
-				addFieldError(errors, `${prefix}.${field}`, 'Localized EN/HU title, body, and alt text are required.');
+				addFieldError(errors, `${prefix}.${field}`, 'Localized EN/HU title and body are required.');
 			}
 		}
 
-		if (!slide.desktopCropAssetId) {
-			addFieldError(errors, `${prefix}.desktopCropAssetId`, 'Desktop crop asset is required.');
-		} else {
+		const hasUploadedImage = Boolean(slide.desktopCropAssetId || slide.mobileCropAssetId);
+		if (hasUploadedImage) {
+			for (const [field, value] of [
+				['altText.en', slide.altTextEn],
+				['altText.hu', slide.altTextHu],
+			]) {
+				if (!value.trim()) {
+					addFieldError(errors, `${prefix}.${field}`, 'Localized EN/HU alt text is required when an image is uploaded.');
+				}
+			}
+		}
+
+		if (slide.desktopCropAssetId) {
 			const asset = assetMap.get(slide.desktopCropAssetId);
 			if (!asset || asset.assetKind !== 'crop' || asset.variant !== 'desktop') {
 				addFieldError(errors, `${prefix}.desktopCropAssetId`, 'Desktop crop asset must be a campaign desktop crop.');
 			}
 		}
-		if (!slide.mobileCropAssetId) {
-			addFieldError(errors, `${prefix}.mobileCropAssetId`, 'Mobile crop asset is required.');
-		} else {
+		if (slide.mobileCropAssetId) {
 			const asset = assetMap.get(slide.mobileCropAssetId);
 			if (!asset || asset.assetKind !== 'crop' || asset.variant !== 'mobile') {
 				addFieldError(errors, `${prefix}.mobileCropAssetId`, 'Mobile crop asset must be a campaign mobile crop.');
@@ -682,8 +688,8 @@ export async function publishCampaign(
 					actionLabelHu: slide.actionLabelHu,
 					altTextEn: slide.altTextEn,
 					altTextHu: slide.altTextHu,
-					desktopCropAssetId: slide.desktopCropAssetId!,
-					mobileCropAssetId: slide.mobileCropAssetId!,
+					desktopCropAssetId: slide.desktopCropAssetId,
+					mobileCropAssetId: slide.mobileCropAssetId,
 					actionDestination: slide.actionDestination,
 					setupControlsJson: slide.setupControlsJson,
 				})
@@ -699,10 +705,12 @@ export async function publishCampaign(
 			})
 			.where(eq(announcementCampaigns.id, campaignId))
 			.run();
-		tx.update(campaignAssets)
-			.set({ status: 'published', updatedAt: now })
-			.where(inArray(campaignAssets.id, assetIds))
-			.run();
+		if (assetIds.length > 0) {
+			tx.update(campaignAssets)
+				.set({ status: 'published', updatedAt: now })
+				.where(inArray(campaignAssets.id, assetIds))
+				.run();
+		}
 	});
 
 	const published = await getCampaignById(campaignId, { db });

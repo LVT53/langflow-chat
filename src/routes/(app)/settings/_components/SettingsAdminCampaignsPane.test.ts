@@ -284,7 +284,7 @@ describe('SettingsAdminCampaignsPane', () => {
 			new ApiError('Campaign is not ready to publish.', {
 				status: 400,
 				fieldErrors: {
-					'slides.slide-standard.desktopCropAssetId': 'Desktop crop asset is required.',
+					'slides.slide-standard.altText.en': 'Localized EN/HU alt text is required when an image is uploaded.',
 				},
 			}),
 		);
@@ -297,12 +297,12 @@ describe('SettingsAdminCampaignsPane', () => {
 		await fireEvent.click(screen.getByRole('button', { name: 'Publish' }));
 
 		await waitFor(() => {
-			expect(screen.getByText('Desktop crop asset is required.')).toBeInTheDocument();
+			expect(screen.getByText('Localized EN/HU alt text is required when an image is uploaded.')).toBeInTheDocument();
 		});
 		expect(screen.getByText('Campaign is not ready to publish.')).toBeInTheDocument();
 	});
 
-	it('blocks publish locally when required assets are missing instead of sending a known-bad publish request', async () => {
+	it('blocks publish locally when uploaded images are missing alt text', async () => {
 		mockFetchAdminCampaign.mockResolvedValue({
 			id: 'campaign-1',
 			type: 'first_run_onboarding',
@@ -320,7 +320,7 @@ describe('SettingsAdminCampaignsPane', () => {
 					titleHu: 'AlfyAI beállítása',
 					bodyEn: 'Connect your tools.',
 					bodyHu: 'Kapcsold össze az eszközeidet.',
-					altEn: 'Setup screenshot',
+					altEn: '',
 					altHu: 'Beállítás képernyőkép',
 					desktopAssetId: 'setup-desktop',
 				},
@@ -349,7 +349,7 @@ describe('SettingsAdminCampaignsPane', () => {
 
 		const publishButton = screen.getByRole('button', { name: 'Publish' });
 		expect(publishButton).toBeDisabled();
-		expect(screen.getByText('Mobile crop asset is required.')).toBeInTheDocument();
+		expect(screen.getByText('Localized EN/HU alt text is required when an image is uploaded.')).toBeInTheDocument();
 
 		await fireEvent.click(publishButton);
 		expect(mockPublishAdminCampaign).not.toHaveBeenCalled();

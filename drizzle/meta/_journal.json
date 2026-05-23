@@ -407,6 +407,13 @@
       "when": 1777140000044,
       "tag": "1777140000044_sidebar_pin_order",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1777140000045,
+      "tag": "1777140000045_model_icons_optional_campaign_images",
+      "breakpoints": true
     }
 
   ]

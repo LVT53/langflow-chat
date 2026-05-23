@@ -38,6 +38,7 @@ export const ADMIN_CONFIG_KEYS = [
 	"MODEL_1_API_KEY",
 	"MODEL_1_NAME",
 	"MODEL_1_DISPLAY_NAME",
+	"MODEL_1_ICON_ASSET_ID",
 	"MODEL_1_SYSTEM_PROMPT",
 	"MODEL_1_FLOW_ID",
 	"MODEL_1_COMPONENT_ID",
@@ -48,6 +49,7 @@ export const ADMIN_CONFIG_KEYS = [
 	"MODEL_2_API_KEY",
 	"MODEL_2_NAME",
 	"MODEL_2_DISPLAY_NAME",
+	"MODEL_2_ICON_ASSET_ID",
 	"MODEL_2_SYSTEM_PROMPT",
 	"MODEL_2_FLOW_ID",
 	"MODEL_2_COMPONENT_ID",
@@ -200,6 +202,8 @@ export interface RuntimeConfig {
 	databasePath: string;
 	model1: ModelConfig;
 	model2: ModelConfig;
+	model1IconAssetId: string | null;
+	model2IconAssetId: string | null;
 	model2Enabled: boolean;
 	honchoApiKey: string;
 	honchoBaseUrl: string;
@@ -255,6 +259,8 @@ function buildDefaultConfig(): RuntimeConfig {
 		),
 		braveSearchApiKey: envConfig.braveSearchApiKey,
 		appVersionOverride: null,
+		model1IconAssetId: null,
+		model2IconAssetId: null,
 		composerCommandRegistryEnabled:
 			envConfig.composerCommandRegistryEnabled ?? true,
 		deepResearchEnabled: envConfig.deepResearchEnabled ?? false,
@@ -401,6 +407,9 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 	MODEL_1_DISPLAY_NAME: (config, value) => {
 		config.model1.displayName = value;
 	},
+	MODEL_1_ICON_ASSET_ID: (config, value) => {
+		config.model1IconAssetId = value.trim() || null;
+	},
 	MODEL_1_SYSTEM_PROMPT: (config, value) => {
 		config.model1.systemPrompt = normalizeSystemPromptReference(value) ?? "";
 	},
@@ -431,6 +440,9 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 	},
 	MODEL_2_DISPLAY_NAME: (config, value) => {
 		config.model2.displayName = value;
+	},
+	MODEL_2_ICON_ASSET_ID: (config, value) => {
+		config.model2IconAssetId = value.trim() || null;
 	},
 	MODEL_2_SYSTEM_PROMPT: (config, value) => {
 		config.model2.systemPrompt = normalizeSystemPromptReference(value) ?? "";
@@ -913,15 +925,41 @@ export async function normalizeModelSelectionWithProviders(
 	return normalizeModelSelection(modelId, config);
 }
 
+function modelIconUrl(iconAssetId: string | null | undefined): string | null {
+	return iconAssetId
+		? `/api/campaign-assets/${encodeURIComponent(iconAssetId)}/content`
+		: null;
+}
+
 export function getAvailableModels(
 	config: RuntimeConfig = runtimeConfig,
-): Array<{ id: ModelId; displayName: string }> {
-	const models: Array<{ id: ModelId; displayName: string }> = [
-		{ id: "model1", displayName: config.model1.displayName },
+): Array<{
+	id: ModelId;
+	displayName: string;
+	iconAssetId: string | null;
+	iconUrl: string | null;
+}> {
+	const models: Array<{
+		id: ModelId;
+		displayName: string;
+		iconAssetId: string | null;
+		iconUrl: string | null;
+	}> = [
+		{
+			id: "model1",
+			displayName: config.model1.displayName,
+			iconAssetId: config.model1IconAssetId,
+			iconUrl: modelIconUrl(config.model1IconAssetId),
+		},
 	];
 
 	if (config.model2Enabled !== false) {
-		models.push({ id: "model2", displayName: config.model2.displayName });
+		models.push({
+			id: "model2",
+			displayName: config.model2.displayName,
+			iconAssetId: config.model2IconAssetId,
+			iconUrl: modelIconUrl(config.model2IconAssetId),
+		});
 	}
 
 	return models;
@@ -956,6 +994,7 @@ export function getResolvedAdminConfigValues(
 		MODEL_1_API_KEY: config.model1.apiKey,
 		MODEL_1_NAME: config.model1.modelName,
 		MODEL_1_DISPLAY_NAME: config.model1.displayName,
+		MODEL_1_ICON_ASSET_ID: config.model1IconAssetId ?? "",
 		MODEL_1_SYSTEM_PROMPT: getSystemPrompt(config.model1.systemPrompt),
 		MODEL_1_FLOW_ID: config.model1.flowId,
 		MODEL_1_COMPONENT_ID: config.model1.componentId,
@@ -967,6 +1006,7 @@ export function getResolvedAdminConfigValues(
 		MODEL_2_API_KEY: config.model2.apiKey,
 		MODEL_2_NAME: config.model2.modelName,
 		MODEL_2_DISPLAY_NAME: config.model2.displayName,
+		MODEL_2_ICON_ASSET_ID: config.model2IconAssetId ?? "",
 		MODEL_2_SYSTEM_PROMPT: getSystemPrompt(config.model2.systemPrompt),
 		MODEL_2_FLOW_ID: config.model2.flowId,
 		MODEL_2_COMPONENT_ID: config.model2.componentId,
@@ -1129,7 +1169,13 @@ export async function getProviderById(
 }
 
 export async function getAvailableModelsWithProviders(): Promise<
-	Array<{ id: ModelId; displayName: string; isThirdParty: boolean }>
+	Array<{
+		id: ModelId;
+		displayName: string;
+		isThirdParty: boolean;
+		iconAssetId: string | null;
+		iconUrl: string | null;
+	}>
 > {
 	const [builtIn, providers] = await Promise.all([
 		Promise.resolve(getAvailableModels()),
@@ -1143,6 +1189,8 @@ export async function getAvailableModelsWithProviders(): Promise<
 			id: `provider:${provider.id}` as ModelId,
 			displayName: provider.displayName,
 			isThirdParty: true,
+			iconAssetId: provider.iconAssetId,
+			iconUrl: modelIconUrl(provider.iconAssetId),
 		});
 	}
 

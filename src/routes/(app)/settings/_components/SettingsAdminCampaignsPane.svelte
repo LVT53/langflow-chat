@@ -230,19 +230,22 @@
 				['title.hu', slide.titleHu],
 				['body.en', slide.bodyEn],
 				['body.hu', slide.bodyHu],
-				['altText.en', slide.altEn],
-				['altText.hu', slide.altHu],
 			]) {
 				if (!value?.trim()) {
 					issues.push(issue(`${prefix}.${field}`, $t('admin.campaigns.validation.localizedContentRequired')));
 				}
 			}
 
-			if (!slide.desktopAssetId) {
-				issues.push(issue(`${prefix}.desktopCropAssetId`, $t('admin.campaigns.validation.desktopAssetRequired')));
-			}
-			if (!slide.mobileAssetId) {
-				issues.push(issue(`${prefix}.mobileCropAssetId`, $t('admin.campaigns.validation.mobileAssetRequired')));
+			const hasUploadedImage = Boolean(slide.desktopAssetId || slide.mobileAssetId);
+			if (hasUploadedImage) {
+				for (const [field, value] of [
+					['altText.en', slide.altEn],
+					['altText.hu', slide.altHu],
+				]) {
+					if (!value?.trim()) {
+						issues.push(issue(`${prefix}.${field}`, $t('admin.campaigns.validation.imageAltRequired')));
+					}
+				}
 			}
 			if (slide.actionUrl && !allowedActionDestinations.has(slide.actionUrl)) {
 				issues.push(issue(`${prefix}.actionDestination`, $t('admin.campaigns.validation.actionDestinationInvalid')));
@@ -680,6 +683,43 @@
 			{#if detailLoading}
 				<p class="p-md text-sm text-text-muted">{$t('admin.campaigns.loadingDetail')}</p>
 			{:else if draft}
+				<div class="campaign-editor-actions sticky top-0 z-20 border-b border-border bg-surface-page/95 p-lg backdrop-blur">
+					<div class="flex flex-wrap items-start justify-between gap-lg">
+						<div>
+							<p class="text-sm font-semibold text-text-primary">
+								{$t('admin.campaigns.publishChecklist')} · {statusLabel(draft.status)}
+							</p>
+							{#if validationErrors.length > 0}
+								<ul class="mt-1 list-disc space-y-1 pl-md text-xs text-danger">
+									{#each validationErrors as issue}
+										<li>{issue.message}</li>
+									{/each}
+								</ul>
+							{:else}
+								<p class="mt-1 text-xs text-text-muted">{$t('admin.campaigns.noValidationErrors')}</p>
+							{/if}
+						</div>
+						<div class="flex flex-wrap gap-sm">
+							<button type="button" class="btn-secondary cursor-pointer" disabled={!canSave} onclick={saveDraft}>
+								{saving ? $t('common.saving') : $t('admin.campaigns.saveDraft')}
+							</button>
+							<button type="button" class="btn-secondary cursor-pointer" disabled={!canDuplicate} onclick={duplicateCampaign}>
+								{$t('admin.campaigns.duplicate')}
+							</button>
+							<button
+								type="button"
+								class="btn-secondary cursor-pointer"
+								disabled={draft.status === 'draft' ? !canPublish : !canArchive}
+								onclick={() => deleteOrArchiveCampaign(draft?.status === 'draft' ? $t('admin.campaigns.deleteDraftConfirm') : $t('admin.campaigns.archiveConfirm'))}
+							>
+								{draft.status === 'draft' ? $t('admin.campaigns.deleteDraft') : $t('admin.campaigns.archive')}
+							</button>
+							<button type="button" class="btn-primary cursor-pointer" disabled={!canPublish} onclick={publishCampaign}>
+								{$t('admin.campaigns.publish')}
+							</button>
+						</div>
+					</div>
+				</div>
 				<div class="campaign-editor-body">
 					<div class="campaign-editor-hero">
 						<div class="min-w-0">
@@ -853,43 +893,6 @@
 					{/if}
 				</div>
 
-				<div class="sticky bottom-0 z-10 border-t border-border bg-surface-page/95 p-lg backdrop-blur">
-					<div class="flex flex-wrap items-start justify-between gap-lg">
-						<div>
-							<p class="text-sm font-semibold text-text-primary">
-								{$t('admin.campaigns.publishChecklist')} · {statusLabel(draft.status)}
-							</p>
-							{#if validationErrors.length > 0}
-								<ul class="mt-1 list-disc space-y-1 pl-md text-xs text-danger">
-									{#each validationErrors as issue}
-										<li>{issue.message}</li>
-									{/each}
-								</ul>
-							{:else}
-								<p class="mt-1 text-xs text-text-muted">{$t('admin.campaigns.noValidationErrors')}</p>
-							{/if}
-						</div>
-						<div class="flex flex-wrap gap-sm">
-							<button type="button" class="btn-secondary cursor-pointer" disabled={!canSave} onclick={saveDraft}>
-								{saving ? $t('common.saving') : $t('admin.campaigns.saveDraft')}
-							</button>
-							<button type="button" class="btn-secondary cursor-pointer" disabled={!canDuplicate} onclick={duplicateCampaign}>
-								{$t('admin.campaigns.duplicate')}
-							</button>
-							<button
-								type="button"
-								class="btn-secondary cursor-pointer"
-								disabled={draft.status === 'draft' ? !canPublish : !canArchive}
-								onclick={() => deleteOrArchiveCampaign(draft?.status === 'draft' ? $t('admin.campaigns.deleteDraftConfirm') : $t('admin.campaigns.archiveConfirm'))}
-							>
-								{draft.status === 'draft' ? $t('admin.campaigns.deleteDraft') : $t('admin.campaigns.archive')}
-							</button>
-							<button type="button" class="btn-primary cursor-pointer" disabled={!canPublish} onclick={publishCampaign}>
-								{$t('admin.campaigns.publish')}
-							</button>
-						</div>
-					</div>
-				</div>
 			{:else}
 				<p class="p-md text-sm text-text-muted">{$t('admin.campaigns.selectCampaign')}</p>
 			{/if}
@@ -971,6 +974,10 @@
 		border-radius: 8px;
 		background: var(--surface-page);
 		box-shadow: 0 10px 28px rgba(0, 0, 0, 0.08);
+	}
+
+	.campaign-editor {
+		overflow: visible;
 	}
 
 	.campaign-create-panel {

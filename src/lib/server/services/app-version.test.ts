@@ -16,6 +16,7 @@ vi.mock("$lib/server/config-store", () => ({
 	getConfig: () => ({
 		appVersionOverride: configStoreMock.appVersionOverride,
 	}),
+	refreshConfig: vi.fn(),
 }));
 
 describe("app version metadata", () => {
@@ -34,7 +35,7 @@ describe("app version metadata", () => {
 		sqlite.close();
 	});
 
-	it("uses package metadata for the sidebar badge even when release campaigns exist", async () => {
+	it("uses the highest published release campaign version when it is newer than package metadata", async () => {
 		db.insert(schema.announcementCampaigns)
 			.values([
 				{
@@ -60,6 +61,17 @@ describe("app version metadata", () => {
 					publishedAt: new Date("2026-05-17T10:00:00.000Z"),
 				},
 				{
+					id: "release-newer-lower",
+					type: "release_update",
+					status: "published",
+					identityKey: "release_update:1.0.0:r2",
+					name: "AlfyAI 1.0 patch",
+					campaignVersion: "1.0.0",
+					revision: 2,
+					releaseVersion: "1.0.0",
+					publishedAt: new Date("2026-05-18T10:00:00.000Z"),
+				},
+				{
 					id: "onboarding-latest",
 					type: "first_run_onboarding",
 					status: "published",
@@ -79,8 +91,8 @@ describe("app version metadata", () => {
 		await expect(
 			getAppVersionMetadata({ db, packageVersion: "0.1.0" }),
 		).resolves.toEqual({
-			full: "0.1.0",
-			compact: "v0.1.0",
+			full: "1.0.1",
+			compact: "v1.0.1",
 		});
 	});
 
@@ -106,6 +118,44 @@ describe("app version metadata", () => {
 			full: "2026.05-admin",
 			compact: "v2026.05-admin",
 		});
+	});
+
+	it("uses a newer release campaign over an ambient admin override and clears the override", async () => {
+		configStoreMock.appVersionOverride = "1.0.0";
+		db.insert(schema.adminConfig)
+			.values({
+				key: "APP_VERSION_OVERRIDE",
+				value: "1.0.0",
+				updatedBy: "admin-user",
+			})
+			.run();
+		db.insert(schema.announcementCampaigns)
+			.values({
+				id: "release-2",
+				type: "release_update",
+				status: "published",
+				identityKey: "release_update:1.2.0:r1",
+				name: "AlfyAI 1.2",
+				campaignVersion: "1.2.0",
+				revision: 1,
+				releaseVersion: "1.2.0",
+				publishedAt: new Date("2026-05-17T10:00:00.000Z"),
+			})
+			.run();
+
+		await expect(
+			getAppVersionMetadata({ db, packageVersion: "0.1.0" }),
+		).resolves.toEqual({
+			full: "1.2.0",
+			compact: "v1.2.0",
+		});
+		expect(
+			db
+				.select()
+				.from(schema.adminConfig)
+				.all()
+				.some((row) => row.key === "APP_VERSION_OVERRIDE"),
+		).toBe(false);
 	});
 
 	it("treats an injected null app version override as authoritative", async () => {

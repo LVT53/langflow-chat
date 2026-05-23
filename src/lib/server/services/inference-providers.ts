@@ -36,6 +36,7 @@ export interface InferenceProvider {
   targetConstructedContext: number | null;
   maxMessageLength: number | null;
   maxTokens: number | null;
+  iconAssetId: string | null;
   rateLimitFallbackEnabled: boolean;
   rateLimitFallbackBaseUrl: string | null;
   rateLimitFallbackModelName: string | null;
@@ -66,6 +67,7 @@ export interface CreateProviderInput {
   targetConstructedContext?: number | null;
   maxMessageLength?: number | null;
   maxTokens?: number | null;
+  iconAssetId?: string | null;
   rateLimitFallbackEnabled?: boolean;
   rateLimitFallbackBaseUrl?: string | null;
   rateLimitFallbackApiKey?: string | null;
@@ -87,6 +89,7 @@ export interface UpdateProviderInput {
   targetConstructedContext?: number | null;
   maxMessageLength?: number | null;
   maxTokens?: number | null;
+  iconAssetId?: string | null;
   rateLimitFallbackEnabled?: boolean;
   rateLimitFallbackBaseUrl?: string | null;
   rateLimitFallbackApiKey?: string | null;
@@ -405,6 +408,7 @@ export async function createProvider(input: CreateProviderInput): Promise<Infere
       targetConstructedContext: input.targetConstructedContext ?? null,
       maxMessageLength: input.maxMessageLength ?? null,
       maxTokens: input.maxTokens ?? null,
+      iconAssetId: input.iconAssetId ?? null,
       rateLimitFallbackEnabled: input.rateLimitFallbackEnabled ?? false,
       rateLimitFallbackBaseUrl: input.rateLimitFallbackBaseUrl ?? null,
       rateLimitFallbackApiKeyEncrypted: fallbackApiKey?.encrypted ?? null,
@@ -524,6 +528,9 @@ export async function updateProvider(
   if (input.maxTokens !== undefined) {
     updates.maxTokens = input.maxTokens;
   }
+  if (input.iconAssetId !== undefined) {
+    updates.iconAssetId = input.iconAssetId;
+  }
   if (input.rateLimitFallbackEnabled !== undefined) {
     updates.rateLimitFallbackEnabled = input.rateLimitFallbackEnabled;
   }
@@ -638,6 +645,7 @@ function mapRowToProvider(row: typeof inferenceProviders.$inferSelect): Inferenc
     targetConstructedContext: row.targetConstructedContext ?? null,
     maxMessageLength: row.maxMessageLength ?? null,
     maxTokens: row.maxTokens ?? null,
+    iconAssetId: row.iconAssetId ?? null,
     rateLimitFallbackEnabled: row.rateLimitFallbackEnabled ?? false,
     rateLimitFallbackBaseUrl: row.rateLimitFallbackBaseUrl ?? null,
     rateLimitFallbackModelName: row.rateLimitFallbackModelName ?? null,

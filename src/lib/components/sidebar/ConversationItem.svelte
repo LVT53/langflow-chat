@@ -393,7 +393,6 @@ onMount(() => {
 				>
 					<svg class="conversation-option-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 						<path d="M12 17v5"/>
-						<path d="M7 7l10 10"/>
 						<path d="M8 4h8l-1 6 3 3v2H6v-2l3-3z"/>
 					</svg>
 					<span>{conversation.sidebarPinned ? $t('sidebar.unpinFromSidebar') : $t('sidebar.pinToSidebar')}</span>

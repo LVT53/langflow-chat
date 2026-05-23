@@ -169,6 +169,15 @@ const initialActiveSkillSession = getData().activeSkillSession ?? null;
 const initialConversationId = getData().conversation.id;
 const initialConversationStatus = getData().conversation.status ?? "open";
 const initialUserPersonality = getData().userPersonality ?? null;
+const modelIcons = $derived.by(() => {
+	const models =
+		((data as typeof data & {
+			availableModels?: Array<{ id: string; iconUrl?: string | null }>;
+		}).availableModels ?? []);
+	return Object.fromEntries(
+		models.map((model) => [model.id, model.iconUrl ?? null]),
+	) as Record<string, string | null>;
+});
 const canPublishSkillDrafts = false;
 const skillDraftLocalizedApiErrorKeys: Record<string, I18nKey> = {
 	"composerCommandRegistry.disabled": "composerCommandRegistry.disabled",
@@ -2474,6 +2483,7 @@ function handleDrop(event: DragEvent) {
 						conversationId={data.conversation.id}
 						{isThinkingActive}
 						{contextDebug}
+						{modelIcons}
 						{fileProductionJobs}
 						{deepResearchJobs}
 						hasActiveSkillSession={Boolean(activeSkillSession)}

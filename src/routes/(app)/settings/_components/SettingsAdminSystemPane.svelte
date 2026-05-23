@@ -5,6 +5,7 @@ import {
 	deleteProvider,
 	fetchAdminSystemSkills,
 	fetchProviders,
+	updateAdminConfig,
 	updateProvider,
 	updateAdminSystemSkill,
 	validateProvider,
@@ -14,6 +15,7 @@ import {
 	type InferenceProvider,
 	type PersonalityProfileSummary,
 } from "$lib/client/api/admin";
+import { uploadModelIconAsset } from "$lib/client/api/campaign-assets";
 import { get } from "svelte/store";
 import { t } from "$lib/i18n";
 import {
@@ -22,6 +24,7 @@ import {
 	type DeepResearchModelRoleDefinition,
 } from "$lib/deep-research-models";
 import type { ModelId } from "$lib/types";
+import ModelIcon from "$lib/components/ui/ModelIcon.svelte";
 import ModelFormModal from "./ModelFormModal.svelte";
 
 const tVal = get(t);
@@ -40,7 +43,7 @@ let {
 }: {
 	adminConfig: Record<string, string>;
 	envDefaults?: Record<string, string>;
-	availableModels?: Array<{ id: ModelId; displayName: string }>;
+	availableModels?: Array<{ id: ModelId; displayName: string; iconUrl?: string | null }>;
 	adminSaving?: boolean;
 	adminMessage?: string;
 	adminError?: string;
@@ -85,6 +88,7 @@ $effect(() => {
 		.catch(() => {});
 });
 let providersMessage = $state("");
+let iconUploading = $state<string | null>(null);
 let providersMessageTimer: ReturnType<typeof setTimeout> | undefined;
 let systemSkillsMessageTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -106,6 +110,93 @@ function showSystemSkillsMessage(text: string) {
 
 function errorMessage(error: unknown, fallback: string): string {
 	return error instanceof Error ? error.message : fallback;
+}
+
+function campaignAssetContentUrl(assetId: string | null | undefined): string | null {
+	return assetId ? `/api/campaign-assets/${encodeURIComponent(assetId)}/content` : null;
+}
+
+function builtInIconAssetId(modelName: "model1" | "model2"): string | null {
+	const key = modelName === "model1" ? "MODEL_1_ICON_ASSET_ID" : "MODEL_2_ICON_ASSET_ID";
+	return adminConfig[key] || null;
+}
+
+function builtInIconUrl(modelName: "model1" | "model2"): string | null {
+	return campaignAssetContentUrl(builtInIconAssetId(modelName));
+}
+
+function providerIconUrl(provider: InferenceProvider): string | null {
+	return provider.iconUrl ?? campaignAssetContentUrl(provider.iconAssetId);
+}
+
+function uploadKeyForProvider(provider: InferenceProvider): string {
+	return `provider:${provider.id}`;
+}
+
+function readImageDimensions(file: File): Promise<{ width: number; height: number }> {
+	return new Promise((resolve, reject) => {
+		const image = new Image();
+		const url = URL.createObjectURL(file);
+		image.onload = () => {
+			const dimensions = { width: image.naturalWidth, height: image.naturalHeight };
+			URL.revokeObjectURL(url);
+			resolve(dimensions);
+		};
+		image.onerror = () => {
+			URL.revokeObjectURL(url);
+			reject(new Error($t("admin.modelIconReadFailed")));
+		};
+		image.src = url;
+	});
+}
+
+async function handleModelIconFile(
+	event: Event,
+	target:
+		| { kind: "built-in"; modelName: "model1" | "model2" }
+		| { kind: "provider"; provider: InferenceProvider },
+) {
+	const input = event.currentTarget as HTMLInputElement;
+	const file = input.files?.[0] ?? null;
+	input.value = "";
+	if (!file) return;
+
+	const key =
+		target.kind === "built-in"
+			? target.modelName
+			: uploadKeyForProvider(target.provider);
+	iconUploading = key;
+	providersError = "";
+	providersMessage = "";
+	try {
+		const dimensions = await readImageDimensions(file);
+		if (dimensions.width !== dimensions.height) {
+			throw new Error($t("admin.modelIconSquareRequired"));
+		}
+		const asset = await uploadModelIconAsset({
+			image: file,
+			width: dimensions.width,
+			height: dimensions.height,
+		});
+
+		if (target.kind === "built-in") {
+			const configKey =
+				target.modelName === "model1"
+					? "MODEL_1_ICON_ASSET_ID"
+					: "MODEL_2_ICON_ASSET_ID";
+			adminConfig[configKey] = asset.id;
+			await updateAdminConfig({ [configKey]: asset.id });
+		} else {
+			await updateProvider(target.provider.id, { iconAssetId: asset.id });
+			await loadProviders();
+		}
+
+		showProvidersMessage($t("admin.modelIconUpdated"));
+	} catch (error: unknown) {
+		providersError = errorMessage(error, $t("admin.modelIconUploadFailed"));
+	} finally {
+		iconUploading = null;
+	}
 }
 
 // Modal state
@@ -276,6 +367,7 @@ function openEditBuiltIn(modelName: string) {
 		maxTokens: adminConfig[`${prefix}_MAX_TOKENS`]
 			? Number(adminConfig[`${prefix}_MAX_TOKENS`])
 			: null,
+		iconAssetId: adminConfig[`${prefix}_ICON_ASSET_ID`] || null,
 		createdAt: "",
 		updatedAt: "",
 		isBuiltIn: true,
@@ -488,6 +580,7 @@ function configLabelKey(key: string): string {
 		MODEL_1_API_KEY: "admin.model1ApiKey",
 		MODEL_1_NAME: "admin.model1Name",
 		MODEL_1_DISPLAY_NAME: "admin.model1DisplayName",
+		MODEL_1_ICON_ASSET_ID: "admin.model1IconAssetId",
 		MODEL_1_SYSTEM_PROMPT: "admin.model1SystemPrompt",
 		MODEL_1_FLOW_ID: "admin.model1FlowId",
 		MODEL_1_COMPONENT_ID: "admin.model1ComponentId",
@@ -495,6 +588,7 @@ function configLabelKey(key: string): string {
 		MODEL_2_API_KEY: "admin.model2ApiKey",
 		MODEL_2_NAME: "admin.model2Name",
 		MODEL_2_DISPLAY_NAME: "admin.model2DisplayName",
+		MODEL_2_ICON_ASSET_ID: "admin.model2IconAssetId",
 		MODEL_2_SYSTEM_PROMPT: "admin.model2SystemPrompt",
 		MODEL_2_FLOW_ID: "admin.model2FlowId",
 		MODEL_2_COMPONENT_ID: "admin.model2ComponentId",
@@ -605,55 +699,74 @@ function placeholderFor(key: string): string {
 		{:else}
 			<div class="flex flex-col gap-2">
 				<!-- Model 1 (built-in, always present) -->
-				<div class="flex items-center justify-between rounded-md border border-border bg-surface-page px-3 py-2">
-					<div class="flex flex-col">
-						<span class="text-sm font-medium text-text-primary">{adminConfig.MODEL_1_DISPLAY_NAME || $t('admin.model1')}</span>
-						<span class="text-xs text-text-muted">{$t('admin.langflow')} &bull; {adminConfig.MODEL_1_NAME || 'model-1'}</span>
+				<div class="flex items-center justify-between gap-3 rounded-md border border-border bg-surface-page px-3 py-2">
+					<div class="flex min-w-0 items-center gap-3">
+						<ModelIcon iconUrl={builtInIconUrl('model1')} displayName={adminConfig.MODEL_1_DISPLAY_NAME || $t('admin.model1')} size={32} />
+						<div class="flex min-w-0 flex-col">
+							<span class="truncate text-sm font-medium text-text-primary">{adminConfig.MODEL_1_DISPLAY_NAME || $t('admin.model1')}</span>
+							<span class="truncate text-xs text-text-muted">{$t('admin.langflow')} &bull; {adminConfig.MODEL_1_NAME || 'model-1'}</span>
+						</div>
 					</div>
-					<div class="flex items-center gap-2">
+					<div class="flex flex-wrap items-center justify-end gap-2">
 						<span class="inline-block h-2 w-2 rounded-full bg-success"></span>
 						<span class="text-xs text-text-muted">{$t('admin.builtIn')}</span>
+						<label class="btn-small cursor-pointer">
+							{iconUploading === 'model1' ? $t('admin.modelIconUploading') : $t('admin.uploadModelIcon')}
+							<input class="sr-only" type="file" accept="image/*" disabled={iconUploading !== null} onchange={(event) => handleModelIconFile(event, { kind: 'built-in', modelName: 'model1' })} />
+						</label>
 						<button class="btn-small" onclick={() => openEditBuiltIn('model1')}>{$t('common.edit')}</button>
 					</div>
 				</div>
 
-				<!-- Model 2 (built-in, conditionally shown) -->
-				{#if adminConfig.MODEL_2_ENABLED !== 'false'}
-					<div class="flex items-center justify-between rounded-md border border-border bg-surface-page px-3 py-2">
-						<div class="flex flex-col">
-							<span class="text-sm font-medium text-text-primary">{adminConfig.MODEL_2_DISPLAY_NAME || $t('admin.model2')}</span>
-							<span class="text-xs text-text-muted">{$t('admin.langflow')} &bull; {adminConfig.MODEL_2_NAME || 'model-2'}</span>
-						</div>
-						<div class="flex items-center gap-2">
-							<span class="inline-block h-2 w-2 rounded-full bg-success"></span>
-							<span class="text-xs text-text-muted">{$t('admin.builtIn')}</span>
-							<button class="btn-small" onclick={() => openEditBuiltIn('model2')}>{$t('common.edit')}</button>
+				<!-- Model 2 (built-in) -->
+				<div class="flex items-center justify-between gap-3 rounded-md border border-border bg-surface-page px-3 py-2">
+					<div class="flex min-w-0 items-center gap-3">
+						<ModelIcon iconUrl={builtInIconUrl('model2')} displayName={adminConfig.MODEL_2_DISPLAY_NAME || $t('admin.model2')} size={32} />
+						<div class="flex min-w-0 flex-col">
+							<span class="truncate text-sm font-medium text-text-primary">{adminConfig.MODEL_2_DISPLAY_NAME || $t('admin.model2')}</span>
+							<span class="truncate text-xs text-text-muted">{$t('admin.langflow')} &bull; {adminConfig.MODEL_2_NAME || 'model-2'}</span>
 						</div>
 					</div>
-				{/if}
+					<div class="flex flex-wrap items-center justify-end gap-2">
+						<span class={`inline-block h-2 w-2 rounded-full ${adminConfig.MODEL_2_ENABLED !== 'false' ? 'bg-success' : 'bg-text-muted'}`}></span>
+						<span class="text-xs text-text-muted">{$t('admin.builtIn')}</span>
+						<label class="btn-small cursor-pointer">
+							{iconUploading === 'model2' ? $t('admin.modelIconUploading') : $t('admin.uploadModelIcon')}
+							<input class="sr-only" type="file" accept="image/*" disabled={iconUploading !== null} onchange={(event) => handleModelIconFile(event, { kind: 'built-in', modelName: 'model2' })} />
+						</label>
+						<button class="btn-small" onclick={() => openEditBuiltIn('model2')}>{$t('common.edit')}</button>
+					</div>
+				</div>
 
 				<!-- Third-party providers -->
 				{#each providers as provider}
-					<div class="flex items-center justify-between rounded-md border border-border bg-surface-page px-3 py-2">
-						<div class="flex flex-col">
-							<span class="text-sm font-medium text-text-primary">{provider.displayName}</span>
-							<span class="text-xs text-text-muted">{provider.baseUrl} &bull; {provider.modelName}</span>
-							{#if provider.reasoningEffort || provider.thinkingType}
-								<span class="text-xs text-text-tertiary">
-									{#if provider.reasoningEffort}
-										reasoning_effort: {provider.reasoningEffort}
-									{/if}
-									{#if provider.reasoningEffort && provider.thinkingType}
-										&bull;
-									{/if}
-									{#if provider.thinkingType}
-										extra_body.thinking.type: {provider.thinkingType}
-									{/if}
-								</span>
-							{/if}
+					<div class="flex items-center justify-between gap-3 rounded-md border border-border bg-surface-page px-3 py-2">
+						<div class="flex min-w-0 items-center gap-3">
+							<ModelIcon iconUrl={providerIconUrl(provider)} displayName={provider.displayName} size={32} />
+							<div class="flex min-w-0 flex-col">
+								<span class="truncate text-sm font-medium text-text-primary">{provider.displayName}</span>
+								<span class="truncate text-xs text-text-muted">{provider.baseUrl} &bull; {provider.modelName}</span>
+								{#if provider.reasoningEffort || provider.thinkingType}
+									<span class="truncate text-xs text-text-tertiary">
+										{#if provider.reasoningEffort}
+											reasoning_effort: {provider.reasoningEffort}
+										{/if}
+										{#if provider.reasoningEffort && provider.thinkingType}
+											&bull;
+										{/if}
+										{#if provider.thinkingType}
+											extra_body.thinking.type: {provider.thinkingType}
+										{/if}
+									</span>
+								{/if}
+							</div>
 						</div>
-						<div class="flex items-center gap-2">
+						<div class="flex flex-wrap items-center justify-end gap-2">
 							<span class={`inline-block h-2 w-2 rounded-full ${provider.enabled ? 'bg-success' : 'bg-text-muted'}`}></span>
+							<label class="btn-small cursor-pointer">
+								{iconUploading === uploadKeyForProvider(provider) ? $t('admin.modelIconUploading') : $t('admin.uploadModelIcon')}
+								<input class="sr-only" type="file" accept="image/*" disabled={iconUploading !== null} onchange={(event) => handleModelIconFile(event, { kind: 'provider', provider })} />
+							</label>
 							<button class="btn-small" onclick={() => handleValidate(provider)}>{$t('common.test')}</button>
 							<button class="btn-small" onclick={() => openEditProvider(provider)}>{$t('common.edit')}</button>
 							<button class="btn-small text-danger" onclick={() => handleDelete(provider)}>{$t('common.delete')}</button>

@@ -1,6 +1,7 @@
 <script lang=ts>
 	import clsx from 'clsx';
 	import AvatarCircle from '$lib/components/ui/AvatarCircle.svelte';
+	import ModelIcon from '$lib/components/ui/ModelIcon.svelte';
 	import { t } from '$lib/i18n';
 	import {
 		getPersonalityProfileDisplayDescription,
@@ -10,7 +11,7 @@
 	import UserSkillsSettingsSurface from './UserSkillsSettingsSurface.svelte';
 	import type { ModelId, UserModelPreference } from '$lib/types';
 
-	type AvailableModel = { id: ModelId; displayName: string };
+	type AvailableModel = { id: ModelId; displayName: string; iconUrl?: string | null };
 	type Theme = 'system' | 'light' | 'dark';
 	type TitleLanguage = 'auto' | 'en' | 'hu';
 	type UiLanguage = 'en' | 'hu';
@@ -235,7 +236,10 @@
 					aria-label={$t('settings.systemDefaultModelResolved', { model: systemDefaultModelDisplayName })}
 					onclick={() => onChangeModel(null)}
 				>
-					<span>{$t('settings.systemDefaultModel')}</span>
+					<span class="inline-flex min-w-0 items-center gap-2">
+						<ModelIcon iconUrl={availableModels.find((model) => model.id === systemDefaultModel)?.iconUrl ?? null} displayName={systemDefaultModelDisplayName} size={20} />
+						<span>{$t('settings.systemDefaultModel')}</span>
+					</span>
 					<span class="text-xs opacity-70">{systemDefaultModelDisplayName}</span>
 				</button>
 				{#each explicitModelOptions as model}
@@ -244,7 +248,10 @@
 						class:pref-pill-active={selectedModel === model.id}
 						onclick={() => onChangeModel(model.id)}
 					>
-						{model.displayName}
+						<span class="inline-flex min-w-0 items-center gap-2">
+							<ModelIcon iconUrl={model.iconUrl ?? null} displayName={model.displayName} size={20} />
+							<span>{model.displayName}</span>
+						</span>
 					</button>
 				{/each}
 			</div>

@@ -51,6 +51,12 @@ export const PUT: RequestHandler = async (event) => {
     }
     if (limits.value.maxMessageLength !== undefined) input.maxMessageLength = limits.value.maxMessageLength;
     if (limits.value.maxTokens !== undefined) input.maxTokens = limits.value.maxTokens;
+    if (body.iconAssetId !== undefined) {
+      input.iconAssetId =
+        typeof body.iconAssetId === 'string' && body.iconAssetId.trim()
+          ? body.iconAssetId.trim()
+          : null;
+    }
     Object.assign(input, fallback.value);
     if (
       typeof body.rateLimitFallbackApiKey === 'string' &&

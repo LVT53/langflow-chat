@@ -6,6 +6,8 @@ export interface AvailableModel {
 	id: ModelId;
 	displayName: string;
 	isThirdParty?: boolean;
+	iconAssetId?: string | null;
+	iconUrl?: string | null;
 }
 
 export async function fetchAvailableModels(): Promise<AvailableModel[]> {

@@ -101,6 +101,8 @@ export interface InferenceProvider {
 	targetConstructedContext: number | null;
 	maxMessageLength: number | null;
 	maxTokens: number | null;
+	iconAssetId: string | null;
+	iconUrl?: string | null;
 	rateLimitFallbackEnabled: boolean;
 	rateLimitFallbackBaseUrl: string | null;
 	rateLimitFallbackModelName: string | null;
@@ -146,6 +148,7 @@ export async function createProvider(data: {
 	targetConstructedContext?: number | null;
 	maxMessageLength?: number | null;
 	maxTokens?: number | null;
+	iconAssetId?: string | null;
 	rateLimitFallbackEnabled?: boolean;
 	rateLimitFallbackBaseUrl?: string | null;
 	rateLimitFallbackApiKey?: string | null;
@@ -180,6 +183,7 @@ export async function updateProvider(
 		targetConstructedContext?: number | null;
 		maxMessageLength?: number | null;
 		maxTokens?: number | null;
+		iconAssetId?: string | null;
 		rateLimitFallbackEnabled?: boolean;
 		rateLimitFallbackBaseUrl?: string | null;
 		rateLimitFallbackApiKey?: string | null;

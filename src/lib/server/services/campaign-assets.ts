@@ -149,7 +149,7 @@ function extensionForMime(mimeType: string): string {
 	return MIME_EXTENSIONS[mimeType] ?? 'bin';
 }
 
-function scopedStoragePath(folder: 'sources' | 'crops', id: string, mimeType: string): string {
+function scopedStoragePath(folder: 'sources' | 'crops' | 'model-icons', id: string, mimeType: string): string {
 	return `${folder}/${id}.${extensionForMime(mimeType)}`;
 }
 
@@ -264,6 +264,51 @@ export async function saveCampaignCropAsset(
 			cropHeight: input.crop.height,
 			zoom: input.crop.zoom,
 			cropMetadataJson: JSON.stringify(cropMetadata),
+		})
+		.returning();
+
+	return row;
+}
+
+export async function storeModelIconAsset(
+	input: {
+		uploadedByUserId: string;
+		file: CampaignImageInput;
+		dimensions?: CampaignImageDimensions;
+	},
+	options: CampaignAssetServiceOptions = {},
+): Promise<CampaignAssetRecord> {
+	validateImageFile(input.file);
+	validateDimensions(input.dimensions);
+	if (!input.dimensions) {
+		throw new CampaignAssetValidationError('Invalid model icon dimensions.', {
+			image: 'Model icon dimensions are required.',
+		});
+	}
+	if (input.dimensions.width !== input.dimensions.height) {
+		throw new CampaignAssetValidationError('Invalid model icon dimensions.', {
+			image: 'Model icon must use a 1:1 image ratio.',
+		});
+	}
+
+	const database = options.db ?? defaultDb;
+	const id = options.id ?? randomUUID();
+	const storagePath = scopedStoragePath('model-icons', id, input.file.mimeType);
+	await writeAssetContent(getStorageRoot(options), storagePath, input.file.content);
+
+	const [row] = await database
+		.insert(campaignAssets)
+		.values({
+			id,
+			uploadedByUserId: input.uploadedByUserId,
+			assetKind: 'model_icon',
+			status: 'published',
+			originalFilename: input.file.filename,
+			mimeType: input.file.mimeType,
+			sizeBytes: input.file.content.byteLength,
+			storagePath,
+			width: input.dimensions?.width ?? null,
+			height: input.dimensions?.height ?? null,
 		})
 		.returning();
 

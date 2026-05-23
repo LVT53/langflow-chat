@@ -1,9 +1,13 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { and, desc, eq } from "drizzle-orm";
-import { getConfig, type RuntimeConfig } from "$lib/server/config-store";
+import {
+	getConfig,
+	refreshConfig,
+	type RuntimeConfig,
+} from "$lib/server/config-store";
 import { db as defaultDb } from "$lib/server/db";
-import { announcementCampaigns } from "$lib/server/db/schema";
+import { adminConfig, announcementCampaigns } from "$lib/server/db/schema";
 
 type AppVersionDb = typeof defaultDb;
 
@@ -34,11 +38,32 @@ function compactVersion(version: string): string {
 	return `v${[major, minor, patch].filter((part) => part !== undefined).join(".")}`;
 }
 
+function versionParts(version: string): number[] {
+	const parts = version.match(/\d+/g)?.map((part) => Number(part)) ?? [];
+	return parts.filter((part) => Number.isFinite(part));
+}
+
+function compareVersions(left: string, right: string): number {
+	const leftParts = versionParts(left);
+	const rightParts = versionParts(right);
+	const length = Math.max(leftParts.length, rightParts.length);
+	for (let index = 0; index < length; index += 1) {
+		const diff = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
+		if (diff !== 0) return diff;
+	}
+	return 0;
+}
+
+async function clearAppVersionOverride(db: AppVersionDb): Promise<void> {
+	db.delete(adminConfig).where(eq(adminConfig.key, "APP_VERSION_OVERRIDE")).run();
+	await refreshConfig();
+}
+
 export async function getLatestPublishedReleaseVersion(
 	options: Pick<AppVersionMetadataOptions, "db"> = {},
 ): Promise<string | null> {
 	const db = options.db ?? defaultDb;
-	const row = db
+	const rows = db
 		.select({ releaseVersion: announcementCampaigns.releaseVersion })
 		.from(announcementCampaigns)
 		.where(
@@ -51,20 +76,37 @@ export async function getLatestPublishedReleaseVersion(
 			desc(announcementCampaigns.publishedAt),
 			desc(announcementCampaigns.revision),
 		)
-		.get();
-	return row?.releaseVersion?.trim() || null;
+		.all();
+	let highest: string | null = null;
+	for (const row of rows) {
+		const releaseVersion = row.releaseVersion?.trim() || "";
+		if (!releaseVersion) continue;
+		if (!highest || compareVersions(releaseVersion, highest) > 0) {
+			highest = releaseVersion;
+		}
+	}
+	return highest;
 }
 
 export async function getAppVersionMetadata(
 	options: AppVersionMetadataOptions = {},
 ): Promise<AppVersionMetadata> {
+	const db = options.db ?? defaultDb;
 	const appVersionOverride =
 		options.config === undefined
 			? getConfig().appVersionOverride
 			: options.config.appVersionOverride;
 	const packageVersion =
 		options.packageVersion ?? readPackageMetadata().version ?? "0.0.0";
-	const full = appVersionOverride?.trim() || packageVersion;
+	const trimmedOverride = appVersionOverride?.trim() || "";
+	let full = trimmedOverride || packageVersion;
+	const latestRelease = await getLatestPublishedReleaseVersion({ db });
+	if (latestRelease && compareVersions(latestRelease, full) > 0) {
+		full = latestRelease;
+		if (trimmedOverride && options.config === undefined) {
+			await clearAppVersionOverride(db);
+		}
+	}
 	return {
 		full,
 		compact: compactVersion(full),

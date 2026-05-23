@@ -59,7 +59,7 @@
 		};
 		currentConfigValues?: Record<string, string>;
 		modelNames?: Record<string, string>;
-		availableModels?: Array<{ id: ModelId; displayName: string }>;
+		availableModels?: Array<{ id: ModelId; displayName: string; iconUrl?: string | null }>;
 		envDefaults?: Record<string, string>;
 		composerCommandRegistryEnabled?: boolean;
 	}
@@ -77,7 +77,10 @@
 	const availableModels = ((getData() as SettingsPageData).availableModels ?? [
 		{ id: 'model1', displayName: modelNames.model1 },
 		{ id: 'model2', displayName: modelNames.model2 },
-	]) as Array<{ id: ModelId; displayName: string }>;
+	]) as Array<{ id: ModelId; displayName: string; iconUrl?: string | null }>;
+	const modelIcons = Object.fromEntries(
+		availableModels.map((model) => [model.id, model.iconUrl ?? null]),
+	) as Record<string, string | null>;
 
 	let activeTab = $state<Tab>('profile');
 
@@ -480,6 +483,7 @@ let removingPhoto = $state(false);
 				{analyticsError}
 				{isAdmin}
 				{modelNames}
+				{modelIcons}
 				onRetry={loadAnalytics}
 				selectedMonth={analyticsMonth}
 				onMonthChange={handleMonthChange}

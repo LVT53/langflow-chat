@@ -206,7 +206,7 @@ describe('campaign client API', () => {
 				JSON.stringify({
 					error: 'Campaign is not ready to publish.',
 					fieldErrors: {
-						'slides.slide-1.desktopCropAssetId': 'Desktop crop asset is required.',
+						'slides.slide-1.altText.en': 'Localized EN/HU alt text is required when an image is uploaded.',
 					},
 				}),
 				{ status: 400, headers: { 'Content-Type': 'application/json' } },
@@ -218,7 +218,7 @@ describe('campaign client API', () => {
 			message: 'Campaign is not ready to publish.',
 			status: 400,
 			fieldErrors: {
-				'slides.slide-1.desktopCropAssetId': 'Desktop crop asset is required.',
+				'slides.slide-1.altText.en': 'Localized EN/HU alt text is required when an image is uploaded.',
 			},
 		} satisfies Partial<ApiError>);
 	});

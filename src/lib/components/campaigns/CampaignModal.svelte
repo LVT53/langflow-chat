@@ -16,6 +16,9 @@
 
 	type Theme = 'system' | 'light' | 'dark';
 	type UiLanguage = 'en' | 'hu';
+	const CAMPAIGN_FALLBACK_DESKTOP_IMAGE = '/campaign-fallbacks/alfyai-brand-desktop.png';
+	const CAMPAIGN_FALLBACK_MOBILE_IMAGE = '/campaign-fallbacks/alfyai-brand-mobile.png';
+
 	type SetupPreferences = {
 		availableModels: Array<{ id: ModelId; displayName: string }>;
 		effectiveModel: ModelId;
@@ -90,8 +93,11 @@
 	let explicitModelOptions = $derived(
 		setupPreferences?.availableModels.filter((model) => model.id !== systemDefaultModel) ?? [],
 	);
-	let currentDesktopImageUrl = $derived(assetUrl(currentSlide, 'desktop'));
-	let currentMobileImageUrl = $derived(assetUrl(currentSlide, 'mobile'));
+	let currentDesktopUploadedImageUrl = $derived(assetUrl(currentSlide, 'desktop'));
+	let currentMobileUploadedImageUrl = $derived(assetUrl(currentSlide, 'mobile'));
+	let hasCurrentUploadedImage = $derived(Boolean(currentDesktopUploadedImageUrl || currentMobileUploadedImageUrl));
+	let currentDesktopImageUrl = $derived(campaignImageUrl(currentSlide, 'desktop'));
+	let currentMobileImageUrl = $derived(campaignImageUrl(currentSlide, 'mobile'));
 	let currentImageKey = $derived(
 		currentSlide
 			? `${currentSlide.id ?? safeSlideIndex}:${currentDesktopImageUrl}:${currentMobileImageUrl}`
@@ -115,8 +121,8 @@
 
 	$effect(() => {
 		const nextSlide = slides[safeSlideIndex + 1] ?? null;
-		preloadCampaignImage(assetUrl(nextSlide, 'desktop'));
-		preloadCampaignImage(assetUrl(nextSlide, 'mobile'));
+		preloadCampaignImage(campaignImageUrl(nextSlide, 'desktop'));
+		preloadCampaignImage(campaignImageUrl(nextSlide, 'mobile'));
 	});
 
 	function localized(slide: CampaignSlide | null, field: 'title' | 'body' | 'alt' | 'actionLabel') {
@@ -157,6 +163,16 @@
 			slide.assets?.find((candidate) => candidate.variant === preferredVariant)?.id ??
 			slide.assets?.[0]?.id;
 		return assetId ? `/api/campaign-assets/${encodeURIComponent(assetId)}/content` : '';
+	}
+
+	function campaignImageUrl(slide: CampaignSlide | null, preferredVariant: 'desktop' | 'mobile') {
+		if (!slide) return '';
+		return (
+			assetUrl(slide, preferredVariant) ||
+			(preferredVariant === 'desktop'
+				? CAMPAIGN_FALLBACK_DESKTOP_IMAGE
+				: CAMPAIGN_FALLBACK_MOBILE_IMAGE)
+		);
 	}
 
 	function markImageSettled(key: string) {
@@ -306,7 +322,7 @@
 								<img
 									class="campaign-image"
 									src={currentDesktopImageUrl || currentMobileImageUrl}
-									alt={localized(currentSlide, 'alt')}
+									alt={hasCurrentUploadedImage ? localized(currentSlide, 'alt') : ''}
 									onload={() => markImageSettled(currentImageKey)}
 									onerror={() => markImageSettled(currentImageKey)}
 								/>

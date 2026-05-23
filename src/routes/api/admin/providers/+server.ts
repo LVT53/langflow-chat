@@ -55,6 +55,10 @@ export const POST: RequestHandler = async (event) => {
       targetConstructedContext: limits.value.targetConstructedContext ?? null,
       maxMessageLength: limits.value.maxMessageLength ?? null,
       maxTokens: limits.value.maxTokens ?? null,
+      iconAssetId:
+        typeof body.iconAssetId === 'string' && body.iconAssetId.trim()
+          ? body.iconAssetId.trim()
+          : null,
       ...fallback.value,
     };
 

@@ -31,7 +31,7 @@
 	}: {
 		currentUserId: string;
 		modelNames: Record<string, string>;
-		availableModels?: Array<{ id: ModelId; displayName: string }>;
+		availableModels?: Array<{ id: ModelId; displayName: string; iconUrl?: string | null }>;
 		adminConfig: Record<string, string>;
 		envDefaults?: Record<string, string>;
 		adminSaving?: boolean;

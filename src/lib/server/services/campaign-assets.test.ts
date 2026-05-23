@@ -12,6 +12,7 @@ import {
 	getCampaignAssetForServing,
 	saveCampaignCropAsset,
 	storeCampaignSourceAsset,
+	storeModelIconAsset,
 } from './campaign-assets';
 
 describe('campaign asset service', () => {
@@ -174,6 +175,50 @@ describe('campaign asset service', () => {
 			sourceHeight: 1500,
 		});
 		await expect(readFile(join(storageRoot, crop.storagePath), 'utf8')).resolves.toBe('desktop-crop');
+	});
+
+	it('stores model icons as published square campaign assets', async () => {
+		const icon = await storeModelIconAsset(
+			{
+				uploadedByUserId: 'admin-user',
+				file: {
+					filename: 'model-icon.png',
+					mimeType: 'image/png',
+					content: Buffer.from('icon-bytes'),
+				},
+				dimensions: { width: 512, height: 512 },
+			},
+			{ db, storageRoot, id: 'model-icon-1' },
+		);
+
+		expect(icon).toMatchObject({
+			id: 'model-icon-1',
+			assetKind: 'model_icon',
+			status: 'published',
+			width: 512,
+			height: 512,
+		});
+		expect(icon.storagePath).toBe('model-icons/model-icon-1.png');
+		await expect(readFile(join(storageRoot, icon.storagePath), 'utf8')).resolves.toBe('icon-bytes');
+	});
+
+	it('rejects model icons that are not square', async () => {
+		await expect(
+			storeModelIconAsset(
+				{
+					uploadedByUserId: 'admin-user',
+					file: {
+						filename: 'wide-icon.png',
+						mimeType: 'image/png',
+						content: Buffer.from('icon-bytes'),
+					},
+					dimensions: { width: 512, height: 256 },
+				},
+				{ db, storageRoot, id: 'wide-icon' },
+			),
+		).rejects.toMatchObject({
+			fieldErrors: { image: 'Model icon must use a 1:1 image ratio.' },
+		});
 	});
 
 	it('serves draft assets only to admins and published assets to authenticated viewers', async () => {

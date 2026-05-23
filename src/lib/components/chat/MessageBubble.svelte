@@ -12,6 +12,7 @@
 	import MarkdownRenderer from './MarkdownRenderer.svelte';
 	import ThinkingBlock from './ThinkingBlock.svelte';
 	import LogoMark from './LogoMark.svelte';
+	import ModelIcon from '$lib/components/ui/ModelIcon.svelte';
 	import FileAttachment from './FileAttachment.svelte';
 	import MessageEvidenceDetails from './MessageEvidenceDetails.svelte';
 	import FileProductionCard from './FileProductionCard.svelte';
@@ -26,6 +27,7 @@
 		excludedArtifactIds = [],
 		fileProductionJobs = [],
 		conversationId = null,
+		modelIcons = {},
 		readOnly = false,
 		onRegenerate = undefined,
 		onEdit = undefined,
@@ -47,6 +49,7 @@
 		excludedArtifactIds?: string[];
 		fileProductionJobs?: FileProductionJob[];
 		conversationId?: string | null;
+		modelIcons?: Record<string, string | null | undefined>;
 		readOnly?: boolean;
 		onRegenerate?: ((payload: { messageId: string }) => void) | undefined;
 		onEdit?: ((payload: { messageId: string; newText: string }) => void) | undefined;
@@ -92,6 +95,9 @@
 	let responseTokenCount = $derived(estimateTokenCount(message.content));
 	let totalTokenCount = $derived(thinkingTokenCount + responseTokenCount);
 	let hasTokenInfo = $derived(hasThinking || responseTokenCount > 0 || message.costUsd != null);
+	let messageModelIconUrl = $derived(
+		message.modelId ? (modelIcons[message.modelId] ?? null) : null,
+	);
 	let skillDrafts = $derived(message.skillDrafts ?? []);
 	let sourceForks = $derived(message.sourceForks);
 
@@ -460,7 +466,10 @@
 								{#if message.modelDisplayName}
 									<div class="tooltip-row">
 										<span class="tooltip-label">Model</span>
-										<span class="tooltip-value">{message.modelDisplayName}</span>
+										<span class="tooltip-value tooltip-model-value">
+											<ModelIcon iconUrl={messageModelIconUrl} displayName={message.modelDisplayName} size={18} />
+											<span>{message.modelDisplayName}</span>
+										</span>
 									</div>
 								{/if}
 								{#if message.generationDurationMs && message.generationDurationMs > 0}
@@ -895,6 +904,13 @@
 		color: var(--text-primary);
 		font-weight: 500;
 		font-variant-numeric: tabular-nums;
+	}
+
+	.tooltip-model-value {
+		display: inline-flex;
+		min-width: 0;
+		align-items: center;
+		gap: var(--space-xs);
 	}
 
 	.timestamp-container {

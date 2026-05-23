@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onDestroy, tick } from 'svelte';
 	import { get } from 'svelte/store';
+	import ModelIcon from '$lib/components/ui/ModelIcon.svelte';
 	import { t, type I18nKey } from '$lib/i18n';
 
 	let {
@@ -9,6 +10,7 @@
 		analyticsError = '',
 		isAdmin = false,
 		modelNames,
+		modelIcons = {},
 		onRetry,
 		selectedMonth = null,
 		onMonthChange = undefined,
@@ -19,6 +21,7 @@
 		analyticsError?: string;
 		isAdmin?: boolean;
 		modelNames: Record<string, string>;
+		modelIcons?: Record<string, string | null | undefined>;
 		onRetry: () => void | Promise<void>;
 		selectedMonth?: string | null;
 		onMonthChange?: ((month: string | null) => void) | undefined;
@@ -53,6 +56,10 @@
 
 	function modelDisplayName(key: string): string {
 		return modelNames[key] ?? key;
+	}
+
+	function modelIconUrl(key: string | null | undefined): string | null {
+		return key ? (modelIcons[key] ?? null) : null;
 	}
 
 	function formatMs(ms: number): string {
@@ -359,6 +366,17 @@
 		{#if analyticsData.personal.byModel?.length > 0}
 			<div class="mt-5">
 				<p class="settings-label mb-3">{$t('analytics.costByModel')}</p>
+				<div class="mb-3 grid gap-2">
+					{#each analyticsData.personal.byModel as row}
+						<div class="flex min-w-0 items-center justify-between gap-3 rounded-md border border-border bg-surface-overlay px-3 py-2 text-sm">
+							<div class="flex min-w-0 items-center gap-2">
+								<ModelIcon iconUrl={modelIconUrl(row.model)} displayName={row.displayName ?? modelDisplayName(row.model)} size={22} />
+								<span class="truncate text-text-primary">{row.displayName ?? modelDisplayName(row.model)}</span>
+							</div>
+							<span class="shrink-0 text-xs text-text-muted">{formatUsd(row.totalCostUsd)}</span>
+						</div>
+					{/each}
+				</div>
 				<div style="max-width: 480px; height: 200px; margin: 0 auto; position: relative;">
 					<canvas bind:this={modelChartCanvas} style="display: block; width: 100%; height: 100%;"></canvas>
 				</div>
@@ -438,6 +456,22 @@
 					<div class="stat-label">{$t('analytics.totalConversations')}</div>
 				</div>
 			</div>
+			{#if analyticsData.system.byModel?.length > 0}
+				<div class="mt-5">
+					<p class="settings-label mb-3">{$t('analytics.costByModel')}</p>
+					<div class="grid gap-2 sm:grid-cols-2">
+						{#each analyticsData.system.byModel as row}
+							<div class="flex min-w-0 items-center justify-between gap-3 rounded-md border border-border bg-surface-overlay px-3 py-2 text-sm">
+								<div class="flex min-w-0 items-center gap-2">
+									<ModelIcon iconUrl={modelIconUrl(row.model)} displayName={row.displayName ?? modelDisplayName(row.model)} size={22} />
+									<span class="truncate text-text-primary">{row.displayName ?? modelDisplayName(row.model)}</span>
+								</div>
+								<span class="shrink-0 text-xs text-text-muted">{formatUsd(row.totalCostUsd)}</span>
+							</div>
+						{/each}
+					</div>
+				</div>
+			{/if}
 		</section>
 
 		{#if analyticsData.perUser?.length > 0}
@@ -482,7 +516,14 @@
 								<td class="py-2 pr-3 text-text-secondary">{formatNum(row.totalTokens)}</td>
 								<td class="py-2 pr-3 text-text-secondary">{formatUsd(row.totalCostUsd)}</td>
 								<td class="py-2 pr-3 text-text-secondary">
-									{row.favoriteModel ? modelDisplayName(row.favoriteModel) : '—'}
+									{#if row.favoriteModel}
+										<span class="inline-flex min-w-0 items-center gap-2">
+											<ModelIcon iconUrl={modelIconUrl(row.favoriteModel)} displayName={modelDisplayName(row.favoriteModel)} size={20} />
+											<span>{modelDisplayName(row.favoriteModel)}</span>
+										</span>
+									{:else}
+										—
+									{/if}
 								</td>
 								<td class="py-2 text-text-secondary">{formatNum(row.conversationCount)}</td>
 							</tr>

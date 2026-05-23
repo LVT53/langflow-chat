@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { t } from '$lib/i18n';
+	import ModelIcon from '$lib/components/ui/ModelIcon.svelte';
 	import { fetchAvailableModels, type AvailableModel } from '$lib/client/api/models';
 	import { selectedModel, setSelectedModel, type ModelId } from '$lib/stores/settings';
 
@@ -85,6 +86,7 @@
 		{#if isLoading}
 			<span class="model-selector__text">Loading...</span>
 		{:else if currentModel}
+			<ModelIcon iconUrl={currentModel.iconUrl ?? null} displayName={currentModel.displayName} size={22} />
 			<span class="model-selector__text">{currentModel.displayName}</span>
 		{:else}
 			<span class="model-selector__text">Select model</span>
@@ -119,25 +121,8 @@
 					tabindex="0"
 					data-testid="model-option-{model.id}"
 				>
-					{#if model.isThirdParty}
-						<svg
-							class='provider-icon'
-							xmlns='http://www.w3.org/2000/svg'
-							width='12'
-							height='12'
-							viewBox='0 0 24 24'
-							fill='none'
-							stroke='currentColor'
-							stroke-width='2'
-							stroke-linecap='round'
-							stroke-linejoin='round'
-						>
-							<circle cx='12' cy='12' r='10' />
-							<line x1='2' x2='22' y1='12' y2='12' />
-							<path d='M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z' />
-						</svg>
-					{/if}
-					{model.displayName}
+					<ModelIcon iconUrl={model.iconUrl ?? null} displayName={model.displayName} size={22} />
+					<span class="model-selector__option-text">{model.displayName}</span>
 				</li>
 			{/each}
 		</ul>
@@ -154,6 +139,7 @@
 		display: flex;
 		align-items: center;
 		gap: var(--space-xs, 4px);
+		min-width: 0;
 		padding: var(--space-sm, 8px) 10px;
 		background: transparent;
 		border: 1px solid var(--border, rgba(0, 0, 0, 0.08));
@@ -187,6 +173,7 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		max-width: 120px;
+		min-width: 0;
 	}
 
 	.model-selector__chevron {
@@ -220,6 +207,9 @@
 	}
 
 	.model-selector__option {
+		display: flex;
+		align-items: center;
+		gap: var(--space-sm, 8px);
 		padding: var(--space-sm, 8px) var(--space-md, 16px);
 		border-radius: var(--radius-sm, 4px);
 		cursor: pointer;
@@ -228,6 +218,12 @@
 		color: var(--text-primary, #1a1a1a);
 		transition: background-color 150ms ease-out;
 		white-space: nowrap;
+	}
+
+	.model-selector__option-text {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 
 	.model-selector__option:hover,
@@ -292,15 +288,4 @@
 		}
 	}
 
-	.provider-icon {
-		display: inline-block;
-		vertical-align: middle;
-		margin-right: 6px;
-		color: var(--text-muted, #6b6b6b);
-		flex-shrink: 0;
-	}
-
-	:global(.dark) .provider-icon {
-		color: var(--text-muted, #999999);
-	}
 </style>

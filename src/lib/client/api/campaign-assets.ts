@@ -14,7 +14,7 @@ export type CampaignAsset = {
 	id: string;
 	uploadedByUserId?: string;
 	sourceAssetId?: string | null;
-	assetKind: 'source' | 'crop';
+	assetKind: 'source' | 'crop' | 'model_icon';
 	variant?: CampaignAssetVariant | null;
 	status: 'draft' | 'published';
 	originalFilename?: string;
@@ -54,6 +54,28 @@ export async function uploadCampaignAssetSource(
 		'/api/admin/campaigns/assets/upload',
 		{ method: 'POST', body: formData },
 		'Failed to upload campaign screenshot',
+		fetchImpl,
+	);
+	return response.asset;
+}
+
+export async function uploadModelIconAsset(
+	input: {
+		image: File;
+		width?: number;
+		height?: number;
+	},
+	fetchImpl: FetchLike = fetch,
+): Promise<CampaignAsset> {
+	const formData = new FormData();
+	formData.set('image', input.image);
+	if (input.width) formData.set('width', String(input.width));
+	if (input.height) formData.set('height', String(input.height));
+
+	const response = await requestJson<CampaignAssetResponse>(
+		'/api/admin/model-icons/upload',
+		{ method: 'POST', body: formData },
+		'Failed to upload model icon',
 		fetchImpl,
 	);
 	return response.asset;

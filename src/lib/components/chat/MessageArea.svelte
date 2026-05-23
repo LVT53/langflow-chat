@@ -19,6 +19,7 @@ let {
 	conversationId = null,
 	isThinkingActive = false,
 	contextDebug = null,
+	modelIcons = {},
 	fileProductionJobs = [],
 	deepResearchJobs = [],
 	hasActiveSkillSession = false,
@@ -49,6 +50,7 @@ let {
 	conversationId?: string | null;
 	isThinkingActive?: boolean;
 	contextDebug?: ContextDebugState | null;
+	modelIcons?: Record<string, string | null | undefined>;
 	fileProductionJobs?: FileProductionJob[];
 	deepResearchJobs?: DeepResearchJob[];
 	hasActiveSkillSession?: boolean;
@@ -312,6 +314,7 @@ async function alignToBottomAfterRender() {
 					isLast={i === dedupedMessages.length - 1}
 					{pinnedArtifactIds}
 					{excludedArtifactIds}
+					{modelIcons}
 					fileProductionJobs={getFileProductionJobsForMessage(message)}
 					{conversationId}
 					{readOnly}
