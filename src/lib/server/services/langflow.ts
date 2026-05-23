@@ -131,6 +131,9 @@ const LANGFLOW_PROMPT_OVERHEAD_RESERVE_RATIO = 0.16;
 const LANGFLOW_PROMPT_MAX_OVERHEAD_RESERVE_TOKENS = 48_000;
 const LANGFLOW_PROMPT_TOKEN_SAFETY_FACTOR = 1.2;
 const UNKNOWN_PROVIDER_MAX_MODEL_CONTEXT_FALLBACK = 150_000;
+const GPT_OSS_HIGH_REASONING_DIRECTIVE = "Reasoning: high";
+const GPT_OSS_REASONING_DIRECTIVE_RE =
+	/(^|\n)Reasoning:\s*(?:low|medium|high)\s*(?=\n|$)/i;
 
 const URL_LIST_TOOL_ARGUMENT_GUARD = [
 	"Tool argument safety for URL-processing tools:",
@@ -294,14 +297,37 @@ export function buildOutboundSystemPrompt(params: {
 	inputValue: string;
 	responseLanguage?: SupportedLanguage;
 	modelDisplayName?: string;
+	modelName?: string;
 	systemPromptAppendix?: string;
 	personalityPrompt?: string;
 	forceWebSearch?: boolean;
 }): string {
 	const modelHeader = params.modelDisplayName
-		? `[MODEL: ${params.modelDisplayName}]\n`
+		? `[MODEL: ${params.modelDisplayName}]`
 		: "";
-	const basePrompt = modelHeader + params.basePrompt.trim();
+	const needsGptOssReasoningDirective = [
+		params.modelName,
+		params.modelDisplayName,
+	].some((value) => typeof value === "string" && isGptOssModel(value));
+	const basePromptBody = params.basePrompt.trim();
+	const normalizedBasePromptBody =
+		needsGptOssReasoningDirective &&
+		GPT_OSS_REASONING_DIRECTIVE_RE.test(basePromptBody)
+			? basePromptBody.replace(
+					GPT_OSS_REASONING_DIRECTIVE_RE,
+					`$1${GPT_OSS_HIGH_REASONING_DIRECTIVE}`,
+				)
+			: basePromptBody;
+	const promptPreamble =
+		needsGptOssReasoningDirective &&
+		!GPT_OSS_REASONING_DIRECTIVE_RE.test(normalizedBasePromptBody)
+			? GPT_OSS_HIGH_REASONING_DIRECTIVE
+			: "";
+	const basePrompt = [
+		modelHeader,
+		promptPreamble,
+		normalizedBasePromptBody,
+	].filter(Boolean).join("\n\n");
 	const todayStr = new Date().toLocaleDateString("en-US", {
 		weekday: "long",
 		year: "numeric",
@@ -1355,6 +1381,7 @@ export async function prepareOutboundChatContext(params: {
 		inputValue,
 		responseLanguage: detectLanguage(params.message),
 		modelDisplayName: params.modelConfig.displayName,
+		modelName: params.modelConfig.modelName,
 		systemPromptAppendix: params.systemPromptAppendix,
 		personalityPrompt: params.personalityPrompt,
 		forceWebSearch: params.forceWebSearch,
@@ -1513,6 +1540,7 @@ async function sendMessageAttempt(
 			inputValue,
 			responseLanguage: detectLanguage(message),
 			modelDisplayName: modelConfig.displayName,
+			modelName: modelConfig.modelName,
 			systemPromptAppendix: options?.systemPromptAppendix,
 			personalityPrompt: options?.personalityPrompt,
 			forceWebSearch: options?.forceWebSearch,
@@ -1858,6 +1886,7 @@ async function sendMessageStreamAttempt(
 			inputValue,
 			responseLanguage: detectLanguage(message),
 			modelDisplayName: modelConfig.displayName,
+			modelName: modelConfig.modelName,
 			systemPromptAppendix: options?.systemPromptAppendix,
 			personalityPrompt: options?.personalityPrompt,
 			forceWebSearch: options?.forceWebSearch,

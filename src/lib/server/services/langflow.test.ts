@@ -178,10 +178,35 @@ describe("buildOutboundSystemPrompt", () => {
 		expect(prompt).toContain(
 			"get_contents` expects a JSON argument like {urls:",
 		);
+		expect(prompt).not.toContain("Reasoning: high");
 		expect(prompt).not.toContain("generate_file");
 		expect(prompt).not.toContain("export_document");
 		expect(prompt).not.toContain("createPDF");
 		expect(prompt).not.toContain("Terracotta Crown");
+	});
+
+	it("adds the official high reasoning directive for GPT-OSS prompts", () => {
+		const prompt = buildOutboundSystemPrompt({
+			basePrompt: "Base system prompt",
+			inputValue: "Think carefully.",
+			modelDisplayName: "Local GPT-OSS",
+			modelName: "openai/gpt-oss-120b",
+		});
+
+		expect(prompt).toContain(
+			"[MODEL: Local GPT-OSS]\n\nReasoning: high\n\nBase system prompt",
+		);
+	});
+
+	it("normalizes an existing GPT-OSS reasoning directive to high without duplicating it", () => {
+		const prompt = buildOutboundSystemPrompt({
+			basePrompt: "Reasoning: medium\n\nBase system prompt",
+			inputValue: "Think carefully.",
+			modelName: "openai/gpt-oss-120b",
+		});
+
+		expect(prompt.match(/^Reasoning: high$/gm)).toHaveLength(1);
+		expect(prompt).not.toContain("Reasoning: medium");
 	});
 
 	it("places the selected personality style after generic tool guidance so it controls visible answer style", () => {
@@ -964,6 +989,9 @@ describe("sendMessage provider routing", () => {
 				reasoning_effort: "high",
 			},
 		});
+		expect(body.tweaks["ModelNode-1"].system_prompt).toContain(
+			"Reasoning: high",
+		);
 		expect(body.tweaks["ModelNode-1"]).not.toHaveProperty("thinking_type");
 	});
 
@@ -996,6 +1024,9 @@ describe("sendMessage provider routing", () => {
 			model_name: "openai/gpt-oss-120b",
 			enable_thinking: false,
 		});
+		expect(body.tweaks["ModelNode-1"].system_prompt).toContain(
+			"Reasoning: high",
+		);
 		expect(body.tweaks["ModelNode-1"]).not.toHaveProperty("thinking_type");
 		expect(body.tweaks["ModelNode-1"]).not.toHaveProperty("reasoning_effort");
 	});
