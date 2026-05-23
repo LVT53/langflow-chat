@@ -167,10 +167,10 @@ const DEPRECATED_PRESERVE_PROTOCOL_RE = new RegExp(
 );
 const DEPRECATED_TRANSLATION_CONTRACT_RE = new RegExp(
 	[
-		String.raw`(?:^|\n)## Translation Layer Contract [—-] Critical[ \t]*`,
-		String.raw`\n+(?:[ \t]*\n+)*`,
+		String.raw`(?:^|\n)(?:## Translation Layer Contract [—-] Critical[ \t]*\n+(?:[ \t]*\n+)*)?`,
 		String.raw`You ALWAYS respond in English\. Every word you write must be in English\.[ \t]*`,
-		String.raw`\n+Never attempt to generate text in Hungarian, German, French, or any other non-English language, even if the user asks you to\.[ \t]*(?=\n|$)`,
+		String.raw`\n+Never attempt to generate text in Hungarian, German, French, or any other non-English language, even if the user asks you to\.[ \t]*`,
+		String.raw`\n+The system has a dedicated translation layer that handles language conversion automatically\.[ \t]*(?=\n|$)`,
 	].join(""),
 	"g",
 );

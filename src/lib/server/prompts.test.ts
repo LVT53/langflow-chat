@@ -66,7 +66,7 @@ describe("prompts", () => {
 
 	it("does not force English-only answers in the built-in assistant prompt", () => {
 		expect(ALFYAI_NEMOTRON_PROMPT).not.toMatch(
-			/always respond in english|every word you write must be in english|never attempt to generate text in hungarian|non-english language/i,
+			/always respond in english|every word you write must be in english|never attempt to generate text in hungarian|non-english language|dedicated translation layer/i,
 		);
 	});
 
@@ -76,6 +76,7 @@ describe("prompts", () => {
 			"",
 			"You ALWAYS respond in English. Every word you write must be in English.",
 			"Never attempt to generate text in Hungarian, German, French, or any other non-English language, even if the user asks you to.",
+			"The system has a dedicated translation layer that handles language conversion automatically.",
 		].join("\n");
 		const oldBuiltInPrompt = ALFYAI_NEMOTRON_PROMPT.replace(
 			"## Content Preservation",
@@ -95,6 +96,25 @@ describe("prompts", () => {
 		expect(getSystemPrompt(oldBuiltInPrompt)).toBe(ALFYAI_NEMOTRON_PROMPT);
 		expect(getSystemPrompt(customPrompt)).toBe(
 			"You are a custom assistant.\n\nRespect the user's requested response language.",
+		);
+		expect(getSystemPrompt(customPrompt)).not.toContain(
+			"dedicated translation layer",
+		);
+	});
+
+	it("removes the obsolete translation contract from stored prompts without the legacy heading", () => {
+		const customPrompt = [
+			"You are a custom assistant.",
+			"",
+			"You ALWAYS respond in English. Every word you write must be in English.",
+			"Never attempt to generate text in Hungarian, German, French, or any other non-English language, even if the user asks you to.",
+			"The system has a dedicated translation layer that handles language conversion automatically.",
+			"",
+			"Reply in the latest user-message language by default.",
+		].join("\n");
+
+		expect(getSystemPrompt(customPrompt)).toBe(
+			"You are a custom assistant.\n\nReply in the latest user-message language by default.",
 		);
 	});
 
