@@ -166,6 +166,8 @@ describe("buildOutboundSystemPrompt", () => {
 		expect(prompt).toContain("research_web");
 		expect(prompt).toContain("Memory context workflow");
 		expect(prompt).toContain("memory_context");
+		expect(prompt).toContain("Do not output bare source markers");
+		expect(prompt).toContain("use markdown links");
 		expect(prompt).toContain("mode `project`");
 		expect(prompt).toContain("mode `persona`");
 		expect(prompt).toContain("mode `history`");

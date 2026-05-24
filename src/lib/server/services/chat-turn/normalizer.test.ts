@@ -82,6 +82,26 @@ describe("normalizeAssistantOutput", () => {
 		expect(result).toBe("Qudelix alternatives\n\nThe answer starts here.");
 	});
 
+	it("strips bare source reference markers while preserving markdown source links", () => {
+		const result = normalizeAssistantOutput(
+			[
+				"Current releases include a newer model 【S5】 and another update【S12】.",
+				"",
+				"Sources:",
+				"- [Official release notes](https://example.com/release)",
+			].join("\n"),
+		);
+
+		expect(result).toBe(
+			[
+				"Current releases include a newer model and another update.",
+				"",
+				"Sources:",
+				"- [Official release notes](https://example.com/release)",
+			].join("\n"),
+		);
+	});
+
 	it("strips leaked Python REPL transcripts from assistant output", () => {
 		const result = normalizeAssistantOutput(
 			[

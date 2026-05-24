@@ -92,6 +92,29 @@ describe("createServerChunkRuntime", () => {
 		);
 	});
 
+	it("strips split bare source reference markers from visible tokens", () => {
+		const chunks: string[] = [];
+		const runtime = createServerChunkRuntime({
+			enqueueChunk(chunk) {
+				chunks.push(chunk);
+				return true;
+			},
+		});
+
+		runtime.emitChunkWithOutputHandling("The newer model");
+		runtime.emitChunkWithOutputHandling(" 【S");
+		runtime.emitChunkWithOutputHandling("5】 was released recently.");
+		runtime.emitChunkWithOutputHandling(
+			"\n\nSources:\n- [Official release notes](https://example.com/release)",
+		);
+		runtime.flushInlineThinkingBuffer();
+
+		expect(tokenTexts(chunks).join("")).toBe(
+			"The newer model was released recently.\n\nSources:\n- [Official release notes](https://example.com/release)",
+		);
+		expect(runtime.fullResponse).not.toContain("【S5】");
+	});
+
 	it("strips leaked Python REPL transcripts from visible tokens", () => {
 		const chunks: string[] = [];
 		const runtime = createServerChunkRuntime({

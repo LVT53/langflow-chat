@@ -1,4 +1,5 @@
 import { escapeHtml, sanitizeHtml } from "$lib/utils/html-sanitizer";
+import { stripPlainSourceReferenceMarkers } from "./stream-protocol";
 
 type MarkedModule = typeof import("marked");
 type Highlighter = Awaited<
@@ -206,8 +207,11 @@ async function renderMarkdown(
 	const marked = getMarked();
 	const frontmatter = await extractFrontmatter(content);
 	const displayContent = normalizeMarkdownContent(frontmatter.content);
+	const sourceDisplayContent = options.compactExternalLinks
+		? stripPlainSourceReferenceMarkers(displayContent)
+		: displayContent;
 	const renderer = createMarkdownRenderer(isDark, options);
-	const html = marked.parse(displayContent, {
+	const html = marked.parse(sourceDisplayContent, {
 		renderer: renderer as Parameters<typeof marked.parse>[1]["renderer"],
 		breaks: true,
 		gfm: true,

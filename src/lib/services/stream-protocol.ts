@@ -282,6 +282,8 @@ const PYTHON_TOOL_MARKER_PATTERNS = [
 	/successfully imported modules\s*:/i,
 	/code execution (?:completed|failed)\b/i,
 ] as const;
+const PLAIN_SOURCE_REFERENCE_MARKER_RE = /[ \t]*【S\d+】[ \t]*/g;
+const PLAIN_SOURCE_REFERENCE_MARKER_PREFIX_SCAN_CHARS = 24;
 const ASSISTANT_PROSE_BOUNDARY_PATTERNS = [
 	"i see",
 	"i found",
@@ -310,6 +312,7 @@ const ASSISTANT_PROSE_BOUNDARY_PATTERNS = [
 
 export interface LeakedToolDiagnosticsState {
 	suppressPythonToolOutput: boolean;
+	lastVisibleChar: string;
 }
 
 const THINKING_PREAMBLE_STARTS = [
@@ -346,7 +349,64 @@ function stripTentativeLeadingResponseMarker(value: string): string {
 }
 
 export function createLeakedToolDiagnosticsState(): LeakedToolDiagnosticsState {
-	return { suppressPythonToolOutput: false };
+	return { suppressPythonToolOutput: false, lastVisibleChar: "" };
+}
+
+function shouldInsertSpaceAfterRemovedSourceMarker(params: {
+	previousChar: string;
+	nextChar: string;
+}): boolean {
+	const { previousChar, nextChar } = params;
+	if (!previousChar || !nextChar) return false;
+	if (/\s/.test(previousChar) || /\s/.test(nextChar)) return false;
+	if (/^[.,;:!?)]$/.test(nextChar)) return false;
+	if (/^[([{]$/.test(previousChar)) return false;
+	return true;
+}
+
+export function stripPlainSourceReferenceMarkers(
+	value: string,
+	state?: LeakedToolDiagnosticsState,
+): string {
+	let output = "";
+	let cursor = 0;
+	let previousChar = state?.lastVisibleChar ?? "";
+
+	for (const match of value.matchAll(PLAIN_SOURCE_REFERENCE_MARKER_RE)) {
+		const markerStart = match.index ?? 0;
+		const rawMatch = match[0];
+		const markerEnd = markerStart + rawMatch.length;
+		const beforeMarker = value.slice(cursor, markerStart);
+		if (beforeMarker) {
+			output += beforeMarker;
+			previousChar = beforeMarker.at(-1) ?? previousChar;
+		}
+
+		const nextChar = value[markerEnd] ?? "";
+		if (
+			shouldInsertSpaceAfterRemovedSourceMarker({
+				previousChar,
+				nextChar,
+			})
+		) {
+			output += " ";
+			previousChar = " ";
+		}
+
+		cursor = markerEnd;
+	}
+
+	const remainder = value.slice(cursor);
+	if (remainder) {
+		output += remainder;
+		previousChar = remainder.at(-1) ?? previousChar;
+	}
+
+	if (state && output) {
+		state.lastVisibleChar = previousChar;
+	}
+
+	return output;
 }
 
 function findFirstPythonToolMarkerIndex(value: string): number {
@@ -451,10 +511,14 @@ export function stripLeakedToolDiagnostics(
 	state: LeakedToolDiagnosticsState = createLeakedToolDiagnosticsState(),
 ): string {
 	const withoutWebDiagnostics = value.replace(WEB_RESEARCH_DIAGNOSTIC_RE, "");
-	return stripLeakedPythonToolDiagnostics(withoutWebDiagnostics, state).replace(
-		/[ \t]+\n/g,
-		"\n",
+	const withoutPythonDiagnostics = stripLeakedPythonToolDiagnostics(
+		withoutWebDiagnostics,
+		state,
 	);
+	return stripPlainSourceReferenceMarkers(
+		withoutPythonDiagnostics,
+		state,
+	).replace(/[ \t]+\n/g, "\n");
 }
 
 function isLeakedToolDiagnosticPrefix(value: string): boolean {
@@ -486,6 +550,10 @@ function isLeakedPythonToolDiagnosticPrefix(value: string): boolean {
 	});
 }
 
+function isPlainSourceReferenceMarkerPrefix(value: string): boolean {
+	return /^[ \t]*【(?:S\d*)?$/i.test(value);
+}
+
 export function getLeakedToolDiagnosticPrefixLength(value: string): number {
 	const scanStart = Math.max(
 		0,
@@ -493,13 +561,15 @@ export function getLeakedToolDiagnosticPrefixLength(value: string): number {
 			Math.max(
 				WEB_RESEARCH_DIAGNOSTIC_PREFIX_SCAN_CHARS,
 				PYTHON_TOOL_DIAGNOSTIC_PREFIX_SCAN_CHARS,
+				PLAIN_SOURCE_REFERENCE_MARKER_PREFIX_SCAN_CHARS,
 			),
 	);
 	for (let index = scanStart; index < value.length; index += 1) {
 		const suffix = value.slice(index);
 		if (
 			isLeakedToolDiagnosticPrefix(suffix) ||
-			isLeakedPythonToolDiagnosticPrefix(suffix)
+			isLeakedPythonToolDiagnosticPrefix(suffix) ||
+			isPlainSourceReferenceMarkerPrefix(suffix)
 		) {
 			return value.length - index;
 		}

@@ -65,6 +65,20 @@ describe("Markdown Rendering Service", () => {
 		expect(html).not.toContain(">Example Source</a>");
 	});
 
+	it("removes bare source markers when rendering compact source-link chips", async () => {
+		const mod = await import("./markdown");
+		const html = await mod.renderMarkdown(
+			"Claim one 【S5】 and claim two【S12】.\n\nSources: [Example Source](https://example.com/page)",
+			false,
+			{ compactExternalLinks: true },
+		);
+
+		expect(html).toContain("Claim one and claim two.");
+		expect(html).not.toContain("【S5】");
+		expect(html).not.toContain("【S12】");
+		expect(html).toContain('class="source-link-chip"');
+	});
+
 	it("uses a domain label when compact source link text is only a URL", async () => {
 		const mod = await import("./markdown");
 		const html = await mod.renderMarkdown(

@@ -239,6 +239,13 @@ const WEB_RESEARCH_GUARD = [
 	"- Use the injected current date for temporal context before searching.",
 ].join("\n");
 
+const SOURCE_LINKING_GUARD = [
+	"Source linking format:",
+	"- Cite source-backed claims with markdown links using the returned source title and URL, close to the claim they support when practical.",
+	"- Do not output bare source markers such as `【S5】`, `[S5]`, or source ids without URLs. The UI can only render source pills from real markdown links.",
+	"- If you want a compact source list at the end, use markdown links there too; do not leave placeholder markers in the body.",
+].join("\n");
+
 const WEB_SEARCH_QUERY_PLANNING_GUARD = [
 	"Web search query planning:",
 	"- Before searching, identify the concrete entity, target fact, timeframe, geography or jurisdiction, version or model, and source authority needed. Keep those terms in the query instead of sending a vague paraphrase.",
@@ -376,6 +383,7 @@ export function buildOutboundSystemPrompt(params: {
 		FILE_GENERATION_GUARD,
 		IMAGE_SEARCH_GUARD,
 		WEB_RESEARCH_GUARD,
+		SOURCE_LINKING_GUARD,
 		WEB_SEARCH_QUERY_PLANNING_GUARD,
 		KNOWLEDGE_CUTOFF_SAFE_RESEARCH_GUARD,
 		MEMORY_CONTEXT_GUARD,
