@@ -337,11 +337,9 @@ export function buildOutboundSystemPrompt(params: {
 		!GPT_OSS_REASONING_DIRECTIVE_RE.test(normalizedBasePromptBody)
 			? GPT_OSS_HIGH_REASONING_DIRECTIVE
 			: "";
-	const basePrompt = [
-		modelHeader,
-		promptPreamble,
-		normalizedBasePromptBody,
-	].filter(Boolean).join("\n\n");
+	const basePrompt = [modelHeader, promptPreamble, normalizedBasePromptBody]
+		.filter(Boolean)
+		.join("\n\n");
 	const todayStr = new Date().toLocaleDateString("en-US", {
 		weekday: "long",
 		year: "numeric",
@@ -488,16 +486,12 @@ function resolvePromptContextLimits(
 function resolveProviderPromptContextLimits(provider: {
 	modelName?: string | null;
 	maxModelContext: number | null;
-	compactionUiThreshold: number | null;
-	targetConstructedContext: number | null;
 }): PromptContextLimits {
 	const budget = deriveModelContextBudget({
 		maxModelContext:
 			provider.maxModelContext ??
 			inferModelContextWindow(provider.modelName) ??
 			UNKNOWN_PROVIDER_MAX_MODEL_CONTEXT_FALLBACK,
-		compactionUiThreshold: provider.compactionUiThreshold,
-		targetConstructedContext: provider.targetConstructedContext,
 	});
 	return {
 		maxModelContext: budget.maxModelContext,
@@ -507,7 +501,9 @@ function resolveProviderPromptContextLimits(provider: {
 }
 
 function estimateOutboundPromptTokens(text: string): number {
-	return Math.ceil(estimateTokenCount(text) * LANGFLOW_PROMPT_TOKEN_SAFETY_FACTOR);
+	return Math.ceil(
+		estimateTokenCount(text) * LANGFLOW_PROMPT_TOKEN_SAFETY_FACTOR,
+	);
 }
 
 function resolveLangflowPromptOverheadReserve(maxModelContext: number): number {
@@ -611,7 +607,9 @@ function applyOutboundPromptBudget(params: {
 		Math.floor(inputTokenBudget / LANGFLOW_PROMPT_TOKEN_SAFETY_FACTOR),
 	);
 	const currentInputTokens = estimateTokenCount(params.inputValue);
-	const safeCurrentInputTokens = estimateOutboundPromptTokens(params.inputValue);
+	const safeCurrentInputTokens = estimateOutboundPromptTokens(
+		params.inputValue,
+	);
 	if (outputTokenBudget.outputReserveClamped) {
 		console.warn("[LANGFLOW] Output token cap clamped", {
 			sessionId: params.sessionId,
@@ -1140,14 +1138,6 @@ function buildProviderRateLimitFallbackModelConfig(params: {
 		maxModelContext:
 			typeof provider.maxModelContext === "number"
 				? provider.maxModelContext
-				: null,
-		compactionUiThreshold:
-			typeof provider.compactionUiThreshold === "number"
-				? provider.compactionUiThreshold
-				: null,
-		targetConstructedContext:
-			typeof provider.targetConstructedContext === "number"
-				? provider.targetConstructedContext
 				: null,
 	});
 

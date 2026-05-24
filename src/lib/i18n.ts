@@ -935,13 +935,10 @@ const dictionary = {
 		"admin.contextLimitsDescriptionBuiltIn":
 			"Leave empty to use global defaults.",
 		"admin.contextLimitsDescriptionProvider":
-			"Max Model Context is required for third-party providers. Leave target and threshold empty to derive them from that context window.",
+			"Max Model Context is required for third-party providers.",
 		"admin.maxModelContextLabel": "Max Model Context (tokens)",
 		"admin.maxModelContextRequired":
 			"Required for third-party providers. This is the total input plus output context window.",
-		"admin.compactionUiThresholdLabel": "Compaction UI Threshold (tokens)",
-		"admin.targetConstructedContextLabel":
-			"Target Constructed Context (tokens)",
 		"admin.maxMessageLengthLabel": "Max Message Length (chars)",
 		"admin.fillRequiredFields": "Fill in all required provider fields.",
 		"admin.fillRequiredBuiltIn":
@@ -2065,7 +2062,8 @@ const dictionary = {
 		"admin.modelIconUploading": "Feltöltés...",
 		"admin.modelIconUpdated": "Modellikon frissítve.",
 		"admin.modelIconCropTitle": "Modellikon kivágása",
-		"admin.modelIconSquareRequired": "A modellikon képarányának 1:1-nek kell lennie.",
+		"admin.modelIconSquareRequired":
+			"A modellikon képarányának 1:1-nek kell lennie.",
 		"admin.modelIconReadFailed": "Nem sikerült beolvasni a kiválasztott képet.",
 		"admin.modelIconUploadFailed": "Nem sikerült feltölteni a modell ikonját.",
 		"admin.deleteProviderConfirm":
@@ -2506,12 +2504,10 @@ const dictionary = {
 		"admin.contextLimitsDescriptionBuiltIn":
 			"Hagyd üresen a globális alapértelmezések használatához.",
 		"admin.contextLimitsDescriptionProvider":
-			"A harmadik féltől származó szolgáltatóknál kötelező a maximális modellkontextus. A célkontextust és a küszöböt hagyd üresen, ha ebből az ablakból szeretnéd származtatni őket.",
+			"A harmadik féltől származó szolgáltatóknál kötelező a maximális modellkontextus.",
 		"admin.maxModelContextLabel": "Maximális modellkontextus (token)",
 		"admin.maxModelContextRequired":
 			"Harmadik féltől származó szolgáltatóknál kötelező. Ez a teljes bemeneti és kimeneti kontextusablak.",
-		"admin.compactionUiThresholdLabel": "Tömörítési UI küszöb (token)",
-		"admin.targetConstructedContextLabel": "Célkontextus (token)",
 		"admin.maxMessageLengthLabel": "Maximális üzenethossz (karakter)",
 		"admin.fillRequiredFields":
 			"Töltsd ki az összes kötelező szolgáltatói mezőt.",

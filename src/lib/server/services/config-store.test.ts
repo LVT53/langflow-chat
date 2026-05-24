@@ -204,6 +204,23 @@ describe("Knowledge Store Config", () => {
 			expect(getConfig().maxMessageLength).toBe(50_000);
 		});
 
+		it("getConfig() should derive model-specific budgets from a model max context override", async () => {
+			adminConfigRows = [
+				{ key: "MODEL_1_MAX_MODEL_CONTEXT", value: "132000" },
+				{ key: "MODEL_1_COMPACTION_UI_THRESHOLD", value: "90000" },
+				{ key: "MODEL_1_TARGET_CONSTRUCTED_CONTEXT", value: "100000" },
+			];
+
+			await refreshConfig();
+
+			const config = getConfig();
+			expect(config.model1MaxModelContext).toBe(132_000);
+			expect(config.model1CompactionUiThreshold).toBe(105_600);
+			expect(config.model1TargetConstructedContext).toBe(118_800);
+			expect(config.model1MaxMessageLength).toBe(528_000);
+			expect(config.maxMessageLength).toBe(528_000);
+		});
+
 		it("getConfig() should apply and clamp model timeout failover admin overrides", async () => {
 			adminConfigRows = [
 				{ key: "MODEL_TIMEOUT_FAILOVER_ENABLED", value: "true" },
@@ -397,7 +414,9 @@ describe("Knowledge Store Config", () => {
 				sourceProcessingConcurrency: 5,
 				modelReasoningConcurrency: 2,
 			});
-			expect(getConfig().deepResearchDepthBudgets.standard.sourceReviewCeiling).toBe(75);
+			expect(
+				getConfig().deepResearchDepthBudgets.standard.sourceReviewCeiling,
+			).toBe(75);
 		});
 
 		it("getResolvedAdminConfigValues() should expose all Deep Research admin config keys", () => {

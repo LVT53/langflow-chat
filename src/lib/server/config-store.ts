@@ -328,7 +328,125 @@ async function resolveLowestModelMaxMessageLength(
 		);
 	}
 
-	return Math.min(...candidates.filter((value): value is number => value != null));
+	return Math.min(
+		...candidates.filter((value): value is number => value != null),
+	);
+}
+
+function deriveCompactionUiThreshold(maxModelContext: number): number {
+	return Math.max(
+		1,
+		Math.min(maxModelContext - 1, Math.floor(maxModelContext * 0.8)),
+	);
+}
+
+function deriveTargetConstructedContext(maxModelContext: number): number {
+	return Math.max(
+		1,
+		Math.min(maxModelContext - 1, Math.floor(maxModelContext * 0.9)),
+	);
+}
+
+function applyDerivedContextLimitDefaults(
+	config: RuntimeConfig,
+	overrides: Record<string, string>,
+): void {
+	if (overrides.MAX_MODEL_CONTEXT !== undefined) {
+		if (overrides.COMPACTION_UI_THRESHOLD === undefined) {
+			config.compactionUiThreshold = deriveCompactionUiThreshold(
+				config.maxModelContext,
+			);
+		}
+		if (overrides.TARGET_CONSTRUCTED_CONTEXT === undefined) {
+			config.targetConstructedContext = deriveTargetConstructedContext(
+				config.maxModelContext,
+			);
+		}
+	}
+
+	config.model1CompactionUiThreshold = deriveCompactionUiThreshold(
+		config.model1MaxModelContext,
+	);
+	config.model1TargetConstructedContext = deriveTargetConstructedContext(
+		config.model1MaxModelContext,
+	);
+	config.model2CompactionUiThreshold = deriveCompactionUiThreshold(
+		config.model2MaxModelContext,
+	);
+	config.model2TargetConstructedContext = deriveTargetConstructedContext(
+		config.model2MaxModelContext,
+	);
+}
+
+function applyDerivedMaxMessageLengthDefaults(
+	config: RuntimeConfig,
+	overrides: Record<string, string>,
+): void {
+	if (
+		overrides.MODEL_1_MAX_MODEL_CONTEXT !== undefined &&
+		overrides.MODEL_1_MAX_MESSAGE_LENGTH === undefined
+	) {
+		config.model1MaxMessageLength = deriveMaxMessageLengthFromContextTokens(
+			config.model1MaxModelContext,
+		);
+	}
+
+	if (
+		overrides.MODEL_2_MAX_MODEL_CONTEXT !== undefined &&
+		overrides.MODEL_2_MAX_MESSAGE_LENGTH === undefined
+	) {
+		config.model2MaxMessageLength = deriveMaxMessageLengthFromContextTokens(
+			config.model2MaxModelContext,
+		);
+	}
+}
+
+function validateContextLimitTriples(config: RuntimeConfig): void {
+	function invalidTriple(
+		max: number,
+		threshold: number,
+		target: number,
+	): boolean {
+		return target >= max || threshold >= max;
+	}
+
+	if (
+		invalidTriple(
+			config.maxModelContext,
+			config.compactionUiThreshold,
+			config.targetConstructedContext,
+		)
+	) {
+		config.targetConstructedContext = envConfig.targetConstructedContext;
+		config.compactionUiThreshold = envConfig.compactionUiThreshold;
+		config.maxModelContext = envConfig.maxModelContext;
+	}
+
+	if (
+		invalidTriple(
+			config.model1MaxModelContext,
+			config.model1CompactionUiThreshold,
+			config.model1TargetConstructedContext,
+		)
+	) {
+		config.model1TargetConstructedContext =
+			envConfig.model1TargetConstructedContext;
+		config.model1CompactionUiThreshold = envConfig.model1CompactionUiThreshold;
+		config.model1MaxModelContext = envConfig.model1MaxModelContext;
+	}
+
+	if (
+		invalidTriple(
+			config.model2MaxModelContext,
+			config.model2CompactionUiThreshold,
+			config.model2TargetConstructedContext,
+		)
+	) {
+		config.model2TargetConstructedContext =
+			envConfig.model2TargetConstructedContext;
+		config.model2CompactionUiThreshold = envConfig.model2CompactionUiThreshold;
+		config.model2MaxModelContext = envConfig.model2MaxModelContext;
+	}
 }
 
 const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
@@ -546,7 +664,8 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 		}
 	},
 	DEEP_RESEARCH_PLAN_MODEL: (config, value) => {
-		config.deepResearchModels.plan_generation = normalizeConfiguredModelId(value);
+		config.deepResearchModels.plan_generation =
+			normalizeConfiguredModelId(value);
 	},
 	DEEP_RESEARCH_PLAN_REVISION_MODEL: (config, value) => {
 		config.deepResearchModels.plan_revision = normalizeConfiguredModelId(value);
@@ -561,10 +680,12 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 		config.deepResearchModels.synthesis = normalizeConfiguredModelId(value);
 	},
 	DEEP_RESEARCH_CITATION_AUDIT_MODEL: (config, value) => {
-		config.deepResearchModels.citation_audit = normalizeConfiguredModelId(value);
+		config.deepResearchModels.citation_audit =
+			normalizeConfiguredModelId(value);
 	},
 	DEEP_RESEARCH_REPORT_MODEL: (config, value) => {
-		config.deepResearchModels.report_writing = normalizeConfiguredModelId(value);
+		config.deepResearchModels.report_writing =
+			normalizeConfiguredModelId(value);
 	},
 	TITLE_GEN_URL: (config, value) => {
 		config.titleGenUrl = value;
@@ -709,63 +830,78 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 	},
 	FILE_PRODUCTION_MAX_OUTPUTS: (config, value) => {
 		const parsed = parseIntOverride(value);
-		if (parsed !== undefined) config.fileProductionMaxOutputs = Math.max(1, parsed);
+		if (parsed !== undefined)
+			config.fileProductionMaxOutputs = Math.max(1, parsed);
 	},
 	FILE_PRODUCTION_MAX_SOURCE_JSON_BYTES: (config, value) => {
 		const parsed = parseIntOverride(value);
-		if (parsed !== undefined) config.fileProductionMaxSourceJsonBytes = Math.max(1024, parsed);
+		if (parsed !== undefined)
+			config.fileProductionMaxSourceJsonBytes = Math.max(1024, parsed);
 	},
 	FILE_PRODUCTION_MAX_PROJECTION_BYTES: (config, value) => {
 		const parsed = parseIntOverride(value);
-		if (parsed !== undefined) config.fileProductionMaxProjectionBytes = Math.max(1024, parsed);
+		if (parsed !== undefined)
+			config.fileProductionMaxProjectionBytes = Math.max(1024, parsed);
 	},
 	FILE_PRODUCTION_MAX_PDF_PAGES: (config, value) => {
 		const parsed = parseIntOverride(value);
-		if (parsed !== undefined) config.fileProductionMaxPdfPages = Math.max(1, parsed);
+		if (parsed !== undefined)
+			config.fileProductionMaxPdfPages = Math.max(1, parsed);
 	},
 	FILE_PRODUCTION_MAX_TABLE_ROWS: (config, value) => {
 		const parsed = parseIntOverride(value);
-		if (parsed !== undefined) config.fileProductionMaxTableRows = Math.max(1, parsed);
+		if (parsed !== undefined)
+			config.fileProductionMaxTableRows = Math.max(1, parsed);
 	},
 	FILE_PRODUCTION_MAX_TABLE_COLUMNS: (config, value) => {
 		const parsed = parseIntOverride(value);
-		if (parsed !== undefined) config.fileProductionMaxTableColumns = Math.max(1, parsed);
+		if (parsed !== undefined)
+			config.fileProductionMaxTableColumns = Math.max(1, parsed);
 	},
 	FILE_PRODUCTION_MAX_CHART_DATA_POINTS: (config, value) => {
 		const parsed = parseIntOverride(value);
-		if (parsed !== undefined) config.fileProductionMaxChartDataPoints = Math.max(1, parsed);
+		if (parsed !== undefined)
+			config.fileProductionMaxChartDataPoints = Math.max(1, parsed);
 	},
 	FILE_PRODUCTION_MAX_CHART_SERIES: (config, value) => {
 		const parsed = parseIntOverride(value);
-		if (parsed !== undefined) config.fileProductionMaxChartSeries = Math.max(1, parsed);
+		if (parsed !== undefined)
+			config.fileProductionMaxChartSeries = Math.max(1, parsed);
 	},
 	FILE_PRODUCTION_MAX_IMAGE_COUNT: (config, value) => {
 		const parsed = parseIntOverride(value);
-		if (parsed !== undefined) config.fileProductionMaxImageCount = Math.max(1, parsed);
+		if (parsed !== undefined)
+			config.fileProductionMaxImageCount = Math.max(1, parsed);
 	},
 	FILE_PRODUCTION_MAX_IMAGE_BYTES: (config, value) => {
 		const parsed = parseIntOverride(value);
-		if (parsed !== undefined) config.fileProductionMaxImageBytes = Math.max(1024, parsed);
+		if (parsed !== undefined)
+			config.fileProductionMaxImageBytes = Math.max(1024, parsed);
 	},
 	FILE_PRODUCTION_MAX_TOTAL_IMAGE_BYTES: (config, value) => {
 		const parsed = parseIntOverride(value);
-		if (parsed !== undefined) config.fileProductionMaxTotalImageBytes = Math.max(1024, parsed);
+		if (parsed !== undefined)
+			config.fileProductionMaxTotalImageBytes = Math.max(1024, parsed);
 	},
 	FILE_PRODUCTION_SANDBOX_TIMEOUT_MS: (config, value) => {
 		const parsed = parseIntOverride(value);
-		if (parsed !== undefined) config.fileProductionSandboxTimeoutMs = Math.max(1000, parsed);
+		if (parsed !== undefined)
+			config.fileProductionSandboxTimeoutMs = Math.max(1000, parsed);
 	},
 	FILE_PRODUCTION_RENDERER_TIMEOUT_MS: (config, value) => {
 		const parsed = parseIntOverride(value);
-		if (parsed !== undefined) config.fileProductionRendererTimeoutMs = Math.max(1000, parsed);
+		if (parsed !== undefined)
+			config.fileProductionRendererTimeoutMs = Math.max(1000, parsed);
 	},
 	FILE_PRODUCTION_MAX_OUTPUT_FILE_BYTES: (config, value) => {
 		const parsed = parseIntOverride(value);
-		if (parsed !== undefined) config.fileProductionMaxOutputFileBytes = Math.max(1024, parsed);
+		if (parsed !== undefined)
+			config.fileProductionMaxOutputFileBytes = Math.max(1024, parsed);
 	},
 	FILE_PRODUCTION_MAX_TOTAL_OUTPUT_BYTES: (config, value) => {
 		const parsed = parseIntOverride(value);
-		if (parsed !== undefined) config.fileProductionMaxTotalOutputBytes = Math.max(1024, parsed);
+		if (parsed !== undefined)
+			config.fileProductionMaxTotalOutputBytes = Math.max(1024, parsed);
 	},
 	CONTEXT_DIAGNOSTICS_DEBUG: (config, value) => {
 		config.contextDiagnosticsDebug = value === "true";
@@ -777,7 +913,8 @@ export async function refreshConfig(): Promise<void> {
 	const overrides: Record<string, string> = Object.fromEntries(
 		rows.map((r) => [r.key, r.value]),
 	);
-	const hasMaxMessageLengthOverride = overrides.MAX_MESSAGE_LENGTH !== undefined;
+	const hasMaxMessageLengthOverride =
+		overrides.MAX_MESSAGE_LENGTH !== undefined;
 
 	const base = buildDefaultConfig();
 
@@ -787,60 +924,15 @@ export async function refreshConfig(): Promise<void> {
 		overrideAppliers[key](base, value);
 	}
 
+	applyDerivedContextLimitDefaults(base, overrides);
+	validateContextLimitTriples(base);
+	applyDerivedMaxMessageLengthDefaults(base, overrides);
+
 	if (!hasMaxMessageLengthOverride) {
 		base.maxMessageLength = await resolveLowestModelMaxMessageLength(base);
 	}
 
 	runtimeConfig = base;
-
-	// Cross-field validation: target and threshold must fit below max.
-	function validateTriple(
-		max: number,
-		threshold: number,
-		target: number,
-	): boolean {
-		return target >= max || threshold >= max;
-	}
-
-	if (
-		validateTriple(
-			runtimeConfig.maxModelContext,
-			runtimeConfig.compactionUiThreshold,
-			runtimeConfig.targetConstructedContext,
-		)
-	) {
-		runtimeConfig.targetConstructedContext = envConfig.targetConstructedContext;
-		runtimeConfig.compactionUiThreshold = envConfig.compactionUiThreshold;
-		runtimeConfig.maxModelContext = envConfig.maxModelContext;
-	}
-
-	if (
-		validateTriple(
-			runtimeConfig.model1MaxModelContext,
-			runtimeConfig.model1CompactionUiThreshold,
-			runtimeConfig.model1TargetConstructedContext,
-		)
-	) {
-		runtimeConfig.model1TargetConstructedContext =
-			envConfig.model1TargetConstructedContext;
-		runtimeConfig.model1CompactionUiThreshold =
-			envConfig.model1CompactionUiThreshold;
-		runtimeConfig.model1MaxModelContext = envConfig.model1MaxModelContext;
-	}
-
-	if (
-		validateTriple(
-			runtimeConfig.model2MaxModelContext,
-			runtimeConfig.model2CompactionUiThreshold,
-			runtimeConfig.model2TargetConstructedContext,
-		)
-	) {
-		runtimeConfig.model2TargetConstructedContext =
-			envConfig.model2TargetConstructedContext;
-		runtimeConfig.model2CompactionUiThreshold =
-			envConfig.model2CompactionUiThreshold;
-		runtimeConfig.model2MaxModelContext = envConfig.model2MaxModelContext;
-	}
 	// Global SYSTEM_PROMPT overrides per-model system prompts
 	if (runtimeConfig.systemPrompt) {
 		runtimeConfig.model1.systemPrompt = runtimeConfig.systemPrompt;
@@ -1035,9 +1127,7 @@ export function getResolvedAdminConfigValues(
 		DEEP_RESEARCH_ACTIVE_CONVERSATION_LIMIT: String(
 			config.deepResearchActiveConversationLimit,
 		),
-		DEEP_RESEARCH_ACTIVE_USER_LIMIT: String(
-			config.deepResearchActiveUserLimit,
-		),
+		DEEP_RESEARCH_ACTIVE_USER_LIMIT: String(config.deepResearchActiveUserLimit),
 		DEEP_RESEARCH_ACTIVE_GLOBAL_LIMIT: String(
 			config.deepResearchActiveGlobalLimit,
 		),
@@ -1054,12 +1144,9 @@ export function getResolvedAdminConfigValues(
 			config.deepResearchDepthBudgets,
 		),
 		DEEP_RESEARCH_PLAN_MODEL: config.deepResearchModels.plan_generation,
-		DEEP_RESEARCH_PLAN_REVISION_MODEL:
-			config.deepResearchModels.plan_revision,
-		DEEP_RESEARCH_SOURCE_REVIEW_MODEL:
-			config.deepResearchModels.source_review,
-		DEEP_RESEARCH_RESEARCH_TASK_MODEL:
-			config.deepResearchModels.research_task,
+		DEEP_RESEARCH_PLAN_REVISION_MODEL: config.deepResearchModels.plan_revision,
+		DEEP_RESEARCH_SOURCE_REVIEW_MODEL: config.deepResearchModels.source_review,
+		DEEP_RESEARCH_RESEARCH_TASK_MODEL: config.deepResearchModels.research_task,
 		DEEP_RESEARCH_SYNTHESIS_MODEL: config.deepResearchModels.synthesis,
 		DEEP_RESEARCH_CITATION_AUDIT_MODEL:
 			config.deepResearchModels.citation_audit,
@@ -1103,24 +1190,43 @@ export function getResolvedAdminConfigValues(
 		MODEL_TIMEOUT_FAILOVER_TIMEOUT_MS: String(
 			config.modelTimeoutFailoverTimeoutMs,
 		),
-		MODEL_TIMEOUT_FAILOVER_TARGET_MODEL:
-			config.modelTimeoutFailoverTargetModel,
+		MODEL_TIMEOUT_FAILOVER_TARGET_MODEL: config.modelTimeoutFailoverTargetModel,
 		DEFAULT_NEW_USER_MODEL: config.defaultNewUserModel,
 		FILE_PRODUCTION_MAX_OUTPUTS: String(config.fileProductionMaxOutputs),
-		FILE_PRODUCTION_MAX_SOURCE_JSON_BYTES: String(config.fileProductionMaxSourceJsonBytes),
-		FILE_PRODUCTION_MAX_PROJECTION_BYTES: String(config.fileProductionMaxProjectionBytes),
+		FILE_PRODUCTION_MAX_SOURCE_JSON_BYTES: String(
+			config.fileProductionMaxSourceJsonBytes,
+		),
+		FILE_PRODUCTION_MAX_PROJECTION_BYTES: String(
+			config.fileProductionMaxProjectionBytes,
+		),
 		FILE_PRODUCTION_MAX_PDF_PAGES: String(config.fileProductionMaxPdfPages),
 		FILE_PRODUCTION_MAX_TABLE_ROWS: String(config.fileProductionMaxTableRows),
-		FILE_PRODUCTION_MAX_TABLE_COLUMNS: String(config.fileProductionMaxTableColumns),
-		FILE_PRODUCTION_MAX_CHART_DATA_POINTS: String(config.fileProductionMaxChartDataPoints),
-		FILE_PRODUCTION_MAX_CHART_SERIES: String(config.fileProductionMaxChartSeries),
+		FILE_PRODUCTION_MAX_TABLE_COLUMNS: String(
+			config.fileProductionMaxTableColumns,
+		),
+		FILE_PRODUCTION_MAX_CHART_DATA_POINTS: String(
+			config.fileProductionMaxChartDataPoints,
+		),
+		FILE_PRODUCTION_MAX_CHART_SERIES: String(
+			config.fileProductionMaxChartSeries,
+		),
 		FILE_PRODUCTION_MAX_IMAGE_COUNT: String(config.fileProductionMaxImageCount),
 		FILE_PRODUCTION_MAX_IMAGE_BYTES: String(config.fileProductionMaxImageBytes),
-		FILE_PRODUCTION_MAX_TOTAL_IMAGE_BYTES: String(config.fileProductionMaxTotalImageBytes),
-		FILE_PRODUCTION_SANDBOX_TIMEOUT_MS: String(config.fileProductionSandboxTimeoutMs),
-		FILE_PRODUCTION_RENDERER_TIMEOUT_MS: String(config.fileProductionRendererTimeoutMs),
-		FILE_PRODUCTION_MAX_OUTPUT_FILE_BYTES: String(config.fileProductionMaxOutputFileBytes),
-		FILE_PRODUCTION_MAX_TOTAL_OUTPUT_BYTES: String(config.fileProductionMaxTotalOutputBytes),
+		FILE_PRODUCTION_MAX_TOTAL_IMAGE_BYTES: String(
+			config.fileProductionMaxTotalImageBytes,
+		),
+		FILE_PRODUCTION_SANDBOX_TIMEOUT_MS: String(
+			config.fileProductionSandboxTimeoutMs,
+		),
+		FILE_PRODUCTION_RENDERER_TIMEOUT_MS: String(
+			config.fileProductionRendererTimeoutMs,
+		),
+		FILE_PRODUCTION_MAX_OUTPUT_FILE_BYTES: String(
+			config.fileProductionMaxOutputFileBytes,
+		),
+		FILE_PRODUCTION_MAX_TOTAL_OUTPUT_BYTES: String(
+			config.fileProductionMaxTotalOutputBytes,
+		),
 		CONTEXT_DIAGNOSTICS_DEBUG: String(config.contextDiagnosticsDebug),
 	};
 }

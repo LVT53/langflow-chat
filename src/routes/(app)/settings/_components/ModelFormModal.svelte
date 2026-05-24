@@ -19,7 +19,7 @@ type ModelFormModalModel = InferenceProvider & {
 };
 
 function handleKeydown(e: KeyboardEvent) {
-	if (e.key === 'Escape') {
+	if (e.key === "Escape") {
 		onClose?.();
 	}
 }
@@ -62,18 +62,6 @@ let formMaxTokens = $state(
 );
 let formMaxModelContext = $state(
 	untrack(() => (model?.maxModelContext ? String(model.maxModelContext) : "")),
-);
-let formCompactionUiThreshold = $state(
-	untrack(() =>
-		model?.compactionUiThreshold ? String(model.compactionUiThreshold) : "",
-	),
-);
-let formTargetConstructedContext = $state(
-	untrack(() =>
-		model?.targetConstructedContext
-			? String(model.targetConstructedContext)
-			: "",
-	),
 );
 let formMaxMessageLength = $state(
 	untrack(() =>
@@ -190,21 +178,15 @@ function handleSave() {
 	data.maxModelContext = formMaxModelContext
 		? Number(formMaxModelContext)
 		: null;
-	data.compactionUiThreshold = formCompactionUiThreshold
-		? Number(formCompactionUiThreshold)
-		: null;
-	data.targetConstructedContext = formTargetConstructedContext
-		? Number(formTargetConstructedContext)
-		: null;
+	data.compactionUiThreshold = null;
+	data.targetConstructedContext = null;
 	data.maxMessageLength = formMaxMessageLength
 		? Number(formMaxMessageLength)
 		: null;
 	if (!isBuiltIn) {
 		data.rateLimitFallbackEnabled = formRateLimitFallbackEnabled;
-		data.rateLimitFallbackBaseUrl =
-			formRateLimitFallbackBaseUrl || null;
-		data.rateLimitFallbackModelName =
-			formRateLimitFallbackModelName || null;
+		data.rateLimitFallbackBaseUrl = formRateLimitFallbackBaseUrl || null;
+		data.rateLimitFallbackModelName = formRateLimitFallbackModelName || null;
 		data.rateLimitFallbackTimeoutMs = rateLimitFallbackTimeoutMs;
 		if (formRateLimitFallbackApiKey) {
 			data.rateLimitFallbackApiKey = formRateLimitFallbackApiKey;
@@ -365,14 +347,6 @@ function handleSave() {
 							{#if requiresProviderContext}
 								<p class="mt-1 text-xs text-text-muted">{$t('admin.maxModelContextRequired')}</p>
 							{/if}
-						</div>
-						<div>
-							<label class="settings-label" for="form-compaction-threshold">{$t('admin.compactionUiThresholdLabel')}</label>
-							<input id="form-compaction-threshold" type="number" class="settings-input" bind:value={formCompactionUiThreshold} placeholder="209715" min="1000" />
-						</div>
-						<div>
-							<label class="settings-label" for="form-target-context">{$t('admin.targetConstructedContextLabel')}</label>
-							<input id="form-target-context" type="number" class="settings-input" bind:value={formTargetConstructedContext} placeholder="235929" min="1000" />
 						</div>
 						<div>
 							<label class="settings-label" for="form-max-msg-length">{$t('admin.maxMessageLengthLabel')}</label>

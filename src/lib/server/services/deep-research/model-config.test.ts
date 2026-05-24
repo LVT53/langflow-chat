@@ -110,7 +110,7 @@ describe("Deep Research model configuration", () => {
 			limits: {
 				maxModelContext: 180_000,
 				compactionUiThreshold: 144_000,
-				targetConstructedContext: 108_000,
+				targetConstructedContext: 162_000,
 				maxMessageLength: 30_000,
 				maxTokens: 12_000,
 			},
@@ -132,7 +132,9 @@ describe("Deep Research model configuration", () => {
 			maxTokens: 16_000,
 		});
 
-		await expect(resolveDeepResearchModel("research_task")).resolves.toMatchObject({
+		await expect(
+			resolveDeepResearchModel("research_task"),
+		).resolves.toMatchObject({
 			modelId: "provider:deep-provider",
 			limits: {
 				maxModelContext: 1_000_000,
@@ -159,7 +161,9 @@ describe("Deep Research model configuration", () => {
 			maxTokens: null,
 		});
 
-		await expect(resolveDeepResearchModel("citation_audit")).resolves.toMatchObject({
+		await expect(
+			resolveDeepResearchModel("citation_audit"),
+		).resolves.toMatchObject({
 			modelId: "provider:unknown",
 			limits: {
 				maxModelContext: 150_000,
@@ -191,7 +195,9 @@ describe("Deep Research model configuration", () => {
 		runtimeConfig.model2Enabled = false;
 		runtimeConfig.deepResearchModels.report_writing = "model2";
 
-		await expect(resolveDeepResearchModel("report_writing")).resolves.toMatchObject({
+		await expect(
+			resolveDeepResearchModel("report_writing"),
+		).resolves.toMatchObject({
 			modelId: "model1",
 			modelDisplayName: "Model One",
 		});

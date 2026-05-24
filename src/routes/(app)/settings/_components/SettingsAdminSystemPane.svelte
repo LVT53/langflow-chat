@@ -399,14 +399,8 @@ function openEditBuiltIn(modelName: string) {
 		maxModelContext: adminConfig[`${prefix}_MAX_MODEL_CONTEXT`]
 			? Number(adminConfig[`${prefix}_MAX_MODEL_CONTEXT`])
 			: null,
-		compactionUiThreshold: adminConfig[`${prefix}_COMPACTION_UI_THRESHOLD`]
-			? Number(adminConfig[`${prefix}_COMPACTION_UI_THRESHOLD`])
-			: null,
-		targetConstructedContext: adminConfig[
-			`${prefix}_TARGET_CONSTRUCTED_CONTEXT`
-		]
-			? Number(adminConfig[`${prefix}_TARGET_CONSTRUCTED_CONTEXT`])
-			: null,
+		compactionUiThreshold: null,
+		targetConstructedContext: null,
 		maxMessageLength: adminConfig[`${prefix}_MAX_MESSAGE_LENGTH`]
 			? Number(adminConfig[`${prefix}_MAX_MESSAGE_LENGTH`])
 			: null,

@@ -3,13 +3,17 @@ import {
 	type DeepResearchModelRole,
 	type DeepResearchModelSelections,
 } from "$lib/deep-research-models";
-import type { ModelId } from "$lib/types";
-import { getConfig, getProviderById, type RuntimeConfig } from "$lib/server/config-store";
+import {
+	getConfig,
+	getProviderById,
+	type RuntimeConfig,
+} from "$lib/server/config-store";
 import { deriveModelContextBudget } from "$lib/server/services/chat-turn/context-budget";
 import { inferModelContextWindow } from "$lib/server/services/model-context";
+import type { ModelId } from "$lib/types";
 
-export { DEEP_RESEARCH_MODEL_ROLES };
 export type { DeepResearchModelRole, DeepResearchModelSelections };
+export { DEEP_RESEARCH_MODEL_ROLES };
 
 const UNKNOWN_PROVIDER_MAX_MODEL_CONTEXT_FALLBACK = 150_000;
 
@@ -44,8 +48,6 @@ export async function resolveDeepResearchModel(
 					provider.maxModelContext ??
 					inferModelContextWindow(provider.modelName) ??
 					UNKNOWN_PROVIDER_MAX_MODEL_CONTEXT_FALLBACK,
-				compactionUiThreshold: provider.compactionUiThreshold,
-				targetConstructedContext: provider.targetConstructedContext,
 			});
 			return {
 				role,
