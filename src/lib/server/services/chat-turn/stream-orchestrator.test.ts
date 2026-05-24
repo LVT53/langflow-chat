@@ -283,7 +283,9 @@ describe("stream-orchestrator SSE contract", () => {
 	});
 
 	it("logs structured phase timing without emitting timing SSE events", async () => {
-		const infoSpy = vi.spyOn(console, "info").mockImplementation(() => undefined);
+		const infoSpy = vi
+			.spyOn(console, "info")
+			.mockImplementation(() => undefined);
 		const { sendMessageStream } = await import("$lib/server/services/langflow");
 		(sendMessageStream as ReturnType<typeof vi.fn>).mockResolvedValue({
 			stream: createTokenStream("Hi"),
@@ -957,6 +959,177 @@ describe("stream-orchestrator SSE contract", () => {
 			"Hello",
 			"reasoning-timeout-failover-conv",
 			"model2",
+			expect.any(Object),
+			expect.any(Object),
+		);
+	});
+
+	it("uses a Langflow end result as the answer when no visible tokens arrived", async () => {
+		const { sendMessage, sendMessageStream } = await import(
+			"$lib/server/services/langflow"
+		);
+		(sendMessageStream as ReturnType<typeof vi.fn>).mockResolvedValue({
+			stream: createEventBlockStream([
+				`event: end\ndata: ${JSON.stringify({
+					result: {
+						session_id: "end-result-conv",
+						message: "Final answer from end payload.",
+					},
+				})}\n\n`,
+			]),
+			contextStatus: null,
+			taskState: null,
+			contextDebug: null,
+			honchoContext: null,
+			honchoSnapshot: null,
+			providerUsage: null,
+		});
+
+		const response = runChatStreamOrchestrator({
+			user: {
+				id: "u1",
+				displayName: "User",
+				email: "u@test.com",
+			},
+			turn: createTurn({
+				conversationId: "end-result-conv",
+				streamId: "end-result-stream",
+				modelId: "model1",
+				modelDisplayName: "Model One",
+			}),
+			upstreamMessage: "Hello",
+			downstreamAbortSignal: new AbortController().signal,
+			requestStartTime: Date.now(),
+		});
+
+		const chunks = await readSseResponse(response);
+		const body = chunks.join("\n\n");
+		expect(body).toContain(
+			'event: token\ndata: {"text":"Final answer from end payload."}',
+		);
+		expect(body).toContain("event: end");
+		expect(body).not.toContain("event: error");
+		expect(sendMessage).not.toHaveBeenCalled();
+	});
+
+	it("does not duplicate a Langflow end result after visible tokens", async () => {
+		const { sendMessage, sendMessageStream } = await import(
+			"$lib/server/services/langflow"
+		);
+		(sendMessageStream as ReturnType<typeof vi.fn>).mockResolvedValue({
+			stream: createEventBlockStream([
+				`event: token\ndata: ${JSON.stringify({
+					choices: [{ delta: { content: "Visible streamed answer." } }],
+				})}\n\n`,
+				`event: end\ndata: ${JSON.stringify({
+					result: {
+						session_id: "end-duplicate-conv",
+						message: "Intro. Visible streamed answer.",
+					},
+				})}\n\n`,
+			]),
+			contextStatus: null,
+			taskState: null,
+			contextDebug: null,
+			honchoContext: null,
+			honchoSnapshot: null,
+			providerUsage: null,
+		});
+
+		const response = runChatStreamOrchestrator({
+			user: {
+				id: "u1",
+				displayName: "User",
+				email: "u@test.com",
+			},
+			turn: createTurn({
+				conversationId: "end-duplicate-conv",
+				streamId: "end-duplicate-stream",
+				modelId: "model1",
+				modelDisplayName: "Model One",
+			}),
+			upstreamMessage: "Hello",
+			downstreamAbortSignal: new AbortController().signal,
+			requestStartTime: Date.now(),
+		});
+
+		const chunks = await readSseResponse(response);
+		const body = chunks.join("\n\n");
+		expect(body).toContain(
+			'event: token\ndata: {"text":"Visible streamed answer."}',
+		);
+		expect(body).not.toContain("Intro. Visible streamed answer.");
+		expect(body).toContain("event: end");
+		expect(body).not.toContain("event: error");
+		expect(sendMessage).not.toHaveBeenCalled();
+	});
+
+	it("falls back instead of silently completing when upstream ends after reasoning only", async () => {
+		const { sendMessage, sendMessageStream } = await import(
+			"$lib/server/services/langflow"
+		);
+		(sendMessageStream as ReturnType<typeof vi.fn>).mockResolvedValue({
+			stream: createEventBlockStream([
+				`event: token\ndata: ${JSON.stringify({
+					choices: [
+						{
+							delta: {
+								reasoning_content: "Done thinking; preparing the final answer.",
+							},
+						},
+					],
+				})}\n\n`,
+				"data: [DONE]\n\n",
+			]),
+			contextStatus: null,
+			taskState: null,
+			contextDebug: null,
+			honchoContext: null,
+			honchoSnapshot: null,
+			providerUsage: null,
+		});
+		(sendMessage as ReturnType<typeof vi.fn>).mockResolvedValue({
+			text: "Recovered visible answer",
+			contextStatus: null,
+			taskState: null,
+			contextDebug: null,
+			honchoContext: null,
+			honchoSnapshot: null,
+			providerUsage: null,
+			modelId: "model1",
+			modelDisplayName: "Model One",
+		});
+
+		const response = runChatStreamOrchestrator({
+			user: {
+				id: "u1",
+				displayName: "User",
+				email: "u@test.com",
+			},
+			turn: createTurn({
+				conversationId: "reasoning-only-complete-conv",
+				streamId: "reasoning-only-complete-stream",
+				modelId: "model1",
+				modelDisplayName: "Model One",
+			}),
+			upstreamMessage: "Hello",
+			downstreamAbortSignal: new AbortController().signal,
+			requestStartTime: Date.now(),
+		});
+
+		const chunks = await readSseResponse(response);
+		const body = chunks.join("\n\n");
+		expect(body).toContain("event: thinking");
+		expect(body).toContain("Done thinking; preparing the final answer.");
+		expect(body).toContain(
+			'event: token\ndata: {"text":"Recovered visible answer"}',
+		);
+		expect(body).toContain("event: end");
+		expect(body).not.toContain("event: error");
+		expect(sendMessage).toHaveBeenCalledWith(
+			"Hello",
+			"reasoning-only-complete-conv",
+			"model1",
 			expect.any(Object),
 			expect.any(Object),
 		);

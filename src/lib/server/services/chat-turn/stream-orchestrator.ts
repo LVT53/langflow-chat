@@ -470,6 +470,42 @@ export function runChatStreamOrchestrator(
 				}
 				return true;
 			};
+			const completeOrRecoverAfterUpstreamEnd = async (
+				reason: "done_signal" | "end_event" | "stream_closed",
+			) => {
+				chunkRuntime.flushNativeToolCalls();
+				if (!flushBufferedStreamOutput()) {
+					return;
+				}
+				if (hasPersistableStreamOutput()) {
+					completeSuccess();
+					return;
+				}
+				if (
+					!attemptedNonStreamFallback &&
+					!wasActiveChatStreamStopRequested(streamId) &&
+					fallbackToNonStreaming
+				) {
+					console.warn(
+						"[STREAM] Upstream stream ended before visible assistant output",
+						{
+							conversationId,
+							streamId,
+							modelId,
+							reason,
+							thinkingLength: chunkRuntime.thinkingContent.length,
+							toolCallCount: chunkRuntime.toolCallRecords.length,
+						},
+					);
+					await fallbackToNonStreaming(
+						"stream_read_failure",
+						latestUpstreamAttempt,
+						new Error("Upstream stream ended before visible assistant output"),
+					);
+					return;
+				}
+				failStream("backend_failure");
+			};
 			let latestContextStatus:
 				| import("$lib/types").ConversationContextStatus
 				| undefined;
@@ -908,18 +944,11 @@ export function runChatStreamOrchestrator(
 							if (eventUsage) {
 								latestProviderUsage = eventUsage;
 							}
-							if (data === "[DONE]" || eventType === "end") {
-								chunkRuntime.flushNativeToolCalls();
-								flushPendingThinking();
-								if (!flushInlineThinkingBuffer()) {
-									return;
-								}
-								if (!flushOutputBuffer()) {
-									return;
-								}
-								completeSuccess();
+							if (data === "[DONE]") {
+								await completeOrRecoverAfterUpstreamEnd("done_signal");
 								return;
 							}
+							const isEndEvent = eventType === "end";
 
 							if (eventType === "error") {
 								const errorMessage = extractErrorMessage(data);
@@ -974,13 +1003,19 @@ export function runChatStreamOrchestrator(
 
 							chunkRuntime.processNativeToolCalls(data);
 							const rawChunk = extractAssistantChunk(eventType, data);
+							const shouldEmitRawChunk =
+								!isEndEvent || !hasVisibleAssistantAnswerOutput();
 							const reasoningChunk = getReasoningContent(data);
 							if (reasoningChunk) {
 								if (!emitThinking(reasoningChunk)) {
 									return;
 								}
 							}
-							if (!rawChunk) {
+							if (!rawChunk || !shouldEmitRawChunk) {
+								if (isEndEvent) {
+									await completeOrRecoverAfterUpstreamEnd("end_event");
+									return;
+								}
 								continue;
 							}
 
@@ -994,7 +1029,13 @@ export function runChatStreamOrchestrator(
 							lastAssistantSnapshot = incremental.lastSnapshot;
 							emittedAssistantText = incremental.emittedText;
 							const chunk = incremental.chunk;
-							if (!chunk) continue;
+							if (!chunk) {
+								if (isEndEvent) {
+									await completeOrRecoverAfterUpstreamEnd("end_event");
+									return;
+								}
+								continue;
+							}
 
 							// Suppress duplicate visible text from Langflow's final summary event.
 							// Nemotron streams tokens as "<thinking>...</thinking>visible" so
@@ -1013,6 +1054,10 @@ export function runChatStreamOrchestrator(
 										normalizedEmittedText.endsWith(normalizedChunk) ||
 										normalizedChunk.endsWith(normalizedEmittedText))
 								) {
+									if (isEndEvent) {
+										await completeOrRecoverAfterUpstreamEnd("end_event");
+										return;
+									}
 									continue;
 								}
 							}
@@ -1023,25 +1068,32 @@ export function runChatStreamOrchestrator(
 								emitToolCallEventWithDebug,
 							);
 
-							if (!cleanedChunk) continue;
+							if (!cleanedChunk) {
+								if (isEndEvent) {
+									await completeOrRecoverAfterUpstreamEnd("end_event");
+									return;
+								}
+								continue;
+							}
 
 							if (!emitChunkWithOutputHandling(cleanedChunk)) {
 								return;
 							}
+
+							if (eventType === "end") {
+								await completeOrRecoverAfterUpstreamEnd("end_event");
+								return;
+							}
+						}
+
+						if (ended) {
+							return;
 						}
 					} finally {
 						clearUpstreamIdleTimeout();
 					}
 
-					chunkRuntime.flushNativeToolCalls();
-					flushPendingThinking();
-					if (!flushInlineThinkingBuffer()) {
-						return;
-					}
-					if (!flushOutputBuffer()) {
-						return;
-					}
-					completeSuccess();
+					await completeOrRecoverAfterUpstreamEnd("stream_closed");
 					return;
 				}
 			} catch (error) {
