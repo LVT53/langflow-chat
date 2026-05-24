@@ -31,6 +31,7 @@
     top: number;
     maxWidth: number;
     placement: 'top' | 'bottom';
+    ready: boolean;
   };
 
   let blocks = $state<MarkdownBlock[]>([]);
@@ -47,7 +48,7 @@
   let postRenderVersion = 0;
   let activeSourceLink: HTMLAnchorElement | null = null;
   const SOURCE_TOOLTIP_MARGIN = 12;
-  const SOURCE_TOOLTIP_OFFSET = 8;
+  const SOURCE_TOOLTIP_OFFSET = 6;
 
   // Throttle rendering during streaming so each visual update is large
   // enough that new blocks are perceivable with the fade-in animation.
@@ -329,6 +330,44 @@
     };
   }
 
+  function getTooltipBoundary() {
+    const viewport = getViewportBounds();
+    const viewportBounds = {
+      left: viewport.left + SOURCE_TOOLTIP_MARGIN,
+      right: viewport.left + viewport.width - SOURCE_TOOLTIP_MARGIN,
+      top: viewport.top + SOURCE_TOOLTIP_MARGIN,
+      bottom: viewport.top + viewport.height - SOURCE_TOOLTIP_MARGIN,
+    };
+    const chatBoundsElement = container?.closest('.chat-main, [data-testid="assistant-message"]');
+    if (!(chatBoundsElement instanceof HTMLElement)) {
+      return viewportBounds;
+    }
+
+    const chatRect = chatBoundsElement.getBoundingClientRect();
+    const bounds = {
+      left: Math.max(viewportBounds.left, chatRect.left + SOURCE_TOOLTIP_MARGIN),
+      right: Math.min(viewportBounds.right, chatRect.right - SOURCE_TOOLTIP_MARGIN),
+      top: viewportBounds.top,
+      bottom: viewportBounds.bottom,
+    };
+
+    return bounds.right - bounds.left >= 180 ? bounds : viewportBounds;
+  }
+
+  function clamp(value: number, min: number, max: number) {
+    return Math.min(Math.max(value, min), max);
+  }
+
+  function getTooltipCoordinateOffset() {
+    const offsetParent = sourceTooltipElement?.offsetParent;
+    if (offsetParent instanceof HTMLElement) {
+      const rect = offsetParent.getBoundingClientRect();
+      return { left: rect.left, top: rect.top };
+    }
+
+    return { left: 0, top: 0 };
+  }
+
   function updateSourceLinkTooltipPosition() {
     if (!activeSourceLink || !sourceTooltip || !sourceTooltipElement || !activeSourceLink.isConnected) {
       sourceTooltip = null;
@@ -338,26 +377,21 @@
 
     const linkRect = activeSourceLink.getBoundingClientRect();
     const tooltipRect = sourceTooltipElement.getBoundingClientRect();
-    const viewport = getViewportBounds();
-    const maxWidth = Math.min(384, Math.max(180, viewport.width - SOURCE_TOOLTIP_MARGIN * 2));
+    const boundary = getTooltipBoundary();
+    const coordinateOffset = getTooltipCoordinateOffset();
+    const maxWidth = Math.min(352, Math.max(180, boundary.right - boundary.left));
     const tooltipWidth = Math.min(tooltipRect.width || maxWidth, maxWidth);
     const tooltipHeight = tooltipRect.height || 48;
-    const minimumCenter = viewport.left + SOURCE_TOOLTIP_MARGIN + tooltipWidth / 2;
-    const maximumCenter = viewport.left + viewport.width - SOURCE_TOOLTIP_MARGIN - tooltipWidth / 2;
-    const idealCenter = linkRect.left + linkRect.width / 2;
-    const left = Math.min(Math.max(idealCenter, minimumCenter), maximumCenter);
-    const spaceBelow = viewport.top + viewport.height - linkRect.bottom;
-    const spaceAbove = linkRect.top - viewport.top;
+    const left = clamp(linkRect.left, boundary.left, boundary.right - tooltipWidth) - coordinateOffset.left;
+    const spaceBelow = boundary.bottom - linkRect.bottom;
+    const spaceAbove = linkRect.top - boundary.top;
     const placement =
       spaceBelow < tooltipHeight + SOURCE_TOOLTIP_OFFSET && spaceAbove > spaceBelow ? 'top' : 'bottom';
     const idealTop =
       placement === 'top'
         ? linkRect.top - tooltipHeight - SOURCE_TOOLTIP_OFFSET
         : linkRect.bottom + SOURCE_TOOLTIP_OFFSET;
-    const top = Math.min(
-      Math.max(idealTop, viewport.top + SOURCE_TOOLTIP_MARGIN),
-      viewport.top + viewport.height - SOURCE_TOOLTIP_MARGIN - tooltipHeight,
-    );
+    const top = clamp(idealTop, boundary.top, boundary.bottom - tooltipHeight) - coordinateOffset.top;
 
     sourceTooltip = {
       ...sourceTooltip,
@@ -365,6 +399,7 @@
       top,
       maxWidth,
       placement,
+      ready: true,
     };
   }
 
@@ -383,15 +418,17 @@
     const label = link.querySelector('.source-link-chip__label')?.textContent?.trim();
     const sourceName = label || link.hostname || link.href;
     const linkRect = link.getBoundingClientRect();
-    const viewport = getViewportBounds();
+    const boundary = getTooltipBoundary();
+    const maxWidth = Math.min(352, Math.max(180, boundary.right - boundary.left));
     activeSourceLink = link;
     sourceTooltip = {
       sourceName,
       url: link.href,
-      left: linkRect.left + linkRect.width / 2,
+      left: clamp(linkRect.left, boundary.left, boundary.right - maxWidth),
       top: linkRect.bottom + SOURCE_TOOLTIP_OFFSET,
-      maxWidth: Math.min(384, Math.max(180, viewport.width - SOURCE_TOOLTIP_MARGIN * 2)),
+      maxWidth,
       placement: 'bottom',
+      ready: false,
     };
 
     await tick();
@@ -561,9 +598,11 @@
 {#if sourceTooltip}
   <div
     bind:this={sourceTooltipElement}
-    class={sourceTooltip.placement === 'top'
-      ? 'source-link-tooltip-floating source-link-tooltip-floating--top'
-      : 'source-link-tooltip-floating'}
+    class={[
+      'source-link-tooltip-floating',
+      sourceTooltip.placement === 'top' ? 'source-link-tooltip-floating--top' : '',
+      sourceTooltip.ready ? 'source-link-tooltip-floating--visible' : ''
+    ].filter(Boolean).join(' ')}
     role="tooltip"
     style={`left: ${sourceTooltip.left}px; top: ${sourceTooltip.top}px; max-width: ${sourceTooltip.maxWidth}px;`}
   >
@@ -602,21 +641,21 @@
   :global(.source-link-chip) {
     position: relative;
     display: inline-flex;
-    max-width: min(24ch, 100%);
+    max-width: min(18ch, 100%);
     align-items: center;
-    gap: 0.28em;
+    gap: 0.22em;
     justify-content: center;
-    margin: 0 0.1em;
-    border: 1px solid color-mix(in srgb, var(--accent) 34%, var(--border-subtle));
+    margin: 0 0.06em;
+    border: 1px solid var(--border-subtle);
     border-radius: 999px;
-    background: color-mix(in srgb, var(--surface-elevated) 86%, var(--accent) 14%);
-    color: color-mix(in srgb, var(--accent) 82%, var(--text-primary));
-    font-size: 0.88em;
-    font-weight: 620;
-    line-height: 1.35;
-    padding: 0.07em 0.38em 0.07em 0.44em;
+    background: color-mix(in srgb, var(--surface-elevated) 94%, var(--text-muted) 6%);
+    color: var(--text-primary);
+    font-size: 0.82em;
+    font-weight: 560;
+    line-height: 1.25;
+    padding: 0.02em 0.3em 0.02em 0.34em;
     text-decoration: none !important;
-    vertical-align: -0.14em;
+    vertical-align: 0.02em;
     transition:
       border-color var(--duration-micro) var(--ease-out),
       background var(--duration-micro) var(--ease-out),
@@ -625,9 +664,8 @@
 
   :global(.source-link-chip:hover),
   :global(.source-link-chip:focus-visible) {
-    border-color: color-mix(in srgb, var(--accent) 70%, var(--border-subtle));
-    background: color-mix(in srgb, var(--surface-elevated) 76%, var(--accent) 24%);
-    color: var(--text-primary);
+    border-color: color-mix(in srgb, var(--text-muted) 42%, var(--border-subtle));
+    background: var(--surface-elevated);
     outline: none;
   }
 
@@ -645,9 +683,10 @@
   :global(.source-link-chip__icon) {
     position: relative;
     display: block;
-    width: 0.88em;
-    min-width: 0.88em;
-    height: 0.88em;
+    width: 0.86em;
+    min-width: 0.86em;
+    height: 0.86em;
+    color: var(--accent);
     background: currentColor;
     -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 3h6v6'/%3E%3Cpath d='M10 14 21 3'/%3E%3Cpath d='M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'/%3E%3C/svg%3E") center / contain no-repeat;
     mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M15 3h6v6'/%3E%3Cpath d='M10 14 21 3'/%3E%3Cpath d='M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'/%3E%3C/svg%3E") center / contain no-repeat;
@@ -657,7 +696,7 @@
     position: fixed;
     z-index: 90;
     display: flex;
-    min-width: min(18rem, calc(100vw - 1.5rem));
+    width: max-content;
     flex-direction: column;
     gap: 0.18rem;
     border: 1px solid var(--border-subtle);
@@ -671,7 +710,12 @@
     padding: 0.45rem 0.55rem;
     pointer-events: none;
     text-align: left;
-    transform: translateX(-50%);
+    opacity: 0;
+    transform: translateY(-0.18rem);
+    transition:
+      opacity 120ms var(--ease-out),
+      transform 120ms var(--ease-out);
+    visibility: hidden;
     white-space: normal;
   }
 
@@ -688,7 +732,13 @@
   }
 
   .source-link-tooltip-floating--top {
-    transform: translateX(-50%);
+    transform: translateY(0.18rem);
+  }
+
+  .source-link-tooltip-floating--visible {
+    opacity: 1;
+    transform: translateY(0);
+    visibility: visible;
   }
 
   @keyframes wordFadeIn {
