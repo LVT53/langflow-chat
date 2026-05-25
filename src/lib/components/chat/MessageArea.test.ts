@@ -9,6 +9,7 @@ import type {
 } from '$lib/types';
 
 vi.mock('$lib/utils/markdown-loader', () => ({
+	collectSourceReferenceCandidates: async () => [],
 	prepareCodeHighlighting: async () => undefined,
 	renderCodeBlock: async (content: string) => `<pre><code>${content}</code></pre>`,
 	renderHighlightedText: async (content: string) => content,

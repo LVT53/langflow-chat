@@ -446,6 +446,8 @@ export function streamChat(
 								contextDebug: parsed.contextDebug,
 								messageEvidence: parsed.messageEvidence,
 								generatedFiles: parsed.generatedFiles,
+								contextCompressionSnapshots:
+									parsed.contextCompressionSnapshots,
 							};
 							metadata = Object.values(nextMetadata).some(
 								(value) => value !== undefined,
