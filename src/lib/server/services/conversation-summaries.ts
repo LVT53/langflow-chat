@@ -1,11 +1,11 @@
-import { and, eq, sql } from 'drizzle-orm';
-import { db } from '$lib/server/db';
-import { conversationSummaries } from '$lib/server/db/schema';
+import { and, eq, sql } from "drizzle-orm";
+import { db } from "$lib/server/db";
+import { conversationSummaries } from "$lib/server/db/schema";
 import {
 	canUseContextSummarizer,
 	requestContextSummarizer,
-} from '$lib/server/services/task-state/control-model';
-import { clipNullableText, normalizeWhitespace } from '$lib/server/utils/text';
+} from "$lib/server/services/task-state/control-model";
+import { clipNullableText, normalizeWhitespace } from "$lib/server/utils/text";
 
 const SUMMARY_MAX_CHARS = 700;
 const MEANINGFUL_TURN_MIN_CHARS = 40;
@@ -14,7 +14,7 @@ export type ConversationSummary = {
 	conversationId: string;
 	userId: string;
 	summary: string;
-	source: 'model' | 'deterministic';
+	source: "model" | "deterministic";
 	createdAt: number;
 	updatedAt: number;
 };
@@ -28,7 +28,7 @@ export type RefreshConversationSummaryParams = {
 
 function timestampToMs(value: Date | number | null | undefined): number {
 	if (value instanceof Date) return value.getTime();
-	if (typeof value === 'number') return value;
+	if (typeof value === "number") return value;
 	return 0;
 }
 
@@ -39,14 +39,26 @@ function mapConversationSummary(
 		conversationId: row.conversationId,
 		userId: row.userId,
 		summary: row.summary,
-		source: row.source === 'model' ? 'model' : 'deterministic',
+		source: row.source === "model" ? "model" : "deterministic",
 		createdAt: timestampToMs(row.createdAt),
 		updatedAt: timestampToMs(row.updatedAt),
 	};
 }
 
-function compactText(value: string | null | undefined, maxLength = SUMMARY_MAX_CHARS): string {
-	return clipNullableText(normalizeWhitespace(value ?? ''), maxLength) ?? '';
+function compactText(
+	value: string | null | undefined,
+	maxLength = SUMMARY_MAX_CHARS,
+): string {
+	return clipNullableText(normalizeWhitespace(value ?? ""), maxLength) ?? "";
+}
+
+function isForeignKeyConstraintError(error: unknown): boolean {
+	return (
+		typeof error === "object" &&
+		error !== null &&
+		"code" in error &&
+		(error as { code?: unknown }).code === "SQLITE_CONSTRAINT_FOREIGNKEY"
+	);
 }
 
 function buildDeterministicSummary(params: {
@@ -63,7 +75,7 @@ function buildDeterministicSummary(params: {
 		assistant ? `Latest assistant response: ${assistant}` : null,
 	]
 		.filter((value): value is string => Boolean(value))
-		.join(' ');
+		.join(" ");
 	return compactText(next);
 }
 
@@ -76,7 +88,7 @@ async function buildModelSummary(params: {
 	try {
 		const summary = await requestContextSummarizer({
 			system:
-				'Write a compact durable conversation summary in 50-100 words. Preserve concrete user goals, decisions, constraints, and next steps. Do not mention that you are summarizing.',
+				"Write a compact durable conversation summary in 50-100 words. Preserve concrete user goals, decisions, constraints, and next steps. Do not mention that you are summarizing.",
 			user: [
 				params.previousSummary
 					? `Existing durable summary:\n${params.previousSummary}`
@@ -85,13 +97,16 @@ async function buildModelSummary(params: {
 				`Latest assistant response:\n${params.assistantResponse}`,
 			]
 				.filter((value): value is string => Boolean(value))
-				.join('\n\n'),
+				.join("\n\n"),
 			maxTokens: 140,
 			temperature: 0.1,
 		});
 		return summary ? compactText(summary) : null;
 	} catch (error) {
-		console.error('[CONVERSATION_SUMMARIES] Model summary refresh failed:', error);
+		console.error(
+			"[CONVERSATION_SUMMARIES] Model summary refresh failed:",
+			error,
+		);
 		return null;
 	}
 }
@@ -135,7 +150,9 @@ export async function refreshConversationSummary(
 		userMessage,
 		assistantResponse,
 	});
-	const source: ConversationSummary['source'] = modelSummary ? 'model' : 'deterministic';
+	const source: ConversationSummary["source"] = modelSummary
+		? "model"
+		: "deterministic";
 	const summary =
 		modelSummary ??
 		buildDeterministicSummary({
@@ -144,23 +161,30 @@ export async function refreshConversationSummary(
 			assistantResponse,
 		});
 
-	await db
-		.insert(conversationSummaries)
-		.values({
-			conversationId: params.conversationId,
-			userId: params.userId,
-			summary,
-			source,
-		})
-		.onConflictDoUpdate({
-			target: conversationSummaries.conversationId,
-			set: {
+	try {
+		await db
+			.insert(conversationSummaries)
+			.values({
+				conversationId: params.conversationId,
 				userId: params.userId,
 				summary,
 				source,
-				updatedAt: sql`(unixepoch())`,
-			},
-		});
+			})
+			.onConflictDoUpdate({
+				target: conversationSummaries.conversationId,
+				set: {
+					userId: params.userId,
+					summary,
+					source,
+					updatedAt: sql`(unixepoch())`,
+				},
+			});
+	} catch (error) {
+		if (isForeignKeyConstraintError(error)) {
+			return null;
+		}
+		throw error;
+	}
 
 	return getConversationSummary({
 		userId: params.userId,
