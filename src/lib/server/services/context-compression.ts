@@ -126,6 +126,8 @@ const compressionSnapshotSchema = z.strictObject({
 	}),
 });
 
+const CONTEXT_COMPRESSION_CONTROL_MAX_TOKENS = 4096;
+
 const compressionSnapshotJsonSchema = {
 	type: "object",
 	additionalProperties: false,
@@ -809,6 +811,7 @@ export async function runContextCompression(
 				{
 					systemPrompt: CONTEXT_COMPRESSION_SYSTEM_APPENDIX,
 					thinkingMode: "on",
+					maxTokens: CONTEXT_COMPRESSION_CONTROL_MAX_TOKENS,
 					jsonSchema: {
 						name: "context_compression_snapshot",
 						strict: true,
