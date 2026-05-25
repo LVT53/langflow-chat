@@ -235,4 +235,14 @@ describe("runNonStreamFallback", () => {
 		expect(mockEmitText).not.toHaveBeenCalled();
 		expect(mockCompleteSuccess).not.toHaveBeenCalled();
 	});
+
+	it("returns false instead of throwing when fallback send fails", async () => {
+		mockSendMessage.mockRejectedValue(new Error("Langflow API error: 502"));
+
+		const result = await callFallback();
+
+		expect(result).toBe(false);
+		expect(mockEmitText).not.toHaveBeenCalled();
+		expect(mockCompleteSuccess).not.toHaveBeenCalled();
+	});
 });
