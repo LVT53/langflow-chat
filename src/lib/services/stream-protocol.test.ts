@@ -250,9 +250,7 @@ describe("stream-protocol", () => {
 					},
 				],
 			}),
-		).toBe(
-			"Magyarországon hivatalosan szürke rendszámot lehet igényelni.",
-		);
+		).toBe("Magyarországon hivatalosan szürke rendszámot lehet igényelni.");
 	});
 
 	it("keeps multiple Langflow assistant output blocks when none look like tool output", () => {
@@ -431,6 +429,13 @@ describe("stream-protocol", () => {
 		expect(
 			getLeakedToolDiagnosticPrefixLength("Before text Code execution complet"),
 		).toBe(22);
+	});
+
+	it("does not hold ordinary JSON examples as leaked diagnostic prefixes", () => {
+		expect(getLeakedToolDiagnosticPrefixLength("Here is JSON: {")).toBe(0);
+		expect(getLeakedToolDiagnosticPrefixLength('Here is JSON: {"type":')).toBe(
+			0,
+		);
 	});
 
 	it("splits an untagged Qwen planning preamble from visible prose", () => {

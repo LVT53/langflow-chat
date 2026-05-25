@@ -307,6 +307,8 @@ const PYTHON_TOOL_MARKER_PATTERNS = [
 ] as const;
 const LEADING_TOOL_PLANNING_NARRATION_RE =
 	/^\s*(?:(?:i(?:'ll| will| am going to)?|let me)\s+(?:search|look up|fetch|check|research|retrieve)\b|(?:friss\s+adatokat\s+)?keresek\b|rákeresek\b|lekérdezek\b|megnézem\b|utánanézek\b|(?:két|több)\s+konkrét\b[\s\S]{0,180}\b(?:forrást|forrás)\b[\s\S]{0,180}\blekérdezek\b)[^.!?\n]*(?:[.!?]|(?=\n|$))\s*/i;
+const LEADING_FILE_PRODUCTION_REPAIR_NARRATION_RE =
+	/^\s*(?:(?:i(?:'ll| will| am going to| need to| should)?|let me)\s+(?:fix|repair|correct|adjust|rewrite|reformat)\b[^.!?\n]{0,220}\b(?:json|document[_\s-]+source|source\s+json|schema|formatting)\b[^.!?\n]*(?:[.!?]|(?=\n|$)))\s*/i;
 const TOOL_PLANNING_NARRATION_PREFIX_SCAN_CHARS = 240;
 const TOOL_PLANNING_NARRATION_PREFIXES = [
 	"i'll search",
@@ -328,8 +330,45 @@ const TOOL_PLANNING_NARRATION_PREFIXES = [
 	"két konkrét",
 	"több konkrét",
 ] as const;
+const FILE_PRODUCTION_REPAIR_NARRATION_PREFIXES = [
+	"i'll fix",
+	"i will fix",
+	"i am going to fix",
+	"i need to fix",
+	"i should fix",
+	"let me fix",
+	"i'll repair",
+	"i will repair",
+	"let me repair",
+	"i'll correct",
+	"i will correct",
+	"let me correct",
+	"i'll adjust",
+	"i will adjust",
+	"let me adjust",
+	"i'll rewrite",
+	"i will rewrite",
+	"let me rewrite",
+	"i'll reformat",
+	"i will reformat",
+	"let me reformat",
+] as const;
 const PLAIN_SOURCE_REFERENCE_MARKER_RE = /[ \t]*【S\d+】[ \t]*/g;
 const PLAIN_SOURCE_REFERENCE_MARKER_PREFIX_SCAN_CHARS = 24;
+const DOCUMENT_SOURCE_BLOCK_TYPES = [
+	"heading",
+	"paragraph",
+	"list",
+	"table",
+	"callout",
+	"quote",
+	"code",
+	"divider",
+	"image",
+	"chart",
+] as const;
+const DOCUMENT_SOURCE_CONTINUATION_LINE_RE =
+	/^(?:(?:\{|\}|\[|\]),?|,|"?(?:type|title|subtitle|summary|blocks|sections|level|text|items|ordered|columns|rows|cells|callout|variant|quote|language|code|caption|chartType|data|labels|datasets|url|alt)"?\s*:)/i;
 const ASSISTANT_PROSE_BOUNDARY_PATTERNS = [
 	"i see",
 	"i found",
@@ -360,6 +399,7 @@ export interface LeakedToolDiagnosticsState {
 	suppressWebToolOutput: boolean;
 	pendingWebToolWhitespace: string;
 	suppressPythonToolOutput: boolean;
+	suppressDocumentSourceOutput: boolean;
 	lastVisibleChar: string;
 }
 
@@ -401,6 +441,7 @@ export function createLeakedToolDiagnosticsState(): LeakedToolDiagnosticsState {
 		suppressWebToolOutput: false,
 		pendingWebToolWhitespace: "",
 		suppressPythonToolOutput: false,
+		suppressDocumentSourceOutput: false,
 		lastVisibleChar: "",
 	};
 }
@@ -654,15 +695,178 @@ function stripLeadingToolPlanningNarration(value: string): string {
 	return remainder.trimStart() ? remainder.trimStart() : "";
 }
 
+function stripLeadingFileProductionRepairNarration(
+	value: string,
+	state: LeakedToolDiagnosticsState,
+): string {
+	if (!value.trim()) {
+		return value;
+	}
+
+	const match = LEADING_FILE_PRODUCTION_REPAIR_NARRATION_RE.exec(value);
+	if (!match) {
+		return value;
+	}
+
+	state.suppressDocumentSourceOutput = true;
+	const remainder = value.slice(match[0].length);
+	return remainder.trimStart() ? remainder.trimStart() : "";
+}
+
+function getDocumentSourceBlockType(value: string): string | null {
+	const match = /(?:^|(?:\[|\{|,)\s*)"type"\s*:\s*"([^"]+)"/i.exec(value);
+	return match?.[1]?.toLowerCase() ?? null;
+}
+
+function hasDocumentSourceBlockType(value: string): boolean {
+	const blockType = getDocumentSourceBlockType(value);
+	return Boolean(
+		blockType && DOCUMENT_SOURCE_BLOCK_TYPES.some((type) => type === blockType),
+	);
+}
+
+function findJsonObjectEnd(value: string, startIndex: number): number | null {
+	let depth = 0;
+	let inString = false;
+	let escaped = false;
+
+	for (let index = startIndex; index < value.length; index += 1) {
+		const char = value[index];
+
+		if (inString) {
+			if (escaped) {
+				escaped = false;
+				continue;
+			}
+			if (char === "\\") {
+				escaped = true;
+				continue;
+			}
+			if (char === '"') {
+				inString = false;
+			}
+			continue;
+		}
+
+		if (char === '"') {
+			inString = true;
+			continue;
+		}
+		if (char === "{") {
+			depth += 1;
+			continue;
+		}
+		if (char === "}") {
+			depth -= 1;
+			if (depth === 0) {
+				return index + 1;
+			}
+		}
+	}
+
+	return null;
+}
+
+function stripLeadingDocumentSourceObjectStream(line: string): {
+	line: string;
+	removed: boolean;
+	openEnded: boolean;
+} {
+	let cursor = 0;
+	let removed = false;
+
+	while (cursor < line.length) {
+		while (/[\s,]/.test(line[cursor] ?? "")) {
+			cursor += 1;
+		}
+
+		if (line[cursor] !== "{") {
+			break;
+		}
+
+		const objectEnd = findJsonObjectEnd(line, cursor);
+		if (objectEnd === null) {
+			if (isDocumentSourceRawOutputPrefix(line.slice(cursor))) {
+				return { line: "", removed: true, openEnded: true };
+			}
+			break;
+		}
+
+		const objectText = line.slice(cursor, objectEnd);
+		if (!hasDocumentSourceBlockType(objectText)) {
+			break;
+		}
+
+		removed = true;
+		cursor = objectEnd;
+	}
+
+	if (!removed) {
+		return { line, removed: false, openEnded: false };
+	}
+
+	return {
+		line: line.slice(cursor).trimStart(),
+		removed: true,
+		openEnded: false,
+	};
+}
+
+function isDocumentSourceContinuationLine(value: string): boolean {
+	const candidate = value.trim();
+	if (!candidate) return false;
+	return (
+		DOCUMENT_SOURCE_CONTINUATION_LINE_RE.test(candidate) ||
+		hasDocumentSourceBlockType(candidate)
+	);
+}
+
+function stripLeakedDocumentSourceDiagnostics(
+	value: string,
+	state: LeakedToolDiagnosticsState,
+): string {
+	let output = "";
+
+	for (const { line, lineEnding } of splitPreservingLineEndings(value)) {
+		if (state.suppressDocumentSourceOutput) {
+			const stripped = stripLeadingDocumentSourceObjectStream(line);
+			if (stripped.removed) {
+				state.suppressDocumentSourceOutput =
+					stripped.openEnded || !stripped.line.trim();
+				if (!stripped.line.trim()) {
+					continue;
+				}
+				output += stripped.line + lineEnding;
+				continue;
+			}
+
+			if (!line.trim() || isDocumentSourceContinuationLine(line)) {
+				continue;
+			}
+			state.suppressDocumentSourceOutput = false;
+		}
+
+		output += line + lineEnding;
+	}
+
+	return output;
+}
+
 export function stripLeakedToolDiagnostics(
 	value: string,
 	state: LeakedToolDiagnosticsState = createLeakedToolDiagnosticsState(),
 ): string {
-	const withoutLeadingToolNarration = stripLeadingToolPlanningNarration(
-		value,
+	const withoutLeadingToolNarration = stripLeadingToolPlanningNarration(value);
+	const withoutFileProductionRepair = stripLeadingFileProductionRepairNarration(
+		withoutLeadingToolNarration,
+		state,
+	);
+	const withoutDocumentSourceDiagnostics = stripLeakedDocumentSourceDiagnostics(
+		withoutFileProductionRepair,
+		state,
 	);
 	const withoutWebDiagnostics = stripLeakedWebToolDiagnostics(
-		withoutLeadingToolNarration,
+		withoutDocumentSourceDiagnostics,
 		state,
 	);
 	const withoutPythonDiagnostics = stripLeakedPythonToolDiagnostics(
@@ -720,6 +924,18 @@ function isToolPlanningNarrationPrefix(value: string): boolean {
 	);
 }
 
+function isFileProductionRepairNarrationPrefix(value: string): boolean {
+	if (/^\s/.test(value)) return false;
+	const candidate = value.toLowerCase();
+	if (!candidate) return false;
+	if (candidate.length < 4) return false;
+	if (LEADING_FILE_PRODUCTION_REPAIR_NARRATION_RE.test(candidate)) return true;
+
+	return FILE_PRODUCTION_REPAIR_NARRATION_PREFIXES.some(
+		(prefix) => prefix.startsWith(candidate) || candidate.startsWith(prefix),
+	);
+}
+
 function isLeakedPythonToolDiagnosticPrefix(value: string): boolean {
 	if (/^\s/.test(value)) return false;
 	const candidate = value.toLowerCase();
@@ -737,6 +953,34 @@ function isPlainSourceReferenceMarkerPrefix(value: string): boolean {
 	return /^[ \t]*【(?:S\d*)?$/i.test(value);
 }
 
+function isDocumentSourceRawOutputPrefix(value: string): boolean {
+	if (/^\s/.test(value)) return false;
+	const candidate = value.trimStart();
+	if (!candidate) return false;
+
+	const compact = candidate.toLowerCase().replace(/\s+/g, "");
+	if (
+		compact.length >= 1 &&
+		(['{"type":', '[{"type":'] as const).some((prefix) =>
+			prefix.startsWith(compact),
+		)
+	) {
+		return true;
+	}
+
+	const partialTypeMatch = /^(?:\[\s*)?\{\s*"type"\s*:\s*"([^"]*)$/i.exec(
+		candidate,
+	);
+	if (partialTypeMatch) {
+		const typePrefix = partialTypeMatch[1].toLowerCase();
+		return DOCUMENT_SOURCE_BLOCK_TYPES.some((type) =>
+			type.startsWith(typePrefix),
+		);
+	}
+
+	return hasDocumentSourceBlockType(candidate);
+}
+
 export function getLeakedToolDiagnosticPrefixLength(value: string): number {
 	const scanStart = Math.max(
 		0,
@@ -752,6 +996,7 @@ export function getLeakedToolDiagnosticPrefixLength(value: string): number {
 		const suffix = value.slice(index);
 		if (
 			isLeakedToolDiagnosticPrefix(suffix) ||
+			isFileProductionRepairNarrationPrefix(suffix) ||
 			isLeakedPythonToolDiagnosticPrefix(suffix) ||
 			isPlainSourceReferenceMarkerPrefix(suffix)
 		) {
@@ -933,7 +1178,9 @@ function getTextFromContentBlocks(value: unknown): string {
 					? header.title.toLowerCase().trim()
 					: "";
 			const headerIcon =
-				typeof header?.icon === "string" ? header.icon.toLowerCase().trim() : "";
+				typeof header?.icon === "string"
+					? header.icon.toLowerCase().trim()
+					: "";
 
 			if (headerTitle.includes("input")) {
 				continue;

@@ -135,6 +135,50 @@ describe("normalizeAssistantOutput", () => {
 		expect(result).toBe("I see the root filesystem is 66% used.");
 	});
 
+	it("strips leaked document-source repair output around file-production completion", () => {
+		const toolCompletion = JSON.stringify({
+			name: "produce_file",
+			outputSummary: "Accepted file-production request.",
+		});
+		const result = normalizeAssistantOutput(
+			[
+				"Let me fix the JSON formatting for the document source.",
+				'{"type":"paragraph","text":"Actionable takeaways..."}, {"type":"list","items":["Prioritize the migration","Measure operational risk"]}',
+				`\u0002TOOL_END\u001f${toolCompletion}\u0003`,
+				"Your PDF is being generated now.",
+			].join("\n"),
+		);
+
+		expect(result).toBe("Your PDF is being generated now.");
+	});
+
+	it("preserves document-source JSON examples when no repair leak is active", () => {
+		const result = normalizeAssistantOutput(
+			[
+				"Here is a document-source example:",
+				'{"type":"paragraph","text":"Visible JSON example"}',
+			].join("\n"),
+		);
+
+		expect(result).toBe(
+			[
+				"Here is a document-source example:",
+				'{"type":"paragraph","text":"Visible JSON example"}',
+			].join("\n"),
+		);
+	});
+
+	it("preserves same-line visible prose after leaked document-source blocks", () => {
+		const result = normalizeAssistantOutput(
+			[
+				"Let me fix the JSON formatting for the document source.",
+				'{"type":"paragraph","text":"Actionable takeaways..."}Your PDF is being generated now.',
+			].join("\n"),
+		);
+
+		expect(result).toBe("Your PDF is being generated now.");
+	});
+
 	it("strips thinking and tool markers combined", () => {
 		const result = normalizeAssistantOutput(
 			"<thinking>reason</thinking>" +

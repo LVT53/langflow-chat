@@ -415,6 +415,23 @@ describe("extractAssistantChunk", () => {
 			}),
 		).toBe("");
 	});
+
+	it("does not expose file-production payload text as assistant output", () => {
+		expect(
+			extractAssistantChunk("token", {
+				name: "produce_file",
+				text: '{"type":"paragraph","text":"Raw document source"}',
+			}),
+		).toBe("");
+		expect(
+			extractAssistantChunk("token", {
+				data: {
+					name: "file_production",
+					text: '{"type":"paragraph","text":"Raw document source"}',
+				},
+			}),
+		).toBe("");
+	});
 });
 
 describe("stream error extraction", () => {

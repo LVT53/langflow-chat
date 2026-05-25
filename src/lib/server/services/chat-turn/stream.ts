@@ -167,7 +167,9 @@ function readToolInput(value: unknown): Record<string, unknown> | undefined {
 	return parsed as Record<string, unknown>;
 }
 
-function parseToolArguments(value: string): Record<string, unknown> | undefined {
+function parseToolArguments(
+	value: string,
+): Record<string, unknown> | undefined {
 	const parsed = parseMaybeJson(value);
 	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
 		return undefined;
@@ -530,7 +532,9 @@ export function createServerChunkRuntime({
 			Boolean(callId) && record.status === "done" && record.callId === callId;
 
 		if (status === "running") {
-			const duplicateRunningIndex = findRunningRecordIndex({ matchInput: true });
+			const duplicateRunningIndex = findRunningRecordIndex({
+				matchInput: true,
+			});
 			if (duplicateRunningIndex !== -1) {
 				rememberAlias(toolCallRecords[duplicateRunningIndex]);
 				return;
@@ -965,6 +969,9 @@ function isToolLikeStreamPayload(eventType: string, value: unknown): boolean {
 	}
 
 	const name = readNonEmptyString(payload.name)?.toLowerCase();
+	if (name && /^(?:produce_file|file_production)$/.test(name)) {
+		return true;
+	}
 	if (
 		name &&
 		/^(?:research_web|search|web_search|exa_search|get_contents|fetch_content|fetch|memory_context)$/.test(
