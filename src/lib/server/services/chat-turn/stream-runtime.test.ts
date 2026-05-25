@@ -175,6 +175,23 @@ describe("createServerChunkRuntime", () => {
 		expect(runtime.fullResponse).toBe("");
 	});
 
+	it("holds one-character starts of web-planning prefixes", () => {
+		const chunks: string[] = [];
+		const runtime = createServerChunkRuntime({
+			enqueueChunk(chunk) {
+				chunks.push(chunk);
+				return true;
+			},
+		});
+
+		runtime.emitChunkWithOutputHandling("K");
+		runtime.emitChunkWithOutputHandling("i\n\n");
+		runtime.flushInlineThinkingBuffer();
+
+		expect(tokenTexts(chunks).join("")).toBe("");
+		expect(runtime.fullResponse).toBe("");
+	});
+
 	it("strips leaked raw web research result blocks from visible tokens", () => {
 		const chunks: string[] = [];
 		const runtime = createServerChunkRuntime({

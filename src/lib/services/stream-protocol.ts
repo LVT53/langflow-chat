@@ -1206,6 +1206,16 @@ export function getLeakedToolDiagnosticPrefixLength(value: string): number {
 	);
 	for (let index = scanStart; index < value.length; index += 1) {
 		const suffix = value.slice(index);
+		const trimmedSuffix = suffix.trimEnd().toLowerCase();
+		if (
+			index === 0 &&
+			trimmedSuffix.length === 1 &&
+			TOOL_PLANNING_NARRATION_PREFIXES.some((prefix) =>
+				prefix.startsWith(trimmedSuffix),
+			)
+		) {
+			return value.length - index;
+		}
 		if (
 			isLeakedToolDiagnosticPrefix(suffix) ||
 			isFileProductionRepairNarrationPrefix(suffix) ||
