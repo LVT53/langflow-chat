@@ -1,4 +1,7 @@
-import type { RenderMarkdownOptions } from "$lib/services/markdown";
+import type {
+	RenderMarkdownOptions,
+	SourceReferenceCandidate,
+} from "$lib/services/markdown";
 
 /**
  * Shared markdown module loader with lazy caching.
@@ -47,6 +50,13 @@ export async function renderMarkdown(
 ): Promise<string> {
 	const { renderMarkdown: fn } = await getMarkdownModule();
 	return fn(content, isDark, options);
+}
+
+export async function collectSourceReferenceCandidates(
+	content: string,
+): Promise<SourceReferenceCandidate[]> {
+	const { collectSourceReferenceCandidates: fn } = await getMarkdownModule();
+	return fn(content);
 }
 
 export async function renderCodeBlock(

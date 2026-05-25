@@ -7,6 +7,7 @@
     hasExtremeUnbreakableContent,
     resolveTableOverflowMode,
   } from '$lib/services/table-layout';
+  import type { SourceReferenceCandidate } from '$lib/services/markdown';
   import { onMount, tick } from 'svelte';
 
   let {
@@ -56,6 +57,24 @@
   let throttleTimer: ReturnType<typeof setTimeout> | null = null;
   const STREAM_THROTTLE_MS = 40;
 
+  async function collectFullMessageSourceReferences(
+    source: string,
+    compactLinks: boolean
+  ): Promise<SourceReferenceCandidate[]> {
+    if (!compactLinks) return [];
+
+    try {
+      const markdown = await import('$lib/utils/markdown-loader');
+      if (typeof markdown.collectSourceReferenceCandidates !== 'function') {
+        return [];
+      }
+
+      return markdown.collectSourceReferenceCandidates(source);
+    } catch {
+      return [];
+    }
+  }
+
   function scheduleRender(src: string, darkMode: boolean, streaming: boolean, compactLinks: boolean) {
     pendingContent = src;
     if (throttleTimer !== null) return;
@@ -72,6 +91,7 @@
     const normalizedSource = source.startsWith('[Translation unavailable]')
       ? source.substring('[Translation unavailable]'.length).trimStart()
       : source;
+    const sourceReferences = await collectFullMessageSourceReferences(normalizedSource, compactLinks);
     const lines = normalizedSource.split('\n');
     const nextBlocks: MarkdownBlock[] = [];
     const textLines: string[] = [];
@@ -83,7 +103,8 @@
       if (!textLines.length) return;
 
       const html = await renderMarkdown(textLines.join('\n'), darkMode, {
-        compactExternalLinks: compactLinks
+        compactExternalLinks: compactLinks,
+        sourceReferences
       });
       if (html.trim()) {
         nextBlocks.push({ type: 'html', html });

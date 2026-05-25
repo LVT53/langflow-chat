@@ -65,6 +65,65 @@ describe("Markdown Rendering Service", () => {
 		expect(html).not.toContain(">Example Source</a>");
 	});
 
+	it("renders inline compact source references as source link chips", async () => {
+		const mod = await import("./markdown");
+		const html = await mod.renderMarkdown(
+			"Alpha claim (S2).\n\nSources: [S2](https://example.com/source)",
+			false,
+			{ compactExternalLinks: true },
+		);
+
+		expect(html).toContain("Alpha claim ");
+		expect(html).toContain('href="https://example.com/source"');
+		expect(html).toContain('class="source-link-chip"');
+		expect(html).toContain('class="source-link-chip__label">S2</span>');
+		expect(html).not.toContain("(S2)");
+	});
+
+	it("can render inline source references from candidates derived from the full assistant message", async () => {
+		const mod = await import("./markdown");
+		const sourceReferences = await mod.collectSourceReferenceCandidates(
+			"Alpha claim (S2).\n\n```txt\nnot a source [S2](https://wrong.example)\n```\n\nSources:\n- [S1](https://one.example)\n- [S2](https://two.example)",
+		);
+		const html = await mod.renderMarkdown("Alpha claim (S2).", false, {
+			compactExternalLinks: true,
+			sourceReferences,
+		});
+
+		expect(html).toContain('href="https://two.example"');
+		expect(html).toContain('class="source-link-chip__label">S2</span>');
+		expect(html).not.toContain("https://wrong.example");
+		expect(html).not.toContain("(S2)");
+	});
+
+	it("derives inline source reference labels from compact source links", async () => {
+		const mod = await import("./markdown");
+		const html = await mod.renderMarkdown(
+			"Alpha claim (Policy memo).\n\nSources: [Policy memo](https://example.com/policy)",
+			false,
+			{ compactExternalLinks: true },
+		);
+
+		expect(html).toContain('href="https://example.com/policy"');
+		expect(html).toContain(
+			'class="source-link-chip__label">Policy memo</span>',
+		);
+		expect(html).not.toContain("(Policy memo)");
+	});
+
+	it("does not render inline source references inside code or existing links", async () => {
+		const mod = await import("./markdown");
+		const html = await mod.renderMarkdown(
+			"Inline code `(Policy memo)` and [Local (Policy memo)](./draft.md).\n\nSources: [Policy memo](https://example.com/policy)",
+			false,
+			{ compactExternalLinks: true },
+		);
+
+		expect(html.match(/class="source-link-chip"/g) ?? []).toHaveLength(1);
+		expect(html).toContain("<code>(Policy memo)</code>");
+		expect(html).toContain("Local (Policy memo)");
+	});
+
 	it("removes bare source markers when rendering compact source-link chips", async () => {
 		const mod = await import("./markdown");
 		const html = await mod.renderMarkdown(

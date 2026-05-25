@@ -10,7 +10,21 @@ type Highlighter = Awaited<
 
 type RenderMarkdownOptions = {
 	compactExternalLinks?: boolean;
+	sourceReferences?: SourceReferenceCandidate[];
 };
+
+type SourceReferenceCandidate = {
+	label: string;
+	href: string;
+	sourceName?: string;
+};
+
+type InlineSourceReference = {
+	href: string;
+	sourceName: string;
+};
+
+type InlineSourceReferenceMap = Map<string, InlineSourceReference>;
 
 const HIGHLIGHT_LANGS = {
 	javascript: () => import("@shikijs/langs/javascript"),
@@ -210,7 +224,16 @@ async function renderMarkdown(
 	const sourceDisplayContent = options.compactExternalLinks
 		? stripPlainSourceReferenceMarkers(displayContent)
 		: displayContent;
-	const renderer = createMarkdownRenderer(isDark, options);
+	const inlineSourceReferences = options.compactExternalLinks
+		? options.sourceReferences
+			? inlineSourceReferenceMapFromCandidates(options.sourceReferences)
+			: collectInlineSourceReferences(sourceDisplayContent, marked)
+		: new Map<string, InlineSourceReference>();
+	const renderer = createMarkdownRenderer(
+		isDark,
+		options,
+		inlineSourceReferences,
+	);
 	const html = marked.parse(sourceDisplayContent, {
 		renderer: renderer as Parameters<typeof marked.parse>[1]["renderer"],
 		breaks: true,
@@ -417,6 +440,118 @@ function sourceLabelFromLinkText(params: {
 	return text;
 }
 
+function parseExternalHref(href: string): URL | null {
+	if (!/^(https?:|mailto:)/i.test(href)) {
+		return null;
+	}
+
+	try {
+		const parsedHref = new URL(href);
+		if (!["http:", "https:", "mailto:"].includes(parsedHref.protocol)) {
+			return null;
+		}
+
+		return parsedHref;
+	} catch {
+		return null;
+	}
+}
+
+function isCompactSourceLink(parsedHref: URL): boolean {
+	return ["http:", "https:"].includes(parsedHref.protocol);
+}
+
+async function collectSourceReferenceCandidates(
+	content: string,
+): Promise<SourceReferenceCandidate[]> {
+	await initMarkdownParser();
+	const marked = getMarked();
+	const frontmatter = await extractFrontmatter(content);
+	const displayContent = normalizeMarkdownContent(frontmatter.content);
+	const sourceDisplayContent = stripPlainSourceReferenceMarkers(displayContent);
+	const references = collectInlineSourceReferences(sourceDisplayContent, marked);
+
+	return [...references.entries()].map(([label, reference]) => ({
+		label,
+		href: reference.href,
+		sourceName: reference.sourceName,
+	}));
+}
+
+function collectInlineSourceReferences(
+	content: string,
+	marked: MarkedModule["marked"],
+): InlineSourceReferenceMap {
+	const references: InlineSourceReferenceMap = new Map();
+	const tokens = marked.lexer(content, {
+		breaks: true,
+		gfm: true,
+	});
+
+	collectInlineSourceReferencesFromTokens(tokens, references);
+
+	return references;
+}
+
+function collectInlineSourceReferencesFromTokens(
+	tokens: unknown,
+	references: InlineSourceReferenceMap,
+) {
+	if (Array.isArray(tokens)) {
+		for (const token of tokens) {
+			collectInlineSourceReferencesFromTokens(token, references);
+		}
+		return;
+	}
+
+	if (!tokens || typeof tokens !== "object") return;
+
+	const token = tokens as Record<string, unknown>;
+	if (
+		token.type === "link" &&
+		typeof token.href === "string" &&
+		Array.isArray(token.tokens)
+	) {
+		const parsedHref = parseExternalHref(token.href);
+		if (parsedHref && isCompactSourceLink(parsedHref)) {
+			const sourceName = sourceLabelFromLinkText({
+				href: token.href,
+				parsedHref,
+				tokens: token.tokens,
+			});
+			if (sourceName && !references.has(sourceName)) {
+				references.set(sourceName, { href: token.href, sourceName });
+			}
+		}
+	}
+
+	for (const value of Object.values(token)) {
+		if (Array.isArray(value)) {
+			collectInlineSourceReferencesFromTokens(value, references);
+		}
+	}
+}
+
+function inlineSourceReferenceMapFromCandidates(
+	candidates: SourceReferenceCandidate[],
+): InlineSourceReferenceMap {
+	const references: InlineSourceReferenceMap = new Map();
+
+	for (const candidate of candidates) {
+		const label = compactWhitespace(candidate.label);
+		const href = candidate.href.trim();
+		if (!label || !href || references.has(label)) continue;
+
+		const parsedHref = parseExternalHref(href);
+		if (!parsedHref || !isCompactSourceLink(parsedHref)) continue;
+
+		const sourceName = compactWhitespace(candidate.sourceName ?? label) || label;
+		references.set(label, { href, sourceName });
+	}
+
+	return references;
+}
+
 function renderSourceLinkChip(params: { href: string; sourceName: string }) {
 	const sourceName = escapeHtml(params.sourceName);
 	const href = escapeHtml(params.href);
@@ -432,35 +567,91 @@ function renderSourceLinkChip(params: { href: string; sourceName: string }) {
 	].join("");
 }
 
+function escapeRegExp(value: string): string {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function createInlineSourceReferencePattern(
+	references: InlineSourceReferenceMap,
+): RegExp | null {
+	const labels = [...references.keys()]
+		.filter((label) => label.trim())
+		.sort((a, b) => b.length - a.length)
+		.map(escapeRegExp);
+
+	if (!labels.length) return null;
+
+	return new RegExp(`\\((${labels.join("|")})\\)`, "g");
+}
+
+function renderTextSegment(value: string, escaped: boolean): string {
+	return escaped ? value : escapeHtml(value);
+}
+
+function renderInlineSourceReferencesInText(params: {
+	text: string;
+	escaped: boolean;
+	pattern: RegExp;
+	references: InlineSourceReferenceMap;
+}): string {
+	let output = "";
+	let cursor = 0;
+
+	params.pattern.lastIndex = 0;
+	for (const match of params.text.matchAll(params.pattern)) {
+		const start = match.index ?? 0;
+		const rawMatch = match[0];
+		const label = match[1] ?? "";
+		const reference = params.references.get(label);
+
+		output += renderTextSegment(
+			params.text.slice(cursor, start),
+			params.escaped,
+		);
+		output += reference
+			? renderSourceLinkChip(reference)
+			: renderTextSegment(rawMatch, params.escaped);
+		cursor = start + rawMatch.length;
+	}
+
+	output += renderTextSegment(params.text.slice(cursor), params.escaped);
+
+	return output;
+}
+
 function createMarkdownRenderer(
 	isDark: boolean,
 	options: RenderMarkdownOptions,
+	inlineSourceReferences: InlineSourceReferenceMap = new Map(),
 ) {
 	const marked = getMarked();
 	const renderer = new marked.Renderer();
+	const defaultTextRenderer = renderer.text.bind(renderer);
+	const inlineSourceReferencePattern = options.compactExternalLinks
+		? createInlineSourceReferencePattern(inlineSourceReferences)
+		: null;
+	let linkTextDepth = 0;
+
+	function renderLinkText(
+		tokens: Parameters<typeof renderer.link>[0]["tokens"],
+	) {
+		linkTextDepth += 1;
+		try {
+			return renderer.parser.parseInline(tokens);
+		} finally {
+			linkTextDepth -= 1;
+		}
+	}
 
 	renderer.code = ({ text, lang = "" }) => renderCodeBlock(text, lang, isDark);
 	renderer.link = ({ href, title, tokens }) => {
-		const text = renderer.parser.parseInline(tokens);
-		if (!/^(https?:|mailto:)/i.test(href)) {
+		const text = renderLinkText(tokens);
+		const parsedHref = parseExternalHref(href);
+		if (!parsedHref) {
 			return text;
 		}
 
-		let parsedHref: URL;
-		try {
-			parsedHref = new URL(href);
-		} catch {
-			return text;
-		}
-
-		if (!["http:", "https:", "mailto:"].includes(parsedHref.protocol)) {
-			return text;
-		}
-
-		if (
-			options.compactExternalLinks &&
-			["http:", "https:"].includes(parsedHref.protocol)
-		) {
+		if (options.compactExternalLinks && isCompactSourceLink(parsedHref)) {
 			const sourceName = sourceLabelFromLinkText({
 				href,
 				parsedHref,
@@ -472,15 +663,37 @@ function createMarkdownRenderer(
 		const titleAttribute = title ? ` title="${escapeHtml(title)}"` : "";
 		return `<a href="${escapeHtml(href)}"${titleAttribute} target="_blank" rel="noopener noreferrer external">${text}</a>`;
 	};
+	renderer.text = (token) => {
+		if (
+			!inlineSourceReferencePattern ||
+			linkTextDepth > 0 ||
+			token.type !== "text"
+		) {
+			return defaultTextRenderer(token);
+		}
+
+		if ("tokens" in token && Array.isArray(token.tokens)) {
+			return renderer.parser.parseInline(token.tokens);
+		}
+
+		return renderInlineSourceReferencesInText({
+			text: token.text,
+			escaped: "escaped" in token && token.escaped === true,
+			pattern: inlineSourceReferencePattern,
+			references: inlineSourceReferences,
+		});
+	};
 
 	return renderer;
 }
 
 export {
+	collectSourceReferenceCandidates,
 	initHighlighter,
 	normalizeLanguage,
 	prepareCodeHighlighting,
 	type RenderMarkdownOptions,
+	type SourceReferenceCandidate,
 	renderCodeBlock,
 	renderHighlightedText,
 	renderMarkdown,
