@@ -706,8 +706,9 @@ export async function runContextCompression(
 			undefined,
 			{
 				skipHonchoContext: true,
+				skipDefaultRuntimeGuidance: true,
+				systemPromptOverride: CONTEXT_COMPRESSION_SYSTEM_APPENDIX,
 				thinkingMode: "off",
-				systemPromptAppendix: CONTEXT_COMPRESSION_SYSTEM_APPENDIX,
 			},
 		);
 

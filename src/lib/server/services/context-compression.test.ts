@@ -442,11 +442,11 @@ describe("context compression snapshots", () => {
 		expect(call?.[3]).toBeUndefined();
 		expect(call?.[4]).toMatchObject({
 			skipHonchoContext: true,
+			skipDefaultRuntimeGuidance: true,
+			systemPromptOverride: expect.stringContaining("Context compression"),
 			thinkingMode: "off",
 		});
-		expect(String(call?.[4]?.systemPromptAppendix)).toContain(
-			"Context compression",
-		);
+		expect(call?.[4]?.systemPromptAppendix).toBeUndefined();
 
 		const [stored] = await listContextCompressionSnapshots("conv-1");
 		expect(stored).toEqual(

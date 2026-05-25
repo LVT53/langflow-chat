@@ -228,6 +228,24 @@ describe("buildOutboundSystemPrompt", () => {
 		);
 	});
 
+	it("can build a compact control-task prompt without default runtime guidance", () => {
+		const prompt = buildOutboundSystemPrompt({
+			basePrompt: "Return only valid JSON.",
+			inputValue: "Compress this source.",
+			modelDisplayName: "ChatGPT OSS",
+			modelName: "gpt-oss-120b",
+			skipDefaultRuntimeGuidance: true,
+		});
+
+		expect(prompt).toContain("[MODEL: ChatGPT OSS]");
+		expect(prompt).toContain("Reasoning: high");
+		expect(prompt).toContain("Return only valid JSON.");
+		expect(prompt).not.toContain("Generated file workflow");
+		expect(prompt).not.toContain("Web research workflow");
+		expect(prompt).not.toContain("Memory context workflow");
+		expect(prompt).not.toContain("Response language policy");
+	});
+
 	it("normalizes an existing GPT-OSS reasoning directive to high without duplicating it", () => {
 		const prompt = buildOutboundSystemPrompt({
 			basePrompt: "Reasoning: medium\n\nBase system prompt",
@@ -417,6 +435,27 @@ describe("sendMessage provider routing", () => {
 		expect(systemPrompt).toContain("use live/exact retrieval");
 		expect(systemPrompt).toContain("cite page-backed claims");
 		expect(systemPrompt).toContain("tools are unavailable");
+	});
+
+	it("uses a compact system-prompt override for control tasks", async () => {
+		mocks.getSystemPrompt.mockImplementation((prompt?: string) =>
+			prompt?.trim() ? prompt : "Base system prompt",
+		);
+
+		await sendMessage("Return JSON", "control-session", "model1", undefined, {
+			skipHonchoContext: true,
+			skipDefaultRuntimeGuidance: true,
+			systemPromptOverride: "Control task. Return only JSON.",
+			thinkingMode: "off",
+		});
+
+		expect(mocks.buildEnhancedSystemPrompt).not.toHaveBeenCalled();
+		const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
+		const systemPrompt = body.tweaks["ModelNode-1"].system_prompt;
+		expect(systemPrompt).toContain("Control task. Return only JSON.");
+		expect(systemPrompt).not.toContain("Generated file workflow");
+		expect(systemPrompt).not.toContain("Web research workflow");
+		expect(systemPrompt).not.toContain("Memory context workflow");
 	});
 
 	it("passes Hungarian response-language policy into Langflow requests", async () => {

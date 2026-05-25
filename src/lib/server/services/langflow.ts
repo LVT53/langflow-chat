@@ -44,6 +44,8 @@ type SendMessageOptions = {
 	systemPromptAppendix?: string;
 	personalityPrompt?: string;
 	skipHonchoContext?: boolean;
+	skipDefaultRuntimeGuidance?: boolean;
+	systemPromptOverride?: string;
 	thinkingMode?: ThinkingMode;
 	forceWebSearch?: boolean;
 };
@@ -352,6 +354,7 @@ export function buildOutboundSystemPrompt(params: {
 	systemPromptAppendix?: string;
 	personalityPrompt?: string;
 	forceWebSearch?: boolean;
+	skipDefaultRuntimeGuidance?: boolean;
 }): string {
 	const modelHeader = params.modelDisplayName
 		? `[MODEL: ${params.modelDisplayName}]`
@@ -386,32 +389,36 @@ export function buildOutboundSystemPrompt(params: {
 	const explicitDateContext = `[SYSTEM TIME CONTEXT: Today is ${todayStr}. Use this exact date as your current temporal anchor for relative timeframes. Call a date/time tool only when exact current time, timezone, or freshness-sensitive tool behavior materially depends on it.]`;
 	const responseLanguage =
 		params.responseLanguage ?? detectLanguage(params.inputValue);
-	const guidanceAdditions: string[] = [
-		explicitDateContext,
-		buildResponseLanguageGuard(responseLanguage),
-		DATE_BEFORE_SEARCH_GUARD,
-	];
+	const guidanceAdditions: string[] = params.skipDefaultRuntimeGuidance
+		? []
+		: [
+				explicitDateContext,
+				buildResponseLanguageGuard(responseLanguage),
+				DATE_BEFORE_SEARCH_GUARD,
+			];
 
-	if (containsHttpUrl(params.inputValue)) {
-		guidanceAdditions.push(URL_LIST_TOOL_ARGUMENT_GUARD);
+	if (!params.skipDefaultRuntimeGuidance) {
+		if (containsHttpUrl(params.inputValue)) {
+			guidanceAdditions.push(URL_LIST_TOOL_ARGUMENT_GUARD);
+		}
+
+		if (params.forceWebSearch === true) {
+			guidanceAdditions.push(FORCE_WEB_SEARCH_GUARD);
+		}
+
+		guidanceAdditions.push(
+			FILE_GENERATION_GUARD,
+			IMAGE_SEARCH_GUARD,
+			WEB_RESEARCH_GUARD,
+			SOURCE_LINKING_GUARD,
+			WEB_SEARCH_QUERY_PLANNING_GUARD,
+			KNOWLEDGE_CUTOFF_SAFE_RESEARCH_GUARD,
+			MEMORY_CONTEXT_GUARD,
+			WEB_FACT_EXTRACTION_GUARD,
+			PERSONA_MEMORY_GUARD,
+			SOURCE_AUTHORITY_GUARD,
+		);
 	}
-
-	if (params.forceWebSearch === true) {
-		guidanceAdditions.push(FORCE_WEB_SEARCH_GUARD);
-	}
-
-	guidanceAdditions.push(
-		FILE_GENERATION_GUARD,
-		IMAGE_SEARCH_GUARD,
-		WEB_RESEARCH_GUARD,
-		SOURCE_LINKING_GUARD,
-		WEB_SEARCH_QUERY_PLANNING_GUARD,
-		KNOWLEDGE_CUTOFF_SAFE_RESEARCH_GUARD,
-		MEMORY_CONTEXT_GUARD,
-		WEB_FACT_EXTRACTION_GUARD,
-		PERSONA_MEMORY_GUARD,
-		SOURCE_AUTHORITY_GUARD,
-	);
 
 	if (
 		typeof params.systemPromptAppendix === "string" &&
@@ -1701,13 +1708,16 @@ async function sendMessageAttempt(
 			}
 		}
 
-		const baseSystemPrompt = user?.id
-			? await buildEnhancedSystemPrompt(modelConfig.systemPrompt, {
+		const configuredBasePrompt =
+			options?.systemPromptOverride ?? modelConfig.systemPrompt;
+		const baseSystemPrompt =
+			user?.id && !options?.systemPromptOverride
+				? await buildEnhancedSystemPrompt(configuredBasePrompt, {
 					userId: user.id,
 					displayName: user.displayName,
 					email: user.email,
 				})
-			: getSystemPrompt(modelConfig.systemPrompt);
+				: getSystemPrompt(configuredBasePrompt);
 		let systemPrompt = buildOutboundSystemPrompt({
 			basePrompt: baseSystemPrompt,
 			inputValue,
@@ -1717,6 +1727,7 @@ async function sendMessageAttempt(
 			systemPromptAppendix: options?.systemPromptAppendix,
 			personalityPrompt: options?.personalityPrompt,
 			forceWebSearch: options?.forceWebSearch,
+			skipDefaultRuntimeGuidance: options?.skipDefaultRuntimeGuidance,
 		});
 		const contextLimits = resolvePromptContextLimits(
 			modelId ?? "model1",
@@ -1762,6 +1773,7 @@ async function sendMessageAttempt(
 				systemPromptAppendix: options?.systemPromptAppendix,
 				personalityPrompt: options?.personalityPrompt,
 				forceWebSearch: options?.forceWebSearch,
+				skipDefaultRuntimeGuidance: options?.skipDefaultRuntimeGuidance,
 			});
 		}
 		const budgetedPrompt = applyOutboundPromptBudget({
@@ -2066,13 +2078,16 @@ async function sendMessageStreamAttempt(
 			}
 		}
 
-		const baseSystemPrompt = options?.user?.id
-			? await buildEnhancedSystemPrompt(modelConfig.systemPrompt, {
+		const configuredBasePrompt =
+			options?.systemPromptOverride ?? modelConfig.systemPrompt;
+		const baseSystemPrompt =
+			options?.user?.id && !options?.systemPromptOverride
+				? await buildEnhancedSystemPrompt(configuredBasePrompt, {
 					userId: options.user.id,
 					displayName: options.user.displayName,
 					email: options.user.email,
 				})
-			: getSystemPrompt(modelConfig.systemPrompt);
+				: getSystemPrompt(configuredBasePrompt);
 		let systemPrompt = buildOutboundSystemPrompt({
 			basePrompt: baseSystemPrompt,
 			inputValue,
@@ -2082,6 +2097,7 @@ async function sendMessageStreamAttempt(
 			systemPromptAppendix: options?.systemPromptAppendix,
 			personalityPrompt: options?.personalityPrompt,
 			forceWebSearch: options?.forceWebSearch,
+			skipDefaultRuntimeGuidance: options?.skipDefaultRuntimeGuidance,
 		});
 		const contextLimits = resolvePromptContextLimits(
 			modelId ?? "model1",
@@ -2127,6 +2143,7 @@ async function sendMessageStreamAttempt(
 				systemPromptAppendix: options?.systemPromptAppendix,
 				personalityPrompt: options?.personalityPrompt,
 				forceWebSearch: options?.forceWebSearch,
+				skipDefaultRuntimeGuidance: options?.skipDefaultRuntimeGuidance,
 			});
 		}
 		const budgetedPrompt = applyOutboundPromptBudget({
