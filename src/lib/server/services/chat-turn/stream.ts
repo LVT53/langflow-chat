@@ -396,8 +396,9 @@ export function createServerChunkRuntime({
 		);
 		if (
 			force &&
-			getLeakedToolDiagnosticPrefixLength(envelopeFilteredBuffer) ===
-				envelopeFilteredBuffer.length
+			envelopeFilteredBuffer.trim() &&
+			getLeakedToolDiagnosticPrefixLength(envelopeFilteredBuffer.trim()) ===
+				envelopeFilteredBuffer.trim().length
 		) {
 			visibleTokenBuffer = "";
 			return true;

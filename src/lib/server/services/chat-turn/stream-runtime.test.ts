@@ -159,6 +159,22 @@ describe("createServerChunkRuntime", () => {
 		expect(runtime.fullResponse).toBe("");
 	});
 
+	it("holds unresolved short web-planning prefixes with trailing whitespace", () => {
+		const chunks: string[] = [];
+		const runtime = createServerChunkRuntime({
+			enqueueChunk(chunk) {
+				chunks.push(chunk);
+				return true;
+			},
+		});
+
+		runtime.emitChunkWithOutputHandling("Ki\n\n");
+		runtime.flushInlineThinkingBuffer();
+
+		expect(tokenTexts(chunks).join("")).toBe("");
+		expect(runtime.fullResponse).toBe("");
+	});
+
 	it("strips leaked raw web research result blocks from visible tokens", () => {
 		const chunks: string[] = [];
 		const runtime = createServerChunkRuntime({

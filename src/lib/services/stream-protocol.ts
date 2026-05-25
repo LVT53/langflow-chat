@@ -1118,7 +1118,7 @@ function isLeakedToolDiagnosticPrefix(value: string): boolean {
 
 function isToolPlanningNarrationPrefix(value: string): boolean {
 	if (/^\s/.test(value)) return false;
-	const candidate = value.toLowerCase();
+	const candidate = value.trimEnd().toLowerCase();
 	if (!candidate) return false;
 	if (
 		candidate.length >= 2 &&
