@@ -438,6 +438,9 @@ export interface LeakedToolDiagnosticsState {
 	pendingWebToolWhitespace: string;
 	suppressPythonToolOutput: boolean;
 	suppressDocumentSourceOutput: boolean;
+	documentSourceJsonDepth: number;
+	documentSourceJsonInString: boolean;
+	documentSourceJsonEscaped: boolean;
 	lastVisibleChar: string;
 }
 
@@ -480,6 +483,9 @@ export function createLeakedToolDiagnosticsState(): LeakedToolDiagnosticsState {
 		pendingWebToolWhitespace: "",
 		suppressPythonToolOutput: false,
 		suppressDocumentSourceOutput: false,
+		documentSourceJsonDepth: 0,
+		documentSourceJsonInString: false,
+		documentSourceJsonEscaped: false,
 		lastVisibleChar: "",
 	};
 }
@@ -907,6 +913,73 @@ function findJsonObjectEnd(value: string, startIndex: number): number | null {
 	return null;
 }
 
+function resetDocumentSourceJsonSuppression(state: LeakedToolDiagnosticsState) {
+	state.documentSourceJsonDepth = 0;
+	state.documentSourceJsonInString = false;
+	state.documentSourceJsonEscaped = false;
+}
+
+function consumeDocumentSourceJsonLine(
+	line: string,
+	state: LeakedToolDiagnosticsState,
+): { remainder: string; openEnded: boolean } {
+	for (let index = 0; index < line.length; index += 1) {
+		const char = line[index];
+
+		if (state.documentSourceJsonInString) {
+			if (state.documentSourceJsonEscaped) {
+				state.documentSourceJsonEscaped = false;
+				continue;
+			}
+			if (char === "\\") {
+				state.documentSourceJsonEscaped = true;
+				continue;
+			}
+			if (char === '"') {
+				state.documentSourceJsonInString = false;
+			}
+			continue;
+		}
+
+		if (char === '"') {
+			state.documentSourceJsonInString = true;
+			continue;
+		}
+		if (char === "{" || char === "[") {
+			state.documentSourceJsonDepth += 1;
+			continue;
+		}
+		if (char === "}" || char === "]") {
+			if (state.documentSourceJsonDepth > 0) {
+				state.documentSourceJsonDepth -= 1;
+			}
+			if (state.documentSourceJsonDepth === 0) {
+				const remainder = line.slice(index + 1).trimStart();
+				resetDocumentSourceJsonSuppression(state);
+				return { remainder, openEnded: false };
+			}
+		}
+	}
+
+	return {
+		remainder: "",
+		openEnded:
+			state.documentSourceJsonDepth > 0 || state.documentSourceJsonInString,
+	};
+}
+
+function beginDocumentSourceJsonSuppression(
+	line: string,
+	state: LeakedToolDiagnosticsState,
+): { remainder: string; openEnded: boolean } {
+	resetDocumentSourceJsonSuppression(state);
+	const startIndex = line.search(/[[{]/);
+	if (startIndex === -1) {
+		return { remainder: "", openEnded: false };
+	}
+	return consumeDocumentSourceJsonLine(line.slice(startIndex), state);
+}
+
 function isFileProductionPayloadRawOutputPrefix(value: string): boolean {
 	if (/^\s/.test(value)) return false;
 	const candidate = value.trimStart();
@@ -1018,10 +1091,26 @@ function stripLeakedDocumentSourceDiagnostics(
 	let output = "";
 
 	for (const { line, lineEnding } of splitPreservingLineEndings(value)) {
+		if (state.documentSourceJsonDepth > 0) {
+			const consumed = consumeDocumentSourceJsonLine(line, state);
+			state.suppressDocumentSourceOutput = consumed.openEnded;
+			if (!consumed.remainder.trim()) {
+				continue;
+			}
+			state.suppressDocumentSourceOutput = false;
+			output += consumed.remainder + lineEnding;
+			continue;
+		}
+
 		const directPayload = stripLeadingFileProductionPayloadStream(line);
 		if (directPayload.removed) {
-			state.suppressDocumentSourceOutput =
-				directPayload.openEnded || !directPayload.line.trim();
+			if (directPayload.openEnded) {
+				const consumed = beginDocumentSourceJsonSuppression(line, state);
+				state.suppressDocumentSourceOutput = consumed.openEnded;
+			} else {
+				resetDocumentSourceJsonSuppression(state);
+				state.suppressDocumentSourceOutput = !directPayload.line.trim();
+			}
 			if (!directPayload.line.trim()) {
 				continue;
 			}
@@ -1032,8 +1121,13 @@ function stripLeakedDocumentSourceDiagnostics(
 		if (state.suppressDocumentSourceOutput) {
 			const stripped = stripLeadingDocumentSourceObjectStream(line);
 			if (stripped.removed) {
-				state.suppressDocumentSourceOutput =
-					stripped.openEnded || !stripped.line.trim();
+				if (stripped.openEnded) {
+					const consumed = beginDocumentSourceJsonSuppression(line, state);
+					state.suppressDocumentSourceOutput = consumed.openEnded;
+				} else {
+					resetDocumentSourceJsonSuppression(state);
+					state.suppressDocumentSourceOutput = !stripped.line.trim();
+				}
 				if (!stripped.line.trim()) {
 					continue;
 				}

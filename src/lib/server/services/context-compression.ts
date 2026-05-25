@@ -126,6 +126,111 @@ const compressionSnapshotSchema = z.strictObject({
 	}),
 });
 
+const SCHEMA_TEMPLATE_PLACEHOLDERS = new Set([
+	"all covered source message ids",
+	"id",
+	"message-id",
+	"message id",
+	"source message id",
+	"string",
+	"tool|evidence|source",
+]);
+
+function normalizePlaceholderCandidate(value: string): string {
+	return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function isSchemaTemplatePlaceholder(value: string): boolean {
+	return SCHEMA_TEMPLATE_PLACEHOLDERS.has(normalizePlaceholderCandidate(value));
+}
+
+function addPlaceholderIssue(
+	ctx: z.RefinementCtx,
+	path: (string | number)[],
+	value: string,
+) {
+	ctx.addIssue({
+		code: "custom",
+		path,
+		message: `Context compression snapshot contained schema placeholder value: ${value}.`,
+	});
+}
+
+function checkPlaceholderString(
+	ctx: z.RefinementCtx,
+	path: (string | number)[],
+	value: string,
+) {
+	if (isSchemaTemplatePlaceholder(value)) {
+		addPlaceholderIssue(ctx, path, value);
+	}
+}
+
+const semanticCompressionSnapshotSchema = compressionSnapshotSchema.superRefine(
+	(snapshot, ctx) => {
+		checkPlaceholderString(ctx, ["goal"], snapshot.goal);
+		checkPlaceholderString(ctx, ["currentState"], snapshot.currentState);
+
+		for (const [field, values] of [
+			["importantDecisions", snapshot.importantDecisions],
+			["importantFacts", snapshot.importantFacts],
+			["openTasks", snapshot.openTasks],
+			["openQuestions", snapshot.openQuestions],
+		] as const) {
+			values.forEach((value, index) => {
+				checkPlaceholderString(ctx, [field, index], value);
+			});
+		}
+
+		snapshot.toolUseAndEvidenceRefs.forEach((ref, index) => {
+			checkPlaceholderString(
+				ctx,
+				["toolUseAndEvidenceRefs", index, "kind"],
+				ref.kind,
+			);
+			checkPlaceholderString(
+				ctx,
+				["toolUseAndEvidenceRefs", index, "label"],
+				ref.label,
+			);
+			if (ref.detail) {
+				checkPlaceholderString(
+					ctx,
+					["toolUseAndEvidenceRefs", index, "detail"],
+					ref.detail,
+				);
+			}
+			ref.messageIds?.forEach((messageId, messageIdIndex) => {
+				checkPlaceholderString(
+					ctx,
+					["toolUseAndEvidenceRefs", index, "messageIds", messageIdIndex],
+					messageId,
+				);
+			});
+		});
+
+		snapshot.sourceCoverage.messageIds.forEach((messageId, index) => {
+			checkPlaceholderString(
+				ctx,
+				["sourceCoverage", "messageIds", index],
+				messageId,
+			);
+		});
+		snapshot.sourceCoverage.ranges?.forEach((range, index) => {
+			checkPlaceholderString(
+				ctx,
+				["sourceCoverage", "ranges", index, "startMessageId"],
+				range.startMessageId,
+			);
+			checkPlaceholderString(
+				ctx,
+				["sourceCoverage", "ranges", index, "endMessageId"],
+				range.endMessageId,
+			);
+		});
+	},
+);
+
 const CONTEXT_COMPRESSION_CONTROL_MAX_TOKENS = 4096;
 const CONTEXT_COMPRESSION_CONTROL_MAX_ATTEMPTS = 4;
 
@@ -733,9 +838,26 @@ function normalizeCompressionEvidenceRefs(
 }
 
 function normalizeSourceCoverage(params: {
+	parsed: ContextCompressionSnapshotJson;
 	requiredMessageIds: string[];
 	sourceRanges: ContextCompressionSourceRange[];
 }): ContextCompressionStructuredSnapshot["sourceCoverage"] {
+	const parsedCoverage = params.parsed.sourceCoverage;
+	if (isRecord(parsedCoverage)) {
+		const messageIds = normalizeEvidenceMessageIds(parsedCoverage.messageIds);
+		const ranges = firstRecordArray(parsedCoverage, ["ranges"])
+			.map((range) => ({
+				startMessageId: trimmedString(range.startMessageId) ?? "",
+				endMessageId: trimmedString(range.endMessageId) ?? "",
+			}))
+			.filter((range) => range.startMessageId && range.endMessageId);
+
+		return {
+			messageIds,
+			...(ranges.length > 0 ? { ranges } : {}),
+		};
+	}
+
 	const ranges = params.sourceRanges
 		.map((range) => ({
 			startMessageId: range.startMessageId,
@@ -799,6 +921,7 @@ function normalizeCompressionSnapshotInput(params: {
 		openQuestions,
 		toolUseAndEvidenceRefs: normalizeCompressionEvidenceRefs(params.parsed),
 		sourceCoverage: normalizeSourceCoverage({
+			parsed: params.parsed,
 			requiredMessageIds: params.requiredMessageIds,
 			sourceRanges: params.sourceRanges,
 		}),
@@ -877,7 +1000,7 @@ function validateCompressionSnapshot(
 		requiredMessageIds,
 		sourceRanges,
 	});
-	const result = compressionSnapshotSchema.safeParse(normalized);
+	const result = semanticCompressionSnapshotSchema.safeParse(normalized);
 	if (!result.success) {
 		return {
 			ok: false,
@@ -890,6 +1013,27 @@ function validateCompressionSnapshot(
 		return {
 			ok: false,
 			reason: "Snapshot contained leftover <thinking> tags.",
+		};
+	}
+
+	const expectedMessageIds = new Set(requiredMessageIds);
+	const unexpectedMessageIds = result.data.sourceCoverage.messageIds.filter(
+		(id) => !expectedMessageIds.has(id),
+	);
+	if (unexpectedMessageIds.length > 0) {
+		return {
+			ok: false,
+			reason: `Snapshot source coverage included unknown message ids: ${unexpectedMessageIds.join(", ")}.`,
+		};
+	}
+
+	const unexpectedRangeMessageIds = result.data.sourceCoverage.ranges
+		?.flatMap((range) => [range.startMessageId, range.endMessageId])
+		.filter((id) => !expectedMessageIds.has(id));
+	if (unexpectedRangeMessageIds?.length) {
+		return {
+			ok: false,
+			reason: `Snapshot source coverage included unknown range message ids: ${unexpectedRangeMessageIds.join(", ")}.`,
 		};
 	}
 

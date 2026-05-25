@@ -678,6 +678,175 @@ describe("context compression snapshots", () => {
 		);
 	});
 
+	it("rejects schema-template placeholder snapshots and retries with the repaired output", async () => {
+		seedConversationWithMessages();
+		mocks.sendJsonControlMessage
+			.mockResolvedValueOnce({
+				text: JSON.stringify({
+					goal: "string",
+					currentState: "string",
+					importantDecisions: ["string"],
+					importantFacts: ["string"],
+					openTasks: ["string"],
+					openQuestions: ["string"],
+					toolUseAndEvidenceRefs: [
+						{
+							kind: "tool|evidence|source",
+							label: "string",
+							messageIds: ["message-id"],
+							detail: "string",
+						},
+					],
+					sourceCoverage: {
+						messageIds: ["all covered source message ids"],
+						ranges: [{ startMessageId: "id", endMessageId: "id" }],
+					},
+				}),
+				modelId: "model1",
+				modelDisplayName: "Selected Model",
+				rawResponse: {},
+			})
+			.mockResolvedValueOnce({
+				text: JSON.stringify({
+					goal: "Keep the actual first exchange available after compression.",
+					currentState:
+						"The repaired snapshot summarizes the real user question and assistant answer.",
+					importantDecisions: [
+						"Use semantic validation to retry placeholder compression output.",
+					],
+					importantFacts: [
+						"The covered source messages are message-1 and message-2.",
+					],
+					openTasks: ["Continue from the real first exchange."],
+					openQuestions: [],
+					toolUseAndEvidenceRefs: [
+						{
+							kind: "source",
+							label: "First exchange",
+							messageIds: ["message-1", "message-2"],
+						},
+					],
+					sourceCoverage: {
+						messageIds: ["message-1", "message-2"],
+					},
+				}),
+				modelId: "model1",
+				modelDisplayName: "Selected Model",
+				rawResponse: {},
+			});
+		const { runContextCompression } = await import("./context-compression");
+
+		const result = await runContextCompression({
+			conversationId: "conv-1",
+			userId: "user-1",
+			trigger: "automatic",
+			selectedModelId: "model1",
+			sourceMessages: [
+				{
+					id: "message-1",
+					role: "user",
+					content: "First question",
+					messageSequence: 1,
+				},
+				{
+					id: "message-2",
+					role: "assistant",
+					content: "First answer",
+					messageSequence: 2,
+				},
+			],
+		});
+
+		expect(result.status).toBe("valid");
+		expect(result.snapshot.goal).toBe(
+			"Keep the actual first exchange available after compression.",
+		);
+		expect(mocks.sendJsonControlMessage).toHaveBeenCalledTimes(2);
+		expect(String(mocks.sendJsonControlMessage.mock.calls[1]?.[0])).toContain(
+			"placeholder",
+		);
+	});
+
+	it("rejects explicit source coverage that does not match the expected source messages", async () => {
+		seedConversationWithMessages();
+		mocks.sendJsonControlMessage
+			.mockResolvedValueOnce({
+				text: JSON.stringify({
+					goal: "Keep the real first exchange available after compression.",
+					currentState:
+						"The snapshot text is meaningful but the model cited the wrong coverage ids.",
+					importantDecisions: [
+						"Retry snapshots that claim coverage outside the source window.",
+					],
+					importantFacts: [
+						"The real source messages are message-1 and message-2.",
+					],
+					openTasks: ["Continue from the validated source window."],
+					openQuestions: [],
+					toolUseAndEvidenceRefs: [],
+					sourceCoverage: {
+						messageIds: ["message-1", "ghost-message"],
+					},
+				}),
+				modelId: "model1",
+				modelDisplayName: "Selected Model",
+				rawResponse: {},
+			})
+			.mockResolvedValueOnce({
+				text: JSON.stringify({
+					goal: "Keep the real first exchange available after compression.",
+					currentState:
+						"The repaired snapshot cites exactly the expected source messages.",
+					importantDecisions: [
+						"Accept only coverage that matches the source window.",
+					],
+					importantFacts: [
+						"The real source messages are message-1 and message-2.",
+					],
+					openTasks: ["Continue from the validated source window."],
+					openQuestions: [],
+					toolUseAndEvidenceRefs: [],
+					sourceCoverage: {
+						messageIds: ["message-1", "message-2"],
+					},
+				}),
+				modelId: "model1",
+				modelDisplayName: "Selected Model",
+				rawResponse: {},
+			});
+		const { runContextCompression } = await import("./context-compression");
+
+		const result = await runContextCompression({
+			conversationId: "conv-1",
+			userId: "user-1",
+			trigger: "automatic",
+			selectedModelId: "model1",
+			sourceMessages: [
+				{
+					id: "message-1",
+					role: "user",
+					content: "First question",
+					messageSequence: 1,
+				},
+				{
+					id: "message-2",
+					role: "assistant",
+					content: "First answer",
+					messageSequence: 2,
+				},
+			],
+		});
+
+		expect(result.status).toBe("valid");
+		expect(result.snapshot.currentState).toBe(
+			"The repaired snapshot cites exactly the expected source messages.",
+		);
+		expect(mocks.sendJsonControlMessage).toHaveBeenCalledTimes(2);
+		expect(String(mocks.sendJsonControlMessage.mock.calls[1]?.[0])).toContain(
+			"source coverage",
+		);
+	});
+
 	it("keeps retrying transient empty control outputs before marking compression failed", async () => {
 		seedConversationWithMessages();
 		mocks.sendJsonControlMessage

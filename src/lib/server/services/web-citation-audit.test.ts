@@ -105,7 +105,7 @@ describe("buildWebCitationAudit", () => {
 });
 
 describe("applyWebCitationQualityGate", () => {
-	it("appends a source-check notice when researched answers omit citations", () => {
+	it("appends a generic source-check notice when researched answers omit citations", () => {
 		const result = applyWebCitationQualityGate({
 			assistantResponse: "The current price is $799.",
 			toolCalls: [
@@ -125,12 +125,13 @@ describe("applyWebCitationQualityGate", () => {
 			noticeAppended: true,
 		});
 		expect(result.appendedNotice).toContain("Source check:");
-		expect(result.response).toContain(
-			"[Official Product](https://example.com/product)",
-		);
+		expect(result.response).toContain("web research");
+		expect(result.response).not.toContain("Retrieved sources");
+		expect(result.response).not.toContain("Official Product");
+		expect(result.response).not.toContain("https://example.com/product");
 	});
 
-	it("appends a caution notice when citations were not retrieved sources", () => {
+	it("appends a generic caution notice when citations were not retrieved sources", () => {
 		const result = applyWebCitationQualityGate({
 			assistantResponse: "See [wrong page](https://example.com/wrong).",
 			toolCalls: [
@@ -151,9 +152,9 @@ describe("applyWebCitationQualityGate", () => {
 			noticeAppended: true,
 		});
 		expect(result.response).toContain("Treat unsupported links cautiously");
-		expect(result.response).toContain(
-			"[Official Product](https://example.com/product)",
-		);
+		expect(result.response).not.toContain("Retrieved sources");
+		expect(result.response).not.toContain("Official Product");
+		expect(result.response).not.toContain("https://example.com/product");
 	});
 
 	it("leaves clean citations unchanged", () => {

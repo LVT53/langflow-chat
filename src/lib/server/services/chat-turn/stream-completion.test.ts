@@ -444,20 +444,33 @@ describe("completeStreamTurn", () => {
 			call[0]?.includes("Source check:"),
 		);
 		expect(noticeCall).toBeDefined();
+		expect(noticeCall?.[0]).not.toContain("Official Product");
+		expect(noticeCall?.[0]).not.toContain("https://example.com/product");
 		const assistantCreateCall = mockCreateMessage.mock.calls.find(
 			(call: unknown[]) => call[1] === "assistant",
 		);
 		expect(assistantCreateCall?.[2]).toEqual(
 			expect.stringContaining("Source check:"),
 		);
+		expect(assistantCreateCall?.[2]).not.toContain("Official Product");
+		expect(assistantCreateCall?.[2]).not.toContain(
+			"https://example.com/product",
+		);
 		expect(mockPersistAssistantTurnState).toHaveBeenCalledWith(
 			expect.objectContaining({
 				assistantResponse: expect.stringContaining("Source check:"),
 			}),
 		);
+		const evidencePayload = mockPersistAssistantEvidence.mock.calls.at(-1)?.[0];
+		expect(evidencePayload?.assistantResponse).toContain("Source check:");
+		expect(evidencePayload?.assistantResponse).not.toContain(
+			"Official Product",
+		);
+		expect(evidencePayload?.assistantResponse).not.toContain(
+			"https://example.com/product",
+		);
 		expect(mockPersistAssistantEvidence).toHaveBeenCalledWith(
 			expect.objectContaining({
-				assistantResponse: expect.stringContaining("Source check:"),
 				webCitationAudit: expect.objectContaining({
 					status: "missing_citations",
 					noticeAppended: true,

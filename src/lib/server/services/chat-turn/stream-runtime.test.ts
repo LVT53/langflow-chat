@@ -192,6 +192,50 @@ describe("createServerChunkRuntime", () => {
 		expect(runtime.fullResponse).toBe("");
 	});
 
+	it("strips streamed file-production repair narration and pretty-printed document-source JSON", () => {
+		const chunks: string[] = [];
+		const runtime = createServerChunkRuntime({
+			enqueueChunk(chunk) {
+				chunks.push(chunk);
+				return true;
+			},
+		});
+
+		runtime.emitChunkWithOutputHandling(
+			"Let me fix the JSON formatting for the document source.\n",
+		);
+		runtime.emitChunkWithOutputHandling("{\n");
+		runtime.emitChunkWithOutputHandling('  "version": 1,\n');
+		runtime.emitChunkWithOutputHandling(
+			'  "template": "alfyai_standard_report",\n',
+		);
+		runtime.emitChunkWithOutputHandling('  "title": "Project summary",\n');
+		runtime.emitChunkWithOutputHandling('  "blocks": [\n');
+		runtime.emitChunkWithOutputHandling(
+			'    {"type": "paragraph", "text": "Actionable takeaways from past work in this folder:"},\n',
+		);
+		runtime.emitChunkWithOutputHandling('    {"type": "list", "items": [\n');
+		runtime.emitChunkWithOutputHandling(
+			'      "Disk - Schedule recurring docker system prune",\n',
+		);
+		runtime.emitChunkWithOutputHandling(
+			'      "Memory - Keep Honcho snapshots separate"\n',
+		);
+		runtime.emitChunkWithOutputHandling("    ]}\n");
+		runtime.emitChunkWithOutputHandling("  ]\n");
+		runtime.emitChunkWithOutputHandling("}\n");
+		runtime.emitChunkWithOutputHandling("Your PDF is being generated now.");
+		runtime.flushInlineThinkingBuffer();
+
+		const visible = tokenTexts(chunks).join("");
+		expect(visible).toBe("Your PDF is being generated now.");
+		expect(runtime.fullResponse).toBe("Your PDF is being generated now.");
+		expect(visible).not.toContain("Let me fix");
+		expect(visible).not.toContain("Actionable takeaways");
+		expect(visible).not.toContain("Disk - Schedule");
+		expect(visible).not.toContain('"blocks"');
+	});
+
 	it("strips leaked raw web research result blocks from visible tokens", () => {
 		const chunks: string[] = [];
 		const runtime = createServerChunkRuntime({

@@ -184,29 +184,9 @@ export function buildWebCitationAudit(params: {
 	});
 }
 
-function escapeMarkdownLinkLabel(value: string): string {
-	return value.replace(/[[\]\\]/g, "\\$&").trim();
-}
-
-function formatRetrievedSourceLink(source: RetrievedWebSource): string {
-	return `[${escapeMarkdownLinkLabel(source.title || source.host || source.url)}](${source.url})`;
-}
-
-function buildSourceList(
-	sources: RetrievedWebSource[],
-	maxSources: number,
-): string {
-	const limitedSources = sources.slice(0, Math.max(1, maxSources));
-	const sourceLinks = limitedSources.map(formatRetrievedSourceLink).join(", ");
-	const remainingCount = sources.length - limitedSources.length;
-	if (remainingCount <= 0) return sourceLinks;
-	return `${sourceLinks}, plus ${remainingCount} more retrieved source${remainingCount === 1 ? "" : "s"}`;
-}
-
 function buildQualityNotice(params: {
 	audit: WebCitationAudit;
 	sources: RetrievedWebSource[];
-	maxSources: number;
 }): string | null {
 	if (params.sources.length === 0) return null;
 	if (
@@ -216,14 +196,11 @@ function buildQualityNotice(params: {
 		return null;
 	}
 
-	const sourceList = buildSourceList(params.sources, params.maxSources);
-	if (!sourceList) return null;
-
 	if (params.audit.status === "missing_citations") {
-		return `Source check: I used web research for this answer, but the generated text did not include source links. Retrieved sources: ${sourceList}.`;
+		return "Source check: I used web research for this answer, but the generated text did not include source links.";
 	}
 
-	return `Source check: One or more links in the generated answer were not returned by the web research tool. Treat unsupported links cautiously. Retrieved sources: ${sourceList}.`;
+	return "Source check: One or more links in the generated answer were not returned by the web research tool. Treat unsupported links cautiously.";
 }
 
 function appendNotice(response: string, notice: string): string {
@@ -251,7 +228,6 @@ export function applyWebCitationQualityGate(params: {
 	const appendedNotice = buildQualityNotice({
 		audit,
 		sources,
-		maxSources: params.maxSources ?? 5,
 	});
 	if (!appendedNotice) return unchanged;
 
