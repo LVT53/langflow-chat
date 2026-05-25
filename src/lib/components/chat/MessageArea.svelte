@@ -96,6 +96,7 @@ let shouldAutoScroll = true;
 let lastMessageCount = 0;
 let lastFileProductionJobCount = 0;
 let lastDeepResearchJobCount = 0;
+let lastContextCompressionMarkerCount = 0;
 let lastConversationId: string | null = null;
 let shouldJumpToConversationBottom = false;
 
@@ -106,6 +107,7 @@ $effect(() => {
 		lastMessageCount = 0;
 		lastFileProductionJobCount = 0;
 		lastDeepResearchJobCount = 0;
+		lastContextCompressionMarkerCount = 0;
 		shouldJumpToConversationBottom = true;
 	}
 });
@@ -128,6 +130,7 @@ $effect.pre(() => {
 	isThinkingActive;
 	fileProductionJobs.length;
 	deepResearchJobs.length;
+	contextCompressionMarkers.length;
 
 	if (!scrollContainer) return;
 
@@ -139,6 +142,7 @@ $effect.pre(() => {
 		lastMessageCount = 0;
 		lastFileProductionJobCount = fileProductionJobs.length;
 		lastDeepResearchJobCount = 0;
+		lastContextCompressionMarkerCount = contextCompressionMarkers.length;
 		return;
 	}
 
@@ -146,6 +150,8 @@ $effect.pre(() => {
 	const hasNewFileProductionJobs =
 		fileProductionJobs.length > lastFileProductionJobCount;
 	const hasNewDeepResearchJobs = deepResearchJobs.length > lastDeepResearchJobCount;
+	const hasNewContextCompressionMarkers =
+		contextCompressionMarkers.length > lastContextCompressionMarkerCount;
 
 	if (shouldJumpToConversationBottom) {
 		// Switching to another conversation should always reveal the latest response.
@@ -159,6 +165,8 @@ $effect.pre(() => {
 		void alignToBottomAfterRender();
 	} else if (hasNewDeepResearchJobs && shouldAutoScroll) {
 		void alignToBottomAfterRender();
+	} else if (hasNewContextCompressionMarkers && shouldAutoScroll) {
+		void alignToBottomAfterRender();
 	} else if (shouldAutoScroll && isThinkingActive) {
 		// Only follow during thinking phase; stop once content streaming begins.
 		instantScrollToBottom();
@@ -167,6 +175,7 @@ $effect.pre(() => {
 	lastMessageCount = dedupedMessages.length;
 	lastFileProductionJobCount = fileProductionJobs.length;
 	lastDeepResearchJobCount = deepResearchJobs.length;
+	lastContextCompressionMarkerCount = contextCompressionMarkers.length;
 });
 
 function instantScrollToBottom() {
