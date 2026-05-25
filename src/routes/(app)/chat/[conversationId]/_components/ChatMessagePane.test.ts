@@ -4,6 +4,7 @@ import type { ChatMessage, DocumentWorkspaceItem, TaskSteeringPayload } from '$l
 import ChatMessagePane from './ChatMessagePane.svelte';
 
 vi.mock('$lib/utils/markdown-loader', () => ({
+	collectSourceReferenceCandidates: async () => [],
 	prepareCodeHighlighting: async () => undefined,
 	renderCodeBlock: async (content: string) => `<pre><code>${content}</code></pre>`,
 	renderHighlightedText: async (content: string) => content,

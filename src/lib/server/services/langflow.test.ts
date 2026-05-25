@@ -458,6 +458,22 @@ describe("sendMessage provider routing", () => {
 		expect(systemPrompt).not.toContain("Memory context workflow");
 	});
 
+	it("can request JSON mode for model-facing control tasks", async () => {
+		await sendMessage("Return JSON", "control-session", "model1", undefined, {
+			skipHonchoContext: true,
+			skipDefaultRuntimeGuidance: true,
+			systemPromptOverride: "Control task. Return only JSON.",
+			thinkingMode: "on",
+			jsonMode: true,
+		});
+
+		const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
+		expect(body.tweaks["ModelNode-1"]).toMatchObject({
+			enable_thinking: true,
+			json_mode: true,
+		});
+	});
+
 	it("passes Hungarian response-language policy into Langflow requests", async () => {
 		await sendMessage(
 			"Kérlek foglald össze magyarul a legfontosabb webes forrásokat.",

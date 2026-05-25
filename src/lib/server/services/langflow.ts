@@ -47,6 +47,7 @@ type SendMessageOptions = {
 	skipDefaultRuntimeGuidance?: boolean;
 	systemPromptOverride?: string;
 	thinkingMode?: ThinkingMode;
+	jsonMode?: boolean;
 	forceWebSearch?: boolean;
 };
 
@@ -1105,6 +1106,7 @@ function buildLangflowTweaks(
 	message: string,
 	effectiveMaxTokens?: number | null,
 	thinkingMode?: ThinkingMode,
+	jsonMode?: boolean,
 	requestTimeoutMs: number = getConfig().requestTimeoutMs,
 ): Record<string, unknown> {
 	const componentId = modelConfig.componentId.trim();
@@ -1144,6 +1146,7 @@ function buildLangflowTweaks(
 		),
 		...(shouldSendReasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
 		...(shouldSendThinkingType ? { thinking_type: effectiveThinkingType } : {}),
+		...(jsonMode ? { json_mode: true } : {}),
 		system_prompt: systemPrompt,
 	};
 
@@ -1814,6 +1817,7 @@ async function sendMessageAttempt(
 				message,
 				budgetedPrompt.outputTokenBudget.effectiveMaxTokens,
 				options?.thinkingMode,
+				options?.jsonMode,
 				attemptTimeoutMs,
 			),
 		};
@@ -2184,6 +2188,7 @@ async function sendMessageStreamAttempt(
 				message,
 				budgetedPrompt.outputTokenBudget.effectiveMaxTokens,
 				options?.thinkingMode,
+				options?.jsonMode,
 				attemptTimeoutMs,
 			),
 		};

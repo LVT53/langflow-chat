@@ -729,6 +729,7 @@ export async function runContextCompression(
 				skipDefaultRuntimeGuidance: true,
 				systemPromptOverride: CONTEXT_COMPRESSION_SYSTEM_APPENDIX,
 				thinkingMode: "on",
+				jsonMode: true,
 			},
 		);
 
