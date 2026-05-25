@@ -305,6 +305,29 @@ const PYTHON_TOOL_MARKER_PATTERNS = [
 	/successfully imported modules\s*:/i,
 	/code execution (?:completed|failed)\b/i,
 ] as const;
+const LEADING_TOOL_PLANNING_NARRATION_RE =
+	/^\s*(?:(?:i(?:'ll| will| am going to)?|let me)\s+(?:search|look up|fetch|check|research|retrieve)\b|(?:friss\s+adatokat\s+)?keresek\b|rákeresek\b|lekérdezek\b|megnézem\b|utánanézek\b|(?:két|több)\s+konkrét\b[\s\S]{0,180}\b(?:forrást|forrás)\b[\s\S]{0,180}\blekérdezek\b)[^.!?\n]*(?:[.!?]|(?=\n|$))\s*/i;
+const TOOL_PLANNING_NARRATION_PREFIX_SCAN_CHARS = 240;
+const TOOL_PLANNING_NARRATION_PREFIXES = [
+	"i'll search",
+	"i will search",
+	"i am going to search",
+	"let me search",
+	"i'll look up",
+	"i will look up",
+	"let me look up",
+	"i'll fetch",
+	"i will fetch",
+	"let me fetch",
+	"friss adatokat keresek",
+	"keresek",
+	"rákeresek",
+	"lekérdezek",
+	"megnézem",
+	"utánanézek",
+	"két konkrét",
+	"több konkrét",
+] as const;
 const PLAIN_SOURCE_REFERENCE_MARKER_RE = /[ \t]*【S\d+】[ \t]*/g;
 const PLAIN_SOURCE_REFERENCE_MARKER_PREFIX_SCAN_CHARS = 24;
 const ASSISTANT_PROSE_BOUNDARY_PATTERNS = [
@@ -614,11 +637,34 @@ function stripLeakedPythonToolDiagnostics(
 	return output;
 }
 
+function stripLeadingToolPlanningNarration(value: string): string {
+	if (!value.trim()) {
+		return value;
+	}
+
+	const match = LEADING_TOOL_PLANNING_NARRATION_RE.exec(value);
+	if (!match) {
+		return value;
+	}
+
+	const remainder = value.slice(match[0].length);
+	if (!remainder.trim() && !/[.!?]\s*$/.test(match[0])) {
+		return value;
+	}
+	return remainder.trimStart() ? remainder.trimStart() : "";
+}
+
 export function stripLeakedToolDiagnostics(
 	value: string,
 	state: LeakedToolDiagnosticsState = createLeakedToolDiagnosticsState(),
 ): string {
-	const withoutWebDiagnostics = stripLeakedWebToolDiagnostics(value, state);
+	const withoutLeadingToolNarration = stripLeadingToolPlanningNarration(
+		value,
+	);
+	const withoutWebDiagnostics = stripLeakedWebToolDiagnostics(
+		withoutLeadingToolNarration,
+		state,
+	);
 	const withoutPythonDiagnostics = stripLeakedPythonToolDiagnostics(
 		withoutWebDiagnostics,
 		state,
@@ -633,6 +679,8 @@ function isLeakedToolDiagnosticPrefix(value: string): boolean {
 	const candidate = value.trimStart();
 	if (!candidate) return false;
 	const lowerCandidate = candidate.toLowerCase();
+
+	if (isToolPlanningNarrationPrefix(candidate)) return true;
 
 	const hasKnownWebToolPrefix = WEB_TOOL_DIAGNOSTIC_PREFIXES.some(
 		({ marker, minPrefixLength }) => {
@@ -660,6 +708,18 @@ function isLeakedToolDiagnosticPrefix(value: string): boolean {
 	);
 }
 
+function isToolPlanningNarrationPrefix(value: string): boolean {
+	if (/^\s/.test(value)) return false;
+	const candidate = value.toLowerCase();
+	if (!candidate) return false;
+	if (candidate.length < 4) return false;
+	if (LEADING_TOOL_PLANNING_NARRATION_RE.test(candidate)) return true;
+
+	return TOOL_PLANNING_NARRATION_PREFIXES.some(
+		(prefix) => prefix.startsWith(candidate) || candidate.startsWith(prefix),
+	);
+}
+
 function isLeakedPythonToolDiagnosticPrefix(value: string): boolean {
 	if (/^\s/.test(value)) return false;
 	const candidate = value.toLowerCase();
@@ -684,6 +744,7 @@ export function getLeakedToolDiagnosticPrefixLength(value: string): number {
 			Math.max(
 				WEB_RESEARCH_DIAGNOSTIC_PREFIX_SCAN_CHARS,
 				PYTHON_TOOL_DIAGNOSTIC_PREFIX_SCAN_CHARS,
+				TOOL_PLANNING_NARRATION_PREFIX_SCAN_CHARS,
 				PLAIN_SOURCE_REFERENCE_MARKER_PREFIX_SCAN_CHARS,
 			),
 	);
@@ -938,9 +999,7 @@ function looksLikeToolPlanningNarration(value: string): boolean {
 		return false;
 	}
 
-	return /^(?:i(?:'ll| will| am going to)?\s+(?:search|look up|fetch|check|research)\b|let me\s+(?:search|look up|fetch|check)\b|rákeresek\b|keresek\b|lekérdezek\b|megnézem\b|utánanézek\b|(?:két|több)\s+konkrét\b[\s\S]*\b(?:forrást|forrás)\b[\s\S]*\blekérdezek\b)/i.test(
-		trimmed,
-	);
+	return LEADING_TOOL_PLANNING_NARRATION_RE.test(trimmed);
 }
 
 function looksLikeRawToolContentBlock(value: string): boolean {

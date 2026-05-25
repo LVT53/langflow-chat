@@ -93,6 +93,30 @@ describe("createServerChunkRuntime", () => {
 		);
 	});
 
+	it("strips split leading web-search narration before visible answer tokens", () => {
+		const chunks: string[] = [];
+		const runtime = createServerChunkRuntime({
+			enqueueChunk(chunk) {
+				chunks.push(chunk);
+				return true;
+			},
+		});
+
+		runtime.emitChunkWithOutputHandling("Friss adatokat keresek");
+		runtime.emitChunkWithOutputHandling(
+			" a vonóhorgos kerékpárszállító szabályairól.",
+		);
+		runtime.emitChunkWithOutputHandling(
+			"1. A szürke rendszám kormányablaknál igényelhető.",
+		);
+		runtime.flushInlineThinkingBuffer();
+
+		expect(tokenTexts(chunks).join("")).toBe(
+			"1. A szürke rendszám kormányablaknál igényelhető.",
+		);
+		expect(runtime.fullResponse).not.toContain("Friss adatokat keresek");
+	});
+
 	it("strips leaked raw web research result blocks from visible tokens", () => {
 		const chunks: string[] = [];
 		const runtime = createServerChunkRuntime({

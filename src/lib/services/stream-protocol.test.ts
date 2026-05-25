@@ -341,6 +341,19 @@ describe("stream-protocol", () => {
 		).toBe("The answer starts here.");
 	});
 
+	it("strips leading tool-action narration before the final answer", () => {
+		expect(
+			stripLeakedToolDiagnostics(
+				"Friss adatokat keresek a magyar szabályozásról.1. A szürke rendszám igényelhető.",
+			),
+		).toBe("1. A szürke rendszám igényelhető.");
+		expect(
+			stripLeakedToolDiagnostics(
+				"Rákeresek a rendszámtábla szabályaira.\n\nA rövid válasz: igényelhető.",
+			),
+		).toBe("A rövid válasz: igényelhető.");
+	});
+
 	it("strips raw web search and fetch result blocks after leaked diagnostics", () => {
 		expect(
 			stripLeakedToolDiagnostics(
