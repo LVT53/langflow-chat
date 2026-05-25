@@ -306,7 +306,7 @@ const PYTHON_TOOL_MARKER_PATTERNS = [
 	/code execution (?:completed|failed)\b/i,
 ] as const;
 const LEADING_TOOL_PLANNING_NARRATION_RE =
-	/^\s*(?:(?:i(?:'ll| will| am going to)?|let me)\s+(?:search|look up|fetch|check|research|retrieve)\b|röviden,?\s+(?:(?:ki)?keresem|ellenőrzöm|megnézem|átnézem|lekérdezem|lekérdezek|rákeresek|utánanézek)\b|(?:friss\s+adatokat\s+)?keresek\b|rákeresek\b|lekérdezek\b|megnézem\b|utánanézek\b|(?:két|több)\s+konkrét\b[\s\S]{0,180}\b(?:forrást|forrás)\b[\s\S]{0,180}\blekérdezek\b)[^.!?\n]*(?:[.!?]|(?=\n|$))\s*/i;
+	/^\s*(?:(?:i(?:'ll| will| am going to)?|let me)\s+(?:search|look up|fetch|check|research|retrieve)\b|röviden,?\s+(?:(?:ki)?keresem|ellenőrzöm|megnézem|átnézem|lekérdezem|lekérdezek|rákeresek|utánanézek)\b|(?:friss\s+adatokat\s+)?keresek\b|(?:ki)?keresem\b|rákeresek\b|lekérdezek\b|lekérdezem\b|ellenőrzöm\b|megnézem\b|átnézem\b|utánanézek\b|(?:két|több)\s+konkrét\b[\s\S]{0,180}\b(?:forrást|forrás)\b[\s\S]{0,180}\blekérdezek\b)[^.!?\n]*(?:[.!?]|(?=\n|$))\s*/i;
 const LEADING_FILE_PRODUCTION_REPAIR_NARRATION_RE =
 	/^\s*(?:(?:i(?:'ll| will| am going to| need to| should)?|let me)\s+(?:fix|repair|correct|adjust|rewrite|reformat)\b[^.!?\n]{0,220}\b(?:json|document[_\s-]+source|source\s+json|schema|formatting)\b[^.!?\n]*(?:[.!?]|(?=\n|$)))\s*/i;
 const TOOL_PLANNING_NARRATION_PREFIX_SCAN_CHARS = 240;
@@ -323,9 +323,14 @@ const TOOL_PLANNING_NARRATION_PREFIXES = [
 	"let me fetch",
 	"friss adatokat keresek",
 	"keresek",
+	"kikeresem",
+	"keresem",
 	"rákeresek",
 	"lekérdezek",
+	"lekérdezem",
+	"ellenőrzöm",
 	"megnézem",
+	"átnézem",
 	"utánanézek",
 	"röviden kikeresem",
 	"röviden, kikeresem",

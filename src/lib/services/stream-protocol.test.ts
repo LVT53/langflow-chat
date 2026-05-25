@@ -432,6 +432,19 @@ describe("stream-protocol", () => {
 		);
 	});
 
+	it("strips standalone Hungarian web-planning narration before the final answer", () => {
+		expect(
+			stripLeakedToolDiagnostics(
+				"Kikeresem a vonóhorgos kerékpárszállító rendszámtáblával kapcsolatos aktuális magyar szabályokat.Ha a vonóhorgos kerékpárszállító eltakarja az autó rendszámát, külön rendszámtáblát kell felszerelni a tartóra.",
+			),
+		).toBe(
+			"Ha a vonóhorgos kerékpárszállító eltakarja az autó rendszámát, külön rendszámtáblát kell felszerelni a tartóra.",
+		);
+		expect(getLeakedToolDiagnosticPrefixLength("Kikeres")).toBe(
+			"Kikeres".length,
+		);
+	});
+
 	it("strips raw web search and fetch result blocks after leaked diagnostics", () => {
 		expect(
 			stripLeakedToolDiagnostics(
