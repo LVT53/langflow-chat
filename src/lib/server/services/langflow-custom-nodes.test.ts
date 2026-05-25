@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -5,7 +6,174 @@ import { describe, expect, it } from "vitest";
 const nodeSource = (filename: string) =>
 	readFileSync(resolve(process.cwd(), "langflow_nodes", filename), "utf8");
 
+const runVllmNodeReasoningRecoveryFixture = () => {
+	const nodePath = resolve(
+		process.cwd(),
+		"langflow_nodes",
+		"vllm_node_fixed.py",
+	);
+	const script = `
+import importlib.util
+import json
+import sys
+import types
+
+class Dummy:
+    def __init__(self, *args, **kwargs):
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+    def __init_subclass__(cls, **kwargs):
+        return super().__init_subclass__(**kwargs)
+
+    @classmethod
+    def get_base_inputs(cls):
+        return []
+
+    def copy(self, update=None):
+        clone = self.__class__()
+        clone.__dict__.update(self.__dict__)
+        clone.__dict__.update(update or {})
+        return clone
+
+def install_module(name, attrs=None):
+    module = types.ModuleType(name)
+    for key, value in (attrs or {}).items():
+        setattr(module, key, value)
+    sys.modules[name] = module
+    return module
+
+for name in [
+    "langchain_core",
+    "langchain_core.language_models",
+    "langchain_core.language_models.chat_models",
+    "langchain_core.messages",
+    "langchain_core.outputs",
+    "langchain_openai",
+    "pydantic",
+    "pydantic.v1",
+    "lfx",
+    "lfx.base",
+    "lfx.base.models",
+    "lfx.base.models.model",
+    "lfx.field_typing",
+    "lfx.field_typing.range_spec",
+    "lfx.inputs",
+    "lfx.inputs.inputs",
+    "lfx.log",
+    "lfx.log.logger",
+    "httpx",
+    "requests",
+]:
+    install_module(name)
+
+sys.modules["langchain_core.language_models.chat_models"].BaseChatModel = Dummy
+sys.modules["langchain_core.messages"].AIMessage = Dummy
+sys.modules["langchain_core.messages"].AIMessageChunk = Dummy
+sys.modules["langchain_core.messages"].SystemMessage = Dummy
+sys.modules["langchain_core.outputs"].ChatGenerationChunk = Dummy
+sys.modules["langchain_core.outputs"].ChatResult = Dummy
+sys.modules["langchain_openai"].ChatOpenAI = Dummy
+sys.modules["pydantic.v1"].SecretStr = Dummy
+sys.modules["lfx.base.models.model"].LCModelComponent = Dummy
+sys.modules["lfx.field_typing"].LanguageModel = Dummy
+sys.modules["lfx.field_typing.range_spec"].RangeSpec = Dummy
+for attr in [
+    "BoolInput",
+    "DictInput",
+    "IntInput",
+    "MultilineInput",
+    "SecretStrInput",
+    "SliderInput",
+    "StrInput",
+]:
+    setattr(sys.modules["lfx.inputs.inputs"], attr, Dummy)
+sys.modules["lfx.log.logger"].logger = types.SimpleNamespace(
+    debug=lambda *args, **kwargs: None,
+    info=lambda *args, **kwargs: None,
+    warning=lambda *args, **kwargs: None,
+    error=lambda *args, **kwargs: None,
+)
+sys.modules["httpx"].Timeout = Dummy
+sys.modules["requests"].get = lambda *args, **kwargs: Dummy(
+    raise_for_status=lambda: None,
+    json=lambda: {"data": []},
+)
+
+spec = importlib.util.spec_from_file_location("vllm_node_fixed", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+model = module.NemotronReasoningChatOpenAI()
+model.reasoning_payload_field = "reasoning"
+model._last_reasoning_content = ""
+
+payload = {
+    "messages": [
+        {
+            "role": "assistant",
+            "content": "<thinking>a</thinking><thinking>b</thinking>visible",
+        },
+        {
+            "role": "assistant",
+            "content": "<thinking>tool reason</thinking>",
+            "tool_calls": [
+                {
+                    "type": "function",
+                    "id": "call_1",
+                    "function": {"name": "lookup", "arguments": "{}"},
+                }
+            ],
+        },
+    ],
+}
+
+result = model._recover_reasoning_in_payload(payload)
+print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
+`;
+	return JSON.parse(
+		execFileSync("python3", ["-c", script, nodePath], {
+			encoding: "utf8",
+			maxBuffer: 1024 * 1024,
+		}),
+	) as {
+		messages: Array<{
+			role: string;
+			content: string;
+			reasoning?: string;
+			reasoning_content?: string;
+			tool_calls?: unknown[];
+		}>;
+	};
+};
+
 describe("Langflow custom model node", () => {
+	it("recovers every tagged GPT-OSS thinking block before replaying assistant history to the model", () => {
+		const recoveredPayload = runVllmNodeReasoningRecoveryFixture();
+		const assistantMessage = recoveredPayload.messages[0];
+		const toolCallMessage = recoveredPayload.messages[1];
+
+		expect(assistantMessage.content).toBe("visible");
+		expect(assistantMessage.reasoning).toBe("ab");
+		expect(assistantMessage.reasoning_content).toBeUndefined();
+		expect(toolCallMessage.content).toBe("");
+		expect(toolCallMessage.reasoning).toBe("tool reason");
+		expect(toolCallMessage.reasoning_content).toBeUndefined();
+		expect(toolCallMessage.tool_calls).toEqual([
+			{
+				type: "function",
+				id: "call_1",
+				function: { name: "lookup", arguments: "{}" },
+			},
+		]);
+		expect(JSON.stringify(recoveredPayload.messages)).not.toContain(
+			"<thinking>",
+		);
+		expect(JSON.stringify(recoveredPayload.messages)).not.toContain(
+			"</thinking>",
+		);
+	});
+
 	it("routes GPT-OSS recovered tool-call reasoning through the Chat Completions reasoning field", () => {
 		const source = nodeSource("vllm_node_fixed.py");
 
@@ -81,8 +249,12 @@ describe("Langflow custom model node", () => {
 		expect(source).toContain("_normalize_openai_compatible_tool_calls");
 		expect(source).toContain('msg.pop("tool_call_chunks", None)');
 		expect(source).toContain('msg.pop("tool_calls", None)');
-		expect(source).toContain('if not isinstance(tool_call_id, str) or not tool_call_id.strip():');
-		expect(source).toContain('if not isinstance(function_name, str) or not function_name.strip():');
+		expect(source).toContain(
+			"if not isinstance(tool_call_id, str) or not tool_call_id.strip():",
+		);
+		expect(source).toContain(
+			"if not isinstance(function_name, str) or not function_name.strip():",
+		);
 		expect(source).toContain('"arguments": self._coerce_tool_call_arguments(');
 		expect(source).toMatch(
 			/has_tool_calls = self\._normalize_openai_compatible_tool_calls\(msg\)[\s\S]*if has_tool_calls and content in \(None, ""\):/,

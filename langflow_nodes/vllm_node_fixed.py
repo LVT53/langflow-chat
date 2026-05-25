@@ -251,8 +251,6 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
         messages, extracts reasoning from embedded <thinking> tags, and injects the
         provider-appropriate reasoning field so the API accepts the request.
         """
-        open_tag = self.reasoning_open_tag
-        close_tag = self.reasoning_close_tag
         messages = payload.get("messages")
         if not isinstance(messages, list):
             logger.debug("[REASONING_RECOVER] No messages in payload")
@@ -279,13 +277,8 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
                 continue
 
             # Case 1: content contains <thinking>...</thinking> tags
-            if open_tag in content and close_tag in content:
-                start = content.find(open_tag)
-                end = content.find(close_tag) + len(close_tag)
-                inner_start = start + len(open_tag)
-                inner_end = content.find(close_tag)
-                reasoning_text = content[inner_start:inner_end]
-                clean_content = content[:start] + content[end:]
+            clean_content, reasoning_text = self._extract_reasoning_from_content(content)
+            if reasoning_text is not None:
                 msg["content"] = clean_content if clean_content or not has_tool_calls else ""
                 if reasoning_text:
                     self._set_payload_reasoning(msg, reasoning_text)
@@ -543,15 +536,26 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
             return content, None
         open_tag = cls.reasoning_open_tag
         close_tag = cls.reasoning_close_tag
-        if open_tag in content and close_tag in content:
-            start = content.find(open_tag)
-            end = content.find(close_tag) + len(close_tag)
+        if open_tag not in content or close_tag not in content:
+            return content, None
+
+        remaining = content
+        clean_parts: list[str] = []
+        reasoning_parts: list[str] = []
+        while open_tag in remaining and close_tag in remaining:
+            start = remaining.find(open_tag)
+            close_start = remaining.find(close_tag, start + len(open_tag))
+            if close_start == -1:
+                break
+
+            clean_parts.append(remaining[:start])
             inner_start = start + len(open_tag)
-            inner_end = content.find(close_tag)
-            reasoning_text = content[inner_start:inner_end]
-            clean_content = content[:start] + content[end:]
-            return clean_content, reasoning_text
-        return content, None
+            reasoning_parts.append(remaining[inner_start:close_start])
+            remaining = remaining[close_start + len(close_tag):]
+
+        clean_parts.append(remaining)
+        reasoning_text = "".join(reasoning_parts)
+        return "".join(clean_parts), reasoning_text
 
     @classmethod
     def _convert_message_to_dict(cls, message):
@@ -563,9 +567,10 @@ class NemotronReasoningChatOpenAI(ChatOpenAI):
             content = message_dict.get("content", "")
             if not reasoning and isinstance(content, str):
                 clean_content, reasoning = cls._extract_reasoning_from_content(content)
-                if reasoning:
+                if reasoning is not None:
                     message_dict["content"] = clean_content
-                    message_dict["reasoning_content"] = reasoning
+                    if reasoning:
+                        message_dict["reasoning_content"] = reasoning
             elif reasoning:
                 if isinstance(content, str):
                     clean_content, _ = cls._extract_reasoning_from_content(content)
