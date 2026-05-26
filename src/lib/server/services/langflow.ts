@@ -4,6 +4,7 @@ import type {
 	LangflowRunResponse,
 	ModelId,
 	ThinkingMode,
+	ToolCallEntry,
 } from "$lib/types";
 import { isProviderModelId } from "$lib/types";
 import { estimateTokenCount } from "$lib/utils/tokens";
@@ -139,6 +140,7 @@ type LangflowRequestResult = {
 	honchoContext?: import("$lib/types").HonchoContextInfo | null;
 	honchoSnapshot?: import("$lib/types").HonchoContextSnapshot | null;
 	contextTraceSections?: LegacyContextTraceSectionInput[];
+	prefetchedToolCalls?: ToolCallEntry[];
 	providerUsage?: ProviderUsageSnapshot | null;
 	modelId: ModelId;
 	modelDisplayName: string;
@@ -155,6 +157,7 @@ type LangflowStreamResult = {
 	honchoContext?: import("$lib/types").HonchoContextInfo | null;
 	honchoSnapshot?: import("$lib/types").HonchoContextSnapshot | null;
 	contextTraceSections?: LegacyContextTraceSectionInput[];
+	prefetchedToolCalls?: ToolCallEntry[];
 	providerUsage?: ProviderUsageSnapshot | null;
 	modelId: ModelId;
 	modelDisplayName: string;
@@ -623,6 +626,94 @@ function extractCurrentMessageSection(
 			? `${CURRENT_USER_MESSAGE_MARKER}${message.trim()}`
 			: inputValue.trim(),
 	};
+}
+
+function insertContextBeforeCurrentMessage(
+	inputValue: string,
+	message: string,
+	contextSection: string,
+): string {
+	const { contextPrefix, currentMessageSection } = extractCurrentMessageSection(
+		inputValue,
+		message,
+	);
+	return [contextPrefix, contextSection, currentMessageSection]
+		.filter((part) => part.trim())
+		.join("\n\n");
+}
+
+async function maybePrefetchForcedWebResearch(params: {
+	inputValue: string;
+	message: string;
+	forceWebSearch?: boolean;
+	sessionId: string;
+	modelId: ModelId | string | undefined;
+}): Promise<{ inputValue: string; prefetchedToolCalls: ToolCallEntry[] }> {
+	if (!params.forceWebSearch) {
+		return { inputValue: params.inputValue, prefetchedToolCalls: [] };
+	}
+
+	try {
+		const { researchWeb } = await import("./web-research");
+		const result = await researchWeb({
+			query: params.message,
+			mode: "exact",
+			freshness: "live",
+			sourcePolicy: "general",
+			maxSources: 6,
+			quoteRequired: false,
+		});
+		const sourceCandidates = result.answerBrief.sources.map((source) => ({
+			id: source.sourceId,
+			title: source.title,
+			url: source.url,
+			snippet: null,
+			sourceType: "web" as const,
+			material: true,
+		}));
+		const evidenceCount = result.answerBrief.evidence.length;
+		const webContext = [
+			"## Current Web Research",
+			"Server-prefetched web context for this forced-search turn. Use it as retrieved evidence. Do not expose raw source dumps, diagnostics, JSON, or search-result internals.",
+			result.answerBrief.markdown,
+		].join("\n\n");
+
+		return {
+			inputValue: insertContextBeforeCurrentMessage(
+				params.inputValue,
+				params.message,
+				webContext,
+			),
+			prefetchedToolCalls: [
+				{
+					callId: `server-prefetch:research_web:${Date.now().toString(36)}`,
+					name: "research_web",
+					input: {
+						query: params.message,
+						mode: "exact",
+						freshness: "live",
+						source: "server_prefetch",
+					},
+					status: "done",
+					outputSummary: `Server-prefetched ${sourceCandidates.length} web sources and ${evidenceCount} evidence snippets.`,
+					sourceType: "web",
+					candidates: sourceCandidates,
+					metadata: {
+						serverPrefetched: true,
+						sourceCount: sourceCandidates.length,
+						evidenceCount,
+					},
+				},
+			],
+		};
+	} catch (error) {
+		console.warn("[LANGFLOW] Forced web prefetch failed", {
+			sessionId: params.sessionId,
+			modelId: params.modelId ?? "model1",
+			error: error instanceof Error ? error.message : String(error),
+		});
+		return { inputValue: params.inputValue, prefetchedToolCalls: [] };
+	}
 }
 
 function resolveOutputTokenBudget(params: {
@@ -2040,6 +2131,7 @@ async function sendMessageAttempt(
 			| null
 			| undefined;
 		let contextTraceSections: LegacyContextTraceSectionInput[] | undefined;
+		let prefetchedToolCalls: ToolCallEntry[] = [];
 		if (user?.id && !options?.skipHonchoContext) {
 			const constructed = await buildConstructedContext({
 				userId: user.id,
@@ -2059,7 +2151,6 @@ async function sendMessageAttempt(
 			honchoSnapshot = constructed.honchoSnapshot;
 			contextTraceSections = constructed.contextTraceSections;
 		}
-
 		const attachmentSection = summarizeAttachmentSectionInInput(inputValue);
 		if ((options?.attachmentIds?.length ?? 0) > 0) {
 			logAttachmentTrace("langflow_request", {
@@ -2147,6 +2238,28 @@ async function sendMessageAttempt(
 			honchoContext = automaticCompression.context.honchoContext;
 			honchoSnapshot = automaticCompression.context.honchoSnapshot;
 			contextTraceSections = automaticCompression.context.contextTraceSections;
+			systemPrompt = buildOutboundSystemPrompt({
+				basePrompt: baseSystemPrompt,
+				inputValue,
+				responseLanguage: detectLanguage(message),
+				modelDisplayName: modelConfig.displayName,
+				modelName: modelConfig.modelName,
+				systemPromptAppendix: options?.systemPromptAppendix,
+				personalityPrompt: options?.personalityPrompt,
+				forceWebSearch: options?.forceWebSearch,
+				skipDefaultRuntimeGuidance: options?.skipDefaultRuntimeGuidance,
+			});
+		}
+		const forcedWebPrefetch = await maybePrefetchForcedWebResearch({
+			inputValue,
+			message,
+			forceWebSearch: options?.forceWebSearch,
+			sessionId,
+			modelId: modelId ?? "model1",
+		});
+		inputValue = forcedWebPrefetch.inputValue;
+		prefetchedToolCalls = forcedWebPrefetch.prefetchedToolCalls;
+		if (prefetchedToolCalls.length > 0) {
 			systemPrompt = buildOutboundSystemPrompt({
 				basePrompt: baseSystemPrompt,
 				inputValue,
@@ -2265,6 +2378,7 @@ async function sendMessageAttempt(
 			honchoContext,
 			honchoSnapshot,
 			contextTraceSections,
+			prefetchedToolCalls,
 			providerUsage,
 			modelId: modelId ?? "model1",
 			modelDisplayName: modelConfig.displayName,
@@ -2417,6 +2531,7 @@ async function sendMessageStreamAttempt(
 			| null
 			| undefined;
 		let contextTraceSections: LegacyContextTraceSectionInput[] | undefined;
+		let prefetchedToolCalls: ToolCallEntry[] = [];
 		if (options?.user?.id && !options.skipHonchoContext) {
 			const constructed = await buildConstructedContext({
 				userId: options.user.id,
@@ -2436,7 +2551,6 @@ async function sendMessageStreamAttempt(
 			honchoSnapshot = constructed.honchoSnapshot;
 			contextTraceSections = constructed.contextTraceSections;
 		}
-
 		const attachmentSection = summarizeAttachmentSectionInInput(inputValue);
 		if ((options?.attachmentIds?.length ?? 0) > 0) {
 			logAttachmentTrace("langflow_request", {
@@ -2524,6 +2638,28 @@ async function sendMessageStreamAttempt(
 			honchoContext = automaticCompression.context.honchoContext;
 			honchoSnapshot = automaticCompression.context.honchoSnapshot;
 			contextTraceSections = automaticCompression.context.contextTraceSections;
+			systemPrompt = buildOutboundSystemPrompt({
+				basePrompt: baseSystemPrompt,
+				inputValue,
+				responseLanguage: detectLanguage(message),
+				modelDisplayName: modelConfig.displayName,
+				modelName: modelConfig.modelName,
+				systemPromptAppendix: options?.systemPromptAppendix,
+				personalityPrompt: options?.personalityPrompt,
+				forceWebSearch: options?.forceWebSearch,
+				skipDefaultRuntimeGuidance: options?.skipDefaultRuntimeGuidance,
+			});
+		}
+		const forcedWebPrefetch = await maybePrefetchForcedWebResearch({
+			inputValue,
+			message,
+			forceWebSearch: options?.forceWebSearch,
+			sessionId,
+			modelId: modelId ?? "model1",
+		});
+		inputValue = forcedWebPrefetch.inputValue;
+		prefetchedToolCalls = forcedWebPrefetch.prefetchedToolCalls;
+		if (prefetchedToolCalls.length > 0) {
 			systemPrompt = buildOutboundSystemPrompt({
 				basePrompt: baseSystemPrompt,
 				inputValue,
@@ -2667,6 +2803,7 @@ async function sendMessageStreamAttempt(
 				honchoContext,
 				honchoSnapshot,
 				contextTraceSections,
+				prefetchedToolCalls,
 				providerUsage,
 				modelId: modelId ?? "model1",
 				modelDisplayName: modelConfig.displayName,
@@ -2690,6 +2827,7 @@ async function sendMessageStreamAttempt(
 			honchoContext,
 			honchoSnapshot,
 			contextTraceSections,
+			prefetchedToolCalls,
 			modelId: modelId ?? "model1",
 			modelDisplayName: modelConfig.displayName,
 			timeoutFailover,

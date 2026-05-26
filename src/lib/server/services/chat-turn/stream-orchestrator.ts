@@ -389,11 +389,41 @@ export function runChatStreamOrchestrator(
 					outputSummary?: string | null;
 					sourceType?: import("$lib/types").EvidenceSourceType | null;
 					candidates?: import("$lib/types").ToolEvidenceCandidate[];
+					metadata?: Record<string, string | number | boolean | null>;
 				},
 			) => {
 				chunkRuntime.emitToolCallEvent(name, input, status, details);
 				if (chunkRuntime.toolCallRecords.length > 0) {
 					clearFirstVisibleOutputTimeout();
+				}
+			};
+			const emitPrefetchedToolCalls = (
+				records:
+					| Array<{
+							name: string;
+							input: Record<string, unknown>;
+							status: "running" | "done";
+							callId?: string;
+							outputSummary?: string | null;
+							sourceType?: import("$lib/types").EvidenceSourceType | null;
+							candidates?: import("$lib/types").ToolEvidenceCandidate[];
+							metadata?: Record<string, string | number | boolean | null>;
+					  }>
+					| undefined,
+			) => {
+				for (const record of records ?? []) {
+					emitToolCallEventWithDebug(
+						record.name,
+						record.input,
+						record.status,
+						{
+							callId: record.callId,
+							outputSummary: record.outputSummary,
+							sourceType: record.sourceType,
+							candidates: record.candidates,
+							metadata: record.metadata,
+						},
+					);
 				}
 			};
 			const emitChunkWithOutputHandling = (chunk: string): boolean => {
@@ -936,6 +966,7 @@ export function runChatStreamOrchestrator(
 					latestModelDisplayName =
 						langflowResponse.modelDisplayName ?? latestModelDisplayName;
 					if (!langflowResponse.stream) {
+						emitPrefetchedToolCalls(langflowResponse.prefetchedToolCalls);
 						latestContextStatus = langflowResponse.contextStatus;
 						initialContextStatus = latestContextStatus;
 						latestTaskState = await attachContinuityToTaskState(
@@ -967,6 +998,7 @@ export function runChatStreamOrchestrator(
 						return;
 					}
 					const langflowStream = langflowResponse.stream;
+					emitPrefetchedToolCalls(langflowResponse.prefetchedToolCalls);
 					latestContextStatus = langflowResponse.contextStatus;
 					initialContextStatus = latestContextStatus;
 					latestTaskState =

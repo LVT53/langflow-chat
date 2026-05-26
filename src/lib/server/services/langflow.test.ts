@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
 	getProviderWithSecrets: vi.fn(),
 	getSystemPrompt: vi.fn(),
 	listContextCompressionSourceMessages: vi.fn(),
+	researchWeb: vi.fn(),
 	runContextCompression: vi.fn(),
 }));
 
@@ -49,6 +50,10 @@ vi.mock("./context-compression", () => ({
 	listContextCompressionSourceMessages:
 		mocks.listContextCompressionSourceMessages,
 	runContextCompression: mocks.runContextCompression,
+}));
+
+vi.mock("./web-research", () => ({
+	researchWeb: mocks.researchWeb,
 }));
 
 import { estimateTokenCount } from "$lib/utils/tokens";
@@ -378,6 +383,20 @@ describe("sendMessage provider routing", () => {
 		mocks.decryptApiKey.mockReturnValue("provider-secret");
 		mocks.getLatestValidContextCompressionSnapshot.mockResolvedValue(null);
 		mocks.listContextCompressionSourceMessages.mockResolvedValue([]);
+		mocks.researchWeb.mockResolvedValue({
+			answerBrief: {
+				markdown:
+					"Research brief for: What changed today?\n\nSources:\n[S1] Official source - https://example.com/source",
+				sources: [
+					{
+						sourceId: "source-1",
+						title: "Official source",
+						url: "https://example.com/source",
+					},
+				],
+				evidence: [],
+			},
+		});
 		mocks.runContextCompression.mockResolvedValue({
 			id: "snapshot-1",
 			status: "valid",
@@ -442,6 +461,11 @@ describe("sendMessage provider routing", () => {
 		});
 
 		const body = JSON.parse(String(vi.mocked(fetch).mock.calls[0]?.[1]?.body));
+		expect(body.input_value).toContain("## Current Web Research");
+		expect(body.input_value).toContain("https://example.com/source");
+		expect(body.input_value).toContain(
+			"## Current User Message\nWhat changed today?",
+		);
 		const systemPrompt = body.tweaks["ModelNode-1"].system_prompt;
 		expect(systemPrompt).toContain("Current-turn forced web retrieval");
 		expect(systemPrompt).toContain(

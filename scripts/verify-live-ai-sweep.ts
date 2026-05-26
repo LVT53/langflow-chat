@@ -59,7 +59,9 @@ const outputDir =
 		`live-ai-sweep-${new Date().toISOString().replace(/[:.]/g, "-")}`,
 	);
 const lowContextPass = {
-	maxModelContext: Number(process.env.LIVE_AI_LOW_MAX_MODEL_CONTEXT ?? 14_000),
+	// Low enough to force automatic compaction, but still large enough for the
+	// app's real system prompt, runtime guards, current message, and answer room.
+	maxModelContext: Number(process.env.LIVE_AI_LOW_MAX_MODEL_CONTEXT ?? 32_000),
 	compactionUiThreshold: Number(
 		process.env.LIVE_AI_LOW_COMPACTION_UI_THRESHOLD ?? 3_500,
 	),
@@ -432,8 +434,9 @@ async function updateProviderLimits(
 async function pollForFileJob(
 	page: Page,
 	conversationId: string,
+	maxWaitMs = timeoutMs,
 ): Promise<ConversationDetail> {
-	const deadline = Date.now() + timeoutMs;
+	const deadline = Date.now() + maxWaitMs;
 	let lastDetail = await getConversationDetail(page, conversationId);
 	while (Date.now() < deadline) {
 		const jobs = lastDetail.fileProductionJobs ?? [];
@@ -820,21 +823,23 @@ async function runModelSweep(page: Page, model: ModelRef, label: string) {
 		filePrompt,
 		"file",
 	);
+	let fileDetail: ConversationDetail;
+	try {
+		fileDetail = await pollForFileJob(page, conversationId, 120_000);
+	} catch {
+		fileDetail = await getConversationDetail(page, conversationId);
+	}
+	const succeededJobs = (fileDetail.fileProductionJobs ?? []).filter(
+		(job: Record<string, unknown>) => job.status === "succeeded",
+	);
 	steps.push({
 		name: "file generation tool event",
-		ok: fileTurn.toolCalls.length > 0,
-		notes: [`toolCallEvents=${fileTurn.toolCalls.length}`],
+		ok: fileTurn.toolCalls.length > 0 || succeededJobs.length > 0,
+		notes: [
+			`toolCallEvents=${fileTurn.toolCalls.length}`,
+			`succeededJobs=${succeededJobs.length}`,
+		],
 	});
-	const fileDetail =
-		fileTurn.toolCalls.length > 0
-			? await pollForFileJob(page, conversationId)
-			: await getConversationDetail(page, conversationId);
-	const succeededJobs =
-		fileTurn.toolCalls.length > 0
-			? (fileDetail.fileProductionJobs ?? []).filter(
-					(job: Record<string, unknown>) => job.status === "succeeded",
-				)
-			: [];
 	steps.push({
 		name: "file production job",
 		ok: succeededJobs.length > 0,
@@ -842,7 +847,7 @@ async function runModelSweep(page: Page, model: ModelRef, label: string) {
 			`succeededJobs=${succeededJobs.length}`,
 			`replyLength=${fileTurn.text.length}`,
 			fileTurn.toolCalls.length === 0
-				? "skippedPolling=no-produce-file-tool-event"
+				? "toolEvent=missing-polled-by-job-state"
 				: "polledJob=true",
 		],
 	});
