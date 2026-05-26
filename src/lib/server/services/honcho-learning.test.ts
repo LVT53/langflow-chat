@@ -1550,7 +1550,7 @@ describe('honcho learning - buildConstructedContext', () => {
 		);
 	});
 
-	it('merges inherited fork history into live Honcho prompt context and exposes provenance', async () => {
+	it('uses persisted fork history as prompt context and exposes provenance', async () => {
 		mockConfig.honchoEnabled = true;
 		mockListMessages.mockResolvedValueOnce([
 			{
@@ -1577,11 +1577,18 @@ describe('honcho learning - buildConstructedContext', () => {
 					sourceCreatedAt: '2026-05-15T10:00:02.000Z',
 				},
 			},
+			{
+				id: 'fork-user-2',
+				role: 'user',
+				content: 'Fork-local follow-up',
+				timestamp: Date.parse('2026-05-15T10:05:00.000Z'),
+				forkCopy: null,
+			},
 		]);
 		mockSessionContext.mockResolvedValueOnce({
 			messages: [
 				{
-					content: 'Fork-local follow-up',
+					content: 'HONCHO SELECTED LIVE MESSAGE SHOULD NOT REPLACE STORED TRANSCRIPT',
 					peerId: 'user-1',
 					createdAt: '2026-05-15T10:05:00.000Z',
 					metadata: { role: 'user' },
@@ -1613,6 +1620,9 @@ describe('honcho learning - buildConstructedContext', () => {
 		expect(result.inputValue).toContain('Inherited source question');
 		expect(result.inputValue).toContain('Inherited source answer');
 		expect(result.inputValue).toContain('Fork-local follow-up');
+		expect(result.inputValue).not.toContain(
+			'HONCHO SELECTED LIVE MESSAGE SHOULD NOT REPLACE STORED TRANSCRIPT'
+		);
 		expect(result.inputValue).toContain(
 			'[Inherited copied turn from source conversation source-conv; source message source-assistant-1]'
 		);
@@ -1624,6 +1634,59 @@ describe('honcho learning - buildConstructedContext', () => {
 			sourceMessageIds: ['source-user-1', 'source-assistant-1'],
 			copiedForkPointMessageId: 'fork-assistant-1',
 		});
+	});
+
+	it('uses the persisted transcript instead of token-bounded live Honcho messages', async () => {
+		mockConfig.honchoEnabled = true;
+		mockListMessages.mockResolvedValueOnce([
+			{
+				id: 'old-user',
+				role: 'user',
+				content: 'OLD PERSISTED NEEDLE: the launch codename is ember-lattice.',
+				timestamp: Date.parse('2026-05-15T09:00:00.000Z'),
+				forkCopy: null,
+			},
+			{
+				id: 'old-assistant',
+				role: 'assistant',
+				content: 'Acknowledged ember-lattice.',
+				timestamp: Date.parse('2026-05-15T09:00:01.000Z'),
+				forkCopy: null,
+			},
+			{
+				id: 'recent-user',
+				role: 'user',
+				content: 'Recent persisted follow-up.',
+				timestamp: Date.parse('2026-05-15T10:05:00.000Z'),
+				forkCopy: null,
+			},
+		]);
+		mockSessionContext.mockResolvedValueOnce({
+			messages: [
+				{
+					content: 'HONCHO TOKEN-BOUNDED LIVE MESSAGE ONLY',
+					peerId: 'user-1',
+					createdAt: '2026-05-15T10:05:00.000Z',
+					metadata: { role: 'user' },
+				},
+			],
+			summary: null,
+		});
+		renderSectionsInCompactionMock();
+		const { buildConstructedContext } = await import('./honcho');
+
+		const result = await buildConstructedContext({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			message: 'What was the launch codename?',
+		});
+
+		expect(result.inputValue).toContain(
+			'OLD PERSISTED NEEDLE: the launch codename is ember-lattice.'
+		);
+		expect(result.inputValue).toContain('Recent persisted follow-up.');
+		expect(result.inputValue).not.toContain('HONCHO TOKEN-BOUNDED LIVE MESSAGE ONLY');
+		expect(result.honchoContext?.source).toBe('live');
 	});
 
 	it('uses a Honcho-synthesized Baseline Memory Profile instead of raw newest conclusions', async () => {

@@ -1231,32 +1231,6 @@ function createHonchoSnapshot(params: {
 	};
 }
 
-function promptMessageKey(message: PromptContextMessage): string {
-	return [
-		message.role,
-		message.createdAt,
-		createHash('sha1').update(message.content).digest('hex'),
-	].join(':');
-}
-
-function mergeInheritedForkMessages(params: {
-	liveMessages: PromptContextMessage[];
-	storedMessages: PromptContextMessage[];
-}): PromptContextMessage[] {
-	const inheritedMessages = params.storedMessages.filter((message) => message.forkCopy);
-	if (inheritedMessages.length === 0) return params.liveMessages;
-
-	const seen = new Set(params.liveMessages.map(promptMessageKey));
-	const merged = [...params.liveMessages];
-	for (const message of inheritedMessages) {
-		const key = promptMessageKey(message);
-		if (seen.has(key)) continue;
-		seen.add(key);
-		merged.push(message);
-	}
-	return merged.sort((a, b) => a.createdAt - b.createdAt);
-}
-
 function summarizeForkContextProvenance(params: {
 	messages: PromptContextMessage[];
 	copiedForkPointMessageId?: string | null;
@@ -1407,9 +1381,13 @@ async function loadSessionPromptContext(params: {
 		fallbackReason: HonchoContextInfo['fallbackReason']
 	): Promise<LoadedSessionPromptContext> => {
 		const snapshot = latestHonchoMetadata.honchoSnapshot;
-		const sessionMessages = snapshot
+		const snapshotMessages = snapshot
 			? mapSnapshotMessagesToPromptContext(snapshot.messages)
-			: fallbackSessionMessages;
+			: [];
+		const sessionMessages =
+			fallbackSessionMessages.length > 0
+				? fallbackSessionMessages
+				: snapshotMessages;
 		const summary = snapshot?.summary ?? null;
 		const peerContext = await loadPersonaContext(params);
 		const waitedMs = Date.now() - startedAt;
@@ -1493,10 +1471,10 @@ async function loadSessionPromptContext(params: {
 		liveContextResult.value.messages,
 		params.userId
 	);
-	const sessionMessages = mergeInheritedForkMessages({
-		liveMessages: liveSessionMessages,
-		storedMessages: fallbackSessionMessages,
-	});
+	const sessionMessages =
+		fallbackSessionMessages.length > 0
+			? fallbackSessionMessages
+			: liveSessionMessages;
 	const summary = liveContextResult.value.summary?.content?.trim()
 		? liveContextResult.value.summary.content.trim()
 		: null;
@@ -1511,7 +1489,7 @@ async function loadSessionPromptContext(params: {
 	const peerContext = await loadPersonaContext(params);
 	const honchoSnapshot = createHonchoSnapshot({
 		summary,
-		messages: sessionMessages,
+		messages: liveSessionMessages,
 	});
 
 	return {
