@@ -281,7 +281,9 @@ async function streamTurn(
 			signal: controller.signal,
 		});
 		if (!response.ok) {
-			throw new Error(`stream HTTP ${response.status}: ${await response.text()}`);
+			throw new Error(
+				`stream HTTP ${response.status}: ${await response.text()}`,
+			);
 		}
 		if (!response.body) {
 			throw new Error("stream response had no body");
@@ -821,16 +823,25 @@ async function runModelSweep(page: Page, model: ModelRef, label: string) {
 		ok: fileTurn.toolCalls.length > 0,
 		notes: [`toolCallEvents=${fileTurn.toolCalls.length}`],
 	});
-	const fileDetail = await pollForFileJob(page, conversationId);
-	const succeededJobs = (fileDetail.fileProductionJobs ?? []).filter(
-		(job) => job.status === "succeeded",
-	);
+	const fileDetail =
+		fileTurn.toolCalls.length > 0
+			? await pollForFileJob(page, conversationId)
+			: await getConversationDetail(page, conversationId);
+	const succeededJobs =
+		fileTurn.toolCalls.length > 0
+			? (fileDetail.fileProductionJobs ?? []).filter(
+					(job: Record<string, unknown>) => job.status === "succeeded",
+				)
+			: [];
 	steps.push({
 		name: "file production job",
 		ok: succeededJobs.length > 0,
 		notes: [
 			`succeededJobs=${succeededJobs.length}`,
 			`replyLength=${fileTurn.text.length}`,
+			fileTurn.toolCalls.length === 0
+				? "skippedPolling=no-produce-file-tool-event"
+				: "polledJob=true",
 		],
 	});
 	await refreshConversationPage(page, conversationId);

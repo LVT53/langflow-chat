@@ -268,7 +268,10 @@ const FILE_GENERATION_GUARD = [
 	"",
 	"General file-production rules:",
 	"- Do not use generic code-execution tools such as `run_python_repl` as a substitute for downloadable-file requests when `produce_file` is available.",
-	"- Do not claim the file is ready in prose. Tell the user you started the file request and that the file card will update when generation finishes.",
+	"- Do not claim the file is ready in prose.",
+	"- Do not say you started, queued, accepted, created, generated, or submitted a file request unless you have actually called `produce_file` and received a successful tool result in the current turn.",
+	"- After a successful `produce_file` tool result, tell the user the file request was started and that the file card will update when generation finishes.",
+	"- If you cannot call `produce_file` or the call does not return a successful tool result, say plainly that you could not start file production; do not simulate a tool result.",
 	"- If file production fails, inspect the actual error, make one clear fix, and retry at most once without changing the user's requested artifact type.",
 ].join("\n");
 

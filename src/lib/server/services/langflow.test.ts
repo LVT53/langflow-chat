@@ -171,6 +171,10 @@ describe("buildOutboundSystemPrompt", () => {
 		);
 		expect(prompt).toContain("Pass them as nested objects");
 		expect(prompt).toContain("requestedOutputs remains a JSON-encoded array");
+		expect(prompt).toContain(
+			"unless you have actually called `produce_file` and received a successful tool result",
+		);
+		expect(prompt).toContain("do not simulate a tool result");
 		expect(prompt).not.toContain(
 			"Langflow validates `requestedOutputs`, `documentSource`, and `program` as text fields",
 		);
