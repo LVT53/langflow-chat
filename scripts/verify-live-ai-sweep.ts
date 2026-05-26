@@ -66,7 +66,9 @@ const lowContextPass = {
 	targetConstructedContext: Number(
 		process.env.LIVE_AI_LOW_TARGET_CONSTRUCTED_CONTEXT ?? 4_500,
 	),
-	maxTokens: Number(process.env.LIVE_AI_LOW_MAX_TOKENS ?? 1_024),
+	// This pass is meant to force prompt-side context compression. Keep enough
+	// answer budget for third-party providers so we do not test starvation.
+	maxTokens: Number(process.env.LIVE_AI_LOW_MAX_TOKENS ?? 4_096),
 };
 
 const modelTargets = [
