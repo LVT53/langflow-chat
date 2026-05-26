@@ -906,6 +906,10 @@ function normalizeCompressionSnapshotInput(params: {
 		"summary",
 		"currentSummary",
 	]);
+	const fallbackGoal =
+		"Preserve the covered conversation segment for future turns.";
+	const fallbackCurrentState =
+		"The covered source messages remain represented by source coverage because the model did not provide a semantic summary.";
 
 	return {
 		goal:
@@ -914,14 +918,14 @@ function normalizeCompressionSnapshotInput(params: {
 			openTasks[0] ??
 			explicitCurrentState ??
 			importantFacts[0] ??
-			"",
+			fallbackGoal,
 		currentState:
 			explicitCurrentState ??
 			importantFacts[0] ??
 			explicitGoal ??
 			importantDecisions[0] ??
 			openTasks[0] ??
-			"",
+			fallbackCurrentState,
 		importantDecisions,
 		importantFacts,
 		openTasks,

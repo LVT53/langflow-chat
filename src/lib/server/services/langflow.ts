@@ -2013,13 +2013,9 @@ async function sendMessageAttempt(
 	overrideModelConfig?: LangflowModelRunConfig,
 ): Promise<LangflowRequestResult> {
 	const config = getConfig();
-	const controller = new AbortController();
 	let timedOut = false;
-	const timeoutId = setTimeout(() => {
-		timedOut = true;
-		controller.abort();
-	}, attemptTimeoutMs);
-	const signal = mergeAbortSignals(options?.signal, controller.signal);
+	let timeoutId: ReturnType<typeof setTimeout> | null = null;
+	let timeoutController: AbortController | null = null;
 
 	try {
 		const modelConfig =
@@ -2221,6 +2217,13 @@ async function sendMessageAttempt(
 			});
 		}
 
+		timeoutController = new AbortController();
+		timeoutId = setTimeout(() => {
+			timedOut = true;
+			timeoutController?.abort();
+		}, attemptTimeoutMs);
+		const signal = mergeAbortSignals(options?.signal, timeoutController.signal);
+
 		const response = await fetch(url, {
 			method: "POST",
 			headers: {
@@ -2275,7 +2278,9 @@ async function sendMessageAttempt(
 		}
 		throw error;
 	} finally {
-		clearTimeout(timeoutId);
+		if (timeoutId) {
+			clearTimeout(timeoutId);
+		}
 	}
 }
 
@@ -2378,27 +2383,16 @@ async function sendMessageStreamAttempt(
 	overrideModelConfig?: LangflowModelRunConfig,
 ): Promise<LangflowStreamResult> {
 	const config = getConfig();
-	const timeoutController = new AbortController();
 	let timedOut = false;
-	const timeoutId = setTimeout(() => {
-		timedOut = true;
-		timeoutController.abort();
-	}, attemptTimeoutMs);
 	const connectTimeoutMs = Math.min(
 		attemptTimeoutMs,
 		Math.max(1000, options?.connectTimeoutMs ?? attemptTimeoutMs),
 	);
-	const connectTimeoutController = new AbortController();
 	let connectTimedOut = false;
-	const connectTimeoutId = setTimeout(() => {
-		connectTimedOut = true;
-		connectTimeoutController.abort();
-	}, connectTimeoutMs);
-	const signal = mergeAbortSignals(
-		options?.signal,
-		timeoutController.signal,
-		connectTimeoutController.signal,
-	);
+	let timeoutId: ReturnType<typeof setTimeout> | null = null;
+	let connectTimeoutId: ReturnType<typeof setTimeout> | null = null;
+	let timeoutController: AbortController | null = null;
+	let connectTimeoutController: AbortController | null = null;
 
 	try {
 		const modelConfig =
@@ -2600,6 +2594,22 @@ async function sendMessageStreamAttempt(
 			});
 		}
 
+		timeoutController = new AbortController();
+		timeoutId = setTimeout(() => {
+			timedOut = true;
+			timeoutController?.abort();
+		}, attemptTimeoutMs);
+		connectTimeoutController = new AbortController();
+		connectTimeoutId = setTimeout(() => {
+			connectTimedOut = true;
+			connectTimeoutController?.abort();
+		}, connectTimeoutMs);
+		const signal = mergeAbortSignals(
+			options?.signal,
+			timeoutController.signal,
+			connectTimeoutController.signal,
+		);
+
 		const response = await fetch(url, {
 			method: "POST",
 			headers: {
@@ -2611,7 +2621,10 @@ async function sendMessageStreamAttempt(
 			body: JSON.stringify(body),
 			signal,
 		});
-		clearTimeout(connectTimeoutId);
+		if (connectTimeoutId) {
+			clearTimeout(connectTimeoutId);
+			connectTimeoutId = null;
+		}
 
 		if (!response.ok) {
 			const errorBody = await response.text().catch(() => "");
@@ -2697,8 +2710,12 @@ async function sendMessageStreamAttempt(
 		}
 		throw error;
 	} finally {
-		clearTimeout(timeoutId);
-		clearTimeout(connectTimeoutId);
+		if (timeoutId) {
+			clearTimeout(timeoutId);
+		}
+		if (connectTimeoutId) {
+			clearTimeout(connectTimeoutId);
+		}
 	}
 }
 

@@ -57,6 +57,7 @@ import {
 	isLangflowTimeoutError,
 	sendJsonControlMessage,
 	sendMessage,
+	sendMessageStream,
 	shouldAutoEnableThinking,
 } from "./langflow";
 
@@ -1713,6 +1714,77 @@ describe("sendMessage provider routing", () => {
 				String(vi.mocked(fetch).mock.calls[1]?.[1]?.body),
 			);
 			expect(backupBody.tweaks["ModelNode-1"].model_name).toBe("backup-model");
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("does not spend streaming failover timeout during local context compression", async () => {
+		vi.useFakeTimers();
+		try {
+			mockConfig(
+				{},
+				{
+					model2: {
+						baseUrl: "http://backup-model/v1",
+						apiKey: "backup-key",
+						modelName: "backup-model",
+						displayName: "Backup Model",
+						systemPrompt: "",
+						flowId: "shared-flow",
+						componentId: "ModelNode-1",
+						maxTokens: null,
+						reasoningEffort: null,
+						thinkingType: null,
+					},
+					model2Enabled: true,
+					modelTimeoutFailoverEnabled: true,
+					modelTimeoutFailoverTimeoutMs: 1000,
+					modelTimeoutFailoverTargetModel: "model2",
+				},
+			);
+			mocks.buildConstructedContext.mockImplementationOnce(
+				async () =>
+					new Promise((resolve) => {
+						setTimeout(
+							() =>
+								resolve({
+									inputValue: "Context assembled after slow local compression.",
+									contextStatus: undefined,
+									taskState: null,
+									contextDebug: null,
+									honchoContext: null,
+									honchoSnapshot: null,
+									contextTraceSections: [],
+								}),
+							1500,
+						);
+					}),
+			);
+			vi.stubGlobal(
+				"fetch",
+				vi.fn(
+					async () =>
+						new Response("event: token\ndata: {\"text\":\"OK\"}\n\n", {
+							status: 200,
+							headers: { "Content-Type": "text/event-stream" },
+						}),
+				),
+			);
+
+			const pending = sendMessageStream("Hello", "conv-1", "model1", {
+				user: { id: "user-1" },
+				thinkingMode: "off",
+			});
+			await vi.advanceTimersByTimeAsync(1500);
+			const result = await pending;
+
+			expect(fetch).toHaveBeenCalledTimes(1);
+			expect(result.modelId).toBe("model1");
+			const body = JSON.parse(
+				String(vi.mocked(fetch).mock.calls[0]?.[1]?.body),
+			);
+			expect(body.tweaks["ModelNode-1"].model_name).toBe("local-model");
 		} finally {
 			vi.useRealTimers();
 		}

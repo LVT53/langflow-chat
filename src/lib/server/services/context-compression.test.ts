@@ -1004,6 +1004,57 @@ describe("context compression snapshots", () => {
 		);
 	});
 
+	it("repairs empty semantic compression fields to a valid covered snapshot", async () => {
+		seedConversationWithMessages();
+		mocks.sendJsonControlMessage.mockResolvedValueOnce({
+			text: JSON.stringify({
+				goal: "",
+				currentState: "",
+				importantDecisions: [],
+				importantFacts: [],
+				openTasks: [],
+				openQuestions: [],
+				toolUseAndEvidenceRefs: [],
+				sourceCoverage: {
+					messageIds: ["message-1", "message-2"],
+				},
+			}),
+			modelId: "model1",
+			modelDisplayName: "Selected Model",
+			rawResponse: {},
+		});
+		const { runContextCompression } = await import("./context-compression");
+
+		const result = await runContextCompression({
+			conversationId: "conv-1",
+			userId: "user-1",
+			trigger: "automatic",
+			selectedModelId: "model1",
+			sourceMessages: [
+				{
+					id: "message-1",
+					role: "user",
+					content: "First question",
+					messageSequence: 1,
+				},
+				{
+					id: "message-2",
+					role: "assistant",
+					content: "First answer",
+					messageSequence: 2,
+				},
+			],
+		});
+
+		expect(result.status).toBe("valid");
+		expect(result.failureReason).toBeNull();
+		expect(result.snapshot.goal).toBe(
+			"Preserve the covered conversation segment for future turns.",
+		);
+		expect(result.snapshot.currentState).toContain("source coverage");
+		expect(mocks.sendJsonControlMessage).toHaveBeenCalledTimes(1);
+	});
+
 	it("marks the running snapshot failed when validation still rejects the repair", async () => {
 		seedConversationWithMessages();
 		mocks.sendJsonControlMessage
