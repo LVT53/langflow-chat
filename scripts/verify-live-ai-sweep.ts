@@ -114,6 +114,50 @@ function requireEnv(name: string, value: string | undefined): string {
 	return value;
 }
 
+function parseJsonObject(text: string): Record<string, unknown> | null {
+	const trimmed = text.trim();
+	const candidates = [trimmed];
+	const firstBrace = trimmed.indexOf("{");
+	const lastBrace = trimmed.lastIndexOf("}");
+	if (firstBrace >= 0 && lastBrace > firstBrace) {
+		candidates.push(trimmed.slice(firstBrace, lastBrace + 1));
+	}
+
+	for (const candidate of candidates) {
+		try {
+			const parsed: unknown = JSON.parse(candidate);
+			if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+				return parsed as Record<string, unknown>;
+			}
+		} catch {
+			// Try the next candidate.
+		}
+	}
+	return null;
+}
+
+function structuredRecallHasValue(params: {
+	text: string;
+	parsed: Record<string, unknown> | null;
+	field: string;
+	acceptedValues: string[];
+}): boolean {
+	const normalizedText = params.text.toLowerCase();
+	const normalizedAcceptedValues = params.acceptedValues.map((value) =>
+		value.toLowerCase(),
+	);
+	const rawValue = params.parsed?.[params.field];
+	const normalizedFieldValue =
+		typeof rawValue === "string" ? rawValue.trim().toLowerCase() : "";
+
+	return normalizedAcceptedValues.some(
+		(value) =>
+			normalizedText.includes(value) ||
+			normalizedFieldValue === value ||
+			normalizedFieldValue.includes(value),
+	);
+}
+
 function assertValidLowContextPassConfig() {
 	const { maxModelContext, compactionUiThreshold, targetConstructedContext } =
 		lowContextPass;
@@ -963,20 +1007,65 @@ async function runAutomaticLowContextPass(
 			message: automaticCompactionRecallPrompt,
 		});
 		const recallLeaks = detectLeaks(recall.text, "general");
-		const expectedRecallNeedles = [
-			"AUTOCOMP-QUARTZ-93",
-			"Nóra Varga",
-			"Mályva-híd 12",
-			"Kende Farkas",
-			"90413.77",
-			"6F",
-			"Cobalt-8",
-			"SILVER-MANGO-204",
-			"Room 5D",
+		const parsedRecall = parseJsonObject(recall.text);
+		const expectedRecallChecks = [
+			{
+				label: "AUTOCOMP-QUARTZ-93",
+				field: "codename",
+				acceptedValues: ["AUTOCOMP-QUARTZ-93"],
+			},
+			{
+				label: "Nóra Varga",
+				field: "commuter",
+				acceptedValues: ["Nóra Varga"],
+			},
+			{
+				label: "Mályva-híd 12",
+				field: "bridge_marker",
+				acceptedValues: ["Mályva-híd 12"],
+			},
+			{
+				label: "Kende Farkas",
+				field: "reviewer",
+				acceptedValues: ["Kende Farkas"],
+			},
+			{
+				label: "90413.77",
+				field: "checksum",
+				acceptedValues: ["90413.77"],
+			},
+			{
+				label: "6F",
+				field: "envelope",
+				acceptedValues: ["6F", "envelope 6F"],
+			},
+			{
+				label: "Cobalt-8",
+				field: "route",
+				acceptedValues: ["Cobalt-8", "route Cobalt-8"],
+			},
+			{
+				label: "SILVER-MANGO-204",
+				field: "audit_marker",
+				acceptedValues: ["SILVER-MANGO-204"],
+			},
+			{
+				label: "Room 5D",
+				field: "room",
+				acceptedValues: ["Room 5D", "5D"],
+			},
 		];
-		const missingRecallNeedles = expectedRecallNeedles.filter(
-			(needle) => !recall.text.toLowerCase().includes(needle.toLowerCase()),
-		);
+		const missingRecallNeedles = expectedRecallChecks
+			.filter(
+				(check) =>
+					!structuredRecallHasValue({
+						text: recall.text,
+						parsed: parsedRecall,
+						field: check.field,
+						acceptedValues: check.acceptedValues,
+					}),
+			)
+			.map((check) => check.label);
 		steps.push({
 			name: "automatic compaction recall",
 			ok: recallLeaks.length === 0 && missingRecallNeedles.length === 0,
