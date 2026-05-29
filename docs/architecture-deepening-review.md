@@ -15,6 +15,7 @@
 | 2026-04-30 | grill-with-docs | **5** — `stream.ts` split | **SKIPPED** — Simpler cleanup only. Candidate 6's preserve removal + normalization consolidation already addresses most of the file's complexity. No new file splits. |
 | 2026-04-30 | grill-with-docs | **4** — `config-store.ts` refactor | **SCALED BACK** — Collapse `getResolvedAdminConfigValues` + `getEnvDefaults` into a shared serializer. Remove translator keys. Keep override appliers as-is (grep-friendly, zero-risk). No metadata metaprogramming. |
 | 2026-04-30 | grill-with-docs | **3** — `stream-orchestrator.ts` god object | **FINISHED** — 3 targeted extractions (completeStreamTurn, doReconnect, runNonStreamFallback) + SSE contract integration test. 36 new tests across 4 test files. Orchestrator reduced from 977 to ~720 lines. All 4 issues (#13–#16) committed in atomic TDD slices. |
+| 2026-05-29 | architecture review follow-up | Working Document Selection signals | **FINISHED** — `working-document-selection.ts` now owns live document signal collapse; the old `active-state.ts` helper and test were removed. See ADR-0018. |
 
 ---
 
@@ -128,7 +129,7 @@ What should be a Honcho integration adapter has become the de facto chat context
 - Session prompt loading from admin config
 - Attachment resolution and readiness
 - Working-set selection via `knowledge/context.ts`
-- Active document state via `active-state.ts`
+- Working Document Selection via `working-document-selection.ts`
 - Task state preparation via `task-state.ts`
 - Honcho peer context enrichment
 - Document resolution authority signals
@@ -145,7 +146,7 @@ honcho.ts imports:
   task-state (formatTaskStateForPrompt, getContextDebugState, getPromptArtifactSnippets, prepareTaskContext)
   tei-reranker, tei-embedder
   attachment-trace
-  active-state (buildActiveDocumentState)
+  working-document-selection (resolveWorkingDocumentSelection)
   messages (getLatestHonchoMetadata, computeEstimatedMessagesTokenCount, etc.)
 ```
 
@@ -162,7 +163,7 @@ honcho.ts  (remainder ~900 lines)
 chat-turn/context-assembly.ts  (new, ~600 lines)
   └── buildConstructedContext() + related helpers
   └── Owns: prompt loading, attachment resolution, working-set selection,
-           active document state, task preparation, Honcho enrichment
+           working-document selection, task preparation, Honcho enrichment
 ```
 
 ### Benefits
@@ -192,7 +193,7 @@ The re-export surface makes imports ambiguous — callers don't know if they're 
 
 ```
 task-state.ts imports:
-  active-state, evidence-family, messages, semantic-embedding-refresh,
+  working-document-selection, evidence-family, messages, semantic-embedding-refresh,
   semantic-ranking, tei-observability, tei-reranker,
   task-state/artifacts, task-state/document-preferences,
   task-state/control-model, task-state/mappers,
@@ -685,7 +686,7 @@ Routes (api/chat/send, api/chat/stream)
     │         └──► chat-turn/active-streams.ts
     │
     ├──► honcho.ts ──────────────────► task-state (4 functions)
-    │                                   └──► active-state, evidence-family, messages...
+    │                                   └──► working-document-selection, evidence-family, messages...
     │
     ├──► task-state.ts ──────────────► task-state/continuity.ts (988 lines)
     │    (facade)                       task-state/control-model.ts (227 lines)

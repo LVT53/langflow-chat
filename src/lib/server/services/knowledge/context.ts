@@ -1,12 +1,17 @@
-import { randomUUID } from 'crypto';
+import { randomUUID } from 'node:crypto';
 import { and, desc, eq } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import {
-	artifactLinks,
 	artifacts,
 	conversationContextStatus,
 	conversationWorkingSetItems,
 } from '$lib/server/db/schema';
+import { DAY_MS } from '$lib/server/utils/constants';
+import {
+	applyConversationBoundaryPenalty,
+	isCrossConversationArtifactEligible,
+} from '$lib/server/utils/conversation-boundary-filter';
+import { parseJsonStringArray } from '$lib/server/utils/json';
 import type {
 	Artifact,
 	ArtifactSummary,
@@ -16,23 +21,16 @@ import type {
 	MemoryLayer,
 	WorkingSetReasonCode,
 } from '$lib/types';
-import { parseJsonStringArray } from '$lib/server/utils/json';
-import { DAY_MS } from '$lib/server/utils/constants';
-import { countRecentMemoryEventsBySubject } from '../memory-events';
-import {
-	applyConversationBoundaryPenalty,
-	isCrossConversationArtifactEligible,
-} from '$lib/server/utils/conversation-boundary-filter';
-import {
-	buildActiveDocumentState,
-	deriveCurrentTurnReasonCodes,
-	type ActiveDocumentState,
-} from '../active-state';
 import {
 	getGeneratedDocumentBehaviorKey,
 	isGeneratedDocumentPromptEligible,
 	resolveRelevantGeneratedDocumentSelection,
 } from '../document-resolution';
+import { countRecentMemoryEventsBySubject } from '../memory-events';
+import {
+	resolveWorkingDocumentSelection,
+	type WorkingDocumentSelection,
+} from '../working-document-selection';
 import {
 	rankWorkingSetCandidates,
 	scoreMatch,
@@ -41,17 +39,16 @@ import {
 	type WorkingSetCandidate,
 } from '../working-set';
 import {
-	getCompactionUiThreshold,
-	getMaxModelContext,
-	getTargetConstructedContext,
 	findRelevantArtifactsByTypesDetailed,
 	getArtifactOwnershipScope,
 	getArtifactsForUser,
+	getCompactionUiThreshold,
+	getMaxModelContext,
+	getTargetConstructedContext,
 	isArtifactCanonicallyOwned,
 	listConversationSourceArtifactIds,
 	mapArtifact,
 	mapArtifactSummary,
-	parseWorkingDocumentMetadata,
 } from './store';
 
 function mapContextStatus(row: typeof conversationContextStatus.$inferSelect): ConversationContextStatus {
@@ -102,7 +99,7 @@ function logWorkingDocumentSelection(params: {
 	phase: 'prompt' | 'working_set';
 	conversationId: string;
 	activeDocumentArtifactId?: string;
-	activeDocumentState: ActiveDocumentState;
+	selection: WorkingDocumentSelection;
 	selectedArtifacts: Array<{
 		artifactId: string;
 		score?: number;
@@ -111,17 +108,19 @@ function logWorkingDocumentSelection(params: {
 }): void {
 	const {
 		activeDocumentArtifactId,
-		activeDocumentState,
 		conversationId,
 		phase,
+		selection,
 		selectedArtifacts,
 	} = params;
 	const shouldLog =
 		Boolean(activeDocumentArtifactId) ||
-		Boolean(activeDocumentState.currentGeneratedArtifactId) ||
-		Boolean(activeDocumentState.recentlyRefinedFamilyId) ||
-		activeDocumentState.hasRecentUserCorrection ||
-		activeDocumentState.hasContextResetSignal;
+		Boolean(selection.currentDocument) ||
+		selection.latestGeneratedDocumentIds.length > 0 ||
+		selection.activeFocus.artifactIds.length > 0 ||
+		selection.correction.hasSignal ||
+		Boolean(selection.recentRefinement.familyId) ||
+		selection.reset.hasSignal;
 
 	if (!shouldLog) {
 		return;
@@ -130,12 +129,16 @@ function logWorkingDocumentSelection(params: {
 	console.info('[CONTEXT] Working document selection', {
 		conversationId,
 		phase,
-		activeDocumentArtifactId: activeDocumentArtifactId ?? null,
-		currentGeneratedArtifactId: activeDocumentState.currentGeneratedArtifactId,
-		currentGeneratedReasonCodes: Array.from(activeDocumentState.currentGeneratedReasonCodes),
-		recentlyRefinedFamilyId: activeDocumentState.recentlyRefinedFamilyId,
-		hasRecentUserCorrection: activeDocumentState.hasRecentUserCorrection,
-		hasContextResetSignal: activeDocumentState.hasContextResetSignal,
+		requestedActiveDocumentArtifactId: activeDocumentArtifactId ?? null,
+		documentFocused: selection.documentFocused,
+		currentDocument: selection.currentDocument,
+		latestGeneratedDocumentIds: selection.latestGeneratedDocumentIds,
+		activeFocusArtifactIds: selection.activeFocus.artifactIds,
+		correctionTargetArtifactIds: selection.correction.targetArtifactIds,
+		recentlyRefinedFamilyId: selection.recentRefinement.familyId,
+		recentlyRefinedArtifactIds: selection.recentRefinement.artifactIds,
+		hasRecentUserCorrection: selection.correction.hasSignal,
+		hasContextResetSignal: selection.reset.hasSignal,
 		selectedArtifacts: selectedArtifacts.slice(0, 4),
 	});
 }
@@ -225,12 +228,19 @@ export async function selectWorkingSetArtifactsForPrompt(
 			item: row.item,
 			artifact: mapArtifact(row.artifact),
 		}));
-	const activeDocumentState = buildActiveDocumentState({
+	const reasonCodesByArtifactId = new Map(
+		mappedRows.map((row) => [
+			row.artifact.id,
+			parseJsonStringArray(row.item.reasonCodesJson) as WorkingSetReasonCode[],
+		])
+	);
+	const selection = resolveWorkingDocumentSelection({
 		artifacts: mappedRows.map((row) => row.artifact),
 		message,
 		attachmentIds: excludeArtifactIds,
 		activeDocumentArtifactId,
 		currentConversationId: conversationId,
+		reasonCodesByArtifactId,
 	});
 
 	const selectedArtifacts = mappedRows
@@ -240,12 +250,8 @@ export async function selectWorkingSetArtifactsForPrompt(
 				message,
 				`${artifact.name}\n${artifact.summary ?? ''}\n${artifact.contentText ?? ''}`
 			);
-			const baseReasonCodes = parseJsonStringArray(row.item.reasonCodesJson) as WorkingSetReasonCode[];
-			const reasonCodes = deriveCurrentTurnReasonCodes({
-				artifactId: artifact.id,
-				reasonCodes: baseReasonCodes,
-				activeDocumentState,
-			});
+			const reasonCodes =
+				selection.prompt.reasonCodesByArtifactId.get(artifact.id) ?? [];
 			const explicitlyRequested =
 				scoreMatch(message, artifact.name) > 0 ||
 				scoreMatch(message, artifact.summary ?? '') > 1;
@@ -273,7 +279,7 @@ export async function selectWorkingSetArtifactsForPrompt(
 		phase: 'prompt',
 		conversationId,
 		activeDocumentArtifactId,
-		activeDocumentState,
+		selection,
 		selectedArtifacts: selectedArtifacts.map((entry) => ({
 			artifactId: entry.artifact.id,
 			score: entry.score,
@@ -307,24 +313,23 @@ export async function refreshConversationWorkingSet(params: {
 		)
 		.orderBy(desc(artifacts.updatedAt))
 		.limit(8);
-	const activeDocumentState = buildActiveDocumentState({
-		artifacts: outputArtifacts.map((artifact) => mapArtifact(artifact)),
+	const outputArtifactModels = outputArtifacts.map((artifact) => mapArtifact(artifact));
+	const selection = resolveWorkingDocumentSelection({
+		artifacts: outputArtifactModels,
 		message: params.message ?? '',
 		attachmentIds,
 		activeDocumentArtifactId: params.activeDocumentArtifactId,
 		preferredGeneratedArtifactId: params.selectedGeneratedArtifactId,
 		currentConversationId: params.conversationId,
 	});
-	const latestGeneratedArtifactIds = activeDocumentState.latestGeneratedArtifactIds;
-	const currentGeneratedArtifactId = activeDocumentState.currentGeneratedArtifactId;
-	const currentGeneratedReasonCodes = activeDocumentState.currentGeneratedReasonCodes;
+	const latestGeneratedArtifactIds = selection.latestGeneratedDocumentIds;
 
 	const candidateIds = new Set<string>([
 		...existingItems.map((item) => item.artifactId),
 		...attachmentIds,
 		...sourceArtifactIds,
 		...latestGeneratedArtifactIds,
-		...(params.activeDocumentArtifactId ? [params.activeDocumentArtifactId] : []),
+		...selection.workingSet.candidateArtifactIds,
 	]);
 
 	if (candidateIds.size === 0) {
@@ -344,6 +349,8 @@ export async function refreshConversationWorkingSet(params: {
 				linkedSourceArtifactIds.has(artifact.id)
 		)
 		.map((artifact) => {
+			const candidateSignals =
+				selection.workingSet.candidateSignalsByArtifactId.get(artifact.id);
 			return {
 				artifactId: artifact.id,
 				artifactType: artifact.type as WorkingSetCandidate['artifactType'],
@@ -351,15 +358,12 @@ export async function refreshConversationWorkingSet(params: {
 				summary: artifact.summary,
 				contentText: artifact.contentText,
 				updatedAt: artifact.updatedAt,
-				isAttachedThisTurn: attachmentIds.includes(artifact.id),
-				isActiveDocumentFocus: activeDocumentState.activeDocumentIds.has(artifact.id),
-				isRecentUserCorrection: activeDocumentState.correctionTargetIds.has(artifact.id),
-				isRecentlyRefinedDocumentFamily: activeDocumentState.recentlyRefinedArtifactIds.has(
-					artifact.id
-				),
-				isCurrentGeneratedDocument:
-					currentGeneratedArtifactId === artifact.id &&
-					currentGeneratedReasonCodes.has('current_generated_document'),
+				isAttachedThisTurn: candidateSignals?.isAttachedThisTurn ?? false,
+				isActiveDocumentFocus: candidateSignals?.isActiveDocumentFocus ?? false,
+				isRecentUserCorrection: candidateSignals?.isRecentUserCorrection ?? false,
+				isRecentlyRefinedDocumentFamily:
+					candidateSignals?.isRecentlyRefinedDocumentFamily ?? false,
+				isCurrentGeneratedDocument: candidateSignals?.isCurrentGeneratedDocument ?? false,
 				messageMatchScore: message
 					? scoreMatch(
 							message,
@@ -430,7 +434,7 @@ export async function refreshConversationWorkingSet(params: {
 		phase: 'working_set',
 		conversationId: params.conversationId,
 		activeDocumentArtifactId: params.activeDocumentArtifactId,
-		activeDocumentState,
+		selection,
 		selectedArtifacts: ranked
 			.filter((candidate) => candidate.selected)
 			.map((candidate) => ({

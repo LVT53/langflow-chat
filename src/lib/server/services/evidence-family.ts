@@ -1,13 +1,13 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { artifactLinks, artifacts, taskStateEvidenceLinks } from '$lib/server/db/schema';
-import type { Artifact, ArtifactRetrievalClass } from '$lib/types';
-import { parseJsonRecord } from '$lib/server/utils/json';
 import {
 	getGeneratedOutputFamilyKey,
 	parseWorkingDocumentMetadata,
 	resolveGeneratedDocumentFamilyStatus,
 } from '$lib/server/services/knowledge/store';
+import { parseJsonRecord } from '$lib/server/utils/json';
+import type { Artifact, ArtifactRetrievalClass } from '$lib/types';
 
 const generatedOutputBackfillDone = new Set<string>();
 const generatedOutputBackfillInFlight = new Map<string, Promise<void>>();
@@ -357,17 +357,23 @@ export async function collapseArtifactsByFamily(params: {
 	artifacts: Artifact[];
 	pinnedIds?: Set<string>;
 	currentAttachmentIds?: Set<string>;
+	protectedIds?: Set<string>;
 }): Promise<Artifact[]> {
 	if (params.artifacts.length <= 1) return params.artifacts;
 
 	const pinnedIds = params.pinnedIds ?? new Set<string>();
 	const currentAttachmentIds = params.currentAttachmentIds ?? new Set<string>();
+	const protectedIds = params.protectedIds ?? new Set<string>();
 	const familyKeys = await resolveArtifactFamilyKeys(params.userId, params.artifacts);
 	const preserved: Artifact[] = [];
 	const grouped = new Map<string, Artifact[]>();
 
 	for (const artifact of params.artifacts) {
-		if (pinnedIds.has(artifact.id) || currentAttachmentIds.has(artifact.id)) {
+		if (
+			pinnedIds.has(artifact.id) ||
+			currentAttachmentIds.has(artifact.id) ||
+			protectedIds.has(artifact.id)
+		) {
 			preserved.push(artifact);
 			continue;
 		}

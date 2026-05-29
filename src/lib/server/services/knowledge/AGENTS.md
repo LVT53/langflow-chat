@@ -15,7 +15,7 @@ store.ts (facade — re-exports store/*)
   ├── store/documents.ts    ← normalized docs, semantic retrieval (Wave 5)
   ├── store/cleanup.ts      ← cross-reference-aware deletion
   └── store/document-metadata.ts ← generated-document family metadata
-context.ts                ← working-set ranking, compaction, active-state integration
+context.ts                ← working-set ranking, compaction, Working Document Selection integration
 capsules.ts               ← work capsules, generated outputs (not lineage authority)
 ```
 
@@ -37,6 +37,7 @@ capsules.ts               ← work capsules, generated outputs (not lineage auth
 - **Semantic retrieval**: `store/documents.ts` composes lexical fetch + embedding shortlist + TEI rerank; keeps deterministic filters above TEI scores
 - **Library uploads**: `conversationId` may be null; skip `attached_to_conversation` link when null. Filename conflicts auto-rename and remain separate uploaded documents; do not convert duplicate uploads into versions.
 - **Document families**: generated-document families are metadata-driven via `store/document-metadata.ts`; `document-resolution.ts` is authority for "which generated version is current"
+- **Working Document Selection**: live focus, correction, recent-refinement, reset, prompt, retrieval, and task-evidence signal views come from `../working-document-selection.ts`
 - **Capsules**: workflow summaries only; document lineage lives in artifact metadata + links
 - **Observability**: `[CONTEXT] Working document selection` summary in `context.ts`; extend it rather than per-candidate logs
 

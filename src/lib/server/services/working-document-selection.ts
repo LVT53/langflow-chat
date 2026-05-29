@@ -13,7 +13,7 @@ const USER_CORRECTION_RE =
 const CONTEXT_RESET_RE =
 	/\b(done with (?:that|this|it)|finished with (?:that|this|it)|finished (?:that|this|it)|completed (?:that|this|it)|that(?:'s| is) done|wrapped up|move on|switch topics|new topic|another topic|something else|let's talk about something else)\b/i;
 
-export interface ActiveDocumentState {
+interface WorkingDocumentSignalState {
 	documentFocused: boolean;
 	hasRecentUserCorrection: boolean;
 	hasContextResetSignal: boolean;
@@ -35,6 +35,114 @@ const LIVE_DOCUMENT_REASON_CODES: WorkingSetReasonCode[] = [
 	"latest_generated_output",
 	"matched_current_turn",
 ];
+
+export interface WorkingDocumentIdentity {
+	artifactId: string;
+	familyId: string | null;
+	reasonCodes: WorkingSetReasonCode[];
+	source: "active_focus" | "generated_document";
+}
+
+export interface WorkingDocumentWorkingSetCandidateSignals {
+	isAttachedThisTurn: boolean;
+	isActiveDocumentFocus: boolean;
+	isRecentUserCorrection: boolean;
+	isRecentlyRefinedDocumentFamily: boolean;
+	isCurrentGeneratedDocument: boolean;
+	isSelectedCurrentGeneratedDocument: boolean;
+}
+
+export interface WorkingDocumentSelection {
+	documentFocused: boolean;
+	currentDocument: WorkingDocumentIdentity | null;
+	latestGeneratedDocumentIds: string[];
+	activeFocus: {
+		artifactIds: string[];
+	};
+	correction: {
+		hasSignal: boolean;
+		targetArtifactIds: string[];
+	};
+	recentRefinement: {
+		familyId: string | null;
+		artifactIds: string[];
+	};
+	reset: {
+		hasSignal: boolean;
+		suppressCarryover: boolean;
+	};
+	currentTurnReasonCodesByArtifactId: Map<string, WorkingSetReasonCode[]>;
+	prompt: {
+		reasonCodesByArtifactId: Map<string, WorkingSetReasonCode[]>;
+	};
+	workingSet: {
+		candidateArtifactIds: string[];
+		candidateSignalsByArtifactId: Map<
+			string,
+			WorkingDocumentWorkingSetCandidateSignals
+		>;
+	};
+	retrieval: {
+		preferredArtifactId: string | null;
+		preferredGeneratedFamilyId: string | null;
+		suppressGeneratedCarryover: boolean;
+		hasExplicitResetSignal: boolean;
+	};
+	taskEvidence: {
+		protectedArtifactIds: string[];
+		workingDocumentProtectedArtifactIds: string[];
+	};
+}
+
+export interface ResolveWorkingDocumentSelectionParams {
+	artifacts: Artifact[];
+	message: string;
+	attachmentIds?: string[];
+	activeDocumentArtifactId?: string;
+	preferredGeneratedArtifactId?: string | null;
+	currentConversationId?: string | null;
+	reasonCodesByArtifactId?:
+		| ReadonlyMap<string, WorkingSetReasonCode[]>
+		| Record<string, WorkingSetReasonCode[]>;
+}
+
+function orderedIds(values: Iterable<string | null | undefined>): string[] {
+	const ids: string[] = [];
+	const seen = new Set<string>();
+	for (const value of values) {
+		if (!value || seen.has(value)) continue;
+		seen.add(value);
+		ids.push(value);
+	}
+	return ids;
+}
+
+function isReasonCodeMap(
+	source:
+		| ReadonlyMap<string, WorkingSetReasonCode[]>
+		| Record<string, WorkingSetReasonCode[]>,
+): source is ReadonlyMap<string, WorkingSetReasonCode[]> {
+	return typeof source.get === "function";
+}
+
+function getBaseReasonCodes(
+	source:
+		| ReadonlyMap<string, WorkingSetReasonCode[]>
+		| Record<string, WorkingSetReasonCode[]>
+		| undefined,
+	artifactId: string,
+): WorkingSetReasonCode[] {
+	if (!source) return [];
+	if (isReasonCodeMap(source)) return source.get(artifactId) ?? [];
+	return source[artifactId] ?? [];
+}
+
+function getArtifactFamilyId(artifact: Artifact | null): string | null {
+	if (!artifact) return null;
+	return (
+		parseWorkingDocumentMetadata(artifact.metadata).documentFamilyId ?? null
+	);
+}
 
 function isDocumentFocusedTurn(
 	message: string,
@@ -58,12 +166,12 @@ function hasActiveDocumentFocusSignal(message: string): boolean {
 
 function hasDocumentFollowUpSignal(message: string): boolean {
 	return (
-		hasRecentUserCorrectionSignal(message) ||
+		hasUserCorrectionSignal(message) ||
 		(DOCUMENT_ACTION_RE.test(message) && DOCUMENT_REFERENCE_RE.test(message))
 	);
 }
 
-export function hasRecentUserCorrectionSignal(
+function hasUserCorrectionSignal(
 	message: string | null | undefined,
 ): boolean {
 	if (!message?.trim()) return false;
@@ -77,31 +185,39 @@ function hasActiveContextResetSignal(
 	return CONTEXT_RESET_RE.test(message);
 }
 
-export function deriveCurrentTurnReasonCodes(params: {
+function deriveWorkingDocumentReasonCodes(params: {
 	artifactId: string;
 	reasonCodes: WorkingSetReasonCode[];
-	activeDocumentState: ActiveDocumentState;
+	workingDocumentSignalState: WorkingDocumentSignalState;
 }): WorkingSetReasonCode[] {
 	const nextReasonCodes = new Set(params.reasonCodes);
 	for (const code of LIVE_DOCUMENT_REASON_CODES) {
 		nextReasonCodes.delete(code);
 	}
 
-	if (params.activeDocumentState.activeDocumentIds.has(params.artifactId)) {
+	if (
+		params.workingDocumentSignalState.activeDocumentIds.has(params.artifactId)
+	) {
 		nextReasonCodes.add("active_document_focus");
 	}
-	if (params.activeDocumentState.correctionTargetIds.has(params.artifactId)) {
+	if (
+		params.workingDocumentSignalState.correctionTargetIds.has(params.artifactId)
+	) {
 		nextReasonCodes.add("recent_user_correction");
 	}
 	if (
-		params.activeDocumentState.recentlyRefinedArtifactIds.has(params.artifactId)
+		params.workingDocumentSignalState.recentlyRefinedArtifactIds.has(
+			params.artifactId,
+		)
 	) {
 		nextReasonCodes.add("recently_refined_document_family");
 	}
 	if (
-		params.activeDocumentState.currentGeneratedArtifactId === params.artifactId
+		params.workingDocumentSignalState.currentGeneratedArtifactId ===
+		params.artifactId
 	) {
-		for (const code of params.activeDocumentState.currentGeneratedReasonCodes) {
+		for (const code of params.workingDocumentSignalState
+			.currentGeneratedReasonCodes) {
 			nextReasonCodes.add(code);
 		}
 	}
@@ -203,17 +319,17 @@ function resolveRecentlyRefinedGeneratedFamily(params: {
 	};
 }
 
-export function buildActiveDocumentState(params: {
+function buildWorkingDocumentSignalState(params: {
 	artifacts: Artifact[];
 	message: string;
 	attachmentIds?: string[];
 	activeDocumentArtifactId?: string;
 	preferredGeneratedArtifactId?: string | null;
 	currentConversationId?: string | null;
-}): ActiveDocumentState {
+}): WorkingDocumentSignalState {
 	const hasContextResetSignal = hasActiveContextResetSignal(params.message);
 	const shouldContinueDocumentState = !hasContextResetSignal;
-	const hasRecentUserCorrection = hasRecentUserCorrectionSignal(params.message);
+	const hasRecentUserCorrection = hasUserCorrectionSignal(params.message);
 	const hasActiveDocument =
 		typeof params.activeDocumentArtifactId === "string" &&
 		params.activeDocumentArtifactId.trim().length > 0;
@@ -283,5 +399,160 @@ export function buildActiveDocumentState(params: {
 		currentGeneratedArtifactId: selection.primaryArtifactId,
 		latestGeneratedArtifactIds: selection.latestArtifactIds,
 		currentGeneratedReasonCodes: new Set(selection.primaryReasonCodes),
+	};
+}
+
+export function resolveWorkingDocumentSelection(
+	params: ResolveWorkingDocumentSelectionParams,
+): WorkingDocumentSelection {
+	const attachmentIds = params.attachmentIds ?? [];
+	const workingDocumentSignalState = buildWorkingDocumentSignalState({
+		artifacts: params.artifacts,
+		message: params.message,
+		attachmentIds,
+		activeDocumentArtifactId: params.activeDocumentArtifactId,
+		preferredGeneratedArtifactId: params.preferredGeneratedArtifactId,
+		currentConversationId: params.currentConversationId,
+	});
+
+	const artifactsById = new Map(
+		params.artifacts.map((artifact) => [artifact.id, artifact]),
+	);
+	const activeFocusArtifactIds = orderedIds(
+		workingDocumentSignalState.activeDocumentIds,
+	);
+	const correctionTargetArtifactIds = orderedIds(
+		workingDocumentSignalState.correctionTargetIds,
+	);
+	const recentlyRefinedArtifactIds = orderedIds(
+		workingDocumentSignalState.recentlyRefinedArtifactIds,
+	);
+	const latestGeneratedDocumentIds = orderedIds(
+		workingDocumentSignalState.latestGeneratedArtifactIds,
+	);
+	const currentGeneratedArtifactId =
+		workingDocumentSignalState.currentGeneratedArtifactId;
+	const reasonCodeArtifactIds = orderedIds([
+		...params.artifacts.map((artifact) => artifact.id),
+		...activeFocusArtifactIds,
+		...correctionTargetArtifactIds,
+		...recentlyRefinedArtifactIds,
+		currentGeneratedArtifactId,
+	]);
+	const reasonCodesByArtifactId = new Map<string, WorkingSetReasonCode[]>();
+	for (const artifactId of reasonCodeArtifactIds) {
+		reasonCodesByArtifactId.set(
+			artifactId,
+			deriveWorkingDocumentReasonCodes({
+				artifactId,
+				reasonCodes: getBaseReasonCodes(
+					params.reasonCodesByArtifactId,
+					artifactId,
+				),
+				workingDocumentSignalState,
+			}),
+		);
+	}
+
+	const currentArtifactId =
+		activeFocusArtifactIds[0] ?? currentGeneratedArtifactId ?? null;
+	const currentArtifact = currentArtifactId
+		? (artifactsById.get(currentArtifactId) ?? null)
+		: null;
+	const currentDocument =
+		currentArtifactId && !workingDocumentSignalState.hasContextResetSignal
+			? {
+					artifactId: currentArtifactId,
+					familyId: getArtifactFamilyId(currentArtifact),
+					reasonCodes: reasonCodesByArtifactId.get(currentArtifactId) ?? [],
+					source: activeFocusArtifactIds.includes(currentArtifactId)
+						? ("active_focus" as const)
+						: ("generated_document" as const),
+				}
+			: null;
+
+	const candidateArtifactIds = orderedIds([
+		...attachmentIds,
+		...activeFocusArtifactIds,
+		...correctionTargetArtifactIds,
+		...recentlyRefinedArtifactIds,
+		currentGeneratedArtifactId,
+		...latestGeneratedDocumentIds,
+	]);
+	const candidateSignalsByArtifactId = new Map<
+		string,
+		WorkingDocumentWorkingSetCandidateSignals
+	>();
+	for (const artifactId of candidateArtifactIds) {
+		candidateSignalsByArtifactId.set(artifactId, {
+			isAttachedThisTurn: attachmentIds.includes(artifactId),
+			isActiveDocumentFocus:
+				workingDocumentSignalState.activeDocumentIds.has(artifactId),
+			isRecentUserCorrection:
+				workingDocumentSignalState.correctionTargetIds.has(artifactId),
+			isRecentlyRefinedDocumentFamily:
+				workingDocumentSignalState.recentlyRefinedArtifactIds.has(artifactId),
+			isCurrentGeneratedDocument:
+				currentGeneratedArtifactId === artifactId &&
+				workingDocumentSignalState.currentGeneratedReasonCodes.has(
+					"current_generated_document",
+				),
+			isSelectedCurrentGeneratedDocument:
+				currentGeneratedArtifactId === artifactId,
+		});
+	}
+
+	const workingDocumentProtectedArtifactIds = orderedIds([
+		...activeFocusArtifactIds,
+		...correctionTargetArtifactIds,
+		...recentlyRefinedArtifactIds,
+		currentGeneratedArtifactId,
+	]);
+	const protectedArtifactIds = orderedIds([
+		...attachmentIds,
+		...workingDocumentProtectedArtifactIds,
+	]);
+
+	return {
+		documentFocused: workingDocumentSignalState.documentFocused,
+		currentDocument,
+		latestGeneratedDocumentIds,
+		activeFocus: {
+			artifactIds: activeFocusArtifactIds,
+		},
+		correction: {
+			hasSignal:
+				!workingDocumentSignalState.hasContextResetSignal &&
+				workingDocumentSignalState.hasRecentUserCorrection,
+			targetArtifactIds: correctionTargetArtifactIds,
+		},
+		recentRefinement: {
+			familyId: workingDocumentSignalState.recentlyRefinedFamilyId,
+			artifactIds: recentlyRefinedArtifactIds,
+		},
+		reset: {
+			hasSignal: workingDocumentSignalState.hasContextResetSignal,
+			suppressCarryover: workingDocumentSignalState.hasContextResetSignal,
+		},
+		currentTurnReasonCodesByArtifactId: reasonCodesByArtifactId,
+		prompt: {
+			reasonCodesByArtifactId,
+		},
+		workingSet: {
+			candidateArtifactIds,
+			candidateSignalsByArtifactId,
+		},
+		retrieval: {
+			preferredArtifactId: currentDocument?.artifactId ?? null,
+			preferredGeneratedFamilyId:
+				workingDocumentSignalState.recentlyRefinedFamilyId,
+			suppressGeneratedCarryover:
+				workingDocumentSignalState.hasContextResetSignal,
+			hasExplicitResetSignal: workingDocumentSignalState.hasContextResetSignal,
+		},
+		taskEvidence: {
+			protectedArtifactIds,
+			workingDocumentProtectedArtifactIds,
+		},
 	};
 }

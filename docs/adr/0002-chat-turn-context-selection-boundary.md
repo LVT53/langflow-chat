@@ -4,6 +4,8 @@ Normal Chat context selection will be owned by a dedicated chat-turn service rat
 
 ADR-0017 complements this decision: Working Document Identity may identify the prompt-ready artifact for a Working Document, but Context Selection remains responsible for deciding whether that artifact enters Prompt Context and how much budget it receives.
 
+ADR-0018 complements this decision: Working Document Selection may identify live current-document signals and caller-ready prompt/retrieval/task-evidence views, but Context Selection remains responsible for final Prompt Context inclusion level and budget.
+
 The central model-scaled context budget planner belongs inside the chat-turn boundary. Knowledge, task-state, Honcho, and retrieval services may expose candidates, signals, source metadata, snippets, or estimates, but they should not own final prompt-budget policy.
 
 Web research evidence should eventually use the same prompt-budget policy rather than maintaining a separate small-context selection system. The migration may be sliced separately because web research has source-opening, citation, quote-quality, and audit constraints, but the long-term product behavior should not diverge into two context systems.

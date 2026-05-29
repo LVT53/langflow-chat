@@ -1225,6 +1225,10 @@ _Avoid_: active file, current artifact
 The app-owned contract that resolves a **Working Document** into purpose-specific artifact identities for display or workspace use, prompt context, preview or file serving, and family matching.
 _Avoid_: ad hoc `displayArtifactId` choice, prompt artifact convention, route-local preview fallback
 
+**Working Document Selection**:
+The per-turn authority that collapses live **Working Document** signals such as selected workspace focus, current generated document, correction/refinement target, recently refined generated-document family, and reset/move-on phrasing into caller-ready prompt, retrieval, context-source, and task-evidence views.
+_Avoid_: legacy live-signal helper, stale reason-code carryover, caller-local current document guess
+
 **Document Workspace**:
 The user-facing surface where one or more **Working Documents** can be opened, switched, inspected, compared, or closed.
 _Avoid_: working document sidebar, file preview modal, active document
@@ -1282,9 +1286,13 @@ _Avoid_: source message button, primary document action, source viewer
 - A **Generated Document Family** may contain one or more **Generated Document Versions**.
 - A **Working Document** may point to either a **Library Document** or a **Generated Document**.
 - **Working Document Identity** owns purpose-specific artifact ids for **Working Documents**; callers should request display, prompt, preview/file-serving, or family identity instead of inspecting `displayArtifactId`, `promptArtifactId`, and `familyArtifactIds` directly.
+- **Working Document Selection** owns live per-turn signal collapse for **Working Documents**; callers should request its prompt, working-set, retrieval, and task-evidence views instead of re-deriving active focus, correction target, current-generated, recent-refinement, or reset rules locally.
+- `document-resolution.ts` remains the generated-document family ranking authority. **Working Document Selection** consumes that ranking to decide the live current/generated carryover view; it does not replace generated-family identity or version ordering.
 - **Document Workspace** and Knowledge preview/download routes use **Working Document Identity** preview/file-serving identity so source-plus-normalized documents open the display file while text-only documents degrade deliberately.
 - **Linked Context Sources** use **Working Document Identity** canonical display, prompt, and family identity for dedupe, stale-selection matching, and prompt readiness.
-- **Context Selection** may consume the prompt identity supplied by **Working Document Identity**, but **Context Selection** still decides whether that artifact becomes **Prompt Context** and how much budget it receives.
+- **Context Selection** may consume prompt identity supplied by **Working Document Identity** and signals supplied by **Working Document Selection**, but **Context Selection** still decides whether an artifact becomes **Prompt Context** and how much budget it receives.
+- Knowledge retrieval and **Context Sources** may use **Working Document Selection** to preserve the user's current document intent across follow-up turns, but they should not become a second live-signal authority.
+- **Task Context** may protect **Working Document Selection** evidence ids during reranking and persistence, but task continuity remains owned by task-state.
 - **File Production** and **Generated Document Source Persistence** create and link generated-document source/rendered-file metadata; **Working Document Identity** consumes that metadata for workspace and preview behavior rather than owning file-production jobs.
 - A **Library Document** preview in the **Document Workspace** should resolve to the original display file when that file exists.
 - Normalized or extracted **Library Document** text is retrieval and prompt context, not the default visual preview identity.

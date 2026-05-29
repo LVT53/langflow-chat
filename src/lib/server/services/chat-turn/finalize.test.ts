@@ -1,23 +1,48 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { getArtifactsForUser } from '$lib/server/services/knowledge';
+import { recordMemoryEvent } from '$lib/server/services/memory-events';
 import { buildAssistantEvidenceSummary } from '$lib/server/services/message-evidence';
 import { commitSkillNoteOperationsAfterAssistantMessage } from '$lib/server/services/skills/notes';
 import { applySkillControlOperations } from '$lib/server/services/skills/sessions';
 import { getProjectReferenceContext } from '$lib/server/services/task-state';
+import { resolveWorkingDocumentSelection } from '$lib/server/services/working-document-selection';
 
 const {
 	mockMirrorMessage,
 	mockMirrorWorkCapsuleConclusion,
 	mockRefreshConversationSummary,
+	mockResolveWorkingDocumentSelection,
 	mockRunUserMemoryMaintenance,
 } = vi.hoisted(() => ({
 	mockMirrorMessage: vi.fn(async () => undefined),
 	mockMirrorWorkCapsuleConclusion: vi.fn(async () => undefined),
 	mockRefreshConversationSummary: vi.fn(async () => undefined),
+	mockResolveWorkingDocumentSelection: vi.fn(() => ({
+		documentFocused: false,
+		currentDocument: null,
+		latestGeneratedDocumentIds: [],
+		activeFocus: { artifactIds: [] },
+		correction: { hasSignal: false, targetArtifactIds: [] },
+		recentRefinement: { familyId: null, artifactIds: [] },
+		reset: { hasSignal: false, suppressCarryover: false },
+		currentTurnReasonCodesByArtifactId: new Map(),
+		prompt: { reasonCodesByArtifactId: new Map() },
+		workingSet: {
+			candidateArtifactIds: [],
+			candidateSignalsByArtifactId: new Map(),
+		},
+		retrieval: {
+			preferredArtifactId: null,
+			preferredGeneratedFamilyId: null,
+			suppressGeneratedCarryover: false,
+			hasExplicitResetSignal: false,
+		},
+		taskEvidence: {
+			protectedArtifactIds: [],
+			workingDocumentProtectedArtifactIds: [],
+		},
+	})),
 	mockRunUserMemoryMaintenance: vi.fn(async () => undefined),
-}));
-
-vi.mock('$lib/server/services/active-state', () => ({
-	hasRecentUserCorrectionSignal: vi.fn(() => false),
 }));
 
 vi.mock('$lib/server/services/analytics', () => ({
@@ -90,6 +115,10 @@ vi.mock('$lib/server/services/task-state', () => ({
 
 vi.mock('$lib/server/services/web-citation-audit', () => ({
 	buildWebCitationAudit: vi.fn(() => null),
+}));
+
+vi.mock('$lib/server/services/working-document-selection', () => ({
+	resolveWorkingDocumentSelection: mockResolveWorkingDocumentSelection,
 }));
 
 describe('runPostTurnTasks', () => {
@@ -510,6 +539,98 @@ describe('finalizeChatTurn', () => {
 					],
 				}),
 			]),
+		);
+	});
+
+	it('records document refinement correction from Working Document Selection', async () => {
+		const mockGetArtifactsForUser = getArtifactsForUser as ReturnType<typeof vi.fn>;
+		const mockRecordMemoryEvent = recordMemoryEvent as ReturnType<typeof vi.fn>;
+		const mockResolveSelection = resolveWorkingDocumentSelection as ReturnType<typeof vi.fn>;
+		mockGetArtifactsForUser.mockResolvedValueOnce([
+			{
+				id: 'brief-v1',
+				userId: 'user-1',
+				type: 'generated_output',
+				retrievalClass: 'durable',
+				name: 'brief-v1.pdf',
+				mimeType: 'application/pdf',
+				sizeBytes: 100,
+				conversationId: 'conv-1',
+				summary: null,
+				createdAt: 1,
+				updatedAt: 1,
+				extension: 'pdf',
+				storagePath: null,
+				contentText: null,
+				metadata: {
+					documentFamilyId: 'family-brief',
+					documentLabel: 'Project brief',
+				},
+			},
+		]);
+		mockResolveSelection.mockReturnValueOnce({
+			documentFocused: true,
+			currentDocument: {
+				artifactId: 'brief-v1',
+				familyId: 'family-brief',
+				reasonCodes: ['recent_user_correction'],
+				source: 'active_focus',
+			},
+			latestGeneratedDocumentIds: [],
+			activeFocus: { artifactIds: ['brief-v1'] },
+			correction: { hasSignal: true, targetArtifactIds: ['brief-v1'] },
+			recentRefinement: { familyId: null, artifactIds: [] },
+			reset: { hasSignal: false, suppressCarryover: false },
+			currentTurnReasonCodesByArtifactId: new Map([
+				['brief-v1', ['recent_user_correction']],
+			]),
+			prompt: {
+				reasonCodesByArtifactId: new Map([
+					['brief-v1', ['recent_user_correction']],
+				]),
+			},
+			workingSet: {
+				candidateArtifactIds: ['brief-v1'],
+				candidateSignalsByArtifactId: new Map(),
+			},
+			retrieval: {
+				preferredArtifactId: 'brief-v1',
+				preferredGeneratedFamilyId: null,
+				suppressGeneratedCarryover: false,
+				hasExplicitResetSignal: false,
+			},
+			taskEvidence: {
+				protectedArtifactIds: ['brief-v1'],
+				workingDocumentProtectedArtifactIds: ['brief-v1'],
+			},
+		});
+		const { persistAssistantTurnState } = await import('./finalize');
+
+		await persistAssistantTurnState({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			normalizedMessage: 'Please use the alternate tone.',
+			assistantResponse: 'Updated brief.',
+			attachmentIds: [],
+			activeDocumentArtifactId: 'brief-v1',
+			contextStatus: null,
+			initialTaskState: null,
+			initialContextDebug: null,
+			userMessageId: 'user-message-1',
+			assistantMessageId: 'assistant-message-1',
+			analytics: null,
+			continuitySource: 'send',
+			honchoContext: null,
+			honchoSnapshot: null,
+		});
+
+		expect(mockRecordMemoryEvent).toHaveBeenCalledWith(
+			expect.objectContaining({
+				eventType: 'document_refined',
+				payload: expect.objectContaining({
+					explicitCorrection: true,
+				}),
+			}),
 		);
 	});
 });

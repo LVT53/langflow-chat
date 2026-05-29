@@ -6,6 +6,8 @@ The server-side file-serving companion, `src/lib/server/services/knowledge/store
 
 Context Selection remains the prompt-budget authority. Working Document Identity can say which artifact is prompt-ready and which artifact id represents prompt identity, but it does not decide whether a source enters the model prompt, how much of it is included, or how it competes with memory, attachments, retrieval, or task context.
 
+ADR-0018 complements this decision: Working Document Selection owns live per-turn Working Document signals such as active focus, correction target, current generated document, recent refinement, and reset suppression. Working Document Identity remains the purpose-specific id authority; it does not decide live current-document carryover.
+
 File Production remains the producer of generated-document sources, rendered files, and job lifecycle state. Working Document Identity consumes generated-output metadata such as `sourceChatFileId` and document-family metadata for workspace, linked-source, and preview behavior, but it must not create file-production jobs or persist generated-document source artifacts.
 
 **Implementation Status, 2026-05-29:** implemented. Logical document mapping, Knowledge workspace helpers, Linked Context Source resolution, chat `/document` selection, Knowledge preview, and Knowledge download now route through the Working Document Identity or file-serving boundary. Focused tests cover source-plus-normalized uploads, normalized-only fallbacks, generated documents, generated-output source chat files, Skill Notes, linked-source dedupe, and route adapters.

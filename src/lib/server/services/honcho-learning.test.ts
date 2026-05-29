@@ -51,6 +51,46 @@ const mockListConversationSourceArtifactIds = vi.hoisted(() =>
 const mockFindRelevantKnowledgeArtifacts = vi.hoisted(() =>
 	vi.fn(async () => [])
 );
+const mockResolveWorkingDocumentSelection = vi.hoisted(() =>
+	vi.fn(() => ({
+		documentFocused: false,
+		currentDocument: null,
+		latestGeneratedDocumentIds: [],
+		activeFocus: {
+			artifactIds: [],
+		},
+		correction: {
+			hasSignal: false,
+			targetArtifactIds: [],
+		},
+		recentRefinement: {
+			familyId: null,
+			artifactIds: [],
+		},
+		reset: {
+			hasSignal: false,
+			suppressCarryover: false,
+		},
+		currentTurnReasonCodesByArtifactId: new Map(),
+		prompt: {
+			reasonCodesByArtifactId: new Map(),
+		},
+		workingSet: {
+			candidateArtifactIds: [],
+			candidateSignalsByArtifactId: new Map(),
+		},
+		retrieval: {
+			preferredArtifactId: null,
+			preferredGeneratedFamilyId: null,
+			suppressGeneratedCarryover: false,
+			hasExplicitResetSignal: false,
+		},
+		taskEvidence: {
+			protectedArtifactIds: [],
+			workingDocumentProtectedArtifactIds: [],
+		},
+	}))
+);
 const mockGetConversationProjectLabel = vi.hoisted(() =>
 	vi.fn(async () => null as string | null)
 );
@@ -211,48 +251,6 @@ const mockHonchoPeer = vi.fn(async (id: string) => ({
 		peerId: id,
 		createdAt: new Date().toISOString(),
 	}),
-}));
-
-const mockGetUserPeer = vi.fn(async () => ({
-	id: 'user-1',
-	context: mockPeerContext,
-	chat: mockPeerChat,
-	setCard: mockPeerSetCard,
-	sessions: mockPeerSessions,
-	conclusions: { list: mockScopeList, delete: mockScopeDelete, create: mockScopeCreate },
-	conclusionsOf: vi.fn(() => ({ list: mockScopeList, delete: mockScopeDelete })),
-	message: (content: string, options?: { metadata?: Record<string, unknown> }) => ({
-		content,
-		metadata: options?.metadata ?? {},
-		peerId: 'user-1',
-		createdAt: new Date().toISOString(),
-	}),
-}));
-
-const mockGetAssistantPeer = vi.fn(async () => ({
-	id: 'assistant_user-1',
-	context: mockPeerContext,
-	chat: mockPeerChat,
-	setCard: mockPeerSetCard,
-	sessions: mockPeerSessions,
-	conclusions: { list: mockScopeList, delete: mockScopeDelete, create: mockScopeCreate },
-	conclusionsOf: vi.fn(() => ({ list: mockScopeList, delete: mockScopeDelete })),
-	message: (content: string, options?: { metadata?: Record<string, unknown> }) => ({
-		content,
-		metadata: options?.metadata ?? {},
-		peerId: 'assistant_user-1',
-		createdAt: new Date().toISOString(),
-	}),
-}));
-
-const mockGetSession = vi.fn(async () => ({
-	id: 'conv-1',
-	addPeers: vi.fn(async () => undefined),
-	queueStatus: mockSessionQueueStatus,
-	context: mockSessionContext,
-	addMessages: mockSessionAddMessages,
-	uploadFile: mockSessionUploadFile,
-	delete: mockSessionDelete,
 }));
 
 // Mock config-store
@@ -445,20 +443,8 @@ vi.mock('$lib/server/services/attachment-trace', () => ({
 	summarizeAttachmentTraceText: vi.fn(() => ''),
 }));
 
-// Mock active-state
-vi.mock('$lib/server/services/active-state', () => ({
-	buildActiveDocumentState: vi.fn(() => ({
-		documentFocused: false,
-		hasRecentUserCorrection: false,
-		hasContextResetSignal: false,
-		activeDocumentIds: new Set<string>(),
-		correctionTargetIds: new Set<string>(),
-		recentlyRefinedFamilyId: null,
-		recentlyRefinedArtifactIds: new Set<string>(),
-		currentGeneratedArtifactId: null,
-		latestGeneratedArtifactIds: [],
-		currentGeneratedReasonCodes: new Set<string>(),
-	})),
+vi.mock('./working-document-selection', () => ({
+	resolveWorkingDocumentSelection: mockResolveWorkingDocumentSelection,
 }));
 
 // Mock working-set
@@ -1000,6 +986,75 @@ describe('honcho learning - buildConstructedContext', () => {
 			preferredGeneratedFamilyId: null,
 			suppressGeneratedCarryover: false,
 		});
+	});
+
+	it('passes the Working Document Selection retrieval view into relevant knowledge retrieval', async () => {
+		mockResolveWorkingDocumentSelection.mockReturnValueOnce({
+			documentFocused: true,
+			currentDocument: {
+				artifactId: 'brief-v2',
+				familyId: 'family-brief',
+				reasonCodes: ['recently_refined_document_family'],
+				source: 'generated_document',
+			},
+			latestGeneratedDocumentIds: ['brief-v2'],
+			activeFocus: {
+				artifactIds: [],
+			},
+			correction: {
+				hasSignal: false,
+				targetArtifactIds: [],
+			},
+			recentRefinement: {
+				familyId: 'family-brief',
+				artifactIds: ['brief-v2'],
+			},
+			reset: {
+				hasSignal: false,
+				suppressCarryover: true,
+			},
+			currentTurnReasonCodesByArtifactId: new Map(),
+			prompt: {
+				reasonCodesByArtifactId: new Map(),
+			},
+			workingSet: {
+				candidateArtifactIds: ['brief-v2'],
+				candidateSignalsByArtifactId: new Map(),
+			},
+			retrieval: {
+				preferredArtifactId: 'brief-v2',
+				preferredGeneratedFamilyId: 'family-brief',
+				suppressGeneratedCarryover: true,
+				hasExplicitResetSignal: false,
+			},
+			taskEvidence: {
+				protectedArtifactIds: ['brief-v2'],
+				workingDocumentProtectedArtifactIds: ['brief-v2'],
+			},
+		});
+		const { buildConstructedContext } = await import('./honcho');
+
+		await buildConstructedContext({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			message: 'Please make it shorter.',
+		});
+
+		expect(mockResolveWorkingDocumentSelection).toHaveBeenCalledWith(
+			expect.objectContaining({
+				message: 'Please make it shorter.',
+				attachmentIds: [],
+				activeDocumentArtifactId: undefined,
+				currentConversationId: 'conv-1',
+			})
+		);
+		expect(mockFindRelevantKnowledgeArtifacts).toHaveBeenCalledWith(
+			expect.objectContaining({
+				preferredArtifactId: 'brief-v2',
+				preferredGeneratedFamilyId: 'family-brief',
+				suppressGeneratedCarryover: true,
+			})
+		);
 	});
 
 	it('passes the active context target budget into task evidence selection', async () => {

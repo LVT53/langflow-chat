@@ -249,6 +249,8 @@ Responsibility split:
 - `store/documents.ts`
   - artifact-level semantic shortlist retrieval for source/normalized/generated artifacts
   - lexical candidate fetch, embedding shortlist, and TEI rerank before handing results to higher-level document/focus authority
+- `working-document-selection.ts`
+  - live Working Document signal collapse for active workspace focus, current generated document, correction/refinement, move-on/reset, and caller-ready prompt/retrieval/task-evidence views
 - `document-resolution.ts`
   - current/relevant generated-document family selection
   - shared query/focus-aware generated-document ordering
@@ -351,7 +353,7 @@ Rules:
 - `memory-events.ts` owns the persisted normalized event log for important state changes such as deadlines, preference updates, persona fact replacement, project continuity transitions, and document supersession. Add new event types there and emit them from the existing state-change boundaries; do not create ad hoc side logs or route-local event tables.
 - `task-state/continuity.ts` now also consumes the latest task-domain project events on the read path. If a newer `project_paused` or `project_resumed` event exists, continuity summaries should prefer that signal over an older still-active row.
 - User-selected task evidence preferences should stay family-aware for working documents. If a user pins or excludes one version inside a document family, clear contradictory user preference links for sibling versions in that same family instead of letting multiple versions stay preferred at once.
-- Live document-state signals (active workspace focus, current generated document, correction/refinement, move-on/reset) belong in `src/lib/server/services/active-state.ts`. Recompute carryover per turn rather than trusting stale reason codes.
+- Live Working Document selection signals (active workspace focus, current generated document, correction/refinement, move-on/reset) belong in `src/lib/server/services/working-document-selection.ts`. Recompute carryover per turn rather than trusting stale reason codes.
 - `memory-maintenance.ts` owns per-user maintenance scheduling. Chat-triggered maintenance must stay serialized and debounced there; do not trigger heavy continuity or embedding repair directly from routes or UI code.
 - `memory-maintenance.ts` is also the lazy semantic-embedding backfill path. Missing or stale artifact/task embeddings should be repaired there rather than blocking chat routes or artifact writes. Treat legacy persona embedding repair as migration cleanup, not a new local persona-memory feature.
 - Generated-output duplicate repair should also run through `memory-maintenance.ts`, not as a separate ad hoc sweep. Reuse `evidence-family.ts` retrieval-class repair so low-value near-duplicate drafts stay compressed out of broad retrieval while document history still remains available through the working-document system.

@@ -1,4 +1,3 @@
-import { hasRecentUserCorrectionSignal } from "$lib/server/services/active-state";
 import { recordMessageAnalytics } from "$lib/server/services/analytics";
 import { clearConversationDraft } from "$lib/server/services/conversation-drafts";
 import { refreshConversationSummary } from "$lib/server/services/conversation-summaries";
@@ -37,6 +36,7 @@ import {
 	updateTaskStateCheckpoint,
 } from "$lib/server/services/task-state";
 import { buildWebCitationAudit } from "$lib/server/services/web-citation-audit";
+import { resolveWorkingDocumentSelection } from "$lib/server/services/working-document-selection";
 import type {
 	ArtifactSummary,
 	ContextDebugState,
@@ -516,6 +516,15 @@ export async function persistAssistantTurnState(
 				]).catch(() => [])
 			)[0] ?? null)
 		: null;
+	const documentRefinementSelection = activeDocumentArtifact
+		? resolveWorkingDocumentSelection({
+				artifacts: [activeDocumentArtifact],
+				message: params.normalizedMessage,
+				attachmentIds: params.attachmentIds,
+				activeDocumentArtifactId: activeDocumentArtifact.id,
+				currentConversationId: params.conversationId,
+			})
+		: null;
 	const activeWorkingSet = await refreshConversationWorkingSet({
 		userId: params.userId,
 		conversationId: params.conversationId,
@@ -585,9 +594,8 @@ export async function persistAssistantTurnState(
 				documentLabel:
 					documentMetadata.documentLabel ?? activeDocumentArtifact.name,
 				documentRole: documentMetadata.documentRole ?? null,
-				explicitCorrection: hasRecentUserCorrectionSignal(
-					params.normalizedMessage,
-				),
+				explicitCorrection:
+					documentRefinementSelection?.correction.hasSignal ?? false,
 				generatedOutputArtifactId: outputArtifact?.id ?? null,
 			},
 		}).catch((error) =>

@@ -1,7 +1,7 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { and, desc, eq, inArray } from "drizzle-orm";
-import { db } from "$lib/server/db";
 import { getTargetConstructedContext } from "$lib/server/config-store";
+import { db } from "$lib/server/db";
 import {
   artifacts,
   conversationContextStatus,
@@ -9,6 +9,10 @@ import {
   taskCheckpoints,
   taskStateEvidenceLinks,
 } from "$lib/server/db/schema";
+import { RERANK_CONFIDENCE_MIN } from "$lib/server/utils/constants";
+import { parseJsonRecord } from "$lib/server/utils/json";
+import { dedupeById } from "$lib/server/utils/prompt-context";
+import { clipText, normalizeWhitespace } from "$lib/server/utils/text";
 import type {
   Artifact,
   ArtifactType,
@@ -21,17 +25,25 @@ import type {
   TaskSteeringAction,
   VerificationStatus,
 } from "$lib/types";
-import { RERANK_CONFIDENCE_MIN } from "$lib/server/utils/constants";
-import { parseJsonRecord } from "$lib/server/utils/json";
-import { dedupeById } from "$lib/server/utils/prompt-context";
-import { clipText, normalizeWhitespace } from "$lib/server/utils/text";
 import { estimateTokenCount } from "$lib/utils/tokens";
 import { computeCrossConversationDecay } from "../utils/artifact-decay";
-import { buildActiveDocumentState } from "./active-state";
 import { collapseArtifactsByFamily } from "./evidence-family";
+import { parseWorkingDocumentMetadata } from "./knowledge/store";
 import { getLatestHonchoMetadata } from "./messages";
 import { queueTaskStateSemanticEmbeddingRefresh } from "./semantic-embedding-refresh";
 import { shortlistSemanticMatchesBySubject } from "./semantic-ranking";
+import { formatTaskStateForPrompt } from "./task-state/artifacts";
+import {
+  canUseContextSummarizer,
+  parseJsonFromModel,
+  requestContextSummarizer,
+} from "./task-state/control-model";
+import { findConflictingDocumentPreferenceArtifactIds } from "./task-state/document-preferences";
+import {
+  mapTaskCheckpoint,
+  mapTaskEvidenceLink,
+  mapTaskState,
+} from "./task-state/mappers";
 import {
   determineTeiWinningMode,
   logTeiRetrievalSummary,
@@ -39,20 +51,7 @@ import {
   type TeiRerankDiagnostics,
 } from "./tei-observability";
 import { canUseTeiReranker, rerankItems } from "./tei-reranker";
-import { formatTaskStateForPrompt } from "./task-state/artifacts";
-import { findConflictingDocumentPreferenceArtifactIds } from "./task-state/document-preferences";
-import {
-  canUseContextSummarizer,
-  parseJsonFromModel,
-  requestContextSummarizer,
-  requestStructuredControlModel,
-} from "./task-state/control-model";
-import {
-  mapTaskCheckpoint,
-  mapTaskEvidenceLink,
-  mapTaskState,
-} from "./task-state/mappers";
-import { parseWorkingDocumentMetadata } from "./knowledge/store";
+import { resolveWorkingDocumentSelection } from "./working-document-selection";
 import { scoreMatch } from "./working-set";
 
 // Authority note:
@@ -61,6 +60,13 @@ import { scoreMatch } from "./working-set";
 // - document identity/version continuity belongs to artifact metadata plus document-resolution
 // - Honcho may enrich context, but it is not the authority for current task/document/temporal truth
 
+export {
+  formatTaskStateForPrompt,
+  getPromptArtifactSnippets,
+  listArtifactChunksForArtifacts,
+  summarizeHistoricalContext,
+  syncArtifactChunks,
+} from "./task-state/artifacts";
 export {
   applyProjectContinuitySignalFromMessage,
   attachContinuityToTaskState,
@@ -75,15 +81,15 @@ export {
   listFocusContinuityItems,
   listProjectMemoryItems,
   listTaskMemoryItems,
+  type ProjectFolderReferenceContext,
+  type ProjectFolderSiblingPromotionContext,
+  type ProjectReferenceContext,
   pruneOrphanProjectMemory,
   resolveProjectContinuityStatus,
   selectProjectFolderSiblingPromotion,
   syncProjectMemoryFromTaskState,
   syncTaskContinuityFromTaskState,
   updateProjectMemoryStatuses,
-  type ProjectFolderReferenceContext,
-  type ProjectFolderSiblingPromotionContext,
-  type ProjectReferenceContext,
 } from "./task-state/continuity";
 export {
   canUseContextSummarizer,
@@ -91,13 +97,6 @@ export {
   requestContextSummarizer,
   requestStructuredControlModel,
 } from "./task-state/control-model";
-export {
-  formatTaskStateForPrompt,
-  getPromptArtifactSnippets,
-  listArtifactChunksForArtifacts,
-  summarizeHistoricalContext,
-  syncArtifactChunks,
-} from "./task-state/artifacts";
 
 const TASK_MATCH_MIN_SCORE = 12;
 const MAX_LIST_ITEMS = 6;
@@ -106,7 +105,6 @@ const CURRENT_TASK_STATUSES: TaskState["status"][] = [
   "revived",
   "candidate",
 ];
-const ROUTER_CONFIDENCE_MIN = 68;
 // These item limits are performance safeguards. Product inclusion should be
 // decided from the available prompt budget and source authority signals.
 const TASK_SEMANTIC_SHORTLIST_LIMIT = 32;
@@ -125,8 +123,6 @@ function toEvidenceSourceType(artifactType: ArtifactType): EvidenceSourceType {
     case "source_document":
     case "normalized_document":
       return "document";
-    case "generated_output":
-    case "work_capsule":
     default:
       return "tool";
   }
@@ -589,18 +585,6 @@ export async function listTaskCheckpoints(params: {
     .orderBy(desc(taskCheckpoints.updatedAt));
 
   return rows.map(mapTaskCheckpoint);
-}
-
-function buildTaskCandidateSummary(task: TaskState): Record<string, unknown> {
-  return {
-    taskId: task.taskId,
-    status: task.status,
-    objective: task.objective,
-    confidence: task.confidence,
-    locked: task.locked,
-    activeArtifactIds: task.activeArtifactIds.slice(0, 8),
-    updatedAt: task.updatedAt,
-  };
 }
 
 async function createTaskState(params: {
@@ -1105,6 +1089,37 @@ export async function prepareTaskContext(params: {
     (artifact) =>
       !excludedIds.has(artifact.id) || attachmentIds.includes(artifact.id),
   );
+  const workingDocumentSelection = resolveWorkingDocumentSelection({
+    artifacts: candidateArtifacts,
+    message: params.message,
+    attachmentIds,
+    activeDocumentArtifactId: params.activeDocumentArtifactId,
+    currentConversationId: params.conversationId,
+  });
+  const activeDocumentIds = new Set(
+    workingDocumentSelection.activeFocus.artifactIds,
+  );
+  const correctionTargetIds = new Set(
+    workingDocumentSelection.correction.targetArtifactIds,
+  );
+  const recentlyRefinedArtifactIds = new Set(
+    workingDocumentSelection.recentRefinement.artifactIds,
+  );
+  const taskEvidenceProtectedIds = new Set(
+    workingDocumentSelection.taskEvidence.protectedArtifactIds,
+  );
+  const workingDocumentProtectedIds = new Set(
+    workingDocumentSelection.taskEvidence.workingDocumentProtectedArtifactIds,
+  );
+  const currentGeneratedOutputIds = new Set(
+    candidateArtifacts
+      .filter(
+        (artifact) =>
+          artifact.type === "generated_output" &&
+          workingDocumentProtectedIds.has(artifact.id),
+      )
+      .map((artifact) => artifact.id),
+  );
   const collapsedCandidates = await collapseArtifactsByFamily({
     userId: params.userId,
     conversationId: params.conversationId,
@@ -1112,6 +1127,7 @@ export async function prepareTaskContext(params: {
     artifacts: candidateArtifacts,
     pinnedIds,
     currentAttachmentIds,
+    protectedIds: taskEvidenceProtectedIds,
   });
 
   const workingSetIds = new Set(
@@ -1120,20 +1136,7 @@ export async function prepareTaskContext(params: {
   const relevantArtifactIds = new Set(
     params.relevantArtifacts.map((artifact) => artifact.id),
   );
-  const activeDocumentState = buildActiveDocumentState({
-    artifacts: candidateArtifacts,
-    message: params.message,
-    attachmentIds,
-    activeDocumentArtifactId: params.activeDocumentArtifactId,
-    currentConversationId: params.conversationId,
-  });
-  const currentGeneratedOutputIds = new Set(
-    activeDocumentState.currentGeneratedArtifactId
-      ? [activeDocumentState.currentGeneratedArtifactId]
-      : [],
-  );
-  const hasCorrectionSignal = activeDocumentState.hasRecentUserCorrection;
-  const activeDocumentIds = activeDocumentState.activeDocumentIds;
+  const hasCorrectionSignal = workingDocumentSelection.correction.hasSignal;
   const rankedCandidates = collapsedCandidates
     .map((artifact) => ({
       artifact,
@@ -1144,8 +1147,8 @@ export async function prepareTaskContext(params: {
         pinnedIds,
         excludedIds,
         activeDocumentIds,
-        correctionTargetIds: activeDocumentState.correctionTargetIds,
-        recentlyRefinedArtifactIds: activeDocumentState.recentlyRefinedArtifactIds,
+        correctionTargetIds,
+        recentlyRefinedArtifactIds,
         currentAttachmentIds,
         workingSetIds,
         relevantArtifactIds,
@@ -1168,9 +1171,7 @@ export async function prepareTaskContext(params: {
       .filter(
         (entry) =>
           pinnedIds.has(entry.artifact.id) ||
-          activeDocumentIds.has(entry.artifact.id) ||
-          activeDocumentState.correctionTargetIds.has(entry.artifact.id) ||
-          activeDocumentState.recentlyRefinedArtifactIds.has(entry.artifact.id) ||
+          taskEvidenceProtectedIds.has(entry.artifact.id) ||
           currentAttachmentIds.has(entry.artifact.id),
       )
       .map((entry) => entry.artifact),
@@ -1196,9 +1197,7 @@ export async function prepareTaskContext(params: {
     candidateLimit: rerankCandidateLimit,
     protectedIds: new Set([
       ...currentAttachmentIds,
-      ...activeDocumentIds,
-      ...activeDocumentState.correctionTargetIds,
-      ...activeDocumentState.recentlyRefinedArtifactIds,
+      ...taskEvidenceProtectedIds,
     ]),
   });
   if (reranked.usedModel) {
@@ -1221,8 +1220,8 @@ export async function prepareTaskContext(params: {
             taskState,
             pinnedIds,
             activeDocumentIds,
-            correctionTargetIds: activeDocumentState.correctionTargetIds,
-            recentlyRefinedArtifactIds: activeDocumentState.recentlyRefinedArtifactIds,
+            correctionTargetIds,
+            recentlyRefinedArtifactIds,
             currentGeneratedOutputIds,
             workingSetIds,
             relevantArtifactIds,

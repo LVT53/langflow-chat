@@ -1,48 +1,70 @@
-import { readFile } from 'fs/promises';
-import { join } from 'path';
-import { createHash } from 'crypto';
-import { eq } from 'drizzle-orm';
-import { Honcho } from '@honcho-ai/sdk';
+import { createHash } from 'node:crypto';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import type { Message, Peer } from '@honcho-ai/sdk';
+import { Honcho } from '@honcho-ai/sdk';
 import type { ConclusionScope } from '@honcho-ai/sdk/dist/conclusions';
 import type { Session } from '@honcho-ai/sdk/dist/session';
+import { eq } from 'drizzle-orm';
+import {
+	type BudgetedAttachmentContext,
+	dedupeById,
+	extractSerializedAttachmentBody,
+	type PromptContextSection,
+	rerankHistoricalSections,
+	selectRecentRoleTurns,
+	serializeBudgetedAttachments,
+	serializeBudgetedRoleTurns,
+	serializePeerContext,
+	serializeWorkingSetArtifacts,
+	truncateToTokenBudget,
+} from '$lib/server/utils/prompt-context';
+import { clipText } from '$lib/server/utils/text';
+import { detectTopicShift, shouldSuppressCarryover } from '$lib/server/utils/topic-shift-detector';
+import type {
+	Artifact,
+	ChatMessage,
+	ContextDebugState,
+	ConversationContextStatus,
+	ForkContextProvenanceSummary,
+	ForkCopyMetadata,
+	HonchoContextInfo,
+	HonchoContextSnapshot,
+	LinkedContextSource,
+} from '$lib/types';
+import { estimateTokenCount } from '$lib/utils/tokens';
 import { getConfig } from '../config-store';
 import { db } from '../db';
 import { users } from '../db/schema';
 import { getSystemPrompt } from '../prompts';
-import { estimateTokenCount } from '$lib/utils/tokens';
-import { detectTopicShift, shouldSuppressCarryover } from '$lib/server/utils/topic-shift-detector';
 import {
-	dedupeById,
-	extractSerializedAttachmentBody,
-	rerankHistoricalSections,
-	serializePeerContext,
-	serializeBudgetedAttachments,
-	serializeBudgetedRoleTurns,
-	serializeWorkingSetArtifacts,
-	selectRecentRoleTurns,
-	truncateToTokenBudget,
-	type BudgetedAttachmentContext,
-	type PromptContextSection,
-} from '$lib/server/utils/prompt-context';
+	hasMeaningfulAttachmentText,
+	logAttachmentTrace,
+	summarizeAttachmentTraceText,
+} from './attachment-trace';
 import {
-	selectPromptContext,
-	type ContextSelectionCandidate,
-} from './chat-turn/context-selection';
-import {
+	type DocumentContextDepthBudget,
+	type DocumentContextIntent,
 	deriveBaselineMemoryProfileBudget,
 	deriveCurrentTurnAttachmentBudget,
 	deriveDocumentContextDepthBudget,
-	type DocumentContextDepthBudget,
-	type DocumentContextIntent,
 	deriveExplicitSourceSetBudget,
 	deriveModelContextBudget,
 	deriveSessionHistoryBudget,
 } from './chat-turn/context-budget';
+import {
+	type ContextSelectionCandidate,
+	selectPromptContext,
+} from './chat-turn/context-selection';
 import type {
 	ContextTraceSource,
 	LegacyContextTraceSectionInput,
 } from './chat-turn/context-trace';
+import type {
+	ContextCompressionSnapshot,
+	ContextCompressionSourceMessage,
+} from './context-compression';
+import { getConversationForkOrigin } from './conversation-forks';
 import {
 	AttachmentReadinessError,
 	findRelevantKnowledgeArtifacts,
@@ -59,43 +81,21 @@ import {
 	WORKING_SET_PROMPT_TOKEN_BUDGET,
 } from './knowledge';
 import { listConversationLinkedContextSources } from './linked-context-sources';
-import { clipText } from '$lib/server/utils/text';
-import type {
-	Artifact,
-	ChatMessage,
-	HonchoContextInfo,
-	HonchoContextSnapshot,
-	ConversationContextStatus,
-	ContextDebugState,
-	ForkContextProvenanceSummary,
-	ForkCopyMetadata,
-	LinkedContextSource,
-} from '$lib/types';
+import { getLatestHonchoMetadata, listMessages } from './messages';
+import { getConversationProjectLabel } from './projects';
 import {
 	formatTaskStateForPrompt,
 	getContextDebugState,
 	getProjectReferenceContext,
 	getPromptArtifactSnippets,
+	type ProjectFolderSiblingPromotionContext,
+	type ProjectReferenceContext,
 	prepareTaskContext,
 	selectProjectFolderSiblingPromotion,
-	type ProjectReferenceContext,
-	type ProjectFolderSiblingPromotionContext,
 } from './task-state';
-import { getConversationProjectLabel } from './projects';
-import { canUseTeiReranker, rerankItems } from './tei-reranker';
 import { embedTexts } from './tei-embedder';
-import {
-	hasMeaningfulAttachmentText,
-	logAttachmentTrace,
-	summarizeAttachmentTraceText,
-} from './attachment-trace';
-import { buildActiveDocumentState } from './active-state';
-import { getLatestHonchoMetadata, listMessages } from './messages';
-import { getConversationForkOrigin } from './conversation-forks';
-import type {
-	ContextCompressionSnapshot,
-	ContextCompressionSourceMessage,
-} from './context-compression';
+import { canUseTeiReranker, rerankItems } from './tei-reranker';
+import { resolveWorkingDocumentSelection } from './working-document-selection';
 
 let client: Honcho | null = null;
 
@@ -643,8 +643,9 @@ async function getSession(userId: string, conversationId: string): Promise<Sessi
 			[userPeer.id, { observeMe: true, observeOthers: false }],
 			[assistantPeer.id, { observeMe: false, observeOthers: true }],
 		]);
-	} catch (err: any) {
-		const is404 = err?.status === 404 || err?.code === 'not_found';
+	} catch (err: unknown) {
+		const honchoError = err && typeof err === 'object' ? (err as { code?: unknown; status?: unknown }) : {};
+		const is404 = honchoError.status === 404 || honchoError.code === 'not_found';
 		if (is404) {
 			console.warn(`[HONCHO] Session ${honchoSessionId} not yet created — will be initialized on first message`);
 		} else {
@@ -1688,7 +1689,7 @@ export async function buildConstructedContext(params: {
 			resolvedAttachments.unresolvedItems.map((item) => item.requestedArtifactId)
 		);
 	}
-	const retrievalActiveDocumentState = buildActiveDocumentState({
+	const retrievalSelection = resolveWorkingDocumentSelection({
 		artifacts: dedupeById([
 			...currentAttachments,
 			...linkedSourceArtifacts,
@@ -1726,11 +1727,14 @@ export async function buildConstructedContext(params: {
 		previousMessageEmbedding,
 	});
 
-	const suppressCarryover = shouldSuppressCarryover({
+	const topicShiftSuppressesCarryover = shouldSuppressCarryover({
 		isShift: topicShift.isShift,
-		hasExplicitResetSignal: retrievalActiveDocumentState.hasContextResetSignal,
+		hasExplicitResetSignal: retrievalSelection.retrieval.hasExplicitResetSignal,
 		turnsSinceLastShift: 0,
 	});
+	const suppressCarryover =
+		retrievalSelection.retrieval.suppressGeneratedCarryover ||
+		topicShiftSuppressesCarryover;
 	const carriedForwardAttachments = suppressCarryover
 		? []
 		: resolvedCarriedForwardAttachments;
@@ -1749,13 +1753,12 @@ export async function buildConstructedContext(params: {
 		currentConversationId: params.conversationId,
 		limit: deriveRelevantKnowledgeArtifactLimit(targetBudget),
 		preferredArtifactId:
-			retrievalActiveDocumentState.currentGeneratedArtifactId ??
-			params.activeDocumentArtifactId,
+			retrievalSelection.retrieval.preferredArtifactId ?? undefined,
 		preferredGeneratedFamilyId:
-			retrievalActiveDocumentState.recentlyRefinedFamilyId ?? null,
+			retrievalSelection.retrieval.preferredGeneratedFamilyId,
 		suppressGeneratedCarryover: suppressCarryover,
 	}).catch(() => []);
-	const activeDocumentState = buildActiveDocumentState({
+	const contextSelection = resolveWorkingDocumentSelection({
 		artifacts: dedupeById([
 			...currentAttachments,
 			...linkedSourceArtifacts,
@@ -1765,9 +1768,11 @@ export async function buildConstructedContext(params: {
 		message: params.message,
 		attachmentIds,
 		activeDocumentArtifactId: params.activeDocumentArtifactId,
+		preferredGeneratedArtifactId:
+			retrievalSelection.retrieval.preferredArtifactId,
 		currentConversationId: params.conversationId,
 	});
-	const documentFocused = activeDocumentState.documentFocused;
+	const documentFocused = contextSelection.documentFocused;
 
 	const preparedContext = await prepareTaskContext({
 		userId: params.userId,
@@ -2393,8 +2398,7 @@ export async function checkHealth(): Promise<{
 	}
 
 	try {
-		await ensureClient();
-		const honcho = client!;
+		const honcho = await ensureClient();
 		await honcho.getMetadata();
 		return {
 			enabled: true,

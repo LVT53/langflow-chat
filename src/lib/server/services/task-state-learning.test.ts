@@ -6,12 +6,8 @@ const {
 	mockListMemoryEvents,
 	mockCanUseContextSummarizer,
 	mockRequestStructuredControlModel,
-	mockFormatTaskStateForPrompt,
-	mockGetContextDebugState,
-	mockGetPromptArtifactSnippets,
 	mockRerankItems,
 	mockCanUseTeiReranker,
-	mockBuildActiveDocumentState,
 	insertedProjectRows,
 	insertedLinkRows,
 	insertedEvidenceRows,
@@ -21,30 +17,14 @@ const {
 	conversationRows,
 	checkpointRows,
 } = vi.hoisted(() => {
-	const now = Date.now();
 	return {
 		mockRecordMemoryEvent: vi.fn(async () => undefined),
 		mockListLatestMemoryEventsBySubject: vi.fn(async () => new Map()),
 		mockListMemoryEvents: vi.fn(async () => []),
 		mockCanUseContextSummarizer: vi.fn(() => false),
 		mockRequestStructuredControlModel: vi.fn(),
-		mockFormatTaskStateForPrompt: vi.fn((taskState: { objective: string }) => `Objective: ${taskState.objective}`),
-		mockGetContextDebugState: vi.fn(async () => null),
-		mockGetPromptArtifactSnippets: vi.fn(async () => new Map()),
 		mockRerankItems: vi.fn(async () => null),
 		mockCanUseTeiReranker: vi.fn(() => false),
-		mockBuildActiveDocumentState: vi.fn(() => ({
-			documentFocused: false,
-			hasRecentUserCorrection: false,
-			hasContextResetSignal: false,
-			activeDocumentIds: new Set<string>(),
-			correctionTargetIds: new Set<string>(),
-			recentlyRefinedFamilyId: null,
-			recentlyRefinedArtifactIds: new Set<string>(),
-			currentGeneratedArtifactId: null,
-			latestGeneratedArtifactIds: [],
-			currentGeneratedReasonCodes: new Set<string>(),
-		})),
 		insertedProjectRows: [] as Array<Record<string, unknown>>,
 		insertedLinkRows: [] as Array<Record<string, unknown>>,
 		insertedEvidenceRows: [] as Array<Record<string, unknown>>,
@@ -56,19 +36,23 @@ const {
 	};
 });
 
+type SelectChain = unknown[] & {
+	from: (...args: unknown[]) => SelectChain;
+	leftJoin: (...args: unknown[]) => SelectChain;
+	innerJoin: (...args: unknown[]) => SelectChain;
+	where: (...args: unknown[]) => SelectChain;
+	orderBy: (...args: unknown[]) => SelectChain;
+	limit: (count?: number) => Promise<unknown[]>;
+};
+
 function createSelectChain(rows: unknown[]) {
-	const chain: any = {
-		from: vi.fn(() => chain),
-		leftJoin: vi.fn(() => chain),
-		innerJoin: vi.fn(() => chain),
-		where: vi.fn(() => ({
-			orderBy: vi.fn(() => chain),
-			limit: vi.fn(async () => rows),
-		})),
-		orderBy: vi.fn(() => chain),
-		limit: vi.fn(async () => rows),
-		then: (onFulfilled: (value: unknown[]) => unknown) => Promise.resolve(rows).then(onFulfilled),
-	};
+	const chain = [...rows] as SelectChain;
+	chain.from = vi.fn(() => chain);
+	chain.leftJoin = vi.fn(() => chain);
+	chain.innerJoin = vi.fn(() => chain);
+	chain.where = vi.fn(() => chain);
+	chain.orderBy = vi.fn(() => chain);
+	chain.limit = vi.fn(async (count?: number) => (typeof count === 'number' ? rows.slice(0, count) : rows));
 	return chain;
 }
 
@@ -87,6 +71,9 @@ vi.mock('$lib/server/db', () => ({
 				}
 				if (table?.__name === 'conversation_task_states') {
 					return createSelectChain(taskStateRows);
+				}
+				if (table?.__name === 'artifact_links') {
+					return createSelectChain([]);
 				}
 				if (table?.__name === 'conversations') {
 					return createSelectChain(conversationRows);
@@ -201,6 +188,13 @@ vi.mock('$lib/server/db/schema', () => ({
 		origin: { name: 'origin' },
 		updatedAt: { name: 'updatedAt' },
 	},
+	artifactLinks: {
+		__name: 'artifact_links',
+		artifactId: { name: 'artifactId' },
+		relatedArtifactId: { name: 'relatedArtifactId' },
+		userId: { name: 'userId' },
+		linkType: { name: 'linkType' },
+	},
 	artifacts: { id: Symbol('id') },
 
 	memoryEvents: {},
@@ -235,20 +229,26 @@ vi.mock('$lib/server/services/control-model', () => ({
 	requestStructuredControlModel: mockRequestStructuredControlModel,
 }));
 
+type TimestampLike = { getTime?: () => number };
+type MockTaskRow = Record<string, unknown> & {
+	lastCheckpointAt?: TimestampLike | null;
+	updatedAt?: TimestampLike | null;
+};
+
 vi.mock('$lib/server/services/mappers', () => ({
-	mapTaskCheckpoint: vi.fn((row: any) => ({
-		taskId: row.taskId ?? '',
-		content: row.content ?? '',
-		checkpointType: row.checkpointType ?? 'stable',
+	mapTaskCheckpoint: vi.fn((row: MockTaskRow) => ({
+		taskId: typeof row.taskId === 'string' ? row.taskId : '',
+		content: typeof row.content === 'string' ? row.content : '',
+		checkpointType: typeof row.checkpointType === 'string' ? row.checkpointType : 'stable',
 		updatedAt: row.updatedAt?.getTime?.() ?? Date.now(),
 	})),
-	mapTaskState: vi.fn((row: any) => ({
-		taskId: row.taskId ?? '',
-		conversationId: row.conversationId ?? '',
-		objective: row.objective ?? '',
-		status: row.status ?? 'candidate',
-		locked: row.locked ?? false,
-		confidence: row.confidence ?? 40,
+	mapTaskState: vi.fn((row: MockTaskRow) => ({
+		taskId: typeof row.taskId === 'string' ? row.taskId : '',
+		conversationId: typeof row.conversationId === 'string' ? row.conversationId : '',
+		objective: typeof row.objective === 'string' ? row.objective : '',
+		status: typeof row.status === 'string' ? row.status : 'candidate',
+		locked: Boolean(row.locked ?? false),
+		confidence: typeof row.confidence === 'number' ? row.confidence : 40,
 		updatedAt: row.updatedAt?.getTime?.() ?? Date.now(),
 		lastCheckpointAt: row.lastCheckpointAt?.getTime?.() ?? null,
 		nextSteps: [],
@@ -455,6 +455,8 @@ describe('task-state selected evidence policy', () => {
 		vi.resetModules();
 		taskStateRows.splice(0, taskStateRows.length);
 		insertedEvidenceRows.splice(0, insertedEvidenceRows.length);
+		mockCanUseTeiReranker.mockReturnValue(false);
+		mockRerankItems.mockResolvedValue(null);
 	});
 
 	it('scales selected evidence from budget instead of the old small fixed caps', async () => {
@@ -590,6 +592,172 @@ describe('task-state selected evidence policy', () => {
 
 		expect(prepared.selectedArtifacts.map((artifact) => artifact.id)).toContain('doc-semantic');
 		expect(insertedEvidenceRows.map((row) => row.artifactId)).not.toContain('doc-semantic');
+	});
+
+	it('keeps the current generated working document selected when evidence reranking prefers other sources', async () => {
+		const now = Date.now();
+		taskStateRows.push({
+			taskId: 'task-1',
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			status: 'active',
+			objective: 'Revise the current report',
+			confidence: 80,
+			locked: 1,
+			constraintsJson: '[]',
+			factsToPreserveJson: '[]',
+			decisionsJson: '[]',
+			openQuestionsJson: '[]',
+			activeArtifactIdsJson: '[]',
+			nextStepsJson: '[]',
+			lastCheckpointAt: null,
+			createdAt: new Date(now),
+			updatedAt: new Date(now),
+		});
+		const currentGeneratedDocument = {
+			id: 'generated-current',
+			userId: 'user-1',
+			type: 'generated_output',
+			retrievalClass: 'durable',
+			name: 'current-report.pdf',
+			mimeType: 'application/pdf',
+			sizeBytes: 1024,
+			conversationId: 'conv-1',
+			summary: 'Current generated report.',
+			metadata: {
+				documentFamilyId: 'family-report',
+				documentLabel: 'Current report',
+				versionNumber: 1,
+			},
+			contentText: 'Current generated report draft.',
+			extension: 'pdf',
+			storagePath: null,
+			createdAt: now,
+			updatedAt: now,
+		};
+		const relevantDocuments = Array.from({ length: 3 }, (_, index) => ({
+			id: `semantic-${index + 1}`,
+			userId: 'user-1',
+			type: 'normalized_document',
+			retrievalClass: 'durable',
+			name: `Reference ${index + 1}`,
+			mimeType: 'text/plain',
+			sizeBytes: 1024,
+			conversationId: 'conv-1',
+			summary: 'Reference source.',
+			metadata: null,
+			contentText: 'Supporting source material.',
+			extension: 'txt',
+			storagePath: null,
+			createdAt: now,
+			updatedAt: now - index - 1,
+		}));
+		mockCanUseTeiReranker.mockReturnValue(true);
+		mockRerankItems.mockResolvedValue({
+			confidence: 92,
+			items: relevantDocuments.map((item) => ({ item, score: 0.9 })),
+		});
+
+		const { prepareTaskContext } = await import('./task-state');
+		const prepared = await prepareTaskContext({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			message: 'Please summarize this document.',
+			currentAttachments: [],
+			workingSetArtifacts: [currentGeneratedDocument],
+			relevantArtifacts: relevantDocuments,
+		});
+
+		expect(prepared.routingStage).toBe('evidence_rerank');
+		expect(prepared.selectedArtifacts.map((artifact) => artifact.id)).toContain(
+			'generated-current',
+		);
+		expect(insertedEvidenceRows.map((row) => row.artifactId)).toContain(
+			'generated-current',
+		);
+	});
+
+	it('keeps a WDS-protected correction target through generated-document family collapse', async () => {
+		const now = Date.now();
+		taskStateRows.push({
+			taskId: 'task-1',
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			status: 'active',
+			objective: 'Revise the selected brief',
+			confidence: 80,
+			locked: 1,
+			constraintsJson: '[]',
+			factsToPreserveJson: '[]',
+			decisionsJson: '[]',
+			openQuestionsJson: '[]',
+			activeArtifactIdsJson: '[]',
+			nextStepsJson: '[]',
+			lastCheckpointAt: null,
+			createdAt: new Date(now),
+			updatedAt: new Date(now),
+		});
+		const selectedOlderDraft = {
+			id: 'brief-v1',
+			userId: 'user-1',
+			type: 'generated_output',
+			retrievalClass: 'durable',
+			name: 'brief-v1.pdf',
+			mimeType: 'application/pdf',
+			sizeBytes: 1024,
+			conversationId: 'conv-1',
+			summary: 'Older brief draft.',
+			metadata: {
+				documentFamilyId: 'family-brief',
+				documentLabel: 'Project brief',
+				versionNumber: 1,
+			},
+			contentText: 'Older brief draft.',
+			extension: 'pdf',
+			storagePath: null,
+			createdAt: now - 10,
+			updatedAt: now - 10,
+		};
+		const newerSiblingDraft = {
+			id: 'brief-v2',
+			userId: 'user-1',
+			type: 'generated_output',
+			retrievalClass: 'durable',
+			name: 'brief-v2.pdf',
+			mimeType: 'application/pdf',
+			sizeBytes: 1024,
+			conversationId: 'conv-1',
+			summary: 'Newer brief draft.',
+			metadata: {
+				documentFamilyId: 'family-brief',
+				documentLabel: 'Project brief',
+				versionNumber: 2,
+				supersedesArtifactId: 'brief-v1',
+			},
+			contentText: 'Newer brief draft.',
+			extension: 'pdf',
+			storagePath: null,
+			createdAt: now,
+			updatedAt: now,
+		};
+
+		const { prepareTaskContext } = await import('./task-state');
+		const prepared = await prepareTaskContext({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			message: 'Actually, refine this document.',
+			activeDocumentArtifactId: 'brief-v1',
+			currentAttachments: [],
+			workingSetArtifacts: [selectedOlderDraft, newerSiblingDraft],
+			relevantArtifacts: [],
+		});
+
+		expect(prepared.selectedArtifacts.map((artifact) => artifact.id)).toContain(
+			'brief-v1',
+		);
+		expect(insertedEvidenceRows.map((row) => row.artifactId)).toContain(
+			'brief-v1',
+		);
 	});
 });
 
