@@ -16,6 +16,8 @@ import {
 	syncGeneratedFilesToMemory as syncChatGeneratedFilesToMemory,
 } from "$lib/server/services/chat-files";
 import { executeCode as executeSandboxCode } from "$lib/server/services/sandbox-execution";
+import { parseWorkingDocumentMetadata } from "$lib/server/services/knowledge/store/document-metadata";
+import type { Artifact } from "$lib/types";
 import type { FileProductionJob } from "$lib/types";
 import { createDefaultGeneratedDocumentImageLoader } from "./image-loader";
 import {
@@ -39,6 +41,10 @@ import {
 	type GeneratedDocumentSource,
 	validateGeneratedDocumentSource,
 } from "./source-schema";
+import {
+	attachGeneratedDocumentSourceArtifactToRenderedFiles,
+	persistGeneratedDocumentSourceArtifact,
+} from "./source-persistence";
 
 export type {
 	FileProductionIntakeConversationIdResult,
@@ -270,6 +276,26 @@ function mapChatFileToProducedFile(
 		originConversationId: file.originConversationId,
 		originAssistantMessageId: file.originAssistantMessageId,
 		sourceChatFileId: file.sourceChatFileId,
+	};
+}
+
+function mapChatFileToSourceProducedFile(
+	file: ChatFile,
+	sourceArtifact: Artifact,
+): FileProductionJob["files"][number] {
+	const metadata = parseWorkingDocumentMetadata(sourceArtifact.metadata);
+	return {
+		...mapChatFileToProducedFile(file),
+		artifactId: sourceArtifact.id,
+		documentFamilyId: metadata.documentFamilyId ?? sourceArtifact.id,
+		documentFamilyStatus: metadata.documentFamilyStatus ?? "active",
+		documentLabel: metadata.documentLabel ?? sourceArtifact.name,
+		documentRole: metadata.documentRole ?? null,
+		versionNumber: metadata.versionNumber ?? 1,
+		originConversationId:
+			metadata.originConversationId ?? sourceArtifact.conversationId,
+		originAssistantMessageId: metadata.originAssistantMessageId ?? null,
+		sourceChatFileId: file.id,
 	};
 }
 
@@ -1440,6 +1466,44 @@ async function executeNextFileProductionJobStep(
 	}
 
 	const storeGeneratedFile = input.storeGeneratedFile ?? storeChatGeneratedFile;
+	let currentJobRow = await getCurrentOwnedRunningJob({
+		jobId: claimed.job.id,
+		attemptId: claimed.attempt.id,
+		workerId: input.workerId,
+	});
+	if (!currentJobRow) {
+		return { processed: true, result: null };
+	}
+
+	let sourceArtifact: Artifact | null = null;
+	if (request.value.sourceMode === "document_source") {
+		try {
+			sourceArtifact = await persistGeneratedDocumentSourceArtifact({
+				userId: currentJobRow.userId,
+				conversationId: currentJobRow.conversationId,
+				assistantMessageId: currentJobRow.assistantMessageId,
+				fileProductionJobId: currentJobRow.id,
+				title: currentJobRow.title,
+				documentIntent: currentJobRow.documentIntent,
+				source: request.value.documentSource,
+			});
+		} catch (error) {
+			await failFileProductionJobAttempt({
+				jobId: claimed.job.id,
+				attemptId: claimed.attempt.id,
+				workerId: input.workerId,
+				errorCode: "generated_document_source_persistence_failed",
+				errorMessage:
+					error instanceof Error
+						? error.message
+						: "Generated document source persistence failed.",
+				retryable: true,
+				now: new Date(),
+			});
+			return { processed: true, result: null };
+		}
+	}
+
 	let executionResult: ProgramExecutionResult;
 	if (request.value.sourceMode === "program") {
 		const executeCode = input.executeCode ?? executeSandboxCode;
@@ -1481,8 +1545,8 @@ async function executeNextFileProductionJobStep(
 					request.value.documentSource,
 					{
 						imageLoader: createDefaultGeneratedDocumentImageLoader({
-							userId: jobRow.userId,
-							conversationId: jobRow.conversationId,
+							userId: currentJobRow.userId,
+							conversationId: currentJobRow.conversationId,
 						}),
 					},
 				);
@@ -1613,16 +1677,17 @@ async function executeNextFileProductionJobStep(
 		}
 	}
 
-	const currentJobRow = await getCurrentOwnedRunningJob({
+	const latestJobRow = await getCurrentOwnedRunningJob({
 		jobId: claimed.job.id,
 		attemptId: claimed.attempt.id,
 		workerId: input.workerId,
 	});
-	if (!currentJobRow) {
+	if (!latestJobRow) {
 		return { processed: true, result: null };
 	}
+	currentJobRow = latestJobRow;
 
-	const producedFiles: FileProductionJob["files"] = [];
+	const storedFiles: ChatFile[] = [];
 	try {
 		for (const [index, file] of executionResult.files.entries()) {
 			const filename =
@@ -1649,7 +1714,7 @@ async function executeNextFileProductionJobStep(
 				sortOrder: index,
 				createdAt: now,
 			});
-			producedFiles.push(mapChatFileToProducedFile(storedFile));
+			storedFiles.push(storedFile);
 		}
 	} catch (error) {
 		await failFileProductionJobAttempt({
@@ -1666,6 +1731,20 @@ async function executeNextFileProductionJobStep(
 		});
 		return { processed: true, result: null };
 	}
+
+	if (sourceArtifact && storedFiles.length > 0) {
+		sourceArtifact =
+			(await attachGeneratedDocumentSourceArtifactToRenderedFiles({
+				artifactId: sourceArtifact.id,
+				renderedChatFileIds: storedFiles.map((file) => file.id),
+			})) ?? sourceArtifact;
+	}
+
+	const producedFiles: FileProductionJob["files"] = sourceArtifact
+		? storedFiles.map((file) =>
+				mapChatFileToSourceProducedFile(file, sourceArtifact),
+			)
+		: storedFiles.map(mapChatFileToProducedFile);
 
 	const completed = await completeFileProductionJobAttempt({
 		jobId: claimed.job.id,

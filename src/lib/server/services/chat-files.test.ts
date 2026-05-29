@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ChatFile, FileInput } from './chat-files';
+import type { FileInput } from './chat-files';
 
 type ChatFileRow = {
 	id: string;
@@ -13,10 +13,27 @@ type ChatFileRow = {
 	createdAt: Date;
 };
 
+type ArtifactRow = {
+	id: string;
+	userId: string;
+	type: string;
+	retrievalClass: string;
+	name: string;
+	mimeType: string | null;
+	sizeBytes: number | null;
+	conversationId: string | null;
+	summary: string | null;
+	metadataJson: string | null;
+	contentText: string | null;
+	extension: string | null;
+	storagePath: string | null;
+	createdAt: Date;
+	updatedAt: Date;
+};
+
 const {
 	mockRows,
-	mockInsertValues,
-	mockSelectWhere,
+	mockArtifactRows,
 	mockDeleteWhere,
 	mockUnlink,
 	mockRm,
@@ -29,24 +46,7 @@ const {
 	mockExtractDocumentText,
 } = vi.hoisted(() => {
 	const mockRows: ChatFileRow[] = [];
-
-	const mockInsertValues = vi.fn(async (values: ChatFileRow | ChatFileRow[]) => {
-		const items = Array.isArray(values) ? values : [values];
-		const now = new Date();
-		const itemsWithDate = items.map((item) => ({
-			...item,
-			createdAt: item.createdAt || now,
-		}));
-		mockRows.push(...itemsWithDate);
-		return itemsWithDate.map((item) => ({ ...item }));
-	});
-
-	const mockSelectWhere = vi.fn(async (conversationId: string) => {
-		return mockRows
-			.filter((row) => row.conversationId === conversationId)
-			.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-			.map((row) => ({ ...row }));
-	});
+	const mockArtifactRows: ArtifactRow[] = [];
 
 	const mockDeleteWhere = vi.fn(async (conversationId: string, fileId?: string) => {
 		const indicesToRemove: number[] = [];
@@ -56,7 +56,9 @@ const {
 			}
 		});
 		const removed = indicesToRemove.length;
-		indicesToRemove.reverse().forEach((index) => mockRows.splice(index, 1));
+		indicesToRemove.reverse().forEach((index) => {
+			mockRows.splice(index, 1);
+		});
 		return removed;
 	});
 
@@ -91,8 +93,7 @@ const {
 
 	return {
 		mockRows,
-		mockInsertValues,
-		mockSelectWhere,
+		mockArtifactRows,
 		mockDeleteWhere,
 		mockUnlink,
 		mockRm,
@@ -126,36 +127,16 @@ vi.mock('fs/promises', () => ({
 vi.mock('$lib/server/db', () => ({
 	db: {
 		select: vi.fn(() => ({
-			from: vi.fn((table: { name?: string }) => ({
+			from: vi.fn((table: { __table?: string }) => ({
 				where: vi.fn((condition: unknown) => ({
 					orderBy: vi.fn(() => {
-						const conversationId = extractConversationId(condition);
-						const assistantMessageId = extractAssistantMessageId(condition);
-						const rows = mockRows
-							.filter((row) => row.conversationId === conversationId)
-							.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
-							.filter(
-								(row) =>
-									!assistantMessageId || row.assistantMessageId === assistantMessageId
-							)
-							.map((row) => ({ ...row }));
+						const rows = selectRowsForTable(table, condition);
 						return Object.assign(rows, {
 							limit: vi.fn(async (count: number) => rows.slice(0, count)),
 						});
 					}),
 					limit: vi.fn(async () => {
-						const conversationId = extractConversationId(condition);
-						const fileId = extractFileId(condition);
-						const userId = extractUserId(condition);
-						const assistantMessageId = extractAssistantMessageId(condition);
-						const rows = mockRows.filter(
-							(r) =>
-								(!conversationId || r.conversationId === conversationId) &&
-								(!fileId || r.id === fileId) &&
-								(!userId || r.userId === userId) &&
-								(!assistantMessageId || r.assistantMessageId === assistantMessageId)
-						);
-						return rows.slice(0, 1).map((r) => ({ ...r }));
+						return selectRowsForTable(table, condition).slice(0, 1);
 					}),
 				})),
 			})),
@@ -259,8 +240,58 @@ function extractAssistantMessageId(condition: unknown): string | undefined {
 	return undefined;
 }
 
+function extractArtifactType(condition: unknown): string | undefined {
+	if (Array.isArray(condition)) {
+		const typeCondition = condition.find((c: { field: string }) => c.field === 'type');
+		if (typeCondition) return typeCondition.value;
+	}
+	if (typeof condition === 'object' && condition !== null && 'field' in condition) {
+		const c = condition as { field: string; value: string };
+		if (c.field === 'type') return c.value;
+	}
+	return undefined;
+}
+
+function selectRowsForTable(
+	table: { __table?: string },
+	condition: unknown
+): Array<ChatFileRow | ArtifactRow> {
+	if (table.__table === 'artifacts') {
+		const conversationId = extractConversationId(condition);
+		const artifactId = extractFileId(condition);
+		const userId = extractUserId(condition);
+		const type = extractArtifactType(condition);
+		return mockArtifactRows
+			.filter(
+				(row) =>
+					(!conversationId || row.conversationId === conversationId) &&
+					(!artifactId || row.id === artifactId) &&
+					(!userId || row.userId === userId) &&
+					(!type || row.type === type)
+			)
+			.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+			.map((row) => ({ ...row }));
+	}
+
+	const conversationId = extractConversationId(condition);
+	const fileId = extractFileId(condition);
+	const userId = extractUserId(condition);
+	const assistantMessageId = extractAssistantMessageId(condition);
+	return mockRows
+		.filter(
+			(row) =>
+				(!conversationId || row.conversationId === conversationId) &&
+				(!fileId || row.id === fileId) &&
+				(!userId || row.userId === userId) &&
+				(!assistantMessageId || row.assistantMessageId === assistantMessageId)
+		)
+		.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+		.map((row) => ({ ...row }));
+}
+
 vi.mock('$lib/server/db/schema', () => ({
 	artifacts: {
+		__table: 'artifacts',
 		id: { name: 'id' },
 		userId: { name: 'userId' },
 		type: { name: 'type' },
@@ -283,6 +314,7 @@ vi.mock('$lib/server/db/schema', () => ({
 		linkType: { name: 'linkType' },
 	},
 	chatGeneratedFiles: {
+		__table: 'chatGeneratedFiles',
 		id: { name: 'id' },
 		conversationId: { name: 'conversationId' },
 		assistantMessageId: { name: 'assistantMessageId' },
@@ -322,6 +354,7 @@ vi.mock('./document-extraction', () => ({
 describe('chat-files service', () => {
 	beforeEach(() => {
 		mockRows.length = 0;
+		mockArtifactRows.length = 0;
 		vi.clearAllMocks();
 		mockRm.mockResolvedValue(undefined);
 		vi.spyOn(console, 'info').mockImplementation(() => undefined);
@@ -656,6 +689,99 @@ describe('chat-files service', () => {
 	});
 
 	describe('syncGeneratedFilesToMemory', () => {
+		it('uses the canonical source artifact for source-first rendered document files', async () => {
+			const { syncGeneratedFilesToMemory } = await import('./chat-files');
+			const now = new Date('2026-01-01T12:00:00.000Z');
+			mockRows.push(
+				{
+					id: 'file-source-pdf',
+					conversationId: 'conv-a',
+					assistantMessageId: 'assistant-a',
+					userId: 'user-1',
+					filename: 'report.pdf',
+					mimeType: 'application/pdf',
+					sizeBytes: 5000,
+					storagePath: 'conv-a/file-source-pdf.pdf',
+					createdAt: now,
+				},
+				{
+					id: 'file-source-html',
+					conversationId: 'conv-a',
+					assistantMessageId: 'assistant-a',
+					userId: 'user-1',
+					filename: 'report.html',
+					mimeType: 'text/html',
+					sizeBytes: 4000,
+					storagePath: 'conv-a/file-source-html.html',
+					createdAt: now,
+				}
+			);
+			mockArtifactRows.push({
+				id: 'artifact-source-1',
+				userId: 'user-1',
+				type: 'generated_output',
+				retrievalClass: 'durable',
+				name: 'Source-first report',
+				mimeType: 'application/vnd.alfyai.generated-document+json',
+				sizeBytes: null,
+				conversationId: 'conv-a',
+				summary: 'Source-first report',
+				metadataJson: JSON.stringify({
+					generatedDocumentSourceVersion: 1,
+					generatedDocumentSource: {
+						version: 1,
+						template: 'alfyai_standard_report',
+						title: 'Source-first report',
+					},
+					fileProductionJobId: 'job-source-1',
+					documentFamilyId: 'artifact-source-1',
+					documentFamilyStatus: 'active',
+					documentLabel: 'Source-first report',
+					versionNumber: 1,
+					originConversationId: 'conv-a',
+					originAssistantMessageId: 'assistant-a',
+					originalChatFileId: 'file-source-pdf',
+					sourceChatFileId: 'file-source-pdf',
+					generatedDocumentRenderedChatFileIds: [
+						'file-source-pdf',
+						'file-source-html',
+					],
+				}),
+				contentText: 'Source-first report\n\nCanonical generated document source text.',
+				extension: 'alfyidoc.json',
+				storagePath: null,
+				createdAt: now,
+				updatedAt: now,
+			});
+
+			await syncGeneratedFilesToMemory({
+				userId: 'user-1',
+				conversationId: 'conv-a',
+				assistantMessageId: 'assistant-a',
+				fileIds: ['file-source-pdf', 'file-source-html'],
+				assistantResponse: 'Here is the report.',
+			});
+
+			expect(mockAccess).not.toHaveBeenCalled();
+			expect(mockReadFile).not.toHaveBeenCalled();
+			expect(mockExtractDocumentText).not.toHaveBeenCalled();
+			expect(mockCreateGeneratedOutputArtifact).not.toHaveBeenCalled();
+			expect(mockSyncArtifactToHoncho).toHaveBeenCalledTimes(1);
+			expect(mockSyncArtifactToHoncho).toHaveBeenCalledWith(
+				expect.objectContaining({
+					userId: 'user-1',
+					conversationId: 'conv-a',
+					artifact: expect.objectContaining({
+						id: 'artifact-source-1',
+						contentText: expect.stringContaining('Canonical generated document source text.'),
+					}),
+					fallbackTextArtifact: expect.objectContaining({
+						id: 'artifact-source-1',
+					}),
+				})
+			);
+		});
+
 		it('preserves generated-file version metadata when text extraction fails', async () => {
 			const { getChatFile, syncGeneratedFilesToMemory } = await import('./chat-files');
 			mockExtractDocumentText.mockRejectedValueOnce(new Error('parser failed'));

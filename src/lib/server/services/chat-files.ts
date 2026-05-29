@@ -6,11 +6,14 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { artifacts, chatGeneratedFiles, conversations } from '$lib/server/db/schema';
 import { parseJsonRecord } from '$lib/server/utils/json';
+import type { Artifact } from '$lib/types';
+import { mapArtifact } from '$lib/server/services/knowledge/store/core';
 import {
 	buildGeneratedOutputDocumentMetadata,
 	parseWorkingDocumentMetadata,
 	resolveGeneratedDocumentFamilyContext,
 } from '$lib/server/services/knowledge/store/document-metadata';
+import { GENERATED_DOCUMENT_RENDERED_CHAT_FILE_IDS_KEY } from '$lib/server/services/file-production/source-persistence';
 import { syncArtifactToHoncho } from '$lib/server/services/honcho';
 import { recordMemoryEvent } from '$lib/server/services/memory-events';
 import { extractDocumentText } from './document-extraction';
@@ -228,6 +231,16 @@ function mapRowToChatFile(row: typeof chatGeneratedFiles.$inferSelect): ChatFile
 	};
 }
 
+function readStringArray(value: unknown): string[] {
+	if (!Array.isArray(value)) {
+		return [];
+	}
+	return value
+		.filter((item): item is string => typeof item === 'string')
+		.map((item) => item.trim())
+		.filter(Boolean);
+}
+
 async function listGeneratedOutputArtifactIdsByChatFile(
 	conversationId: string
 ): Promise<
@@ -243,14 +256,13 @@ async function listGeneratedOutputArtifactIdsByChatFile(
 			originConversationId: string | null;
 			originAssistantMessageId: string | null;
 			sourceChatFileId: string | null;
+			sourceArtifact: Artifact | null;
+			isGeneratedDocumentSource: boolean;
 		}
 	>
 > {
 	const rows = await db
-		.select({
-			id: artifacts.id,
-			metadataJson: artifacts.metadataJson,
-		})
+		.select()
 		.from(artifacts)
 		.where(
 			and(
@@ -272,6 +284,8 @@ async function listGeneratedOutputArtifactIdsByChatFile(
 			originConversationId: string | null;
 			originAssistantMessageId: string | null;
 			sourceChatFileId: string | null;
+			sourceArtifact: Artifact | null;
+			isGeneratedDocumentSource: boolean;
 		}
 	>();
 	for (const row of rows) {
@@ -280,25 +294,43 @@ async function listGeneratedOutputArtifactIdsByChatFile(
 			typeof metadata?.originalChatFileId === 'string' && metadata.originalChatFileId.trim()
 				? metadata.originalChatFileId.trim()
 				: null;
-		if (!chatFileId || artifactIdsByChatFile.has(chatFileId)) {
-			continue;
-		}
+		const renderedChatFileIds = readStringArray(
+			metadata?.[GENERATED_DOCUMENT_RENDERED_CHAT_FILE_IDS_KEY]
+		);
+		const chatFileIds = Array.from(
+			new Set([chatFileId, ...renderedChatFileIds].filter((id): id is string => Boolean(id)))
+		);
+		if (chatFileIds.length === 0) continue;
+
 		const documentMetadata = parseWorkingDocumentMetadata(metadata);
-		artifactIdsByChatFile.set(chatFileId, {
-			artifactId: row.id,
-			documentFamilyId: documentMetadata.documentFamilyId ?? null,
-			documentFamilyStatus: documentMetadata.documentFamilyStatus ?? null,
-			documentLabel: documentMetadata.documentLabel ?? null,
-			documentRole: documentMetadata.documentRole ?? null,
-			versionNumber:
-				typeof documentMetadata.versionNumber === 'number' &&
-				Number.isFinite(documentMetadata.versionNumber)
-					? Math.trunc(documentMetadata.versionNumber)
-					: null,
-			originConversationId: documentMetadata.originConversationId ?? null,
-			originAssistantMessageId: documentMetadata.originAssistantMessageId ?? null,
-			sourceChatFileId: documentMetadata.sourceChatFileId ?? null,
-		});
+		const isGeneratedDocumentSource =
+			metadata?.generatedDocumentSource !== undefined ||
+			metadata?.generatedDocumentSourceVersion !== undefined;
+		const sourceArtifact = isGeneratedDocumentSource ? mapArtifact(row) : null;
+		for (const id of chatFileIds) {
+			if (artifactIdsByChatFile.has(id)) {
+				continue;
+			}
+			artifactIdsByChatFile.set(id, {
+				artifactId: row.id,
+				documentFamilyId: documentMetadata.documentFamilyId ?? null,
+				documentFamilyStatus: documentMetadata.documentFamilyStatus ?? null,
+				documentLabel: documentMetadata.documentLabel ?? null,
+				documentRole: documentMetadata.documentRole ?? null,
+				versionNumber:
+					typeof documentMetadata.versionNumber === 'number' &&
+					Number.isFinite(documentMetadata.versionNumber)
+						? Math.trunc(documentMetadata.versionNumber)
+						: null,
+				originConversationId: documentMetadata.originConversationId ?? null,
+				originAssistantMessageId: documentMetadata.originAssistantMessageId ?? null,
+				sourceChatFileId: renderedChatFileIds.includes(id)
+					? id
+					: documentMetadata.sourceChatFileId ?? null,
+				sourceArtifact,
+				isGeneratedDocumentSource,
+			});
+		}
 	}
 
 	return artifactIdsByChatFile;
@@ -485,9 +517,30 @@ export async function syncGeneratedFilesToMemory(params: {
 	);
 
 	const uniqueFileIds = Array.from(new Set(params.fileIds));
+	const artifactIdsByChatFile = await listGeneratedOutputArtifactIdsByChatFile(
+		params.conversationId
+	);
+	const syncedSourceArtifactIds = new Set<string>();
 
 	for (const fileId of uniqueFileIds) {
 		try {
+			const existingArtifact = artifactIdsByChatFile.get(fileId);
+			if (
+				existingArtifact?.isGeneratedDocumentSource &&
+				existingArtifact.sourceArtifact
+			) {
+				if (!syncedSourceArtifactIds.has(existingArtifact.sourceArtifact.id)) {
+					await syncArtifactToHoncho({
+						userId: params.userId,
+						conversationId: params.conversationId,
+						artifact: existingArtifact.sourceArtifact,
+						fallbackTextArtifact: existingArtifact.sourceArtifact,
+					});
+					syncedSourceArtifactIds.add(existingArtifact.sourceArtifact.id);
+				}
+				continue;
+			}
+
 			const file = await getChatFile(params.conversationId, fileId);
 			if (!file) {
 				continue;

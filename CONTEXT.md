@@ -1181,6 +1181,10 @@ _Avoid_: export task, PDF tool call, sandbox job
 The normalized start of a **File Production Request**, where AlfyAI decides whether the request becomes a queued job or a durable failed **File Production Card** before rendering begins.
 _Avoid_: route-local file job, tool-specific export path, transient generation task
 
+**Generated Document Source Persistence**:
+The production file-production deep module that stores the canonical **Generated Document Source** artifact and links rendered **Generated Files** back to it.
+_Avoid_: test helper, chat-file extraction path, rendered-file truth
+
 **File Production Card**:
 A chat card that presents the durable state and actions for a **File Production Request**.
 _Avoid_: stream placeholder, temporary generated-file row, tool-call log
@@ -1244,6 +1248,8 @@ _Avoid_: source message button, primary document action, source viewer
 - Every **File Production Request** enters **File Production Intake** before renderer, sandbox, or storage work begins.
 - **File Production Intake** creates or reuses durable **File Production Card** state; it is not a stream-only or tool-specific concern.
 - A malformed **File Production Request** still produces a durable failed **File Production Card** through **File Production Intake** when enough conversation ownership is known.
+- A `document_source` **File Production Request** that passes intake validation and ownership checks persists its canonical **Generated Document Source** through **Generated Document Source Persistence** before PDF, DOCX, or HTML rendering begins.
+- Invalid **Generated Document Source** input fails during request parsing or validation and does not create a persisted source artifact.
 - A **File Production Card** appears from persisted job state, not from a stream-only placeholder.
 - A **File Production Card** may present queued or running jobs with a generating visual treatment while the underlying job status remains `queued` or `running`.
 - A queued or running **File Production Card** may use a content-loading shimmer treatment instead of textual progress, a spinner, or a progress bar.
@@ -1252,7 +1258,11 @@ _Avoid_: source message button, primary document action, source viewer
 - An unassigned active **File Production Card** may appear inside the current streaming assistant response as soon as the successful production job exists, then reconcile to the persisted assistant message when the stream completes.
 - A **Generated Document** may have a **Generated Document Source**.
 - A **Generated Document Source** is **Available Context**.
-- The rendered binary file is the downloadable **Generated File**.
+- **Generated Document Source Persistence** is the source authority for source-first **Generated Documents**; it is not route-local behavior, a detached helper, or a binary-extraction fallback.
+- The rendered binary file is the downloadable **Generated File** and a projection of the persisted **Generated Document Source**.
+- Rendered PDF, DOCX, and HTML **Generated Files** from the same source-first job link back to one source artifact through `generatedDocumentRenderedChatFileIds` plus `originalChatFileId` and `sourceChatFileId` read-model metadata.
+- Source-first rendered document files sync to memory and Honcho through the canonical **Generated Document Source** artifact instead of creating duplicate binary-extraction `generated_output` artifacts.
+- Program-mode and legacy **Generated Files** keep the existing extraction and generated-output versioning path when no canonical **Generated Document Source** exists.
 - A **Generated Document Template** renders a **Generated Document Source** into one or more downloadable formats.
 - A **File Production Request** may name a **Generated Document Template**.
 - When no template is named, AlfyAI chooses an appropriate **Generated Document Template**.
@@ -1345,6 +1355,9 @@ _Avoid_: source message button, primary document action, source viewer
 >
 > **Dev:** "Should the assistant write PDF styling code?"
 > **Domain expert:** "No. The assistant provides a **Generated Document Source**; AlfyAI applies a **Generated Document Template** when rendering."
+>
+> **Dev:** "If a source-first PDF is rendered, should memory sync extract the PDF and create another generated-output artifact?"
+> **Domain expert:** "No. The rendered file is a downloadable projection; memory sync uses the persisted **Generated Document Source** artifact."
 >
 > **Dev:** "Can an uploaded PDF be the **Working Document**?"
 > **Domain expert:** "Yes. A **Working Document** can be uploaded or generated, but upload duplicates still stay separate documents."

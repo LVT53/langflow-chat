@@ -2209,8 +2209,10 @@ await workbook.xlsx.writeFile('/output/workbook.xlsx');
 
 	it("executes a queued document-source PDF job without using the sandbox", async () => {
 		const { db } = await import("$lib/server/db");
-		const { createOrReuseFileProductionJob, executeNextFileProductionJob } =
-			await import("./index");
+		const {
+			createOrReuseFileProductionJob,
+			executeNextFileProductionJob,
+		} = await import("./index");
 		const created = await createOrReuseFileProductionJob({
 			userId: "user-1",
 			conversationId: "conv-1",
@@ -2236,6 +2238,7 @@ await workbook.xlsx.writeFile('/output/workbook.xlsx');
 			now: new Date("2026-05-03T20:08:00.000Z"),
 		});
 		const executeCode = vi.fn();
+		const syncGeneratedFilesToMemory = vi.fn(async () => undefined);
 		const storeGeneratedFile = vi.fn(async (_conversationId, _userId, file) => {
 			expect(file.filename).toBe("quarterly-pdf-report.pdf");
 			expect(file.mimeType).toBe("application/pdf");
@@ -2270,7 +2273,16 @@ await workbook.xlsx.writeFile('/output/workbook.xlsx');
 			workerId: "worker-document-source",
 			executeCode,
 			storeGeneratedFile,
+			syncGeneratedFilesToMemory,
 			now: new Date("2026-05-03T20:09:00.000Z"),
+		});
+		const sourceArtifacts = await db
+			.select()
+			.from(schema.artifacts)
+			.where(eq(schema.artifacts.type, "generated_output"));
+		const sourceArtifact = sourceArtifacts.find((artifact) => {
+			const metadata = JSON.parse(artifact.metadataJson ?? "{}");
+			return metadata.fileProductionJobId === created.job.id;
 		});
 
 		expect(result).toMatchObject({
@@ -2283,8 +2295,38 @@ await workbook.xlsx.writeFile('/output/workbook.xlsx');
 					id: "file-document-pdf-1",
 					filename: "quarterly-pdf-report.pdf",
 					mimeType: "application/pdf",
+					artifactId: sourceArtifact?.id,
+					documentLabel: "Quarterly PDF report",
+					sourceChatFileId: "file-document-pdf-1",
 				}),
 			],
+		});
+		expect(sourceArtifact).toBeDefined();
+		expect(sourceArtifact).toMatchObject({
+			type: "generated_output",
+			retrievalClass: "durable",
+			name: "Quarterly PDF report",
+			mimeType: "application/vnd.alfyai.generated-document+json",
+			contentText: expect.stringContaining("Revenue increased by 12%."),
+		});
+		const sourceMetadata = JSON.parse(sourceArtifact?.metadataJson ?? "{}");
+		expect(sourceMetadata).toMatchObject({
+			generatedDocumentSourceVersion: 1,
+			fileProductionJobId: created.job.id,
+			originConversationId: "conv-1",
+			originAssistantMessageId: "assistant-1",
+			documentFamilyId: sourceArtifact?.id,
+			documentFamilyStatus: "active",
+			documentLabel: "Quarterly PDF report",
+			versionNumber: 1,
+			originalChatFileId: "file-document-pdf-1",
+			sourceChatFileId: "file-document-pdf-1",
+			generatedDocumentRenderedChatFileIds: ["file-document-pdf-1"],
+			generatedDocumentSource: {
+				version: 1,
+				template: "alfyai_standard_report",
+				title: "Quarterly PDF report",
+			},
 		});
 		expect(executeCode).not.toHaveBeenCalled();
 		const links = await db
@@ -2298,10 +2340,92 @@ await workbook.xlsx.writeFile('/output/workbook.xlsx');
 		});
 	});
 
+	it("persists document-source artifacts before PDF rendering starts", async () => {
+		const { db } = await import("$lib/server/db");
+		const {
+			createOrReuseFileProductionJob,
+			executeNextFileProductionJob,
+			listConversationFileProductionJobs,
+		} = await import("./index");
+		const created = await createOrReuseFileProductionJob({
+			userId: "user-1",
+			conversationId: "conv-1",
+			assistantMessageId: "assistant-1",
+			title: "Critical image report",
+			origin: "unified_produce",
+			idempotencyKey: "turn-1:document-source-critical-image",
+			sourceMode: "document_source",
+			documentIntent: "A PDF report with a required image",
+			requestJson: {
+				sourceMode: "document_source",
+				outputs: [{ type: "pdf" }],
+				documentSource: {
+					version: 1,
+					template: "alfyai_standard_report",
+					title: "Critical image report",
+					blocks: [
+						{
+							type: "image",
+							source: { kind: "generated_file", fileId: "missing-image-file" },
+							altText: "Required image.",
+							critical: true,
+						},
+					],
+				},
+			},
+			now: new Date("2026-05-03T20:09:30.000Z"),
+		});
+		const storeGeneratedFile = vi.fn();
+
+		const result = await executeNextFileProductionJob({
+			workerId: "worker-document-source-render-failure",
+			executeCode: vi.fn(),
+			storeGeneratedFile,
+			now: new Date("2026-05-03T20:09:31.000Z"),
+		});
+
+		const sourceArtifacts = await db
+			.select()
+			.from(schema.artifacts)
+			.where(eq(schema.artifacts.type, "generated_output"));
+		const sourceArtifact = sourceArtifacts.find((artifact) => {
+			const metadata = JSON.parse(artifact.metadataJson ?? "{}");
+			return metadata.fileProductionJobId === created.job.id;
+		});
+		const links = await db
+			.select()
+			.from(schema.fileProductionJobFiles)
+			.where(eq(schema.fileProductionJobFiles.jobId, created.job.id));
+
+		expect(result).toBeNull();
+		expect(sourceArtifact).toMatchObject({
+			type: "generated_output",
+			retrievalClass: "durable",
+			name: "Critical image report",
+			contentText: expect.stringContaining("Required image."),
+		});
+		expect(storeGeneratedFile).not.toHaveBeenCalled();
+		expect(links).toHaveLength(0);
+		expect(
+			(await listConversationFileProductionJobs("user-1", "conv-1")).find(
+				(job) => job.id === created.job.id,
+			),
+		).toMatchObject({
+			status: "failed",
+			error: {
+				code: "image_limit_exceeded",
+				retryable: false,
+			},
+		});
+	});
+
 	it("executes one document source into PDF, DOCX, and HTML outputs", async () => {
 		const { db } = await import("$lib/server/db");
-		const { createOrReuseFileProductionJob, executeNextFileProductionJob } =
-			await import("./index");
+		const {
+			createOrReuseFileProductionJob,
+			executeNextFileProductionJob,
+			listConversationFileProductionJobs,
+		} = await import("./index");
 		const created = await createOrReuseFileProductionJob({
 			userId: "user-1",
 			conversationId: "conv-1",
@@ -2365,6 +2489,32 @@ await workbook.xlsx.writeFile('/output/workbook.xlsx');
 			"application/pdf",
 			"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 			"text/html",
+		]);
+		const sourceArtifacts = await db
+			.select()
+			.from(schema.artifacts)
+			.where(eq(schema.artifacts.type, "generated_output"));
+		const sourceArtifact = sourceArtifacts.find((artifact) => {
+			const metadata = JSON.parse(artifact.metadataJson ?? "{}");
+			return metadata.fileProductionJobId === created.job.id;
+		});
+		expect(sourceArtifact).toBeDefined();
+		expect(result?.files.map((file) => file.artifactId)).toEqual([
+			sourceArtifact?.id,
+			sourceArtifact?.id,
+			sourceArtifact?.id,
+		]);
+		expect(result?.files.map((file) => file.sourceChatFileId)).toEqual([
+			"file-document-multi-1",
+			"file-document-multi-2",
+			"file-document-multi-3",
+		]);
+		const jobs = await listConversationFileProductionJobs("user-1", "conv-1");
+		const listedJob = jobs.find((job) => job.id === created.job.id);
+		expect(listedJob?.files.map((file) => file.artifactId)).toEqual([
+			sourceArtifact?.id,
+			sourceArtifact?.id,
+			sourceArtifact?.id,
 		]);
 		expect(storeGeneratedFile).toHaveBeenCalledTimes(3);
 	});
