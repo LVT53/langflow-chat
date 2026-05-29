@@ -31,19 +31,26 @@ vi.mock("$lib/server/services/task-state", () => ({
 	getProjectReferenceContext: vi.fn(async () => null),
 }));
 
-vi.mock("$lib/server/services/chat-turn/finalize", () => ({
-	persistAssistantEvidence: vi.fn(() => Promise.resolve()),
-	persistAssistantTurnState: vi.fn(() =>
-		Promise.resolve({
-			activeWorkingSet: [],
-			taskState: null,
-			contextDebug: null,
-			workCapsule: undefined,
-		}),
-	),
-	persistUserTurnAttachments: vi.fn(() => Promise.resolve()),
-	runPostTurnTasks: vi.fn(() => Promise.resolve()),
-}));
+vi.mock("$lib/server/services/chat-turn/finalize", async (importOriginal) => {
+	const actual =
+		await importOriginal<
+			typeof import("$lib/server/services/chat-turn/finalize")
+		>();
+	return {
+		...actual,
+		persistAssistantEvidence: vi.fn(() => Promise.resolve()),
+		persistAssistantTurnState: vi.fn(() =>
+			Promise.resolve({
+				activeWorkingSet: [],
+				taskState: null,
+				contextDebug: null,
+				workCapsule: undefined,
+			}),
+		),
+		persistUserTurnAttachments: vi.fn(() => Promise.resolve()),
+		runPostTurnTasks: vi.fn(() => Promise.resolve()),
+	};
+});
 
 vi.mock("$lib/server/services/chat-files", () => ({
 	getChatFilesForAssistantMessage: vi.fn(() => Promise.resolve([])),

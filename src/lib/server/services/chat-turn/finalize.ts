@@ -20,10 +20,13 @@ import { recordMemoryEvent } from "$lib/server/services/memory-events";
 import { runUserMemoryMaintenance } from "$lib/server/services/memory-maintenance";
 import { buildAssistantEvidenceSummary } from "$lib/server/services/message-evidence";
 import {
+	createMessage,
 	updateMessageEvidence,
 	updateMessageHonchoMetadata,
 	updateMessageWebCitationAudit,
 } from "$lib/server/services/messages";
+import { commitSkillNoteOperationsAfterAssistantMessage } from "$lib/server/services/skills/notes";
+import { applySkillControlOperations } from "$lib/server/services/skills/sessions";
 import {
 	applyProjectContinuitySignalFromMessage,
 	attachContinuityToTaskState,
@@ -33,6 +36,7 @@ import {
 	updateTaskStateCheckpoint,
 } from "$lib/server/services/task-state";
 import { buildWebCitationAudit } from "$lib/server/services/web-citation-audit";
+import type { SkillControlOperation } from "$lib/types";
 import type {
 	PersistAssistantEvidenceParams,
 	PersistAssistantTurnStateParams,
@@ -74,6 +78,312 @@ export async function persistUserTurnAttachments(params: {
 	attachmentIds: string[];
 }): Promise<WorkingSetItem[] | undefined> {
 	return refreshWorkingSetWithAttachments(params);
+}
+
+type MessageCreationMode = "strict" | "best_effort";
+type CreateMessageFn = (
+	conversationId: string,
+	role: "user" | "assistant",
+	content: string,
+	thinking?: string,
+	thinkingSegments?: Array<unknown>,
+	metadata?: Record<string, unknown>,
+) => Promise<{ id: string } | undefined>;
+
+export type FinalizeChatTurnParams = {
+	logPrefix: "[SEND]" | "[STREAM]";
+	streamId?: string | null;
+	userId: string;
+	conversationId: string;
+	userMessageContent: string;
+	persistUserMessage: boolean;
+	normalizedMessage: string;
+	upstreamMessage: string;
+	assistantResponse: string;
+	assistantThinking?: string;
+	serverSegments?: Array<unknown>;
+	assistantMetadata: Record<string, unknown>;
+	skillControlOperations: SkillControlOperation[];
+	skillControlSessionId: string | null;
+	attachmentIds: string[];
+	activeDocumentArtifactId: string | null;
+	contextStatus: PersistAssistantTurnStateParams["contextStatus"];
+	initialTaskState: PersistAssistantTurnStateParams["initialTaskState"];
+	initialContextDebug: PersistAssistantTurnStateParams["initialContextDebug"];
+	analytics: PersistAssistantTurnStateParams["analytics"];
+	continuitySource: PersistAssistantTurnStateParams["continuitySource"];
+	honchoContext: PersistAssistantTurnStateParams["honchoContext"];
+	honchoSnapshot: PersistAssistantTurnStateParams["honchoSnapshot"];
+	assistantMirrorContent: string;
+	maintenanceReason: RunPostTurnTasksParams["maintenanceReason"];
+	toolCalls?: PersistAssistantEvidenceParams["toolCalls"];
+	contextTraceSections?: PersistAssistantEvidenceParams["contextTraceSections"];
+	webCitationAudit?: PersistAssistantEvidenceParams["webCitationAudit"];
+	persistenceMode?: MessageCreationMode;
+	createMessage?: CreateMessageFn;
+	persistUserTurnAttachments?: typeof persistUserTurnAttachments;
+	persistAssistantTurnState?: typeof persistAssistantTurnState;
+	persistAssistantEvidence?: typeof persistAssistantEvidence;
+	runPostTurnTasks?: typeof runPostTurnTasks;
+	persistUserAttachmentsBeforeAssistantMessage?: boolean;
+	waitForEvidenceBeforePostTurnTasks?: boolean;
+};
+
+function buildSkillControlLogContext(params: {
+	conversationId: string;
+	assistantMessageId: string;
+	streamId?: string | null;
+}): Record<string, string> {
+	const context: Record<string, string> = {
+		conversationId: params.conversationId,
+		assistantMessageId: params.assistantMessageId,
+	};
+	if (params.streamId) {
+		context.streamId = params.streamId;
+	}
+	return context;
+}
+
+export type FinalizeChatTurnResult = {
+	userMessage: { id: string } | undefined;
+	assistantMessage: { id: string } | undefined;
+	turnState: PersistAssistantTurnStateResult | null;
+	evidenceTask: Promise<void>;
+	createPostTurnTask: () => Promise<void>;
+	attachmentTask: Promise<WorkingSetItem[] | undefined>;
+	attachedArtifacts?: WorkingSetItem[];
+};
+
+async function createTurnMessage(
+	params: {
+		conversationId: string;
+		role: "user" | "assistant";
+		content: string;
+		thinking?: string;
+		serverSegments?: Array<unknown>;
+		metadata?: Record<string, unknown>;
+	},
+	mode: MessageCreationMode,
+	createMessageImpl: CreateMessageFn,
+): Promise<{ id: string } | undefined> {
+	const create =
+		params.role === "user"
+			? createMessageImpl(params.conversationId, params.role, params.content)
+			: createMessageImpl(
+					params.conversationId,
+					params.role,
+					params.content,
+					params.thinking,
+					params.serverSegments,
+					params.metadata,
+				);
+
+	return mode === "best_effort" ? create.catch(() => undefined) : create;
+}
+
+export async function finalizeChatTurn(
+	params: FinalizeChatTurnParams,
+): Promise<FinalizeChatTurnResult> {
+	const mode = params.persistenceMode ?? "strict";
+	const createMessageImpl = params.createMessage ?? createMessage;
+	const persistUserTurnAttachmentsImpl =
+		params.persistUserTurnAttachments ?? persistUserTurnAttachments;
+	const persistAssistantTurnStateImpl =
+		params.persistAssistantTurnState ?? persistAssistantTurnState;
+	const persistAssistantEvidenceImpl =
+		params.persistAssistantEvidence ?? persistAssistantEvidence;
+	const runPostTurnTasksImpl = params.runPostTurnTasks ?? runPostTurnTasks;
+	const persistUserAttachmentsBeforeAssistantMessage =
+		params.persistUserAttachmentsBeforeAssistantMessage ?? true;
+	const waitForEvidenceBeforePostTurnTasks =
+		params.waitForEvidenceBeforePostTurnTasks ?? true;
+	let attachedArtifacts: WorkingSetItem[] | undefined;
+	let attachmentTask: Promise<WorkingSetItem[] | undefined> = Promise.resolve(
+		undefined,
+	);
+
+	const userMessage = params.persistUserMessage
+		? await createTurnMessage(
+				{
+					conversationId: params.conversationId,
+					role: "user",
+					content: params.userMessageContent,
+				},
+				mode,
+				createMessageImpl,
+			)
+		: undefined;
+
+	if (
+		persistUserAttachmentsBeforeAssistantMessage &&
+		userMessage &&
+		params.attachmentIds.length > 0
+	) {
+		attachedArtifacts = await persistUserTurnAttachmentsImpl({
+			userId: params.userId,
+			conversationId: params.conversationId,
+			messageId: userMessage.id,
+			normalizedMessage: params.normalizedMessage,
+			attachmentIds: params.attachmentIds,
+		});
+	}
+
+	const assistantMessage = params.assistantResponse.trim()
+		? await createTurnMessage(
+				{
+					conversationId: params.conversationId,
+					role: "assistant",
+					content: params.assistantResponse,
+					thinking: params.assistantThinking,
+					serverSegments: params.serverSegments,
+					metadata: params.assistantMetadata,
+				},
+				mode,
+				createMessageImpl,
+			)
+		: undefined;
+
+	if (
+		!persistUserAttachmentsBeforeAssistantMessage &&
+		userMessage &&
+		params.attachmentIds.length > 0
+	) {
+		attachmentTask = persistUserTurnAttachmentsImpl({
+			userId: params.userId,
+			conversationId: params.conversationId,
+			messageId: userMessage.id,
+			normalizedMessage: params.normalizedMessage,
+			attachmentIds: params.attachmentIds,
+		})
+			.then((artifacts) => {
+				attachedArtifacts = artifacts;
+				return artifacts;
+			})
+			.catch(() => undefined);
+	} else if (!persistUserAttachmentsBeforeAssistantMessage) {
+		attachmentTask = Promise.resolve(undefined);
+	}
+
+	let turnState: PersistAssistantTurnStateResult | null = null;
+	if (assistantMessage) {
+		if (params.skillControlOperations.length > 0) {
+			await commitSkillNoteOperationsAfterAssistantMessage({
+				userId: params.userId,
+				conversationId: params.conversationId,
+				sessionId: params.skillControlSessionId,
+				assistantMessageId: assistantMessage.id,
+				operations: params.skillControlOperations,
+			}).catch((error) => {
+				console.warn(
+					`${params.logPrefix} Failed to apply Skill Note Operations`,
+					{
+						...buildSkillControlLogContext({
+							conversationId: params.conversationId,
+							assistantMessageId: assistantMessage.id,
+							streamId: params.streamId,
+						}),
+						error,
+					},
+				);
+			});
+			await applySkillControlOperations({
+				userId: params.userId,
+				conversationId: params.conversationId,
+				assistantMessageId: assistantMessage.id,
+				operations: params.skillControlOperations,
+			}).catch((error) => {
+				console.warn(
+					`${params.logPrefix} Failed to apply Skill Control Envelope`,
+					{
+						...buildSkillControlLogContext({
+							conversationId: params.conversationId,
+							assistantMessageId: assistantMessage.id,
+							streamId: params.streamId,
+						}),
+						error,
+					},
+				);
+			});
+		}
+
+		turnState = await persistAssistantTurnStateImpl({
+			userId: params.userId,
+			conversationId: params.conversationId,
+			normalizedMessage: params.normalizedMessage,
+			assistantResponse: params.assistantResponse,
+			attachmentIds: params.attachmentIds,
+			activeDocumentArtifactId: params.activeDocumentArtifactId,
+			contextStatus: params.contextStatus,
+			initialTaskState: params.initialTaskState,
+			initialContextDebug: params.initialContextDebug,
+			userMessageId: userMessage?.id ?? null,
+			assistantMessageId: assistantMessage.id,
+			analytics: params.analytics,
+			continuitySource: params.continuitySource,
+			honchoContext: params.honchoContext,
+			honchoSnapshot: params.honchoSnapshot,
+		});
+	}
+
+	const evidenceTask =
+		assistantMessage && turnState
+			? persistAssistantEvidenceImpl({
+					logPrefix: params.logPrefix,
+					userId: params.userId,
+					conversationId: params.conversationId,
+					assistantMessageId: assistantMessage.id,
+					normalizedMessage: params.normalizedMessage,
+					assistantResponse: params.assistantResponse,
+					attachmentIds: params.attachmentIds,
+					taskState: turnState.taskState,
+					contextStatus: params.contextStatus ?? null,
+					contextDebug: turnState.contextDebug,
+					initialTaskState: params.initialTaskState,
+					initialContextDebug: params.initialContextDebug,
+					contextTraceSections: params.contextTraceSections,
+					toolCalls: params.toolCalls,
+					webCitationAudit: params.webCitationAudit,
+				})
+			: Promise.resolve();
+
+	const createPostTurnTask = () =>
+		assistantMessage && turnState
+			? (waitForEvidenceBeforePostTurnTasks
+					? evidenceTask.then(() =>
+							runPostTurnTasksImpl({
+								logPrefix: params.logPrefix,
+								userId: params.userId,
+								conversationId: params.conversationId,
+								upstreamMessage: params.upstreamMessage,
+								userMessage: params.normalizedMessage,
+								assistantResponse: params.assistantResponse,
+								assistantMirrorContent: params.assistantMirrorContent,
+								workCapsule: turnState.workCapsule,
+								maintenanceReason: params.maintenanceReason,
+							}),
+						)
+					: runPostTurnTasksImpl({
+							logPrefix: params.logPrefix,
+							userId: params.userId,
+							conversationId: params.conversationId,
+							upstreamMessage: params.upstreamMessage,
+							userMessage: params.normalizedMessage,
+							assistantResponse: params.assistantResponse,
+							assistantMirrorContent: params.assistantMirrorContent,
+							workCapsule: turnState.workCapsule,
+							maintenanceReason: params.maintenanceReason,
+						}))
+			: Promise.resolve();
+
+	return {
+		userMessage,
+		assistantMessage,
+		turnState,
+		evidenceTask,
+		createPostTurnTask,
+		attachmentTask,
+		attachedArtifacts,
+	};
 }
 
 export async function persistAssistantTurnState(

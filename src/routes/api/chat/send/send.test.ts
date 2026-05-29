@@ -33,6 +33,7 @@ vi.mock("$lib/server/services/messages", () => ({
 	createMessage: vi.fn(),
 	updateMessageEvidence: vi.fn(async () => undefined),
 	updateMessageHonchoMetadata: vi.fn(async () => undefined),
+	updateMessageWebCitationAudit: vi.fn(async () => undefined),
 }));
 
 vi.mock("$lib/server/services/knowledge", () => ({
@@ -1078,7 +1079,8 @@ describe("POST /api/chat/send", () => {
 			"displayArtifactId: display-1",
 		);
 		expect(options.systemPromptAppendix).not.toContain("  Draft the plan  ");
-		expect(mockCreateMessage).toHaveBeenCalledWith(
+		expect(mockCreateMessage).toHaveBeenNthCalledWith(
+			1,
 			"conv-1",
 			"user",
 			"Draft the plan",

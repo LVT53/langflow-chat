@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { buildAssistantEvidenceSummary } from '$lib/server/services/message-evidence';
+import { commitSkillNoteOperationsAfterAssistantMessage } from '$lib/server/services/skills/notes';
+import { applySkillControlOperations } from '$lib/server/services/skills/sessions';
 
 const {
 	mockMirrorMessage,
@@ -18,6 +21,13 @@ vi.mock('$lib/server/services/active-state', () => ({
 
 vi.mock('$lib/server/services/analytics', () => ({
 	recordMessageAnalytics: vi.fn(async () => undefined),
+}));
+
+vi.mock('$lib/server/services/messages', () => ({
+	createMessage: vi.fn(async () => ({ id: 'message-1' })),
+	updateMessageEvidence: vi.fn(async () => undefined),
+	updateMessageHonchoMetadata: vi.fn(async () => undefined),
+	updateMessageWebCitationAudit: vi.fn(async () => undefined),
 }));
 
 vi.mock('$lib/server/services/conversation-drafts', () => ({
@@ -59,10 +69,12 @@ vi.mock('$lib/server/services/message-evidence', () => ({
 	buildAssistantEvidenceSummary: vi.fn(async () => null),
 }));
 
-vi.mock('$lib/server/services/messages', () => ({
-	updateMessageEvidence: vi.fn(async () => undefined),
-	updateMessageHonchoMetadata: vi.fn(async () => undefined),
-	updateMessageWebCitationAudit: vi.fn(async () => undefined),
+vi.mock('$lib/server/services/skills/notes', () => ({
+	commitSkillNoteOperationsAfterAssistantMessage: vi.fn(async () => null),
+}));
+
+vi.mock('$lib/server/services/skills/sessions', () => ({
+	applySkillControlOperations: vi.fn(async () => null),
 }));
 
 vi.mock('$lib/server/services/task-state', () => ({
@@ -114,5 +126,273 @@ describe('runPostTurnTasks', () => {
 		);
 
 		errorSpy.mockRestore();
+	});
+});
+
+describe('finalizeChatTurn', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it('includes streamId in skill control warnings when present', async () => {
+		const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		const mockCommitSkillNoteOperations =
+			commitSkillNoteOperationsAfterAssistantMessage as ReturnType<typeof vi.fn>;
+		const mockApplySkillControlOperations =
+			applySkillControlOperations as ReturnType<typeof vi.fn>;
+		mockCommitSkillNoteOperations.mockRejectedValueOnce(new Error('notes offline'));
+		mockApplySkillControlOperations.mockRejectedValueOnce(new Error('sessions offline'));
+		const { finalizeChatTurn } = await import('./finalize');
+
+		await finalizeChatTurn({
+			logPrefix: '[STREAM]',
+			streamId: 'stream-1',
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			userMessageContent: 'normalized user message',
+			persistUserMessage: true,
+			normalizedMessage: 'normalized user message',
+			upstreamMessage: 'upstream prompt payload',
+			assistantResponse: 'visible assistant response',
+			assistantMetadata: { evidenceStatus: 'pending' },
+			skillControlOperations: [{ operationId: 'op-1' } as never],
+			skillControlSessionId: null,
+			attachmentIds: [],
+			activeDocumentArtifactId: null,
+			contextStatus: null,
+			initialTaskState: null,
+			initialContextDebug: null,
+			analytics: {
+				model: 'model-1',
+				modelDisplayName: 'Model One',
+				promptTokens: 8,
+				completionTokens: 5,
+				generationTimeMs: undefined,
+				providerUsage: null,
+			},
+			continuitySource: 'stream',
+			honchoContext: null,
+			honchoSnapshot: null,
+			assistantMirrorContent: 'assistant mirror text',
+			maintenanceReason: 'chat_stream',
+			persistenceMode: 'best_effort',
+			persistUserAttachmentsBeforeAssistantMessage: false,
+		});
+
+		expect(warnSpy).toHaveBeenCalledWith(
+			'[STREAM] Failed to apply Skill Note Operations',
+			expect.objectContaining({
+				streamId: 'stream-1',
+				conversationId: 'conv-1',
+			}),
+		);
+		expect(warnSpy).toHaveBeenCalledWith(
+			'[STREAM] Failed to apply Skill Control Envelope',
+			expect.objectContaining({
+				streamId: 'stream-1',
+				conversationId: 'conv-1',
+			}),
+		);
+		warnSpy.mockRestore();
+	});
+
+	it('creates the assistant message before attachment persistence in stream mode', async () => {
+		const callOrder: string[] = [];
+		const createMessage = vi.fn(
+			async (
+				_conversationId: string,
+				role: "user" | "assistant",
+			): Promise<{ id: string }> => {
+				callOrder.push(`${role}:create`);
+				return { id: `${role}-message` };
+			},
+		);
+		const persistUserTurnAttachments = vi.fn(async () => {
+			callOrder.push('attachments:persist');
+			return [];
+		});
+		const persistAssistantTurnState = vi.fn(async () => ({
+			activeWorkingSet: [],
+			taskState: null,
+			contextDebug: null,
+			workCapsule: {} as unknown as undefined,
+		}));
+		const { finalizeChatTurn } = await import('./finalize');
+
+		await finalizeChatTurn({
+			logPrefix: '[STREAM]',
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			userMessageContent: 'normalized user message',
+			persistUserMessage: true,
+			normalizedMessage: 'normalized user message',
+			upstreamMessage: 'upstream prompt payload',
+			assistantResponse: 'visible assistant response',
+			assistantMetadata: { evidenceStatus: 'pending' },
+			skillControlOperations: [],
+			skillControlSessionId: null,
+			attachmentIds: ['att-1'],
+			activeDocumentArtifactId: null,
+			contextStatus: null,
+			initialTaskState: null,
+			initialContextDebug: null,
+			analytics: {
+				model: 'model-1',
+				modelDisplayName: 'Model One',
+				promptTokens: 8,
+				completionTokens: 5,
+				generationTimeMs: undefined,
+				providerUsage: null,
+			},
+			continuitySource: 'stream',
+			honchoContext: null,
+			honchoSnapshot: null,
+			assistantMirrorContent: 'assistant mirror text',
+			maintenanceReason: 'chat_stream',
+			persistenceMode: 'best_effort',
+			persistUserAttachmentsBeforeAssistantMessage: false,
+			createMessage,
+			persistUserTurnAttachments,
+			persistAssistantTurnState,
+		});
+
+		expect(callOrder).toEqual([
+			'user:create',
+			'assistant:create',
+			'attachments:persist',
+		]);
+	});
+
+	it('swallows attachment persistence failures in stream mode', async () => {
+		const createMessage = vi.fn(
+			async (
+				_conversationId: string,
+				role: "user" | "assistant",
+			): Promise<{ id: string }> => ({ id: `${role}-message` }),
+		);
+		const persistUserTurnAttachments = vi.fn(async () => {
+			throw new Error('attachment offline');
+		});
+		const persistAssistantTurnState = vi.fn(async () => ({
+			activeWorkingSet: [],
+			taskState: null,
+			contextDebug: null,
+			workCapsule: {} as unknown as undefined,
+		}));
+		const { finalizeChatTurn } = await import('./finalize');
+
+		const completion = await finalizeChatTurn({
+			logPrefix: '[STREAM]',
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			userMessageContent: 'normalized user message',
+			persistUserMessage: true,
+			normalizedMessage: 'normalized user message',
+			upstreamMessage: 'upstream prompt payload',
+			assistantResponse: 'visible assistant response',
+			assistantMetadata: { evidenceStatus: 'pending' },
+			skillControlOperations: [],
+			skillControlSessionId: null,
+			attachmentIds: ['att-1'],
+			activeDocumentArtifactId: null,
+			contextStatus: null,
+			initialTaskState: null,
+			initialContextDebug: null,
+			analytics: {
+				model: 'model-1',
+				modelDisplayName: 'Model One',
+				promptTokens: 8,
+				completionTokens: 5,
+				generationTimeMs: undefined,
+				providerUsage: null,
+			},
+			continuitySource: 'stream',
+			honchoContext: null,
+			honchoSnapshot: null,
+			assistantMirrorContent: 'assistant mirror text',
+			maintenanceReason: 'chat_stream',
+			persistenceMode: 'best_effort',
+			persistUserAttachmentsBeforeAssistantMessage: false,
+			createMessage,
+			persistUserTurnAttachments,
+			persistAssistantTurnState,
+		});
+
+		await expect(completion.attachmentTask).resolves.toBeUndefined();
+	});
+
+	it('returns the durable completion result while the follow-up work runs in the background', async () => {
+		const evidenceDeferred = (() => {
+			let resolve!: () => void;
+			const promise = new Promise<void>((res) => {
+				resolve = res;
+			});
+			return { promise, resolve };
+		})();
+		const mockBuildAssistantEvidenceSummary = buildAssistantEvidenceSummary as ReturnType<
+			typeof vi.fn
+		>;
+		mockBuildAssistantEvidenceSummary.mockImplementationOnce(
+			async () => evidenceDeferred.promise,
+		);
+		const { finalizeChatTurn } = await import('./finalize');
+
+		const postTurnDeferred = (() => {
+			let resolve!: () => void;
+			const promise = new Promise<void>((res) => {
+				resolve = res;
+			});
+			return { promise, resolve };
+		})();
+		const mockPersistAssistantEvidence = vi.fn(async () => evidenceDeferred.promise);
+		const mockRunPostTurnTasks = vi.fn(async () => postTurnDeferred.promise);
+		const completion = await finalizeChatTurn({
+			logPrefix: '[SEND]',
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			userMessageContent: 'normalized user message',
+			persistUserMessage: true,
+			normalizedMessage: 'normalized user message',
+			upstreamMessage: 'upstream prompt payload',
+			assistantResponse: 'visible assistant response',
+			assistantMetadata: {
+				evidenceStatus: 'pending',
+				modelDisplayName: 'Model One',
+			},
+			skillControlOperations: [],
+			skillControlSessionId: null,
+			attachmentIds: [],
+			activeDocumentArtifactId: null,
+			contextStatus: null,
+			initialTaskState: null,
+			initialContextDebug: null,
+			analytics: {
+				model: 'model-1',
+				modelDisplayName: 'Model One',
+				promptTokens: 8,
+				completionTokens: 5,
+				generationTimeMs: undefined,
+				providerUsage: null,
+			},
+			continuitySource: 'send',
+			honchoContext: null,
+			honchoSnapshot: null,
+			assistantMirrorContent: 'assistant mirror text',
+			maintenanceReason: 'chat_send',
+			waitForEvidenceBeforePostTurnTasks: false,
+			persistAssistantEvidence: mockPersistAssistantEvidence,
+			runPostTurnTasks: mockRunPostTurnTasks,
+		});
+
+		expect(completion.userMessage).toEqual({ id: 'message-1' });
+		expect(completion.assistantMessage).toEqual({ id: 'message-1' });
+		expect(mockRunUserMemoryMaintenance).not.toHaveBeenCalled();
+
+		const postTurnTask = completion.createPostTurnTask();
+		expect(mockPersistAssistantEvidence).toHaveBeenCalledTimes(1);
+		expect(mockRunPostTurnTasks).toHaveBeenCalledTimes(1);
+		evidenceDeferred.resolve();
+		postTurnDeferred.resolve();
+		await postTurnTask;
 	});
 });

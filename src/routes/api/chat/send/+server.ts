@@ -5,10 +5,8 @@ import { logAttachmentTrace } from "$lib/server/services/attachment-trace";
 import { checkStreamCapacity } from "$lib/server/services/chat-turn/active-streams";
 import { buildContextSourcesState } from "$lib/server/services/chat-turn/context-sources";
 import {
-	persistAssistantEvidence,
-	persistAssistantTurnState,
+	finalizeChatTurn,
 	persistUserTurnAttachments,
-	runPostTurnTasks,
 } from "$lib/server/services/chat-turn/finalize";
 import { normalizeAssistantOutputWithSkillControl } from "$lib/server/services/chat-turn/normalizer";
 import { preflightChatTurn } from "$lib/server/services/chat-turn/preflight";
@@ -25,8 +23,6 @@ import { sendMessage } from "$lib/server/services/langflow";
 import { createMessage } from "$lib/server/services/messages";
 import { getPersonalityProfile } from "$lib/server/services/personality-profiles";
 import { buildSkillSystemPromptAppendix } from "$lib/server/services/skills/prompt-context";
-import { commitSkillNoteOperationsAfterAssistantMessage } from "$lib/server/services/skills/notes";
-import { applySkillControlOperations } from "$lib/server/services/skills/sessions";
 import { getProjectReferenceContext } from "$lib/server/services/task-state";
 import { estimateTokenCount } from "$lib/utils/tokens";
 import type { RequestHandler } from "./$types";
@@ -198,73 +194,30 @@ export const POST: RequestHandler = async (event) => {
 		const effectiveModelDisplayName =
 			langflowResult.modelDisplayName ?? turn.modelDisplayName;
 
-		const userMessage = await createMessage(
-			turn.conversationId,
-			"user",
-			turn.normalizedMessage,
-		);
-		await persistUserTurnAttachments({
+		const completion = await finalizeChatTurn({
+			logPrefix: "[SEND]",
 			userId: user.id,
 			conversationId: turn.conversationId,
-			messageId: userMessage.id,
+			userMessageContent: turn.normalizedMessage,
+			persistUserMessage: true,
 			normalizedMessage: turn.normalizedMessage,
-			attachmentIds: turn.attachmentIds,
-		});
-
-		const assistantMessage = await createMessage(
-			turn.conversationId,
-			"assistant",
-			responseText,
-			undefined,
-			undefined,
-			{
+			upstreamMessage,
+			assistantResponse: responseText,
+			assistantMetadata: {
 				evidenceStatus: "pending",
 				modelDisplayName: effectiveModelDisplayName,
 				...normalizedAssistantOutput.metadata,
 			},
-		);
-		if (normalizedAssistantOutput.operations.length > 0) {
-			await commitSkillNoteOperationsAfterAssistantMessage({
-				userId: user.id,
-				conversationId: turn.conversationId,
-				sessionId:
-					turn.skillPromptContext?.source === "active_session"
-						? turn.skillPromptContext.sessionId
-						: null,
-				assistantMessageId: assistantMessage.id,
-				operations: normalizedAssistantOutput.operations,
-			}).catch((error) => {
-				console.warn("[SEND] Failed to apply Skill Note Operations", {
-					conversationId: turn.conversationId,
-					assistantMessageId: assistantMessage.id,
-					error,
-				});
-			});
-			await applySkillControlOperations({
-				userId: user.id,
-				conversationId: turn.conversationId,
-				assistantMessageId: assistantMessage.id,
-				operations: normalizedAssistantOutput.operations,
-			}).catch((error) => {
-				console.warn("[SEND] Failed to apply Skill Control Envelope", {
-					conversationId: turn.conversationId,
-					assistantMessageId: assistantMessage.id,
-					error,
-				});
-			});
-		}
-		const turnState = await persistAssistantTurnState({
-			userId: user.id,
-			conversationId: turn.conversationId,
-			normalizedMessage: turn.normalizedMessage,
-			assistantResponse: responseText,
+			skillControlOperations: normalizedAssistantOutput.operations,
+			skillControlSessionId:
+				turn.skillPromptContext?.source === "active_session"
+					? turn.skillPromptContext.sessionId ?? null
+					: null,
 			attachmentIds: turn.attachmentIds,
-			activeDocumentArtifactId: turn.activeDocumentArtifactId,
+			activeDocumentArtifactId: turn.activeDocumentArtifactId ?? null,
 			contextStatus,
 			initialTaskState,
 			initialContextDebug,
-			userMessageId: userMessage.id,
-			assistantMessageId: assistantMessage.id,
 			analytics: {
 				model: effectiveModelId,
 				modelDisplayName: effectiveModelDisplayName,
@@ -276,37 +229,17 @@ export const POST: RequestHandler = async (event) => {
 			continuitySource: "send",
 			honchoContext,
 			honchoSnapshot,
+			assistantMirrorContent: text,
+			maintenanceReason: "chat_send",
+			contextTraceSections,
+			persistenceMode: "strict",
+			waitForEvidenceBeforePostTurnTasks: false,
 		});
 		await touchConversation(user.id, turn.conversationId).catch(
 			() => undefined,
 		);
-
-		void persistAssistantEvidence({
-			logPrefix: "[SEND]",
-			userId: user.id,
-			conversationId: turn.conversationId,
-			assistantMessageId: assistantMessage.id,
-			normalizedMessage: turn.normalizedMessage,
-			assistantResponse: responseText,
-			attachmentIds: turn.attachmentIds,
-			taskState: turnState.taskState,
-			contextStatus,
-			contextDebug: turnState.contextDebug,
-			initialTaskState,
-			initialContextDebug,
-			contextTraceSections,
-		});
-		void runPostTurnTasks({
-			logPrefix: "[SEND]",
-			userId: user.id,
-			conversationId: turn.conversationId,
-			upstreamMessage,
-			userMessage: turn.normalizedMessage,
-			assistantResponse: responseText,
-			assistantMirrorContent: text,
-			workCapsule: turnState.workCapsule,
-			maintenanceReason: "chat_send",
-		});
+		void completion.evidenceTask;
+		void completion.createPostTurnTask();
 		const projectReference = await getProjectReferenceContext({
 			userId: user.id,
 			conversationId: turn.conversationId,
@@ -315,9 +248,9 @@ export const POST: RequestHandler = async (event) => {
 			userId: user.id,
 			conversationId: turn.conversationId,
 			contextStatus,
-			contextDebug: turnState.contextDebug,
+			contextDebug: completion.turnState?.contextDebug,
 			linkedSources: turn.linkedSources,
-			activeWorkingSet: turnState.activeWorkingSet,
+			activeWorkingSet: completion.turnState?.activeWorkingSet,
 			projectReference,
 			contextTraceSections,
 		});
@@ -327,9 +260,9 @@ export const POST: RequestHandler = async (event) => {
 			conversationId: turn.conversationId,
 			contextStatus,
 			contextSources,
-			activeWorkingSet: turnState.activeWorkingSet,
-			taskState: turnState.taskState,
-			contextDebug: turnState.contextDebug,
+			activeWorkingSet: completion.turnState?.activeWorkingSet,
+			taskState: completion.turnState?.taskState,
+			contextDebug: completion.turnState?.contextDebug,
 		});
 	} catch (error) {
 		if (isDeepResearchJobStartError(error)) {
