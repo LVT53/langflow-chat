@@ -28,6 +28,9 @@ export const GET: RequestHandler = async (event) => {
 	if (!chatFile) {
 		return json({ error: "File not found" }, { status: 404 });
 	}
+	if (chatFile.assistantMessageId === null) {
+		return json({ error: "File not found" }, { status: 404 });
+	}
 
 	if (!isGeneratedFileTypeAllowed(chatFile.filename, chatFile.mimeType)) {
 		return json({ error: "Unsupported generated file type" }, { status: 415 });

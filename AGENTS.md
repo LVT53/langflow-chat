@@ -153,7 +153,8 @@ Do not:
   - [`src/lib/server/services/chat-files.ts`](./src/lib/server/services/chat-files.ts)
 - [`src/lib/server/services/file-production/`](./src/lib/server/services/file-production/)
   - [`index.ts`](./src/lib/server/services/file-production/index.ts) is the public facade; keep callers on this boundary unless they are inside file-production internals.
-  - [`job-ledger.ts`](./src/lib/server/services/file-production/job-ledger.ts) owns durable job, attempt, retry, cancellation, stale-recovery, produced-file-link, and read-model state.
+  - [`read-model.ts`](./src/lib/server/services/file-production/read-model.ts) owns read-only conversation/job card projection, legacy generated-file backfill, and internally-visible job-linked file hydration without loading the worker/rendering/storage graph.
+  - [`job-ledger.ts`](./src/lib/server/services/file-production/job-ledger.ts) owns durable job, attempt, retry, cancellation, stale-recovery, and produced-file-link state transitions.
   - [`worker-runner.ts`](./src/lib/server/services/file-production/worker-runner.ts) owns worker identity, startup recovery, lazy wakeup, drain-to-idle execution, and current-attempt orchestration.
   - [`execution-adapter.ts`](./src/lib/server/services/file-production/execution-adapter.ts) owns persisted request parsing plus document-source renderer or sandbox program dispatch.
   - [`storage-adapter.ts`](./src/lib/server/services/file-production/storage-adapter.ts) owns output validation, generated-file storage, job-file linking, source-first produced-file mapping, and post-success memory sync.
@@ -166,6 +167,8 @@ Do not:
   - Chat page refreshes conversation detail after file-producing turns and while queued/running production jobs exist
   - [`src/routes/api/chat/files/produce/+server.ts`](./src/routes/api/chat/files/produce/+server.ts) stays an auth/HTTP adapter; `src/lib/server/services/file-production/` owns intake parsing, validation, durable job creation/reuse, failed-job persistence, and worker wakeup
   - File-production state and execution rules stay in the deep modules behind the facade. Do not put job ledger transitions, worker drain loops, persisted request parsing, renderer dispatch, or generated-file storage/linking back into `index.ts`, routes, renderers, or chat-file services.
+  - Read-only routes such as conversation detail should import `file-production/read-model.ts` directly. General callers may use the public facade, but must not make read paths eagerly load worker-runner, renderer, sandbox, Honcho, or generated-file storage modules.
+  - Source-first generated-document source artifacts start as pending and non-durable, promote to durable only after rendered files attach successfully, and stay non-prompt-eligible if rendering/storage fails before attachment.
   - [`src/lib/server/sandbox/config.ts`](./src/lib/server/sandbox/config.ts) now ensures the sandbox runtime images exist before container creation, warms them in the background at app startup, and supports both the Python runtime (`python:3.11-slim`) and the JavaScript runtime (`node:22-bookworm-slim`)
   - [`src/lib/server/sandbox/config.ts`](./src/lib/server/sandbox/config.ts) must wait for exec inspection to report `Running === false` before the archive reader inspects `/output`; do not treat an early stream close as proof that the sandbox command has finished
   - [`src/lib/server/services/sandbox-execution.ts`](./src/lib/server/services/sandbox-execution.ts) must surface output-archive read failures as explicit execution errors instead of collapsing them into the same empty-file 422 path used for real zero-output runs

@@ -44,6 +44,23 @@ const GENERATED_QUERY_MATCH_REASONS = new Set([
   "matched_document_role",
 ]);
 
+function isGeneratedDocumentSourceReady(artifact: Artifact): boolean {
+  if (artifact.type !== "generated_output") {
+    return true;
+  }
+
+  const metadata = artifact.metadata ?? {};
+  const status = metadata.generatedDocumentSourceStatus;
+  if (typeof status === "string") {
+    return status === "succeeded";
+  }
+
+  return !(
+    metadata.generatedDocumentSourceVersion !== undefined &&
+    typeof metadata.sourceChatFileId !== "string"
+  );
+}
+
 function includesNormalized(haystack: string, needle: string): boolean {
   const normalizedHaystack = haystack.trim().toLowerCase();
   const normalizedNeedle = needle.trim().toLowerCase();
@@ -180,7 +197,9 @@ function getLatestArtifactForGeneratedFamily(
 function rankLatestGeneratedDocumentArtifacts(
   params: GeneratedArtifactMatchParams,
 ): GeneratedDocumentResolution[] {
-  return getLatestGeneratedArtifacts(params.artifacts)
+  return getLatestGeneratedArtifacts(
+    params.artifacts.filter(isGeneratedDocumentSourceReady),
+  )
     .map((artifact) =>
       scoreGeneratedDocumentArtifact({
         artifact,
@@ -217,6 +236,10 @@ export function isGeneratedDocumentPromptEligible(params: {
 }): boolean {
   if (params.artifact.type !== 'generated_output') {
     return true;
+  }
+
+  if (!isGeneratedDocumentSourceReady(params.artifact)) {
+    return false;
   }
 
   if (params.artifact.retrievalClass === 'durable') {
@@ -275,7 +298,9 @@ export function resolveRelevantGeneratedDocumentSelection(params: {
   rerankScoresByArtifactId?: Map<string, number>;
 }): RelevantGeneratedDocumentSelection {
   const generatedArtifacts = params.artifacts.filter(
-    (artifact) => artifact.type === 'generated_output',
+    (artifact) =>
+      artifact.type === 'generated_output' &&
+      isGeneratedDocumentSourceReady(artifact),
   );
   const preferredArtifact = params.preferredArtifactId
     ? generatedArtifacts.find((artifact) => artifact.id === params.preferredArtifactId) ??
@@ -349,7 +374,9 @@ export function resolveCurrentGeneratedDocumentSelection(params: {
   allowFallbackToLatest?: boolean;
 }): CurrentGeneratedDocumentSelection {
   const generatedArtifacts = params.artifacts.filter(
-    (artifact) => artifact.type === "generated_output",
+    (artifact) =>
+      artifact.type === "generated_output" &&
+      isGeneratedDocumentSourceReady(artifact),
   );
   const latestArtifacts = getLatestGeneratedArtifacts(generatedArtifacts);
 

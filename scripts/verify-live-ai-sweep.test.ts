@@ -62,6 +62,34 @@ describe("live AI sweep structured recall validation", () => {
 		).toBe(false);
 	});
 
+	it("rejects negated prose in the expected JSON field", () => {
+		const parsed = parseJsonObject(
+			JSON.stringify({ reviewer: "Not Kende Farkas" }),
+		);
+
+		expect(
+			structuredRecallHasValue({
+				parsed,
+				field: "reviewer",
+				acceptedValues: ["Kende Farkas"],
+			}),
+		).toBe(false);
+	});
+
+	it("rejects numeric count overmatches in the expected JSON field", () => {
+		const parsed = parseJsonObject(
+			JSON.stringify({ cycle2_mural_count: "110 triangles" }),
+		);
+
+		expect(
+			structuredRecallHasValue({
+				parsed,
+				field: "cycle2_mural_count",
+				acceptedValues: ["11 triangles", "11"],
+			}),
+		).toBe(false);
+	});
+
 	it("accepts configured aliases only when they match the parsed field value", () => {
 		const parsed = parseJsonObject(JSON.stringify({ envelope: "envelope 6F" }));
 

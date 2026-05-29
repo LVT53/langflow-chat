@@ -107,27 +107,30 @@ describe("POST /api/conversations/[id]/context-compression", () => {
 		expect(response.status).toBe(200);
 		expect(mockGetConversation).toHaveBeenCalledWith("user-1", "conv-1");
 		expect(mockListSourceMessages).toHaveBeenCalledWith("conv-1");
-		expect(mockRunContextCompression).toHaveBeenCalledWith({
-			conversationId: "conv-1",
-			userId: "user-1",
-			trigger: "manual",
-			selectedModelId: "model2",
-			sourceMessages: [
-				{
-					id: "message-1",
-					role: "user",
-					content: "Question",
-					messageSequence: 1,
-				},
-				{
-					id: "message-2",
-					role: "assistant",
-					content: "Answer",
-					messageSequence: 2,
-				},
-			],
-			priorSnapshot: null,
-		});
+		expect(mockRunContextCompression).toHaveBeenCalledWith(
+			expect.objectContaining({
+				conversationId: "conv-1",
+				userId: "user-1",
+				trigger: "manual",
+				selectedModelId: "model2",
+				controlMessageSender: expect.any(Function),
+				sourceMessages: [
+					{
+						id: "message-1",
+						role: "user",
+						content: "Question",
+						messageSequence: 1,
+					},
+					{
+						id: "message-2",
+						role: "assistant",
+						content: "Answer",
+						messageSequence: 2,
+					},
+				],
+				priorSnapshot: null,
+			}),
+		);
 		expect(data.snapshot).toEqual({
 			id: "snapshot-1",
 			trigger: "manual",

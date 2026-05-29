@@ -13,9 +13,9 @@ const USER_CORRECTION_RE =
 const CONTEXT_RESET_RE =
 	/\b(done with (?:that|this|it)|finished with (?:that|this|it)|finished (?:that|this|it)|completed (?:that|this|it)|that(?:'s| is) done|wrapped up|move on|switch topics|new topic|another topic|something else|let's talk about something else)\b/i;
 const NEW_GENERATED_DOCUMENT_REQUEST_RE =
-	/\b(create|generate|make|produce|export|build)\b[\s\S]{0,140}\b(pdf|docx|xlsx|pptx|csv|html|file|document|report|deck|slide deck|slides|spreadsheet|workbook)\b|\b(pdf|docx|xlsx|pptx|csv|html)\b[\s\S]{0,80}\b(called|named)\b/i;
+	/\b(create|generate|make|produce|export|convert|build)\b[\s\S]{0,140}\b(pdf|docx|xlsx|pptx|csv|html|file|document|report|deck|slide deck|slides|spreadsheet|workbook)\b|\b(pdf|docx|xlsx|pptx|csv|html)\b[\s\S]{0,80}\b(called|named)\b/i;
 const EXPLICIT_DOCUMENT_INPUT_REFERENCE_RE =
-	/\b(this|that|it|same|current|open|opened|selected|attached|attachment|uploaded|source)\b|\bthe\s+(?:document|doc|file|pdf|attachment|report|source)\b|\b(from|based on|using|use|with)\s+(?:the\s+)?(?:this|that|it|current|open|opened|selected|attached|attachment|uploaded|document|doc|file|pdf|report|source)\b/i;
+	/\b(this|that|same|current|open|opened|selected|attached|attachment|uploaded|source)\b|\bthe\s+(?:document|doc|file|pdf|attachment|report|source)\b|\b(from|based on|using|use|with)\s+(?:the\s+)?(?:this|that|it|current|open|opened|selected|attached|attachment|uploaded|document|doc|file|pdf|report|source)\b/i;
 
 interface WorkingDocumentSignalState {
 	documentFocused: boolean;

@@ -575,7 +575,15 @@ export async function persistAssistantTurnState(
 		params.userId,
 		taskState ?? null,
 	).catch(() => taskState ?? null);
-	if (activeDocumentArtifact) {
+	const shouldRecordDocumentRefinement = activeDocumentArtifact
+		? !documentRefinementSelection?.reset.hasSignal &&
+			documentRefinementSelection?.currentDocument?.artifactId ===
+				activeDocumentArtifact.id &&
+			documentRefinementSelection.taskEvidence.workingDocumentProtectedArtifactIds.includes(
+				activeDocumentArtifact.id,
+			)
+		: false;
+	if (activeDocumentArtifact && shouldRecordDocumentRefinement) {
 		const documentMetadata = parseWorkingDocumentMetadata(
 			activeDocumentArtifact.metadata,
 		);

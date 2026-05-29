@@ -12,6 +12,7 @@ import {
 	BROWSER_CHAT_SSE_EVENTS,
 	encodeBrowserChatSseEvent,
 } from "$lib/services/stream-protocol";
+import { isFileProductionToolName } from "$lib/utils/tool-calls";
 import type {
 	ContextDebugState,
 	ContextSourcesState,
@@ -261,7 +262,7 @@ export async function completeStreamTurn(
 		status: record.status,
 	}));
 	const hadFileProductionToolCall = toolCallSummary.some(
-		(record) => record.name === "produce_file",
+		(record) => isFileProductionToolName(record.name),
 	);
 	let persistedTurnState: PersistedStreamTurnState | null = null;
 	let persistedContextSources: ContextSourcesState | null = null;
@@ -273,7 +274,7 @@ export async function completeStreamTurn(
 			wasStopped,
 			toolCallCount: toolCallSummary.length,
 			fileProductionCallCount: toolCallSummary.filter(
-				(record) => record.name === "produce_file",
+				(record) => isFileProductionToolName(record.name),
 			).length,
 			toolCalls: toolCallSummary,
 		});

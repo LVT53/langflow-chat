@@ -150,6 +150,35 @@ describe("resolveWorkingDocumentFileServing", () => {
 		expect(Buffer.from(result.body)).toEqual(xlsxBuffer);
 	});
 
+	it("does not serve failed source-first generated document text as a preview", async () => {
+		mockGetArtifactForUser.mockResolvedValue({
+			id: "generated-failed",
+			name: "failed_report.pdf",
+			storagePath: null,
+			contentText: "Failed report source projection",
+			mimeType: "application/vnd.alfyai.generated-document+json",
+			extension: "alfyidoc.json",
+			type: "generated_output",
+			metadata: {
+				generatedDocumentSourceVersion: 1,
+				generatedDocumentSourceStatus: "failed",
+			},
+		});
+
+		const result = await resolveWorkingDocumentFileServing({
+			userId,
+			artifactId: "generated-failed",
+			mode: "preview",
+		});
+
+		expect(result).toEqual({
+			ok: false,
+			status: 404,
+			error: "File not available for preview",
+		});
+		expect(mockGetChatFileByUser).not.toHaveBeenCalled();
+	});
+
 	it("keeps the requested normalized document filename when downloading source bytes", async () => {
 		const pdfBuffer = Buffer.from("PDF binary content");
 		await writeKnowledgeFile(

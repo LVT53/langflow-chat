@@ -641,6 +641,60 @@ describe("file production service", () => {
 		expect(file.assistantMessageId).toBe("assistant-1");
 	});
 
+	it("keeps fast succeeded unassigned job-linked files discoverable before finalization assigns them", async () => {
+		const { db } = await import("$lib/server/db");
+		const { listConversationFileProductionJobs } = await import("./index");
+		const now = new Date("2026-05-03T19:32:05.000Z");
+		await db.insert(schema.chatGeneratedFiles).values({
+			id: "file-fast-unassigned",
+			conversationId: "conv-1",
+			assistantMessageId: null,
+			userId: "user-1",
+			filename: "fast.pdf",
+			mimeType: "application/pdf",
+			sizeBytes: 4096,
+			storagePath: "conv-1/file-fast-unassigned.pdf",
+			createdAt: now,
+		});
+		await db.insert(schema.fileProductionJobs).values({
+			id: "job-fast-unassigned",
+			conversationId: "conv-1",
+			assistantMessageId: null,
+			userId: "user-1",
+			title: "Fast report",
+			status: "succeeded",
+			stage: null,
+			origin: "unified_produce",
+			createdAt: now,
+			updatedAt: now,
+		});
+		await db.insert(schema.fileProductionJobFiles).values({
+			id: "link-fast-unassigned",
+			jobId: "job-fast-unassigned",
+			chatGeneratedFileId: "file-fast-unassigned",
+			sortOrder: 0,
+			createdAt: now,
+		});
+
+		const jobs = await listConversationFileProductionJobs("user-1", "conv-1");
+
+		expect(jobs).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					id: "job-fast-unassigned",
+					assistantMessageId: null,
+					status: "succeeded",
+					files: [
+						expect.objectContaining({
+							id: "file-fast-unassigned",
+							filename: "fast.pdf",
+						}),
+					],
+				}),
+			]),
+		);
+	});
+
 	it("reuses a durable production job for the same idempotency key", async () => {
 		const { createOrReuseFileProductionJob } = await import("./index");
 
@@ -2519,7 +2573,7 @@ await workbook.xlsx.writeFile('/output/workbook.xlsx');
 		});
 	});
 
-	it("persists document-source artifacts before PDF rendering starts", async () => {
+	it("marks pre-render document-source artifacts failed when PDF rendering fails", async () => {
 		const { db } = await import("$lib/server/db");
 		const {
 			createOrReuseFileProductionJob,
@@ -2579,10 +2633,17 @@ await workbook.xlsx.writeFile('/output/workbook.xlsx');
 		expect(result).toBeNull();
 		expect(sourceArtifact).toMatchObject({
 			type: "generated_output",
-			retrievalClass: "durable",
+			retrievalClass: "ephemeral_followup",
 			name: "Critical image report",
 			contentText: expect.stringContaining("Required image."),
 		});
+		const sourceMetadata = JSON.parse(sourceArtifact?.metadataJson ?? "{}");
+		expect(sourceMetadata).toMatchObject({
+			fileProductionJobId: created.job.id,
+			generatedDocumentSourceStatus: "failed",
+			generatedDocumentSourceErrorCode: "image_limit_exceeded",
+		});
+		expect(sourceMetadata.sourceChatFileId).toBeUndefined();
 		expect(storeGeneratedFile).not.toHaveBeenCalled();
 		expect(links).toHaveLength(0);
 		expect(
@@ -2730,13 +2791,14 @@ await workbook.xlsx.writeFile('/output/workbook.xlsx');
 
 		expect(row).toMatchObject({
 			type: "generated_output",
-			retrievalClass: "durable",
+			retrievalClass: "ephemeral_followup",
 			name: "Quarterly report",
 			contentText:
 				"Quarterly report\nExecutive summary\n\n## Revenue\nRevenue increased by 12%.",
 		});
 		expect(metadata).toMatchObject({
 			generatedDocumentSourceVersion: 1,
+			generatedDocumentSourceStatus: "pending",
 			fileProductionJobId: "job-document-source",
 			originAssistantMessageId: "assistant-1",
 			generatedDocumentSource: {

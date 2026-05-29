@@ -13,6 +13,16 @@ vi.mock("$lib/server/services/langflow", () => ({
 	sendMessage: vi.fn(),
 }));
 
+vi.mock("$lib/server/services/file-production", () => ({
+	assignFileProductionJobsToAssistantMessage: vi.fn(async () => undefined),
+	listConversationFileProductionJobs: vi.fn(async () => []),
+}));
+
+vi.mock("$lib/server/services/chat-files", () => ({
+	getChatFilesForAssistantMessage: vi.fn(async () => []),
+	syncGeneratedFilesToMemory: vi.fn(async () => undefined),
+}));
+
 vi.mock("$lib/server/services/deep-research", () => ({
 	assertCanStartDeepResearchJob: vi.fn(),
 	isDeepResearchJobStartError: vi.fn(
@@ -200,6 +210,14 @@ import {
 	startDeepResearchJobShell,
 } from "$lib/server/services/deep-research";
 import { buildDeepResearchPlanningContext } from "$lib/server/services/deep-research/planning-context";
+import {
+	assignFileProductionJobsToAssistantMessage,
+	listConversationFileProductionJobs,
+} from "$lib/server/services/file-production";
+import {
+	getChatFilesForAssistantMessage,
+	syncGeneratedFilesToMemory,
+} from "$lib/server/services/chat-files";
 import { assertPromptReadyAttachments } from "$lib/server/services/knowledge";
 import { sendMessage } from "$lib/server/services/langflow";
 import { addConversationLinkedContextSources } from "$lib/server/services/linked-context-sources";
@@ -225,6 +243,14 @@ const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
 const mockGetConversation = getConversation as ReturnType<typeof vi.fn>;
 const mockTouchConversation = touchConversation as ReturnType<typeof vi.fn>;
 const mockSendMessage = sendMessage as ReturnType<typeof vi.fn>;
+const mockListFileProductionJobs =
+	listConversationFileProductionJobs as ReturnType<typeof vi.fn>;
+const mockAssignFileProductionJobs =
+	assignFileProductionJobsToAssistantMessage as ReturnType<typeof vi.fn>;
+const mockGetChatFilesForAssistantMessage =
+	getChatFilesForAssistantMessage as ReturnType<typeof vi.fn>;
+const mockSyncGeneratedFilesToMemory =
+	syncGeneratedFilesToMemory as ReturnType<typeof vi.fn>;
 const mockAssertCanStartDeepResearchJob =
 	assertCanStartDeepResearchJob as ReturnType<typeof vi.fn>;
 const mockStartDeepResearchJobShell = startDeepResearchJobShell as ReturnType<
@@ -305,6 +331,10 @@ describe("POST /api/chat/send", () => {
 			displayArtifacts: [],
 			promptArtifacts: [],
 		});
+		mockListFileProductionJobs.mockResolvedValue([]);
+		mockAssignFileProductionJobs.mockResolvedValue(undefined);
+		mockGetChatFilesForAssistantMessage.mockResolvedValue([]);
+		mockSyncGeneratedFilesToMemory.mockResolvedValue(undefined);
 		mockBuildDeepResearchPlanningContext.mockResolvedValue([]);
 		mockGetAvailableSkillSummary.mockResolvedValue({
 			id: "skill-1",
@@ -473,6 +503,77 @@ describe("POST /api/chat/send", () => {
 				}),
 			},
 		);
+	});
+
+	it("assigns file-production jobs created during non-stream sends to the persisted assistant message", async () => {
+		mockGetConversation.mockResolvedValue({
+			id: "conv-1",
+			title: "Test",
+			createdAt: 0,
+			updatedAt: 0,
+		});
+		mockCreateMessage
+			.mockResolvedValueOnce({
+				id: "user-msg",
+				role: "user",
+				content: "Create a report",
+				timestamp: Date.now(),
+			})
+			.mockResolvedValueOnce({
+				id: "assistant-msg",
+				role: "assistant",
+				content: "Done.",
+				timestamp: Date.now(),
+			});
+		mockListFileProductionJobs
+			.mockResolvedValueOnce([{ id: "job-existing", files: [] }])
+			.mockResolvedValueOnce([
+				{ id: "job-existing", files: [] },
+				{ id: "job-new", files: [{ id: "file-new" }] },
+			]);
+		mockGetChatFilesForAssistantMessage.mockResolvedValueOnce([
+			{
+				id: "file-new",
+				name: "report.pdf",
+				filename: "report.pdf",
+			},
+		]);
+		mockSendMessage.mockResolvedValue({
+			text: "Done.",
+			rawResponse: {},
+			contextStatus: undefined,
+		});
+
+		const response = await POST(
+			makeEvent({ message: "Create a report", conversationId: "conv-1" }),
+		);
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(mockListFileProductionJobs).toHaveBeenNthCalledWith(
+			1,
+			"user-1",
+			"conv-1",
+		);
+		expect(
+			mockListFileProductionJobs.mock.invocationCallOrder[0],
+		).toBeLessThan(mockSendMessage.mock.invocationCallOrder[0]);
+		expect(mockAssignFileProductionJobs).toHaveBeenCalledWith(
+			"user-1",
+			"conv-1",
+			"assistant-msg",
+			["job-new"],
+		);
+		expect(mockSyncGeneratedFilesToMemory).toHaveBeenCalledWith({
+			userId: "user-1",
+			conversationId: "conv-1",
+			assistantMessageId: "assistant-msg",
+			fileIds: ["file-new"],
+			assistantResponse: "Done.",
+		});
+		expect(data.generatedFiles).toEqual([
+			expect.objectContaining({ id: "file-new", filename: "report.pdf" }),
+		]);
 	});
 
 	it("passes a forced web-search turn flag into the Langflow send options", async () => {

@@ -1069,6 +1069,7 @@ async function maybeRunAutomaticContextCompression(params: {
 		userId: params.user.id,
 		trigger: "automatic",
 		selectedModelId: params.modelId,
+		controlMessageSender: sendJsonControlMessage,
 		sourceMessages: pendingSourceMessages,
 		priorSnapshot,
 		sourceTokenEstimate: Math.max(

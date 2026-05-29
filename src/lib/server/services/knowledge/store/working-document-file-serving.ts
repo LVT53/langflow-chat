@@ -68,6 +68,16 @@ export async function resolveWorkingDocumentFileServing(params: {
 	if (generatedSource) {
 		return generatedSource;
 	}
+	if (isUnrenderedGeneratedDocumentSource(artifact)) {
+		return {
+			ok: false,
+			status: 404,
+			error:
+				params.mode === "preview"
+					? "File not available for preview"
+					: "File not available for download",
+		};
+	}
 
 	return resolveStoredArtifact({
 		userId: params.userId,
@@ -76,6 +86,23 @@ export async function resolveWorkingDocumentFileServing(params: {
 		filenameArtifact: params.mode === "download" ? requestedArtifact : artifact,
 		mode: params.mode,
 	});
+}
+
+function isUnrenderedGeneratedDocumentSource(artifact: Artifact): boolean {
+	if (artifact.type !== "generated_output" || artifact.storagePath) {
+		return false;
+	}
+
+	const metadata = artifact.metadata ?? {};
+	const status = metadata.generatedDocumentSourceStatus;
+	if (typeof status === "string" && status !== "succeeded") {
+		return true;
+	}
+
+	return (
+		metadata.generatedDocumentSourceVersion !== undefined &&
+		typeof metadata.sourceChatFileId !== "string"
+	);
 }
 
 async function resolveGeneratedOutputSource(params: {

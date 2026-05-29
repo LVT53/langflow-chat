@@ -47,7 +47,7 @@ vi.mock("$lib/server/services/analytics", () => ({
 	getConversationCostSummary: vi.fn(),
 }));
 
-vi.mock("$lib/server/services/file-production", () => ({
+vi.mock("$lib/server/services/file-production/read-model", () => ({
 	listConversationFileProductionJobs: vi.fn(),
 }));
 
@@ -83,7 +83,7 @@ import {
 	setConversationSidebarPinned,
 } from "$lib/server/services/conversations";
 import { listConversationDeepResearchJobs } from "$lib/server/services/deep-research";
-import { listConversationFileProductionJobs } from "$lib/server/services/file-production";
+import { listConversationFileProductionJobs } from "$lib/server/services/file-production/read-model";
 import {
 	getConversationContextStatus,
 	getConversationWorkingSet,

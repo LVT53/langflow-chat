@@ -791,6 +791,24 @@ describe("completeStreamTurn", () => {
 		);
 	});
 
+	it("attaches new file-production jobs from file-production tool aliases", async () => {
+		mockGetFileProductionJobs.mockResolvedValue([{ id: "job-new" }]);
+
+		await completeStreamTurn({
+			...defaultParams,
+			toolCallRecords: [
+				{ name: "File Production", status: "done" },
+			],
+		});
+
+		expect(mockAssignFileProductionJobs).toHaveBeenCalledWith(
+			"user-1",
+			"conv-1",
+			"asst-msg-1",
+			["job-new"],
+		);
+	});
+
 	it("handles produced generated files from produce_file tool calls", async () => {
 		mockGetFileProductionJobs.mockResolvedValue([
 			{ id: "job-new", files: [{ id: "gf-new" }] },

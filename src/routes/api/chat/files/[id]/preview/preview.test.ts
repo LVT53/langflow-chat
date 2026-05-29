@@ -78,6 +78,28 @@ describe("GET /api/chat/files/[id]/preview", () => {
 		);
 	});
 
+	it("quarantines unassigned generated files from direct preview access", async () => {
+		mockGetChatFileByUser.mockResolvedValue({
+			id: "file-1",
+			conversationId: "conv-1",
+			assistantMessageId: null,
+			userId: "user-1",
+			filename: "staged.txt",
+			mimeType: "text/plain",
+			sizeBytes: 11,
+			storagePath: "conv-1/file-1.txt",
+			createdAt: Date.now(),
+		});
+
+		const response = await GET(makeEvent());
+		const body = await response.json();
+
+		expect(response.status).toBe(404);
+		expect(body.error).toBe("File not found");
+		expect(mockReadChatFileContentByUser).not.toHaveBeenCalled();
+		expect(mockReadChatFileContentByConversationOwner).not.toHaveBeenCalled();
+	});
+
 	it("returns inline preview content for a user-owned generated file", async () => {
 		mockGetChatFileByUser.mockResolvedValue({
 			id: "file-1",

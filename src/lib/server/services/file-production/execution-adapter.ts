@@ -7,7 +7,10 @@ import {
 	renderStandardReportPdf,
 	StandardReportPdfRenderError,
 } from "./renderers/standard-report-pdf";
-import { persistGeneratedDocumentSourceArtifact } from "./source-persistence";
+import {
+	markGeneratedDocumentSourceArtifactFailed,
+	persistGeneratedDocumentSourceArtifact,
+} from "./source-persistence";
 import {
 	type GeneratedDocumentSource,
 	validateGeneratedDocumentSource,
@@ -258,37 +261,52 @@ async function renderDocumentSource(
 	}
 	const files: ProgramExecutionFile[] = [];
 
-	if (request.outputs.includes("pdf")) {
-		const rendered = await renderStandardReportPdf(request.documentSource, {
-			imageLoader: createDefaultGeneratedDocumentImageLoader({
-				userId: input.userId,
-				conversationId: input.conversationId,
-			}),
+	try {
+		if (request.outputs.includes("pdf")) {
+			const rendered = await renderStandardReportPdf(request.documentSource, {
+				imageLoader: createDefaultGeneratedDocumentImageLoader({
+					userId: input.userId,
+					conversationId: input.conversationId,
+				}),
+			});
+			files.push({
+				filename: rendered.filename,
+				mimeType: rendered.mimeType,
+				content: rendered.content,
+				sizeBytes: rendered.content.length,
+			});
+		}
+		if (request.outputs.includes("docx")) {
+			const rendered = await renderStandardReportDocx(request.documentSource);
+			files.push({
+				filename: rendered.filename,
+				mimeType: rendered.mimeType,
+				content: rendered.content,
+				sizeBytes: rendered.content.length,
+			});
+		}
+		if (request.outputs.includes("html")) {
+			const rendered = renderStandardReportHtml(request.documentSource);
+			files.push({
+				filename: rendered.filename,
+				mimeType: rendered.mimeType,
+				content: rendered.content,
+				sizeBytes: rendered.content.length,
+			});
+		}
+	} catch (error) {
+		await markGeneratedDocumentSourceArtifactFailed({
+			artifactId: sourceArtifact.id,
+			errorCode:
+				error instanceof StandardReportPdfRenderError
+					? error.code
+					: "document_render_failed",
+			errorMessage:
+				error instanceof Error
+					? error.message
+					: "Generated document rendering failed.",
 		});
-		files.push({
-			filename: rendered.filename,
-			mimeType: rendered.mimeType,
-			content: rendered.content,
-			sizeBytes: rendered.content.length,
-		});
-	}
-	if (request.outputs.includes("docx")) {
-		const rendered = await renderStandardReportDocx(request.documentSource);
-		files.push({
-			filename: rendered.filename,
-			mimeType: rendered.mimeType,
-			content: rendered.content,
-			sizeBytes: rendered.content.length,
-		});
-	}
-	if (request.outputs.includes("html")) {
-		const rendered = renderStandardReportHtml(request.documentSource);
-		files.push({
-			filename: rendered.filename,
-			mimeType: rendered.mimeType,
-			content: rendered.content,
-			sizeBytes: rendered.content.length,
-		});
+		throw error;
 	}
 
 	return {

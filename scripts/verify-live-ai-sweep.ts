@@ -115,16 +115,17 @@ export function structuredRecallHasValue(params: {
 	acceptedValues: string[];
 }): boolean {
 	const normalizedAcceptedValues = params.acceptedValues.map((value) =>
-		value.toLowerCase(),
+		normalizeStructuredRecallValue(value),
 	);
 	const rawValue = params.parsed?.[params.field];
 	const normalizedFieldValue =
-		typeof rawValue === "string" ? rawValue.trim().toLowerCase() : "";
+		typeof rawValue === "string" ? normalizeStructuredRecallValue(rawValue) : "";
 
-	return normalizedAcceptedValues.some(
-		(value) =>
-			normalizedFieldValue === value || normalizedFieldValue.includes(value),
-	);
+	return normalizedAcceptedValues.some((value) => normalizedFieldValue === value);
+}
+
+function normalizeStructuredRecallValue(value: string): string {
+	return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
 const standardRecallChecks = [

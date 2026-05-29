@@ -1189,8 +1189,12 @@ The normalized start of a **File Production Request**, where AlfyAI decides whet
 _Avoid_: route-local file job, tool-specific export path, transient generation task
 
 **File Production Job Ledger**:
-The file-production deep module that owns durable job, attempt, retry, cancellation, stale-recovery, produced-file-link, and job read-model state.
+The file-production deep module that owns durable job, attempt, retry, cancellation, stale-recovery, and produced-file-link state transitions.
 _Avoid_: route-local job state, renderer-owned retry state, worker-owned DB rules
+
+**File Production Read Model**:
+The file-production deep module that projects **File Production Card** state for conversation detail, including legacy generated-file backfill and internally-visible job-linked files that are not yet attached to an assistant message.
+_Avoid_: worker import side effect, chat-file public list, route-local job projection
 
 **File Production Worker Runner**:
 The file-production deep module that owns in-process worker identity, startup recovery, lazy wakeups, drain-to-idle execution, and current-attempt orchestration.
@@ -1205,7 +1209,7 @@ The file-production deep module that validates produced outputs, stores generate
 _Avoid_: worker-local storage block, renderer-owned chat-file write, duplicate generated-file mapper
 
 **Generated Document Source Persistence**:
-The production file-production deep module that stores the canonical **Generated Document Source** artifact and links rendered **Generated Files** back to it.
+The production file-production deep module that stores the canonical **Generated Document Source** artifact, manages its pending/succeeded/failed lifecycle, and links rendered **Generated Files** back to it.
 _Avoid_: test helper, chat-file extraction path, rendered-file truth
 
 **File Production Card**:
@@ -1279,13 +1283,16 @@ _Avoid_: source message button, primary document action, source viewer
 - Every **File Production Request** enters **File Production Intake** before renderer, sandbox, or storage work begins.
 - **File Production Intake** creates or reuses durable **File Production Card** state; it is not a stream-only or tool-specific concern.
 - A malformed **File Production Request** still produces a durable failed **File Production Card** through **File Production Intake** when enough conversation ownership is known.
-- The public file-production facade delegates to deep modules; callers should import the facade unless they are inside the file-production boundary.
+- The public file-production facade delegates to deep modules; callers should import the facade unless they are inside the file-production boundary or are read-only conversation detail code that needs **File Production Read Model** without loading worker/rendering/storage modules.
 - **File Production Job Ledger** is the durable state authority for **File Production Cards** and attempts; renderers, routes, and worker code should not reimplement job state transitions.
+- **File Production Read Model** is the projection authority for conversation-visible **File Production Cards**; it may hydrate job-linked unassigned files for finalization, but public generated-file lists and direct preview/download routes still require an assigned assistant message.
 - **File Production Worker Runner** consumes **File Production Job Ledger**, **File Production Execution Adapter**, and **Generated File Storage Adapter** rather than owning their rules inline.
 - **File Production Execution Adapter** decides how a persisted request runs; it does not own durable job state or generated-file storage.
 - **Generated File Storage Adapter** stores and links outputs after execution and before job success; output validation failures do not create produced-file links.
 - A `document_source` **File Production Request** that passes intake validation and ownership checks persists its canonical **Generated Document Source** through **Generated Document Source Persistence** before PDF, DOCX, or HTML rendering begins.
 - Invalid **Generated Document Source** input fails during request parsing or validation and does not create a persisted source artifact.
+- A source-first **Generated Document Source** is pending and non-durable until its rendered **Generated Files** attach successfully.
+- A failed or still-pending source-first **Generated Document Source** is not prompt-eligible and must not fall through to text-only preview/download as though generation succeeded.
 - A **File Production Card** appears from persisted job state, not from a stream-only placeholder.
 - A **File Production Card** may present queued or running jobs with a generating visual treatment while the underlying job status remains `queued` or `running`.
 - A queued or running **File Production Card** may use a content-loading shimmer treatment instead of textual progress, a spinner, or a progress bar.

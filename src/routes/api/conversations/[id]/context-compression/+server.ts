@@ -8,6 +8,7 @@ import {
 	serializeContextCompressionSnapshot,
 } from "$lib/server/services/context-compression";
 import { getConversation } from "$lib/server/services/conversations";
+import { sendJsonControlMessage } from "$lib/server/services/langflow";
 import type { ModelId } from "$lib/types";
 import type { RequestHandler } from "./$types";
 
@@ -76,6 +77,7 @@ export const POST: RequestHandler = async (event) => {
 		userId: user.id,
 		trigger,
 		selectedModelId: body.selectedModelId,
+		controlMessageSender: sendJsonControlMessage,
 		sourceMessages: pendingSourceMessages,
 		priorSnapshot,
 	});

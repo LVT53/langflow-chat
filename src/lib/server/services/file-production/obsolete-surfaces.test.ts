@@ -133,10 +133,8 @@ describe("obsolete file-generation surfaces", () => {
 		const ledger = readFileSync(join(root, ledgerPath), "utf8");
 
 		expect(facade).toContain('from "./job-ledger"');
-		expect(facade).not.toContain(
-			"export async function claimNextFileProductionJob",
-		);
 		expect(facade).not.toContain("function mapJobRow");
+		expect(facade).not.toContain("fileProductionJobAttempts");
 		expect(ledger).toContain(
 			"export async function claimNextFileProductionJob",
 		);
@@ -161,6 +159,9 @@ describe("obsolete file-generation surfaces", () => {
 		);
 
 		expect(facade).toContain('from "./worker-runner"');
+		expect(facade).toContain('return import("./worker-runner")');
+		expect(facade).not.toMatch(/^import\s+\{[\s\S]*from "\.\/worker-runner";/m);
+		expect(facade).not.toMatch(/^import\s+\{[\s\S]*from "\.\/job-ledger";/m);
 		expect(facade).not.toContain("DEFAULT_WORKER_ID");
 		expect(facade).not.toContain("workerInitialized");
 		expect(facade).not.toContain("drainPromise");
@@ -204,6 +205,39 @@ describe("obsolete file-generation surfaces", () => {
 			expect(workerRunner).not.toContain(directStorageImport);
 			expect(storageAdapter).toContain(directStorageImport.replace(" as", ""));
 			expect(facade).not.toContain(directStorageImport);
+		}
+	});
+
+	it("keeps read-only file-production callers on a read-model entrypoint", () => {
+		const conversationDetailRoute = readFileSync(
+			join(root, "src/routes/api/conversations/[id]/+server.ts"),
+			"utf8",
+		);
+		const readModel = readFileSync(
+			join(root, "src/lib/server/services/file-production/read-model.ts"),
+			"utf8",
+		);
+
+		expect(conversationDetailRoute).toContain(
+			'$lib/server/services/file-production/read-model',
+		);
+		expect(readModel).toContain(
+			"export async function listConversationFileProductionJobs",
+		);
+		for (const eagerImport of [
+			"from \"./index\"",
+			"from './index'",
+			"from \"./worker-runner\"",
+			"from './worker-runner'",
+			"from \"./execution-adapter\"",
+			"from './execution-adapter'",
+			"from \"./storage-adapter\"",
+			"from './storage-adapter'",
+			"$lib/server/services/chat-files",
+			"$lib/server/services/honcho",
+			"document-extraction",
+		]) {
+			expect(readModel).not.toContain(eagerImport);
 		}
 	});
 });

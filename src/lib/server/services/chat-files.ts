@@ -486,6 +486,51 @@ export async function getChatFilesForAssistantMessage(
 	}
 }
 
+export async function getChatFilesByIdsForConversation(
+	conversationId: string,
+	fileIds: string[]
+): Promise<ChatFile[]> {
+	const uniqueFileIds = Array.from(new Set(fileIds.filter(Boolean)));
+	if (uniqueFileIds.length === 0) {
+		return [];
+	}
+
+	try {
+		const fileIdSet = new Set(uniqueFileIds);
+		const [rows, artifactIdsByChatFile] = await Promise.all([
+			db
+				.select(chatGeneratedFileSelection)
+				.from(chatGeneratedFiles)
+				.where(eq(chatGeneratedFiles.conversationId, conversationId))
+				.orderBy(desc(chatGeneratedFiles.createdAt)),
+			listGeneratedOutputArtifactIdsByChatFile(conversationId),
+		]);
+
+		return rows
+			.filter((row) => fileIdSet.has(row.id))
+			.map((row) => ({
+				...mapRowToChatFile(row),
+				artifactId: artifactIdsByChatFile.get(row.id)?.artifactId ?? null,
+				documentFamilyId: artifactIdsByChatFile.get(row.id)?.documentFamilyId ?? null,
+				documentFamilyStatus: artifactIdsByChatFile.get(row.id)?.documentFamilyStatus ?? null,
+				documentLabel: artifactIdsByChatFile.get(row.id)?.documentLabel ?? null,
+				documentRole: artifactIdsByChatFile.get(row.id)?.documentRole ?? null,
+				versionNumber: artifactIdsByChatFile.get(row.id)?.versionNumber ?? null,
+				originConversationId: artifactIdsByChatFile.get(row.id)?.originConversationId ?? null,
+				originAssistantMessageId:
+					artifactIdsByChatFile.get(row.id)?.originAssistantMessageId ?? null,
+				sourceChatFileId: artifactIdsByChatFile.get(row.id)?.sourceChatFileId ?? null,
+			}));
+	} catch (error) {
+		console.error('[CHAT_FILES] Failed to list generated files by id', {
+			conversationId,
+			fileIds: uniqueFileIds,
+			error,
+		});
+		throw error;
+	}
+}
+
 export async function assignGeneratedFilesToAssistantMessage(
 	conversationId: string,
 	assistantMessageId: string,

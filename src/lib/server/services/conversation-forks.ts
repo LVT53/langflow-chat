@@ -161,6 +161,14 @@ function parseJsonRecord(value: string | null): JsonRecord {
 	}
 }
 
+function readStringArray(value: unknown): string[] {
+	if (!Array.isArray(value)) return [];
+	return value
+		.filter((item): item is string => typeof item === "string")
+		.map((item) => item.trim())
+		.filter(Boolean);
+}
+
 function mapArtifactForSemanticRefresh(
 	row: typeof artifacts.$inferSelect,
 	metadata: JsonRecord | null,
@@ -748,6 +756,23 @@ function copyGeneratedWorkSnapshot(params: {
 		const copiedChatFileId = sourceOriginalChatFileId
 			? (copiedFileIdBySourceId.get(sourceOriginalChatFileId) ?? null)
 			: null;
+		const sourceRenderedChatFileIds = readStringArray(
+			sourceMetadata.generatedDocumentRenderedChatFileIds,
+		);
+		const copiedRenderedChatFileIds: string[] = [];
+		for (const sourceRenderedChatFileId of sourceRenderedChatFileIds) {
+			const copiedRenderedChatFileId = copiedFileIdBySourceId.get(
+				sourceRenderedChatFileId,
+			);
+			if (!copiedRenderedChatFileId) {
+				throw new ConversationForkError(
+					"required_generated_work_unavailable",
+					"Fork source includes generated document rendered-file metadata that cannot be copied",
+					409,
+				);
+			}
+			copiedRenderedChatFileIds.push(copiedRenderedChatFileId);
+		}
 		const copiedAssistantMessageId = sourceAssistantMessageId
 			? (params.copiedMessageIdBySourceId.get(sourceAssistantMessageId) ?? null)
 			: null;
@@ -793,6 +818,11 @@ function copyGeneratedWorkSnapshot(params: {
 		if (copiedChatFileId) {
 			nextMetadata.originalChatFileId = copiedChatFileId;
 			nextMetadata.sourceChatFileId = copiedChatFileId;
+		}
+		if (copiedRenderedChatFileIds.length > 0) {
+			nextMetadata.generatedDocumentRenderedChatFileIds = Array.from(
+				new Set(copiedRenderedChatFileIds),
+			);
 		}
 		if (sourceOriginalChatFileId) {
 			nextMetadata.forkedFromChatFileId = sourceOriginalChatFileId;

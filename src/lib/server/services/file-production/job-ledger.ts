@@ -7,7 +7,11 @@ import {
 	fileProductionJobFiles,
 	fileProductionJobs,
 } from "$lib/server/db/schema";
-import { type ChatFile, getChatFiles } from "$lib/server/services/chat-files";
+import {
+	type ChatFile,
+	getChatFiles,
+	getChatFilesByIdsForConversation,
+} from "$lib/server/services/chat-files";
 import { parseWorkingDocumentMetadata } from "$lib/server/services/knowledge/store/document-metadata";
 import type { Artifact, FileProductionJob } from "$lib/types";
 
@@ -1247,7 +1251,6 @@ export async function listConversationFileProductionJobs(
 	const files = await getChatFiles(conversationId);
 	const userFiles = files.filter((file) => file.userId === userId);
 	await ensureLegacyJobs(userFiles);
-	const fileById = new Map(userFiles.map((file) => [file.id, file]));
 	const jobs = await db
 		.select()
 		.from(fileProductionJobs)
@@ -1278,6 +1281,16 @@ export async function listConversationFileProductionJobs(
 		next.push(link);
 		linksByJobId.set(link.jobId, next);
 	}
+	const linkedFileIds = Array.from(
+		new Set(links.map((link) => link.chatGeneratedFileId)),
+	);
+	const linkedFiles = (
+		await getChatFilesByIdsForConversation(conversationId, linkedFileIds)
+	).filter((file) => file.userId === userId);
+
+	const fileById = new Map(
+		[...userFiles, ...linkedFiles].map((file) => [file.id, file]),
+	);
 
 	return jobs
 		.map((job) => {

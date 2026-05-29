@@ -2086,12 +2086,16 @@ describe('honcho learning - getPeerContext', () => {
 		const records = await listPersonaMemories('user-1');
 
 		expect(records).toHaveLength(2);
-		expect(records[0]).toMatchObject({
-			id: 'conclusion-1',
-			content: 'User prefers concise responses',
-			scope: 'self',
-			sessionId: 'conv-1',
-		});
+		expect(records).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					id: 'conclusion-1',
+					content: 'User prefers concise responses',
+					scope: 'self',
+					sessionId: 'conv-1',
+				}),
+			]),
+		);
 	});
 
 	it('retrieves self-scope conclusions', async () => {

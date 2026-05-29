@@ -1368,20 +1368,34 @@ describe("conversation forks", () => {
 	it("copies generated-output artifacts into fork-local document families with origin lineage", async () => {
 		seedTextConversation();
 		writeStoredChatFile("source-conv/source-file-1.txt", "fork me as bytes");
+		writeStoredChatFile("source-conv/source-file-2.html", "<p>fork me too</p>");
 		const { sqlite, db } = openDatabase();
 		const createdAt = new Date("2026-05-15T10:00:02.500Z");
 		db.insert(schema.chatGeneratedFiles)
-			.values({
-				id: "source-file-1",
-				conversationId: "source-conv",
-				assistantMessageId: "source-assistant-1",
-				userId: "user-1",
-				filename: "report.txt",
-				mimeType: "text/plain",
-				sizeBytes: "fork me as bytes".length,
-				storagePath: "source-conv/source-file-1.txt",
-				createdAt,
-			})
+			.values([
+				{
+					id: "source-file-1",
+					conversationId: "source-conv",
+					assistantMessageId: "source-assistant-1",
+					userId: "user-1",
+					filename: "report.txt",
+					mimeType: "text/plain",
+					sizeBytes: "fork me as bytes".length,
+					storagePath: "source-conv/source-file-1.txt",
+					createdAt,
+				},
+				{
+					id: "source-file-2",
+					conversationId: "source-conv",
+					assistantMessageId: "source-assistant-1",
+					userId: "user-1",
+					filename: "report.html",
+					mimeType: "text/html",
+					sizeBytes: "<p>fork me too</p>".length,
+					storagePath: "source-conv/source-file-2.html",
+					createdAt: new Date("2026-05-15T10:00:02.600Z"),
+				},
+			])
 			.run();
 		db.insert(schema.artifacts)
 			.values([
@@ -1434,6 +1448,10 @@ describe("conversation forks", () => {
 						originConversationId: "source-conv",
 						originAssistantMessageId: "source-assistant-1",
 						sourceChatFileId: "source-file-1",
+						generatedDocumentRenderedChatFileIds: [
+							"source-file-1",
+							"source-file-2",
+						],
 					}),
 					createdAt,
 					updatedAt: createdAt,
@@ -1506,7 +1524,11 @@ describe("conversation forks", () => {
 		const copiedAssistantMessageId = forkMessages[1]?.id;
 		const forkGeneratedWork = readGeneratedWorkRows(result.conversation.id);
 		const copiedChatFileId = forkGeneratedWork.generatedFiles[0]?.id;
+		const copiedRenderedChatFileIds = forkGeneratedWork.generatedFiles.map(
+			(file) => file.id,
+		);
 		trackStoredChatPath(forkGeneratedWork.generatedFiles[0]?.storagePath);
+		trackStoredChatPath(forkGeneratedWork.generatedFiles[1]?.storagePath);
 		const { generatedArtifacts, chunks, links } = readGeneratedArtifacts(
 			result.conversation.id,
 		);
@@ -1538,6 +1560,7 @@ describe("conversation forks", () => {
 			originConversationId: result.conversation.id,
 			originAssistantMessageId: copiedAssistantMessageId,
 			sourceChatFileId: copiedChatFileId,
+			generatedDocumentRenderedChatFileIds: copiedRenderedChatFileIds,
 			forkedFromArtifactId: "source-generated-current",
 			forkedFromChatFileId: "source-file-1",
 			forkedFromConversationId: "source-conv",

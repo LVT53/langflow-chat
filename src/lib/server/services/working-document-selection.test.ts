@@ -305,6 +305,61 @@ describe("working document selection", () => {
 		expect(selection.taskEvidence.protectedArtifactIds).toEqual([]);
 	});
 
+	it("suppresses generated-output carryover for conversion file requests without an active source", () => {
+		const selection = resolveWorkingDocumentSelection({
+			message: "Convert this to PDF.",
+			currentConversationId: "conv-1",
+			artifacts: [
+				generatedArtifact(
+					"brief-v1",
+					{
+						documentFamilyId: "family-brief",
+						documentLabel: "Project brief",
+						versionNumber: 1,
+					},
+					1,
+				),
+			],
+		});
+
+		expect(selection.currentDocument).toBe(null);
+		expect(selection.latestGeneratedDocumentIds).toEqual([]);
+		expect(selection.retrieval).toMatchObject({
+			preferredArtifactId: null,
+			preferredGeneratedFamilyId: null,
+			suppressGeneratedCarryover: true,
+		});
+		expect(selection.taskEvidence.protectedArtifactIds).toEqual([]);
+	});
+
+	it("does not keep stale active focus for fresh file prompts with output-pronoun wording", () => {
+		const selection = resolveWorkingDocumentSelection({
+			message: "Create a new PDF file called agenda.pdf. Make it concise.",
+			activeDocumentArtifactId: "brief-v1",
+			currentConversationId: "conv-1",
+			artifacts: [
+				generatedArtifact(
+					"brief-v1",
+					{
+						documentFamilyId: "family-brief",
+						documentLabel: "Project brief",
+						versionNumber: 1,
+					},
+					1,
+				),
+			],
+		});
+
+		expect(selection.currentDocument).toBe(null);
+		expect(selection.activeFocus.artifactIds).toEqual([]);
+		expect(selection.retrieval).toMatchObject({
+			preferredArtifactId: null,
+			preferredGeneratedFamilyId: null,
+			suppressGeneratedCarryover: true,
+		});
+		expect(selection.taskEvidence.protectedArtifactIds).toEqual([]);
+	});
+
 	it("keeps the active document focused when the request says the document", () => {
 		const selection = resolveWorkingDocumentSelection({
 			message: "Make the document shorter.",

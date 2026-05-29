@@ -3,10 +3,9 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "$lib/server/db";
 import { contextCompressionSnapshots, messages } from "$lib/server/db/schema";
-import type { ContextCompressionMarker, ModelId } from "$lib/types";
+import type { ContextCompressionMarker, ModelId, ThinkingMode } from "$lib/types";
 import { estimateTokenCount } from "$lib/utils/tokens";
 import { parseModelJsonObject } from "./deep-research/llm-json";
-import { sendJsonControlMessage } from "./langflow";
 import { messageOrderAsc } from "./message-ordering";
 import { repairConversationMessageSequences } from "./message-sequences";
 
@@ -53,6 +52,26 @@ export type ContextCompressionSnapshot = {
 	updatedAt: Date;
 };
 
+export type ContextCompressionJsonSchema = {
+	name: string;
+	schema: Record<string, unknown>;
+	strict?: boolean;
+};
+
+export type ContextCompressionControlSender = (
+	message: string,
+	modelId: ModelId | undefined,
+	options: {
+		systemPrompt: string;
+		thinkingMode?: ThinkingMode;
+		maxTokens?: number;
+		temperature?: number;
+		signal?: AbortSignal;
+		jsonSchema?: ContextCompressionJsonSchema;
+		allowReasoningFallback?: boolean;
+	},
+) => Promise<{ text: string }>;
+
 export type CreateContextCompressionSnapshotInput = {
 	conversationId: string;
 	userId: string;
@@ -87,6 +106,7 @@ export type RunContextCompressionInput = {
 	userId: string;
 	trigger: ContextCompressionSnapshotTrigger;
 	selectedModelId: ModelId;
+	controlMessageSender: ContextCompressionControlSender;
 	sourceMessages: ContextCompressionSourceMessage[];
 	priorSnapshot?: ContextCompressionSnapshot | null;
 	sourceRanges?: ContextCompressionSourceRange[];
@@ -1146,9 +1166,9 @@ export async function runContextCompression(
 		attempt < CONTEXT_COMPRESSION_CONTROL_MAX_ATTEMPTS;
 		attempt += 1
 	) {
-		let response: Awaited<ReturnType<typeof sendJsonControlMessage>>;
+		let response: Awaited<ReturnType<ContextCompressionControlSender>>;
 		try {
-			response = await sendJsonControlMessage(
+			response = await input.controlMessageSender(
 				buildCompressionPrompt({
 					input,
 					sourceRanges,

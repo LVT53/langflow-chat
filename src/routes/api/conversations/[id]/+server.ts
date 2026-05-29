@@ -20,7 +20,7 @@ import {
 	listContextCompressionSnapshots,
 	serializeContextCompressionSnapshot,
 } from "$lib/server/services/context-compression";
-import { listConversationFileProductionJobs } from "$lib/server/services/file-production";
+import { listConversationFileProductionJobs } from "$lib/server/services/file-production/read-model";
 import {
 	getConversationContextStatus,
 	getConversationWorkingSet,

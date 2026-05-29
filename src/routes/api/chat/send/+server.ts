@@ -11,6 +11,14 @@ import { normalizeAssistantOutputWithSkillControl } from "$lib/server/services/c
 import { preflightChatTurn } from "$lib/server/services/chat-turn/preflight";
 import { parseChatTurnRequest } from "$lib/server/services/chat-turn/request";
 import { touchConversation } from "$lib/server/services/conversations";
+import {
+	getChatFilesForAssistantMessage,
+	syncGeneratedFilesToMemory,
+} from "$lib/server/services/chat-files";
+import {
+	assignFileProductionJobsToAssistantMessage,
+	listConversationFileProductionJobs,
+} from "$lib/server/services/file-production";
 import { isAttachmentReadinessError } from "$lib/server/services/knowledge";
 import {
 	assertCanStartDeepResearchJob,
@@ -147,6 +155,25 @@ export const POST: RequestHandler = async (event) => {
 		const skillSystemPromptAppendix = buildSkillSystemPromptAppendix(
 			turn.skillPromptContext,
 		);
+		let fileProductionJobIdsAtStart = new Set<string>();
+		try {
+			fileProductionJobIdsAtStart = new Set(
+				(
+					await listConversationFileProductionJobs(
+						user.id,
+						turn.conversationId,
+					)
+				).map((job) => job.id),
+			);
+		} catch (error) {
+			console.warn(
+				"[CHAT_SEND] Failed to snapshot file-production jobs at send start",
+				{
+					conversationId: turn.conversationId,
+					error,
+				},
+			);
+		}
 		const modelUser = {
 			id: user.id,
 			displayName: user.displayName,
@@ -237,6 +264,71 @@ export const POST: RequestHandler = async (event) => {
 		await touchConversation(user.id, turn.conversationId).catch(
 			() => undefined,
 		);
+		let generatedFiles: Awaited<
+			ReturnType<typeof getChatFilesForAssistantMessage>
+		> = [];
+		try {
+			const assistantMessageId = completion.assistantMessage?.id;
+			if (assistantMessageId) {
+				const fileProductionJobs = await listConversationFileProductionJobs(
+					user.id,
+					turn.conversationId,
+				);
+				const newFileProductionJobs = fileProductionJobs.filter(
+					(job) => !fileProductionJobIdsAtStart.has(job.id),
+				);
+				const newFileProductionJobIds = newFileProductionJobs.map(
+					(job) => job.id,
+				);
+
+				if (newFileProductionJobIds.length > 0) {
+					await assignFileProductionJobsToAssistantMessage(
+						user.id,
+						turn.conversationId,
+						assistantMessageId,
+						newFileProductionJobIds,
+					);
+				}
+
+				const newGeneratedFileIds = Array.from(
+					new Set(
+						newFileProductionJobs.flatMap((job) =>
+							(job.files ?? []).map((file) => file.id),
+						),
+					),
+				);
+
+				if (newGeneratedFileIds.length > 0) {
+					void syncGeneratedFilesToMemory({
+						userId: user.id,
+						conversationId: turn.conversationId,
+						assistantMessageId,
+						fileIds: newGeneratedFileIds,
+						assistantResponse: responseText,
+					}).catch((error) => {
+						console.error(
+							"[CHAT_SEND] Background generated-file memory sync failed",
+							{
+								conversationId: turn.conversationId,
+								assistantMessageId,
+								fileIds: newGeneratedFileIds,
+								error,
+							},
+						);
+					});
+				}
+
+				generatedFiles = await getChatFilesForAssistantMessage(
+					turn.conversationId,
+					assistantMessageId,
+				);
+			}
+		} catch (error) {
+			console.error("[CHAT_SEND] Failed to attach generated files", {
+				conversationId: turn.conversationId,
+				error,
+			});
+		}
 		void completion.evidenceTask;
 		void completion.createPostTurnTask();
 
@@ -248,6 +340,7 @@ export const POST: RequestHandler = async (event) => {
 			activeWorkingSet: completion.turnState?.activeWorkingSet,
 			taskState: completion.turnState?.taskState,
 			contextDebug: completion.turnState?.contextDebug,
+			generatedFiles,
 		});
 	} catch (error) {
 		if (isDeepResearchJobStartError(error)) {

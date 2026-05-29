@@ -718,4 +718,52 @@ describe('finalizeChatTurn', () => {
 			}),
 		);
 	});
+
+	it('does not record document refinement when Working Document Selection ignores a stale active document', async () => {
+		const mockGetArtifactsForUser = getArtifactsForUser as ReturnType<typeof vi.fn>;
+		const mockRecordMemoryEvent = recordMemoryEvent as ReturnType<typeof vi.fn>;
+		mockGetArtifactsForUser.mockResolvedValueOnce([
+			{
+				id: 'brief-v1',
+				userId: 'user-1',
+				type: 'generated_output',
+				retrievalClass: 'durable',
+				name: 'brief-v1.pdf',
+				mimeType: 'application/pdf',
+				sizeBytes: 100,
+				conversationId: 'conv-1',
+				summary: null,
+				createdAt: 1,
+				updatedAt: 1,
+				extension: 'pdf',
+				storagePath: null,
+				contentText: null,
+				metadata: {
+					documentFamilyId: 'family-brief',
+					documentLabel: 'Project brief',
+				},
+			},
+		]);
+		const { persistAssistantTurnState } = await import('./finalize');
+
+		await persistAssistantTurnState({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			normalizedMessage: 'What is the capital of France?',
+			assistantResponse: 'Paris.',
+			attachmentIds: [],
+			activeDocumentArtifactId: 'brief-v1',
+			contextStatus: null,
+			initialTaskState: null,
+			initialContextDebug: null,
+			userMessageId: 'user-message-1',
+			assistantMessageId: 'assistant-message-1',
+			analytics: null,
+			continuitySource: 'send',
+			honchoContext: null,
+			honchoSnapshot: null,
+		});
+
+		expect(mockRecordMemoryEvent).not.toHaveBeenCalled();
+	});
 });

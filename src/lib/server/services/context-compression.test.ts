@@ -12,9 +12,9 @@ const mocks = vi.hoisted(() => ({
 	sendJsonControlMessage: vi.fn(),
 }));
 
-vi.mock("./langflow", () => ({
-	sendJsonControlMessage: mocks.sendJsonControlMessage,
-}));
+vi.mock("./langflow", () => {
+	throw new Error("context-compression must not import langflow");
+});
 
 vi.mock("./knowledge", () => ({
 	listMessageAttachments: vi.fn(async () => new Map()),
@@ -409,6 +409,7 @@ describe("context compression snapshots", () => {
 			userId: "user-1",
 			trigger: "manual",
 			selectedModelId: "model2",
+			controlMessageSender: mocks.sendJsonControlMessage,
 			sourceMessages: [
 				{
 					id: "message-1",
@@ -495,6 +496,7 @@ describe("context compression snapshots", () => {
 			userId: "user-1",
 			trigger: "automatic",
 			selectedModelId: "model1",
+			controlMessageSender: mocks.sendJsonControlMessage,
 			sourceMessages: [
 				{
 					id: "message-1",
@@ -551,6 +553,7 @@ describe("context compression snapshots", () => {
 			userId: "user-1",
 			trigger: "automatic",
 			selectedModelId: "model1",
+			controlMessageSender: mocks.sendJsonControlMessage,
 			sourceMessages: [
 				{
 					id: "message-1",
@@ -601,6 +604,7 @@ describe("context compression snapshots", () => {
 			userId: "user-1",
 			trigger: "automatic",
 			selectedModelId: "model1",
+			controlMessageSender: mocks.sendJsonControlMessage,
 			sourceMessages: [
 				{
 					id: "message-1",
@@ -670,6 +674,7 @@ describe("context compression snapshots", () => {
 			userId: "user-1",
 			trigger: "automatic",
 			selectedModelId: "model1",
+			controlMessageSender: mocks.sendJsonControlMessage,
 			sourceMessages: [
 				{
 					id: "message-1",
@@ -751,6 +756,7 @@ describe("context compression snapshots", () => {
 			userId: "user-1",
 			trigger: "automatic",
 			selectedModelId: "model1",
+			controlMessageSender: mocks.sendJsonControlMessage,
 			sourceMessages: [
 				{
 					id: "message-1",
@@ -841,6 +847,7 @@ describe("context compression snapshots", () => {
 			userId: "user-1",
 			trigger: "automatic",
 			selectedModelId: "model1",
+			controlMessageSender: mocks.sendJsonControlMessage,
 			sourceMessages: [
 				{
 					id: "message-1",
@@ -921,6 +928,7 @@ describe("context compression snapshots", () => {
 			userId: "user-1",
 			trigger: "automatic",
 			selectedModelId: "model1",
+			controlMessageSender: mocks.sendJsonControlMessage,
 			sourceMessages: [
 				{
 					id: "message-1",
@@ -980,6 +988,7 @@ describe("context compression snapshots", () => {
 			userId: "user-1",
 			trigger: "automatic",
 			selectedModelId: "model1",
+			controlMessageSender: mocks.sendJsonControlMessage,
 			sourceMessages: [
 				{
 					id: "message-1",
@@ -1030,6 +1039,7 @@ describe("context compression snapshots", () => {
 			userId: "user-1",
 			trigger: "automatic",
 			selectedModelId: "model1",
+			controlMessageSender: mocks.sendJsonControlMessage,
 			sourceMessages: [
 				{
 					id: "message-1",
@@ -1106,6 +1116,7 @@ describe("context compression snapshots", () => {
 			userId: "user-1",
 			trigger: "automatic",
 			selectedModelId: "model1",
+			controlMessageSender: mocks.sendJsonControlMessage,
 			sourceMessages: [
 				{
 					id: "message-1",
@@ -1149,6 +1160,7 @@ describe("context compression snapshots", () => {
 			userId: "user-1",
 			trigger: "automatic",
 			selectedModelId: "model1",
+			controlMessageSender: mocks.sendJsonControlMessage,
 			sourceMessages: [
 				{
 					id: "message-1",

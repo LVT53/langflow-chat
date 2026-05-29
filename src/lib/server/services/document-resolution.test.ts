@@ -435,6 +435,57 @@ describe("document resolution", () => {
     expect(selection.primaryArtifactId).toBe("artifact-3");
   });
 
+  it("excludes failed source-first generated documents from current and preferred selection", () => {
+    const selection = resolveCurrentGeneratedDocumentSelection({
+      preferredArtifactId: "artifact-failed",
+      artifacts: [
+        makeArtifact({
+          id: "artifact-failed",
+          name: "failed-report.pdf",
+          updatedAt: 3,
+          metadata: {
+            documentFamilyId: "family-failed",
+            documentLabel: "Failed report",
+            generatedDocumentSourceStatus: "failed",
+          },
+        }),
+        makeArtifact({
+          id: "artifact-ready",
+          name: "ready-report.pdf",
+          updatedAt: 2,
+          metadata: {
+            documentFamilyId: "family-ready",
+            documentLabel: "Ready report",
+            sourceChatFileId: "chat-file-ready",
+            generatedDocumentSourceStatus: "succeeded",
+          },
+        }),
+      ],
+    });
+
+    expect(selection.primaryArtifactId).toBe("artifact-ready");
+    expect(selection.latestArtifactIds).toEqual(["artifact-ready"]);
+
+    expect(
+      isGeneratedDocumentPromptEligible({
+        artifact: makeArtifact({
+          id: "artifact-failed",
+          name: "failed-report.pdf",
+          conversationId: "conv-1",
+          metadata: {
+            documentFamilyId: "family-failed",
+            documentLabel: "Failed report",
+            generatedDocumentSourceStatus: "failed",
+          },
+        }),
+        conversationId: "conv-1",
+        reasonCodes: ["current_generated_document"],
+        messageMatchScore: 10,
+        explicitlyRequested: true,
+      }),
+    ).toBe(false);
+  });
+
   it("preserves an explicitly preferred artifact id for current-document context", () => {
     const selection = resolveCurrentGeneratedDocumentSelection({
       preferredArtifactId: "artifact-1",
