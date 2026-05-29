@@ -1,65 +1,55 @@
-import { and, eq, isNull } from 'drizzle-orm';
-import { db } from '$lib/server/db';
-import { artifactLinks } from '$lib/server/db/schema';
-import { getConversation } from '$lib/server/services/conversations';
-import { createArtifactLink } from '$lib/server/services/knowledge';
-import { listKnowledgeArtifacts } from '$lib/server/services/knowledge';
-import type { KnowledgeDocumentItem, LinkedContextSource } from '$lib/types';
+import { and, eq, isNull } from "drizzle-orm";
+import { db } from "$lib/server/db";
+import { artifactLinks } from "$lib/server/db/schema";
+import { getConversation } from "$lib/server/services/conversations";
+import {
+	createArtifactLink,
+	listKnowledgeArtifacts,
+} from "$lib/server/services/knowledge";
+import {
+	isPromptReadyWorkingDocument,
+	linkedContextSourceArtifactIds,
+	toCanonicalLinkedContextSource,
+	workingDocumentMatchesLinkedContextSource,
+} from "$lib/server/services/knowledge/store/working-document-identity";
+import type { KnowledgeDocumentItem, LinkedContextSource } from "$lib/types";
 
 export class LinkedContextSourceError extends Error {
 	constructor(
 		message: string,
 		public readonly status: number,
-		public readonly code: string
+		public readonly code: string,
 	) {
 		super(message);
-		this.name = 'LinkedContextSourceError';
+		this.name = "LinkedContextSourceError";
 	}
 }
 
-function toLinkedContextSource(document: KnowledgeDocumentItem): LinkedContextSource {
-	return {
-		displayArtifactId: document.displayArtifactId,
-		promptArtifactId: document.promptArtifactId,
-		familyArtifactIds: document.familyArtifactIds,
-		name: document.name,
-		type: 'document',
-		mimeType: document.mimeType,
-		documentOrigin: document.documentOrigin,
-	};
+function toLinkedContextSource(
+	document: KnowledgeDocumentItem,
+): LinkedContextSource {
+	return toCanonicalLinkedContextSource(document);
 }
 
 function isPromptReadyDocument(document: KnowledgeDocumentItem): boolean {
-	return (
-		document.normalizedAvailable &&
-		typeof document.promptArtifactId === 'string' &&
-		document.promptArtifactId.length > 0
-	);
+	return isPromptReadyWorkingDocument(document);
 }
 
 function documentMatchesSource(
 	document: KnowledgeDocumentItem,
-	source: LinkedContextSource
+	source: LinkedContextSource,
 ): boolean {
-	const ids = new Set([
-		document.displayArtifactId,
-		document.promptArtifactId,
-		...document.familyArtifactIds,
-	].filter((id): id is string => typeof id === 'string' && id.length > 0));
-	return (
-		ids.has(source.displayArtifactId) ||
-		Boolean(source.promptArtifactId && ids.has(source.promptArtifactId))
-	);
+	return workingDocumentMatchesLinkedContextSource(document, source);
 }
 
-function overlapsAttachments(source: LinkedContextSource, attachmentIds: Set<string>): boolean {
+function overlapsAttachments(
+	source: LinkedContextSource,
+	attachmentIds: Set<string>,
+): boolean {
 	if (attachmentIds.size === 0) return false;
-	const ids = [
-		source.displayArtifactId,
-		source.promptArtifactId,
-		...source.familyArtifactIds,
-	].filter((id): id is string => typeof id === 'string' && id.length > 0);
-	return ids.some((id) => attachmentIds.has(id));
+	return linkedContextSourceArtifactIds(source).some((id) =>
+		attachmentIds.has(id),
+	);
 }
 
 export async function resolveLinkedContextSourcesForConversation(params: {
@@ -68,12 +58,15 @@ export async function resolveLinkedContextSourcesForConversation(params: {
 	linkedSources: LinkedContextSource[];
 	attachmentIds: string[];
 }): Promise<LinkedContextSource[]> {
-	const conversation = await getConversation(params.userId, params.conversationId);
+	const conversation = await getConversation(
+		params.userId,
+		params.conversationId,
+	);
 	if (!conversation) {
 		throw new LinkedContextSourceError(
-			'Conversation not found',
+			"Conversation not found",
 			404,
-			'conversation_not_found'
+			"conversation_not_found",
 		);
 	}
 
@@ -84,19 +77,21 @@ export async function resolveLinkedContextSourcesForConversation(params: {
 	const byDisplayId = new Map<string, LinkedContextSource>();
 
 	for (const source of params.linkedSources) {
-		const document = documents.find((entry) => documentMatchesSource(entry, source));
+		const document = documents.find((entry) =>
+			documentMatchesSource(entry, source),
+		);
 		if (!document) {
 			throw new LinkedContextSourceError(
-				'Linked source is no longer available',
+				"Linked source is no longer available",
 				404,
-				'linked_source_not_found'
+				"linked_source_not_found",
 			);
 		}
 		if (!isPromptReadyDocument(document)) {
 			throw new LinkedContextSourceError(
-				'Linked source is not ready for prompt context',
+				"Linked source is not ready for prompt context",
 				409,
-				'linked_source_not_prompt_ready'
+				"linked_source_not_prompt_ready",
 			);
 		}
 		const canonical = toLinkedContextSource(document);
@@ -123,9 +118,9 @@ export async function addConversationLinkedContextSources(params: {
 			and(
 				eq(artifactLinks.userId, params.userId),
 				eq(artifactLinks.conversationId, params.conversationId),
-				eq(artifactLinks.linkType, 'linked_context_source'),
-				isNull(artifactLinks.messageId)
-			)
+				eq(artifactLinks.linkType, "linked_context_source"),
+				isNull(artifactLinks.messageId),
+			),
 		);
 	const existing = new Set(existingRows.map((row) => row.artifactId));
 
@@ -136,7 +131,7 @@ export async function addConversationLinkedContextSources(params: {
 			artifactId: source.displayArtifactId,
 			relatedArtifactId: source.promptArtifactId,
 			conversationId: params.conversationId,
-			linkType: 'linked_context_source',
+			linkType: "linked_context_source",
 		});
 	}
 
@@ -157,9 +152,9 @@ export async function listConversationLinkedContextSources(params: {
 			and(
 				eq(artifactLinks.userId, params.userId),
 				eq(artifactLinks.conversationId, params.conversationId),
-				eq(artifactLinks.linkType, 'linked_context_source'),
-				isNull(artifactLinks.messageId)
-			)
+				eq(artifactLinks.linkType, "linked_context_source"),
+				isNull(artifactLinks.messageId),
+			),
 		);
 	if (rows.length === 0) return [];
 
@@ -171,21 +166,27 @@ export async function listConversationLinkedContextSources(params: {
 			displayArtifactId: row.artifactId,
 			promptArtifactId: row.relatedArtifactId,
 			familyArtifactIds: [row.artifactId, row.relatedArtifactId].filter(
-				(value): value is string => typeof value === 'string' && value.length > 0
+				(value): value is string =>
+					typeof value === "string" && value.length > 0,
 			),
-			name: '',
-			type: 'document',
+			name: "",
+			type: "document",
 		};
-		const document = documents.find((entry) => documentMatchesSource(entry, sourceProbe));
+		const document = documents.find((entry) =>
+			documentMatchesSource(entry, sourceProbe),
+		);
 		if (!document || !isPromptReadyDocument(document)) continue;
-		byDisplayId.set(document.displayArtifactId, toLinkedContextSource(document));
+		byDisplayId.set(
+			document.displayArtifactId,
+			toLinkedContextSource(document),
+		);
 	}
 
 	return Array.from(byDisplayId.values());
 }
 
 export function isLinkedContextSourceError(
-	error: unknown
+	error: unknown,
 ): error is LinkedContextSourceError {
 	return error instanceof LinkedContextSourceError;
 }

@@ -3,6 +3,10 @@ import { onMount } from "svelte";
 import { goto } from "$app/navigation";
 import { fetchKnowledgeLibrary } from "$lib/client/api/knowledge";
 import {
+	linkedContextSourceArtifactIds,
+	linkedContextSourcesOverlap,
+} from "$lib/services/working-document-identity";
+import {
 	discoverSkills,
 	type SkillDiscoverySummary,
 } from "$lib/client/api/skills";
@@ -209,10 +213,12 @@ let pendingAttachmentArtifacts = $derived(
 	pendingAttachments.map((attachment) => attachment.artifact),
 );
 let effectiveLinkedSources = $derived(
-	selectedLinkedSources.filter(
-		(source) =>
-			isPromptReadyLinkedSource(source) &&
-			!sourceOverlapsPendingAttachments(source),
+	dedupeLinkedSourcesByFamily(
+		selectedLinkedSources.filter(
+			(source) =>
+				isPromptReadyLinkedSource(source) &&
+				!sourceOverlapsPendingAttachments(source),
+		),
 	),
 );
 let hasUnreadyAttachment = $derived(
@@ -1228,29 +1234,36 @@ function sourceOverlapsPendingAttachments(
 		}
 	}
 	if (attachmentIds.size === 0) return false;
-	return [
-		source.displayArtifactId,
-		source.promptArtifactId,
-		...source.familyArtifactIds,
-	]
-		.filter((id): id is string => typeof id === "string" && id.length > 0)
-		.some((id) => attachmentIds.has(id));
+	return linkedContextSourceArtifactIds(source).some((id) =>
+		attachmentIds.has(id),
+	);
+}
+
+function dedupeLinkedSourcesByFamily(
+	sources: LinkedContextSource[],
+): LinkedContextSource[] {
+	const result: LinkedContextSource[] = [];
+	for (const source of sources) {
+		const canonical = {
+			...source,
+			familyArtifactIds: [...source.familyArtifactIds],
+		};
+		const existingIndex = result.findIndex((entry) =>
+			linkedContextSourcesOverlap(entry, canonical),
+		);
+		if (existingIndex >= 0) {
+			result[existingIndex] = canonical;
+		} else {
+			result.push(canonical);
+		}
+	}
+	return result;
 }
 
 function isPromptReadyLinkedSource(source: LinkedContextSource): boolean {
 	return (
 		typeof source.promptArtifactId === "string" &&
 		source.promptArtifactId.length > 0
-	);
-}
-
-function isPromptReadyKnowledgeDocument(
-	document: KnowledgeDocumentItem,
-): boolean {
-	return (
-		document.normalizedAvailable &&
-		typeof document.promptArtifactId === "string" &&
-		document.promptArtifactId.length > 0
 	);
 }
 
@@ -1266,9 +1279,7 @@ async function openDocumentPicker(initialQuery = "") {
 	documentPickerError = "";
 	try {
 		const library = await fetchKnowledgeLibrary();
-		documentPickerDocuments = library.documents.filter(
-			isPromptReadyKnowledgeDocument,
-		);
+		documentPickerDocuments = library.documents;
 	} catch {
 		documentPickerError = $t("linkedSources.picker.error");
 	} finally {
@@ -1282,14 +1293,7 @@ function closeDocumentPicker() {
 }
 
 function applyLinkedSources(sources: LinkedContextSource[]) {
-	const merged = new Map<string, LinkedContextSource>();
-	for (const source of sources) {
-		merged.set(source.displayArtifactId, {
-			...source,
-			familyArtifactIds: [...source.familyArtifactIds],
-		});
-	}
-	selectedLinkedSources = Array.from(merged.values());
+	selectedLinkedSources = dedupeLinkedSourcesByFamily(sources);
 	documentPickerOpen = false;
 	draftEmissionVersion += 1;
 	void emitDraftChange();

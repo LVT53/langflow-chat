@@ -10,11 +10,8 @@ vi.mock("$lib/server/auth/hooks", () => ({
 	requireAuth: (...args: unknown[]) => mockRequireAuth(...args),
 }));
 
-vi.mock("$lib/server/services/knowledge", () => ({
-	getArtifactForUser: (...args: unknown[]) => mockGetArtifactForUser(...args),
-}));
-
 vi.mock("$lib/server/services/knowledge/store/core", () => ({
+	getArtifactForUser: (...args: unknown[]) => mockGetArtifactForUser(...args),
 	getSourceArtifactIdForNormalizedArtifact: (...args: unknown[]) =>
 		mockGetSourceArtifactId(...args),
 }));
@@ -27,8 +24,17 @@ vi.mock("$lib/server/services/chat-files", () => ({
 
 import { GET } from "./+server";
 
+type DownloadRouteEvent = Parameters<typeof GET>[0];
+
 describe("GET /api/knowledge/[id]/download", () => {
 	const mockUser = { id: "user-123", email: "test@example.com" };
+
+	function makeDownloadEvent(artifactId: string): DownloadRouteEvent {
+		return {
+			locals: { user: mockUser },
+			params: { id: artifactId },
+		} as unknown as DownloadRouteEvent;
+	}
 
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -59,10 +65,7 @@ describe("GET /api/knowledge/[id]/download", () => {
 			Buffer.from("not an ooxml zip"),
 		);
 
-		const response = await GET({
-			locals: { user: mockUser },
-			params: { id: "generated-123" },
-		} as any);
+		const response = await GET(makeDownloadEvent("generated-123"));
 
 		expect(response.status).toBe(415);
 		const body = await response.json();

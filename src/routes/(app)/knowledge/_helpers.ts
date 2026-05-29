@@ -1,4 +1,5 @@
 import type { KnowledgeBulkAction } from "$lib/client/api/knowledge";
+import { resolveWorkingDocumentIdentity } from "$lib/services/working-document-identity";
 import type {
 	DocumentWorkspaceItem,
 	FocusContinuityItem,
@@ -184,12 +185,8 @@ export function getFocusContinuityItemCount(params: {
 export function toWorkspaceDocument(
 	document: KnowledgeDocumentItem,
 ): DocumentWorkspaceItem {
-	// Use displayArtifactId (source artifact with storagePath to the actual binary file),
-	// NOT promptArtifactId (normalized artifact with extracted contentText only).
-	// Preview/download endpoints need the binary source, not extracted text.
-	// Reverting to promptArtifactId causes: PDF preview InvalidPDFException,
-	// and downloads returning text/plain with .pdf extension.
-	const artifactId = document.displayArtifactId;
+	const identity = resolveWorkingDocumentIdentity(document);
+	const artifactId = identity.preview.artifactId;
 	return {
 		id: `artifact:${artifactId}`,
 		source: "knowledge_artifact",
@@ -202,7 +199,7 @@ export function toWorkspaceDocument(
 		versionNumber: document.versionNumber ?? null,
 		originConversationId: document.originConversationId ?? null,
 		originAssistantMessageId: document.originAssistantMessageId ?? null,
-		sourceChatFileId: document.sourceChatFileId ?? null,
+		sourceChatFileId: identity.preview.sourceChatFileId,
 		mimeType: document.mimeType,
 		artifactId,
 		conversationId: document.conversationId,
@@ -214,10 +211,10 @@ export function getWorkspaceDocumentForArtifact(
 	artifactId: string,
 ): DocumentWorkspaceItem | null {
 	const matchingDocument =
-		documents.find(
-			(document) =>
-				document.promptArtifactId === artifactId ||
-				document.displayArtifactId === artifactId,
+		documents.find((document) =>
+			resolveWorkingDocumentIdentity(document).family.artifactIds.includes(
+				artifactId,
+			),
 		) ?? null;
 	if (!matchingDocument) {
 		return null;

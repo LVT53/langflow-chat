@@ -1221,6 +1221,10 @@ _Avoid_: system font dependency, per-document custom font, host-installed PDF fo
 A **Library Document** or **Generated Document** that the user has opened, selected, or clearly continued working on.
 _Avoid_: active file, current artifact
 
+**Working Document Identity**:
+The app-owned contract that resolves a **Working Document** into purpose-specific artifact identities for display or workspace use, prompt context, preview or file serving, and family matching.
+_Avoid_: ad hoc `displayArtifactId` choice, prompt artifact convention, route-local preview fallback
+
 **Document Workspace**:
 The user-facing surface where one or more **Working Documents** can be opened, switched, inspected, compared, or closed.
 _Avoid_: working document sidebar, file preview modal, active document
@@ -1277,6 +1281,11 @@ _Avoid_: source message button, primary document action, source viewer
 - Uploaded documents do not form user-visible version history in v1.
 - A **Generated Document Family** may contain one or more **Generated Document Versions**.
 - A **Working Document** may point to either a **Library Document** or a **Generated Document**.
+- **Working Document Identity** owns purpose-specific artifact ids for **Working Documents**; callers should request display, prompt, preview/file-serving, or family identity instead of inspecting `displayArtifactId`, `promptArtifactId`, and `familyArtifactIds` directly.
+- **Document Workspace** and Knowledge preview/download routes use **Working Document Identity** preview/file-serving identity so source-plus-normalized documents open the display file while text-only documents degrade deliberately.
+- **Linked Context Sources** use **Working Document Identity** canonical display, prompt, and family identity for dedupe, stale-selection matching, and prompt readiness.
+- **Context Selection** may consume the prompt identity supplied by **Working Document Identity**, but **Context Selection** still decides whether that artifact becomes **Prompt Context** and how much budget it receives.
+- **File Production** and **Generated Document Source Persistence** create and link generated-document source/rendered-file metadata; **Working Document Identity** consumes that metadata for workspace and preview behavior rather than owning file-production jobs.
 - A **Library Document** preview in the **Document Workspace** should resolve to the original display file when that file exists.
 - Normalized or extracted **Library Document** text is retrieval and prompt context, not the default visual preview identity.
 - If a **Library Document** no longer has an original display file, the **Document Workspace** may fall back to extracted text as a degraded preview.

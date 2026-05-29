@@ -1,14 +1,21 @@
 <script lang="ts">
-import { onMount, untrack } from 'svelte';
-import { t } from '$lib/i18n';
-import type { KnowledgeDocumentItem, LinkedContextSource } from '$lib/types';
+import { onMount, untrack } from "svelte";
+import { t } from "$lib/i18n";
+import {
+	isPromptReadyWorkingDocument,
+	linkedContextSourceArtifactIds,
+	linkedContextSourcesOverlap,
+	toCanonicalLinkedContextSource,
+	workingDocumentMatchesLinkedContextSource,
+} from "$lib/services/working-document-identity";
+import type { KnowledgeDocumentItem, LinkedContextSource } from "$lib/types";
 
 let {
 	documents,
 	selectedSources = [],
-	initialQuery = '',
+	initialQuery = "",
 	loading = false,
-	error = '',
+	error = "",
 	onApply,
 	onCancel,
 }: {
@@ -25,9 +32,7 @@ let searchInput = $state<HTMLInputElement | null>(null);
 let dialog = $state<HTMLElement | null>(null);
 let query = $state(untrack(() => initialQuery));
 let selected = $state<LinkedContextSource[]>(
-	untrack(() =>
-		selectedSources.filter(isPromptReadySource).map((source) => ({ ...source }))
-	)
+	untrack(() => canonicalizeSelectedSources(selectedSources)),
 );
 
 let promptReadyDocuments = $derived(documents.filter(isPromptReadyDocument));
@@ -35,57 +40,118 @@ let filteredDocuments = $derived.by(() => {
 	const normalizedQuery = query.trim().toLowerCase();
 	if (!normalizedQuery) return promptReadyDocuments;
 	return promptReadyDocuments.filter((document) =>
-		[document.name, document.summary ?? '', document.mimeType ?? '']
-			.join(' ')
+		[document.name, document.summary ?? "", document.mimeType ?? ""]
+			.join(" ")
 			.toLowerCase()
-			.includes(normalizedQuery)
+			.includes(normalizedQuery),
 	);
 });
 
 function isPromptReadyDocument(document: KnowledgeDocumentItem): boolean {
-	return (
-		document.normalizedAvailable &&
-		typeof document.promptArtifactId === 'string' &&
-		document.promptArtifactId.length > 0
-	);
+	return isPromptReadyWorkingDocument(document);
 }
 
 function isPromptReadySource(source: LinkedContextSource): boolean {
 	return (
-		typeof source.promptArtifactId === 'string' && source.promptArtifactId.length > 0
+		typeof source.promptArtifactId === "string" &&
+		source.promptArtifactId.length > 0
 	);
 }
 
 function toLinkedSource(document: KnowledgeDocumentItem): LinkedContextSource {
-	return {
-		displayArtifactId: document.displayArtifactId,
-		promptArtifactId: document.promptArtifactId,
-		familyArtifactIds: document.familyArtifactIds,
-		name: document.name,
-		type: 'document',
-		mimeType: document.mimeType,
-		documentOrigin: document.documentOrigin,
-	};
+	return toCanonicalLinkedContextSource(document);
+}
+
+function sourceMatchesDocument(
+	source: LinkedContextSource,
+	document: KnowledgeDocumentItem,
+): boolean {
+	return workingDocumentMatchesLinkedContextSource(document, source);
+}
+
+function sourceOverlapsSource(
+	left: LinkedContextSource,
+	right: LinkedContextSource,
+): boolean {
+	return linkedContextSourcesOverlap(left, right);
+}
+
+function canonicalizeSource(source: LinkedContextSource): LinkedContextSource {
+	const document = documents.find((entry) =>
+		sourceMatchesDocument(source, entry),
+	);
+	if (!document || !isPromptReadyDocument(document)) {
+		return { ...source, familyArtifactIds: [...source.familyArtifactIds] };
+	}
+	return toLinkedSource(document);
+}
+
+function canonicalizeSelectedSources(
+	sources: LinkedContextSource[],
+): LinkedContextSource[] {
+	const result: LinkedContextSource[] = [];
+	for (const source of sources) {
+		if (!isPromptReadySource(source)) continue;
+		const canonical = canonicalizeSource(source);
+		const existingIndex = result.findIndex((entry) =>
+			sourceOverlapsSource(entry, canonical),
+		);
+		if (existingIndex >= 0) {
+			result[existingIndex] = canonical;
+		} else {
+			result.push(canonical);
+		}
+	}
+	return result;
+}
+
+function linkedSourceKey(source: LinkedContextSource): string {
+	return [
+		source.displayArtifactId,
+		source.promptArtifactId ?? "",
+		linkedContextSourceArtifactIds(source).join(","),
+		source.name,
+		source.mimeType ?? "",
+		source.documentOrigin ?? "",
+	].join("|");
+}
+
+function linkedSourcesEqual(
+	left: LinkedContextSource[],
+	right: LinkedContextSource[],
+): boolean {
+	if (left.length !== right.length) return false;
+	return left.every(
+		(source, index) =>
+			linkedSourceKey(source) === linkedSourceKey(right[index]),
+	);
 }
 
 function isSelected(document: KnowledgeDocumentItem): boolean {
-	return selected.some((source) => source.displayArtifactId === document.displayArtifactId);
+	return selected.some((source) => sourceMatchesDocument(source, document));
 }
 
 function toggleDocument(document: KnowledgeDocumentItem) {
 	if (isSelected(document)) {
-		selected = selected.filter((source) => source.displayArtifactId !== document.displayArtifactId);
+		selected = selected.filter(
+			(source) => !sourceMatchesDocument(source, document),
+		);
 		return;
 	}
-	selected = [...selected, toLinkedSource(document)];
+	selected = canonicalizeSelectedSources([
+		...selected,
+		toLinkedSource(document),
+	]);
 }
 
 function removeSelected(displayArtifactId: string) {
-	selected = selected.filter((source) => source.displayArtifactId !== displayArtifactId);
+	selected = selected.filter(
+		(source) => source.displayArtifactId !== displayArtifactId,
+	);
 }
 
 function applySelection() {
-	onApply(selected.map((source) => ({ ...source, familyArtifactIds: [...source.familyArtifactIds] })));
+	onApply(canonicalizeSelectedSources(selected));
 }
 
 function handleBackdropPointerDown(event: PointerEvent) {
@@ -95,11 +161,11 @@ function handleBackdropPointerDown(event: PointerEvent) {
 }
 
 function handleWindowKeydown(event: KeyboardEvent) {
-	if (event.key === 'Escape') {
+	if (event.key === "Escape") {
 		onCancel();
 		return;
 	}
-	if (event.key === 'Tab') {
+	if (event.key === "Tab") {
 		trapTabNavigation(event);
 	}
 }
@@ -108,8 +174,8 @@ function getFocusableElements(): HTMLElement[] {
 	if (!dialog) return [];
 	return Array.from(
 		dialog.querySelectorAll<HTMLElement>(
-			'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-		)
+			'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+		),
 	);
 }
 
@@ -137,6 +203,14 @@ function trapTabNavigation(event: KeyboardEvent) {
 
 onMount(() => {
 	setTimeout(() => searchInput?.focus(), 0);
+});
+
+$effect(() => {
+	if (documents.length === 0 || selected.length === 0) return;
+	const canonical = canonicalizeSelectedSources(selected);
+	if (!linkedSourcesEqual(selected, canonical)) {
+		selected = canonical;
+	}
 });
 </script>
 

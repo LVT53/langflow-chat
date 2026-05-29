@@ -180,7 +180,7 @@
 		const document = documents.find(d => d.id === documentId);
 		if (!document) return;
 		
-		const artifactId = document.displayArtifactId;
+		const artifactId = toWorkspaceDocument(document).artifactId;
 		if (!artifactId) return;
 		
 		// Trigger download via API endpoint

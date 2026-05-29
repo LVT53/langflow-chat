@@ -1,17 +1,6 @@
 import { json } from "@sveltejs/kit";
-import { readFile } from "fs/promises";
-import { join } from "path";
 import { requireAuth } from "$lib/server/auth/hooks";
-import {
-	getChatFileByUser,
-	readChatFileContentByUser,
-} from "$lib/server/services/chat-files";
-import {
-	isGeneratedFileTypeAllowed,
-	validateGeneratedOutputFile,
-} from "$lib/server/services/file-production/output-validation";
-import { getArtifactForUser } from "$lib/server/services/knowledge";
-import { getSourceArtifactIdForNormalizedArtifact } from "$lib/server/services/knowledge/store/core";
+import { resolveWorkingDocumentFileServing } from "$lib/server/services/knowledge/store/working-document-file-serving";
 import type { RequestHandler } from "./$types";
 export const GET: RequestHandler = async (event) => {
 	try {
@@ -20,139 +9,23 @@ export const GET: RequestHandler = async (event) => {
 		return json({ error: "Unauthorized" }, { status: 401 });
 	}
 
-	const user = event.locals.user!;
+	const user = event.locals.user;
+	if (!user) {
+		return json({ error: "Unauthorized" }, { status: 401 });
+	}
 	const artifactId = event.params.id;
 
-	const artifact = await getArtifactForUser(user.id, artifactId);
-	if (!artifact) {
-		return json({ error: "Artifact not found" }, { status: 404 });
+	const resolved = await resolveWorkingDocumentFileServing({
+		userId: user.id,
+		artifactId,
+		mode: "download",
+	});
+	if (!resolved.ok) {
+		return json({ error: resolved.error }, { status: resolved.status });
 	}
 
-	// Resolve normalized_document to source_document for binary download
-	let artifactToServe = artifact;
-	if (artifact.type === "normalized_document" && artifact.contentText) {
-		const sourceArtifactId = await getSourceArtifactIdForNormalizedArtifact(
-			user.id,
-			artifact.id,
-		);
-		if (sourceArtifactId) {
-			const sourceArtifact = await getArtifactForUser(
-				user.id,
-				sourceArtifactId,
-			);
-			if (sourceArtifact && sourceArtifact.storagePath) {
-				artifactToServe = sourceArtifact;
-			}
-		}
-	}
-
-	// Resolve generated_output artifacts with linked chat files to the binary source
-	if (artifact.type === "generated_output" && !artifactToServe.storagePath) {
-		const sourceChatFileId =
-			typeof artifact.metadata?.sourceChatFileId === "string" &&
-			artifact.metadata.sourceChatFileId.trim()
-				? artifact.metadata.sourceChatFileId.trim()
-				: null;
-		if (sourceChatFileId) {
-			const chatFile = await getChatFileByUser(sourceChatFileId, user.id);
-			if (chatFile) {
-				if (!isGeneratedFileTypeAllowed(chatFile.filename, chatFile.mimeType)) {
-					return json(
-						{ error: "Unsupported generated file type" },
-						{ status: 415 },
-					);
-				}
-				const fileContent = await readChatFileContentByUser(
-					sourceChatFileId,
-					user.id,
-				);
-				if (fileContent) {
-					const contentValidation = await validateGeneratedOutputFile({
-						filename: chatFile.filename,
-						mimeType: chatFile.mimeType,
-						content: fileContent,
-					});
-					if (!contentValidation.ok) {
-						return json(
-							{ error: "Invalid generated file content" },
-							{ status: 415 },
-						);
-					}
-					return new Response(new Uint8Array(fileContent), {
-						status: 200,
-						headers: {
-							"Content-Type": chatFile.mimeType || "application/octet-stream",
-							"Content-Length": fileContent.length.toString(),
-							"Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(artifact.name || chatFile.filename)}`,
-							"Cache-Control": "private, no-store",
-						},
-					});
-				}
-			}
-		}
-	}
-
-	const safeName = artifact.name || "document";
-	const downloadName =
-		safeName.includes(".") || !artifact.extension
-			? safeName
-			: `${safeName}.${artifact.extension}`;
-
-	if (artifactToServe.contentText) {
-		const textBuffer = Buffer.from(artifactToServe.contentText, "utf-8");
-		return new Response(textBuffer, {
-			status: 200,
-			headers: {
-				"Content-Type": "text/plain; charset=utf-8",
-				"Content-Length": textBuffer.length.toString(),
-				"Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(downloadName)}`,
-				"Cache-Control": "private, no-store",
-			},
-		});
-	}
-
-	if (!artifactToServe.storagePath) {
-		return json({ error: "File not available for download" }, { status: 404 });
-	}
-
-	// Path traversal guard - prevent directory traversal attacks
-	if (
-		artifactToServe.storagePath.includes("..") ||
-		artifactToServe.storagePath.startsWith("/")
-	) {
-		console.error("[DOWNLOAD] Path traversal attempt blocked:", {
-			userId: user.id,
-			artifactId,
-			storagePath: artifactToServe.storagePath,
-		});
-		return json({ error: "Invalid path" }, { status: 400 });
-	}
-
-	try {
-		const filePath = join(process.cwd(), artifactToServe.storagePath);
-		const fileBuffer = await readFile(filePath);
-
-		return new Response(fileBuffer, {
-			status: 200,
-			headers: {
-				"Content-Type": artifactToServe.mimeType || "application/octet-stream",
-				"Content-Length": fileBuffer.length.toString(),
-				"Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(downloadName)}`,
-				"Cache-Control": "private, no-store",
-			},
-		});
-	} catch (error: any) {
-		console.error("[DOWNLOAD] Failed to read file:", {
-			userId: user.id,
-			artifactId,
-			storagePath: artifactToServe.storagePath,
-			error: error.message || error,
-		});
-
-		if (error.code === "ENOENT") {
-			return json({ error: "File not found on disk" }, { status: 404 });
-		}
-
-		return json({ error: "Failed to read file" }, { status: 500 });
-	}
+	return new Response(resolved.body, {
+		status: 200,
+		headers: resolved.headers,
+	});
 };

@@ -1,18 +1,6 @@
-import { readFile } from "fs/promises";
-import { join } from "path";
 import { createJsonErrorResponse } from "$lib/server/api/responses";
 import { requireAuth } from "$lib/server/auth/hooks";
-import {
-	getChatFileByUser,
-	readChatFileContentByUser,
-} from "$lib/server/services/chat-files";
-import {
-	isGeneratedFileTypeAllowed,
-	validateGeneratedOutputFile,
-} from "$lib/server/services/file-production/output-validation";
-import { getArtifactForUser } from "$lib/server/services/knowledge";
-import { getSourceArtifactIdForNormalizedArtifact } from "$lib/server/services/knowledge/store/core";
-import { getPreviewContentType } from "$lib/utils/file-preview";
+import { resolveWorkingDocumentFileServing } from "$lib/server/services/knowledge/store/working-document-file-serving";
 import type { RequestHandler } from "./$types";
 /**
  * GET /api/knowledge/[id]/preview
@@ -23,151 +11,23 @@ import type { RequestHandler } from "./$types";
  */
 export const GET: RequestHandler = async (event) => {
 	requireAuth(event);
-	const user = event.locals.user!;
+	const user = event.locals.user;
+	if (!user) {
+		return createJsonErrorResponse("Unauthorized", 401);
+	}
 	const artifactId = event.params.id;
 
-	// Get artifact and verify ownership
-	let artifact = await getArtifactForUser(user.id, artifactId);
-	if (!artifact) {
-		return createJsonErrorResponse("Artifact not found", 404);
+	const resolved = await resolveWorkingDocumentFileServing({
+		userId: user.id,
+		artifactId,
+		mode: "preview",
+	});
+	if (!resolved.ok) {
+		return createJsonErrorResponse(resolved.error, resolved.status);
 	}
 
-	// Resolve normalized_document to source_document for binary preview
-	if (artifact.type === "normalized_document" && artifact.contentText) {
-		const sourceArtifactId = await getSourceArtifactIdForNormalizedArtifact(
-			user.id,
-			artifact.id,
-		);
-		if (sourceArtifactId) {
-			const sourceArtifact = await getArtifactForUser(
-				user.id,
-				sourceArtifactId,
-			);
-			if (sourceArtifact && sourceArtifact.storagePath) {
-				artifact = sourceArtifact;
-			}
-		}
-	}
-
-	// Resolve generated_output artifacts with linked chat files to the binary source
-	if (artifact.type === "generated_output" && !artifact.storagePath) {
-		const sourceChatFileId =
-			typeof artifact.metadata?.sourceChatFileId === "string" &&
-			artifact.metadata.sourceChatFileId.trim()
-				? artifact.metadata.sourceChatFileId.trim()
-				: null;
-		if (sourceChatFileId) {
-			const chatFile = await getChatFileByUser(sourceChatFileId, user.id);
-			if (chatFile) {
-				if (!isGeneratedFileTypeAllowed(chatFile.filename, chatFile.mimeType)) {
-					return createJsonErrorResponse(
-						"Unsupported generated file type",
-						415,
-					);
-				}
-				const fileContent = await readChatFileContentByUser(
-					sourceChatFileId,
-					user.id,
-				);
-				if (fileContent) {
-					const contentValidation = await validateGeneratedOutputFile({
-						filename: chatFile.filename,
-						mimeType: chatFile.mimeType,
-						content: fileContent,
-					});
-					if (!contentValidation.ok) {
-						return createJsonErrorResponse(
-							"Invalid generated file content",
-							415,
-						);
-					}
-					return new Response(new Uint8Array(fileContent), {
-						status: 200,
-						headers: {
-							"Content-Type": getPreviewContentType(
-								chatFile.filename,
-								chatFile.mimeType,
-							),
-							"Content-Length": fileContent.length.toString(),
-							"Content-Disposition": `inline; filename="${encodeURIComponent(artifact.name || chatFile.filename)}"`,
-							"Cache-Control": "private, max-age=3600",
-						},
-					});
-				}
-			}
-		}
-	}
-
-	// Determine content type
-	const safeName = artifact.name || "document";
-	const previewName =
-		safeName.includes(".") || !artifact.extension
-			? safeName
-			: `${safeName}.${artifact.extension}`;
-	const contentType = getPreviewContentType(previewName, artifact.mimeType);
-
-	// Handle contentText-based artifacts (normalized_document, generated_output)
-	if (artifact.contentText) {
-		const textBuffer = Buffer.from(artifact.contentText, "utf-8");
-		return new Response(textBuffer, {
-			status: 200,
-			headers: {
-				"Content-Type": "text/plain; charset=utf-8",
-				"Content-Length": textBuffer.length.toString(),
-				"Content-Disposition": `inline; filename="${encodeURIComponent(safeName)}"`,
-				"Cache-Control": "private, max-age=3600",
-			},
-		});
-	}
-
-	// Handle storagePath-based artifacts (source_document)
-	if (!artifact.storagePath) {
-		return createJsonErrorResponse("File not available for preview", 404);
-	}
-
-	// Path traversal guard - prevent directory traversal attacks
-	if (
-		artifact.storagePath.includes("..") ||
-		artifact.storagePath.startsWith("/")
-	) {
-		console.error("[PREVIEW] Path traversal attempt blocked:", {
-			userId: user.id,
-			artifactId,
-			storagePath: artifact.storagePath,
-		});
-		return new Response(JSON.stringify({ error: "Invalid path" }), {
-			status: 400,
-			headers: { "Content-Type": "application/json" },
-		});
-	}
-
-	try {
-		// Read file from storage
-		const filePath = join(process.cwd(), artifact.storagePath);
-		const fileBuffer = await readFile(filePath);
-
-		// Return file with appropriate headers
-		return new Response(fileBuffer, {
-			status: 200,
-			headers: {
-				"Content-Type": contentType,
-				"Content-Length": fileBuffer.length.toString(),
-				"Content-Disposition": `inline; filename="${encodeURIComponent(safeName)}"`,
-				"Cache-Control": "private, max-age=3600",
-			},
-		});
-	} catch (error: any) {
-		console.error("[PREVIEW] Failed to read file:", {
-			userId: user.id,
-			artifactId,
-			storagePath: artifact.storagePath,
-			error: error.message || error,
-		});
-
-		if (error.code === "ENOENT") {
-			return createJsonErrorResponse("File not found on disk", 404);
-		}
-
-		return createJsonErrorResponse("Failed to read file", 500);
-	}
+	return new Response(resolved.body, {
+		status: 200,
+		headers: resolved.headers,
+	});
 };

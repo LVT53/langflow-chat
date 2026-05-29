@@ -11,6 +11,8 @@ AlfyAI will implement `$` skills and `/` composer commands as an app-owned Norma
 
 We chose the app-owned registry because skills and commands are user-facing product state: they need settings UI, ownership, permissioning, durable session behavior, context-selection integration, and recoverable note writes. Prompt macros would pollute transcripts and make behavior hard to audit. Langflow side effects would blur app configuration with agent execution and make retries or partial streams risky. Strict command syntax would make the feature brittle for ordinary users.
 
+ADR-0017 complements this decision: `/document` creates Linked Context Sources from existing Working Documents, and Working Document Identity canonicalizes their display, prompt, family, and prompt-readiness identity before chat preflight persists or uses them.
+
 **Acceptance Scenarios**
 
 - Typing `$` or `/` opens a composer-attached Command Tray, and Enter selects the highlighted row before message send.

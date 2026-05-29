@@ -138,6 +138,8 @@ describe("KnowledgeWorkspaceCoordinator", () => {
 						createdAt: 1,
 						displayArtifactId: "display-docx-1",
 						promptArtifactId: "artifact-1",
+						familyArtifactIds: ["display-docx-1", "artifact-1"],
+						normalizedAvailable: true,
 					},
 				],
 			},

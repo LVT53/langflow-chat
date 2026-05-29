@@ -766,6 +766,51 @@ describe("MessageInput", () => {
 		expect(queryByRole("listbox", { name: "Composer commands" })).toBeNull();
 	});
 
+	it("dedupes restored linked sources by Working Document family before sending", async () => {
+		const sendSpy = vi.fn();
+		const { getByPlaceholderText, getByRole } = render(MessageInput, {
+			composerCommandRegistryEnabled: true,
+			draftLinkedSources: [
+				{
+					displayArtifactId: "generated-v1",
+					promptArtifactId: "generated-v1",
+					familyArtifactIds: ["generated-v1", "generated-v2"],
+					name: "Generated plan v1.docx",
+					type: "document",
+					documentOrigin: "generated",
+				},
+				{
+					displayArtifactId: "generated-v2",
+					promptArtifactId: "generated-v2",
+					familyArtifactIds: ["generated-v1", "generated-v2"],
+					name: "Generated plan v2.docx",
+					type: "document",
+					documentOrigin: "generated",
+				},
+			],
+			draftVersion: 1,
+			onSend: sendSpy,
+		});
+		const input = getByPlaceholderText(
+			"Type a message...",
+		) as HTMLTextAreaElement;
+
+		await fireEvent.input(input, {
+			target: { value: "Use the current generated plan" },
+		});
+		await fireEvent.click(getByRole("button", { name: "Send message" }));
+
+		const payload = sendSpy.mock.calls[0]?.[0];
+		expect(payload?.linkedSources).toEqual([
+			expect.objectContaining({
+				displayArtifactId: "generated-v2",
+				promptArtifactId: "generated-v2",
+				familyArtifactIds: ["generated-v1", "generated-v2"],
+				name: "Generated plan v2.docx",
+			}),
+		]);
+	});
+
 	it("opens the /source manager and removes a linked source", async () => {
 		const draftSpy = vi.fn();
 		const { getByPlaceholderText, getByRole, queryByText } = render(
@@ -1554,43 +1599,46 @@ describe("MessageInput", () => {
 
 	it("does not expose task steering controls in the context ring popup", async () => {
 		const steerSpy = vi.fn();
-		const { getByLabelText, queryByRole, queryByText } = render(MessageInputWrapper, {
-			onSteer: steerSpy,
-			contextStatus: {
-				conversationId: "conv-1",
-				userId: "user-1",
-				estimatedTokens: 1200,
-				maxContextTokens: 262144,
-				thresholdTokens: 209715,
-				targetTokens: 157286,
-				compactionApplied: false,
-				compactionMode: "none",
-				routingStage: "deterministic",
-				routingConfidence: 0,
-				verificationStatus: "skipped",
-				layersUsed: [],
-				workingSetCount: 0,
-				workingSetArtifactIds: [],
-				workingSetApplied: false,
-				taskStateApplied: false,
-				promptArtifactCount: 0,
-				recentTurnCount: 0,
-				summary: null,
-				updatedAt: Date.now(),
+		const { getByLabelText, queryByRole, queryByText } = render(
+			MessageInputWrapper,
+			{
+				onSteer: steerSpy,
+				contextStatus: {
+					conversationId: "conv-1",
+					userId: "user-1",
+					estimatedTokens: 1200,
+					maxContextTokens: 262144,
+					thresholdTokens: 209715,
+					targetTokens: 157286,
+					compactionApplied: false,
+					compactionMode: "none",
+					routingStage: "deterministic",
+					routingConfidence: 0,
+					verificationStatus: "skipped",
+					layersUsed: [],
+					workingSetCount: 0,
+					workingSetArtifactIds: [],
+					workingSetApplied: false,
+					taskStateApplied: false,
+					promptArtifactCount: 0,
+					recentTurnCount: 0,
+					summary: null,
+					updatedAt: Date.now(),
+				},
+				contextDebug: {
+					activeTaskId: null,
+					activeTaskObjective: "Current task",
+					taskLocked: false,
+					routingStage: "deterministic",
+					routingConfidence: 0,
+					verificationStatus: "skipped",
+					selectedEvidence: [],
+					selectedEvidenceBySource: [],
+					pinnedEvidence: [],
+					excludedEvidence: [],
+				},
 			},
-			contextDebug: {
-				activeTaskId: null,
-				activeTaskObjective: "Current task",
-				taskLocked: false,
-				routingStage: "deterministic",
-				routingConfidence: 0,
-				verificationStatus: "skipped",
-				selectedEvidence: [],
-				selectedEvidenceBySource: [],
-				pinnedEvidence: [],
-				excludedEvidence: [],
-			},
-		});
+		);
 
 		await fireEvent.click(getByLabelText(/prompt budget usage/i));
 
@@ -1642,7 +1690,9 @@ describe("MessageInput", () => {
 
 		await fireEvent.click(getByLabelText(/prompt budget usage/i));
 
-		expect(queryByRole("button", { name: "Manage context sources" })).toBeNull();
+		expect(
+			queryByRole("button", { name: "Manage context sources" }),
+		).toBeNull();
 		expect(manageEvidenceSpy).not.toHaveBeenCalled();
 	});
 

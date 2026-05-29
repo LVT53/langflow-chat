@@ -1,5 +1,5 @@
-import { mkdir, rm, writeFile } from "fs/promises";
-import { dirname, join } from "path";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockRequireAuth = vi.fn();
@@ -12,11 +12,8 @@ vi.mock("$lib/server/auth/hooks", () => ({
 	requireAuth: (...args: unknown[]) => mockRequireAuth(...args),
 }));
 
-vi.mock("$lib/server/services/knowledge", () => ({
-	getArtifactForUser: (...args: unknown[]) => mockGetArtifactForUser(...args),
-}));
-
 vi.mock("$lib/server/services/knowledge/store/core", () => ({
+	getArtifactForUser: (...args: unknown[]) => mockGetArtifactForUser(...args),
 	getSourceArtifactIdForNormalizedArtifact: (...args: unknown[]) =>
 		mockGetSourceArtifactId(...args),
 }));
@@ -28,6 +25,8 @@ vi.mock("$lib/server/services/chat-files", () => ({
 }));
 
 import { GET } from "./+server";
+
+type PreviewRouteEvent = Parameters<typeof GET>[0];
 
 async function writePreviewFile(
 	storagePath: string,
@@ -52,6 +51,13 @@ async function buildMinimalXlsxBuffer(): Promise<Buffer> {
 describe("GET /api/knowledge/[id]/preview", () => {
 	const mockUser = { id: "user-123", email: "test@example.com" };
 
+	function makePreviewEvent(artifactId = "artifact-123"): PreviewRouteEvent {
+		return {
+			locals: { user: mockUser },
+			params: { id: artifactId },
+		} as unknown as PreviewRouteEvent;
+	}
+
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mockRequireAuth.mockImplementation(() => {});
@@ -69,10 +75,7 @@ describe("GET /api/knowledge/[id]/preview", () => {
 	it("returns 404 when artifact not found", async () => {
 		mockGetArtifactForUser.mockResolvedValue(null);
 
-		const event = {
-			locals: { user: mockUser },
-			params: { id: "artifact-123" },
-		} as any;
+		const event = makePreviewEvent();
 
 		const response = await GET(event);
 
@@ -91,10 +94,7 @@ describe("GET /api/knowledge/[id]/preview", () => {
 			extension: "txt",
 		});
 
-		const event = {
-			locals: { user: mockUser },
-			params: { id: "artifact-123" },
-		} as any;
+		const event = makePreviewEvent();
 
 		const response = await GET(event);
 
@@ -114,10 +114,7 @@ describe("GET /api/knowledge/[id]/preview", () => {
 			extension: "txt",
 		});
 
-		const event = {
-			locals: { user: mockUser },
-			params: { id: "artifact-123" },
-		} as any;
+		const event = makePreviewEvent();
 
 		const response = await GET(event);
 
@@ -151,10 +148,7 @@ describe("GET /api/knowledge/[id]/preview", () => {
 			extension: "txt",
 		});
 
-		const event = {
-			locals: { user: mockUser },
-			params: { id: "artifact-123" },
-		} as any;
+		const event = makePreviewEvent();
 
 		const response = await GET(event);
 
@@ -177,10 +171,7 @@ describe("GET /api/knowledge/[id]/preview", () => {
 			extension: "pdf",
 		});
 
-		const event = {
-			locals: { user: mockUser },
-			params: { id: "artifact-123" },
-		} as any;
+		const event = makePreviewEvent();
 
 		const response = await GET(event);
 
@@ -207,10 +198,7 @@ describe("GET /api/knowledge/[id]/preview", () => {
 			extension: "docx",
 		});
 
-		const event = {
-			locals: { user: mockUser },
-			params: { id: "artifact-123" },
-		} as any;
+		const event = makePreviewEvent();
 
 		const response = await GET(event);
 
@@ -229,10 +217,7 @@ describe("GET /api/knowledge/[id]/preview", () => {
 			extension: "pdf",
 		});
 
-		const event = {
-			locals: { user: mockUser },
-			params: { id: "artifact-123" },
-		} as any;
+		const event = makePreviewEvent();
 
 		const response = await GET(event);
 
@@ -252,10 +237,7 @@ describe("GET /api/knowledge/[id]/preview", () => {
 			extension: "png",
 		});
 
-		const event = {
-			locals: { user: mockUser },
-			params: { id: "artifact-123" },
-		} as any;
+		const event = makePreviewEvent();
 
 		const response = await GET(event);
 
@@ -277,10 +259,7 @@ describe("GET /api/knowledge/[id]/preview", () => {
 			extension: "xlsx",
 		});
 
-		const event = {
-			locals: { user: mockUser },
-			params: { id: "artifact-123" },
-		} as any;
+		const event = makePreviewEvent();
 
 		const response = await GET(event);
 
@@ -304,10 +283,7 @@ describe("GET /api/knowledge/[id]/preview", () => {
 			extension: "pptx",
 		});
 
-		const event = {
-			locals: { user: mockUser },
-			params: { id: "artifact-123" },
-		} as any;
+		const event = makePreviewEvent();
 
 		const response = await GET(event);
 
@@ -328,10 +304,7 @@ describe("GET /api/knowledge/[id]/preview", () => {
 			extension: "odt",
 		});
 
-		const event = {
-			locals: { user: mockUser },
-			params: { id: "artifact-123" },
-		} as any;
+		const event = makePreviewEvent();
 
 		const response = await GET(event);
 
@@ -352,10 +325,7 @@ describe("GET /api/knowledge/[id]/preview", () => {
 			extension: "txt",
 		});
 
-		const event = {
-			locals: { user: mockUser },
-			params: { id: "artifact-123" },
-		} as any;
+		const event = makePreviewEvent();
 
 		const response = await GET(event);
 
@@ -374,10 +344,7 @@ describe("GET /api/knowledge/[id]/preview", () => {
 			extension: "pdf",
 		});
 
-		const event = {
-			locals: { user: mockUser },
-			params: { id: "artifact-123" },
-		} as any;
+		const event = makePreviewEvent();
 
 		const response = await GET(event);
 
@@ -422,10 +389,7 @@ describe("GET /api/knowledge/[id]/preview", () => {
 
 		mockGetSourceArtifactId.mockResolvedValue("source-123");
 
-		const event = {
-			locals: { user: mockUser },
-			params: { id: "normalized-123" },
-		} as any;
+		const event = makePreviewEvent("normalized-123");
 
 		const response = await GET(event);
 
@@ -457,10 +421,7 @@ describe("GET /api/knowledge/[id]/preview", () => {
 		const xlsxBuffer = await buildMinimalXlsxBuffer();
 		mockReadChatFileContentByUser.mockResolvedValue(xlsxBuffer);
 
-		const event = {
-			locals: { user: mockUser },
-			params: { id: "generated-123" },
-		} as any;
+		const event = makePreviewEvent("generated-123");
 
 		const response = await GET(event);
 
@@ -502,10 +463,7 @@ describe("GET /api/knowledge/[id]/preview", () => {
 			Buffer.from("not an ooxml zip"),
 		);
 
-		const event = {
-			locals: { user: mockUser },
-			params: { id: "generated-123" },
-		} as any;
+		const event = makePreviewEvent("generated-123");
 
 		const response = await GET(event);
 
