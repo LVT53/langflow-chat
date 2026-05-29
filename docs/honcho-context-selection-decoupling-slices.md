@@ -26,12 +26,12 @@ prompt-section construction or budget policy.
 
 **Acceptance criteria**
 
-- [ ] Honcho exports a narrow read-side supplier for session messages, stored
+- [x] Honcho exports a narrow read-side supplier for session messages, stored
       messages, summary, peer/persona context, diagnostics, and snapshots.
-- [ ] Honcho no longer imports chat-turn context-selection helpers.
-- [ ] Honcho still owns SDK session bootstrap, peer bootstrap, fallback to stored
+- [x] Honcho no longer imports chat-turn context-selection helpers.
+- [x] Honcho still owns SDK session bootstrap, peer bootstrap, fallback to stored
       Honcho snapshots, and persona recall.
-- [ ] Existing Honcho disabled, timeout, and fallback behavior remains intact.
+- [x] Existing Honcho disabled, timeout, and fallback behavior remains intact.
 
 **Verification**
 
@@ -54,14 +54,14 @@ stable for Langflow and stream/send callers.
 
 **Acceptance criteria**
 
-- [ ] `buildConstructedContext` is exported from the chat-turn context-selection
+- [x] `buildConstructedContext` is exported from the chat-turn context-selection
       boundary.
-- [ ] Candidate promotion, inclusion-level signal mapping, document intent,
+- [x] Candidate promotion, inclusion-level signal mapping, document intent,
       active-source budgets, context compression snapshot handling, and context
       status updates live in the chat-turn boundary.
-- [ ] Knowledge, task-state, working-document selection, linked sources, and
+- [x] Knowledge, task-state, working-document selection, linked sources, and
       Honcho are candidate/signal suppliers rather than prompt assemblers.
-- [ ] Prompt output, context debug, Honcho metadata, and trace sections keep
+- [x] Prompt output, context debug, Honcho metadata, and trace sections keep
       their existing response contracts.
 
 **Verification**
@@ -85,13 +85,13 @@ constants, helpers, and tests from Honcho.
 
 **Acceptance criteria**
 
-- [ ] `langflow.ts` imports `buildConstructedContext` from
+- [x] `langflow.ts` imports `buildConstructedContext` from
       `chat-turn/context-selection`.
-- [ ] `honcho.ts` keeps only Honcho adapter behavior and no longer imports
+- [x] `honcho.ts` keeps only Honcho adapter behavior and no longer imports
       knowledge/task-state context-selection dependencies.
-- [ ] No stale test-only helpers, duplicate prompt budget constants, or dead
+- [x] No stale test-only helpers, duplicate prompt budget constants, or dead
       context-selection modules remain.
-- [ ] Existing Normal Chat send/stream contracts are unchanged.
+- [x] Existing Normal Chat send/stream contracts are unchanged.
 
 **Verification**
 
@@ -113,13 +113,13 @@ do not move prompt assembly back into Honcho.
 
 **Acceptance criteria**
 
-- [ ] `CONTEXT.md` defines the deep chat-turn context-selection module and its
+- [x] `CONTEXT.md` defines the deep chat-turn context-selection module and its
       supplier seams.
-- [ ] ADR-0002 and ADR-0011 reflect the implemented split without discarding the
+- [x] ADR-0002 and ADR-0011 reflect the implemented split without discarding the
       Honcho-led memory decision.
-- [ ] The architecture review section is marked finished with implementation
+- [x] The architecture review section is marked finished with implementation
       status and changed module ownership.
-- [ ] Documentation does not contradict AGENTS.md or the existing context-access
+- [x] Documentation does not contradict AGENTS.md or the existing context-access
       roadmap.
 
 **Verification**
