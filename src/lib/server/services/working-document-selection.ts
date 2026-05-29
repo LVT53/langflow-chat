@@ -15,7 +15,7 @@ const CONTEXT_RESET_RE =
 const NEW_GENERATED_DOCUMENT_REQUEST_RE =
 	/\b(create|generate|make|produce|export|build)\b[\s\S]{0,140}\b(pdf|docx|xlsx|pptx|csv|html|file|document|report|deck|slide deck|slides|spreadsheet|workbook)\b|\b(pdf|docx|xlsx|pptx|csv|html)\b[\s\S]{0,80}\b(called|named)\b/i;
 const EXPLICIT_DOCUMENT_INPUT_REFERENCE_RE =
-	/\b(this|that|same|current|open|opened|selected|attached|attachment|uploaded|source)\b|\bthe\s+(?:document|doc|file|pdf|attachment|report|source)\b|\b(from|based on|using|use|with)\s+(?:the\s+)?(?:this|that|current|open|opened|selected|attached|attachment|uploaded|document|doc|file|pdf|report|source)\b/i;
+	/\b(this|that|it|same|current|open|opened|selected|attached|attachment|uploaded|source)\b|\bthe\s+(?:document|doc|file|pdf|attachment|report|source)\b|\b(from|based on|using|use|with)\s+(?:the\s+)?(?:this|that|it|current|open|opened|selected|attached|attachment|uploaded|document|doc|file|pdf|report|source)\b/i;
 
 interface WorkingDocumentSignalState {
 	documentFocused: boolean;
@@ -193,7 +193,10 @@ function hasNewGeneratedDocumentRequestSignal(
 	message: string | null | undefined,
 ): boolean {
 	if (!message?.trim()) return false;
-	return NEW_GENERATED_DOCUMENT_REQUEST_RE.test(message);
+	return (
+		NEW_GENERATED_DOCUMENT_REQUEST_RE.test(message) &&
+		!hasExplicitExistingDocumentRefinementSignal(message)
+	);
 }
 
 function hasExplicitDocumentInputReferenceSignal(
@@ -201,6 +204,18 @@ function hasExplicitDocumentInputReferenceSignal(
 ): boolean {
 	if (!message?.trim()) return false;
 	return EXPLICIT_DOCUMENT_INPUT_REFERENCE_RE.test(message);
+}
+
+function hasExplicitExistingDocumentRefinementSignal(
+	message: string | null | undefined,
+): boolean {
+	if (!message?.trim()) return false;
+	return (
+		hasExplicitDocumentInputReferenceSignal(message) &&
+		/\b(summarize|summarise|summary|review|analyze|analyse|rewrite|revise|refine|edit|update|fix|correct|shorten|shorter|expand|polish|translate|extract|compare)\b/i.test(
+			message,
+		)
+	);
 }
 
 function deriveWorkingDocumentReasonCodes(params: {

@@ -89,25 +89,6 @@ const modelTargets = [
 	},
 ];
 
-const cycleNeedles = [
-	"LANTERN-PAPAYA-17",
-	"Inez Vale",
-	"18742.60",
-	"teal folder marked 9Q",
-	"2026-06-18 14:30 Europe/Budapest",
-	"North pier C-17",
-	"RIVER-ONYX-41",
-	"Tomasz Grell",
-	"VX-4409",
-	"Selyem utca 14, gate B",
-	"ORCHID-TUNGSTEN-58",
-	"Priya Sen",
-	"Híd-3",
-	"release/saffron-needle",
-	"thermal label printer jams after 42 labels",
-	"M-77",
-];
-
 function requireEnv(name: string, value: string | undefined): string {
 	if (!value) {
 		throw new Error(`${name} is required`);
@@ -144,6 +125,108 @@ export function structuredRecallHasValue(params: {
 		(value) =>
 			normalizedFieldValue === value || normalizedFieldValue.includes(value),
 	);
+}
+
+const standardRecallChecks = [
+	{
+		label: "LANTERN-PAPAYA-17",
+		field: "cycle1_codename",
+		acceptedValues: ["LANTERN-PAPAYA-17"],
+	},
+	{
+		label: "Inez Vale",
+		field: "cycle1_person",
+		acceptedValues: ["Inez Vale"],
+	},
+	{
+		label: "18742.60",
+		field: "cycle1_budget_checksum",
+		acceptedValues: ["18742.60"],
+	},
+	{
+		label: "teal folder marked 9Q",
+		field: "cycle1_folder",
+		acceptedValues: ["teal folder marked 9Q"],
+	},
+	{
+		label: "2026-06-18 14:30 Europe/Budapest",
+		field: "cycle1_appointment",
+		acceptedValues: ["2026-06-18 14:30 Europe/Budapest"],
+	},
+	{
+		label: "North pier C-17",
+		field: "cycle1_handoff",
+		acceptedValues: ["North pier C-17"],
+	},
+	{
+		label: "RIVER-ONYX-41",
+		field: "cycle2_codename",
+		acceptedValues: ["RIVER-ONYX-41"],
+	},
+	{
+		label: "Tomasz Grell",
+		field: "cycle2_audit_lead",
+		acceptedValues: ["Tomasz Grell"],
+	},
+	{
+		label: "VX-4409",
+		field: "cycle2_invoice_crumb",
+		acceptedValues: ["VX-4409"],
+	},
+	{
+		label: "Selyem utca 14, gate B",
+		field: "cycle2_fallback_address",
+		acceptedValues: ["Selyem utca 14, gate B"],
+	},
+	{
+		label: "11 triangles",
+		field: "cycle2_mural_count",
+		acceptedValues: ["11 triangles", "11"],
+	},
+	{
+		label: "ORCHID-TUNGSTEN-58",
+		field: "cycle3_codename",
+		acceptedValues: ["ORCHID-TUNGSTEN-58"],
+	},
+	{
+		label: "Priya Sen",
+		field: "cycle3_owner",
+		acceptedValues: ["Priya Sen"],
+	},
+	{
+		label: "Híd-3",
+		field: "cycle3_bridge",
+		acceptedValues: ["Híd-3"],
+	},
+	{
+		label: "release/saffron-needle",
+		field: "cycle3_branch",
+		acceptedValues: ["release/saffron-needle"],
+	},
+	{
+		label: "thermal label printer jams after 42 labels",
+		field: "cycle3_blocker",
+		acceptedValues: ["thermal label printer jams after 42 labels"],
+	},
+	{
+		label: "M-77",
+		field: "cycle3_crate_code",
+		acceptedValues: ["M-77"],
+	},
+];
+
+export function getMissingStandardRecallNeedles(text: string): string[] {
+	const parsed = parseJsonObject(text);
+	return standardRecallChecks
+		.filter(
+			(check) =>
+				!structuredRecallHasValue({
+					parsed,
+					field: check.field,
+					acceptedValues: check.acceptedValues,
+				}),
+		)
+		.map((check) => check.label);
 }
 
 function assertValidLowContextPassConfig() {
@@ -901,9 +984,7 @@ async function runModelSweep(page: Page, model: ModelRef, label: string) {
 		recallPrompt,
 		"general",
 	);
-	const missingNeedles = cycleNeedles.filter(
-		(needle) => !recall.text.toLowerCase().includes(needle.toLowerCase()),
-	);
+	const missingNeedles = getMissingStandardRecallNeedles(recall.text);
 	steps.push({
 		name: "needle recall after 3 compactions",
 		ok: missingNeedles.length === 0,

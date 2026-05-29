@@ -2,7 +2,7 @@ import { previewText } from '$lib/server/utils/text';
 import { randomUUID } from 'crypto';
 import { mkdir, writeFile, readFile, unlink, access, rm } from 'fs/promises';
 import { join, extname } from 'path';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm';
 import { db } from '$lib/server/db';
 import { artifacts, chatGeneratedFiles, conversations } from '$lib/server/db/schema';
 import { parseJsonRecord } from '$lib/server/utils/json';
@@ -412,7 +412,12 @@ export async function getChatFiles(conversationId: string): Promise<ChatFile[]> 
 			db
 				.select(chatGeneratedFileSelection)
 				.from(chatGeneratedFiles)
-				.where(eq(chatGeneratedFiles.conversationId, conversationId))
+				.where(
+					and(
+						eq(chatGeneratedFiles.conversationId, conversationId),
+						isNotNull(chatGeneratedFiles.assistantMessageId)
+					)
+				)
 				.orderBy(desc(chatGeneratedFiles.createdAt)),
 			listGeneratedOutputArtifactIdsByChatFile(conversationId),
 		]);

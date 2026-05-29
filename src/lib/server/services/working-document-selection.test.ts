@@ -165,6 +165,40 @@ describe("working document selection", () => {
 		expect(selection.taskEvidence.protectedArtifactIds).toEqual(["brief-v1"]);
 	});
 
+	it("keeps the recent generated document for explicit document refinement without active focus", () => {
+		const selection = resolveWorkingDocumentSelection({
+			message: "Make the document shorter.",
+			currentConversationId: "conv-1",
+			artifacts: [
+				generatedArtifact(
+					"brief-v1",
+					{
+						documentFamilyId: "family-brief",
+						documentLabel: "Project brief",
+						versionNumber: 1,
+					},
+					1,
+				),
+			],
+		});
+
+		expect(selection.documentFocused).toBe(true);
+		expect(selection.currentDocument).toMatchObject({
+			artifactId: "brief-v1",
+			familyId: "family-brief",
+			source: "generated_document",
+		});
+		expect(selection.prompt.reasonCodesByArtifactId.get("brief-v1")).toEqual([
+			"current_generated_document",
+		]);
+		expect(selection.retrieval).toMatchObject({
+			preferredArtifactId: "brief-v1",
+			preferredGeneratedFamilyId: null,
+			suppressGeneratedCarryover: false,
+		});
+		expect(selection.taskEvidence.protectedArtifactIds).toEqual(["brief-v1"]);
+	});
+
 	it("carries the recently refined generated-document family into follow-up turns", () => {
 		const selection = resolveWorkingDocumentSelection({
 			message: "Please make it shorter.",
@@ -325,6 +359,38 @@ describe("working document selection", () => {
 			familyId: "family-brief",
 			source: "active_focus",
 		});
+		expect(selection.retrieval).toMatchObject({
+			preferredArtifactId: "brief-v1",
+			preferredGeneratedFamilyId: null,
+			suppressGeneratedCarryover: true,
+		});
+		expect(selection.taskEvidence.protectedArtifactIds).toEqual(["brief-v1"]);
+	});
+
+	it("keeps the active document focused when creating a file from it", () => {
+		const selection = resolveWorkingDocumentSelection({
+			message: "Create a PDF from it.",
+			activeDocumentArtifactId: "brief-v1",
+			currentConversationId: "conv-1",
+			artifacts: [
+				generatedArtifact(
+					"brief-v1",
+					{
+						documentFamilyId: "family-brief",
+						documentLabel: "Project brief",
+						versionNumber: 1,
+					},
+					1,
+				),
+			],
+		});
+
+		expect(selection.currentDocument).toMatchObject({
+			artifactId: "brief-v1",
+			familyId: "family-brief",
+			source: "active_focus",
+		});
+		expect(selection.activeFocus.artifactIds).toEqual(["brief-v1"]);
 		expect(selection.retrieval).toMatchObject({
 			preferredArtifactId: "brief-v1",
 			preferredGeneratedFamilyId: null,

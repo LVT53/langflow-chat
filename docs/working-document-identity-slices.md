@@ -4,7 +4,7 @@ These are local `$to-issues` slices for deepening **Working Document Identity** 
 
 The review recommendation is to stop making callers inspect `displayArtifactId`, `promptArtifactId`, and `familyArtifactIds` directly when they need workspace, prompt, preview, linked-source, or file-serving identity. The target boundary is one small identity module that receives a **Knowledge Document** or artifact and answers a purpose-specific identity question.
 
-**Implementation Status, 2026-05-29:** WDI-01 through WDI-05 are implemented locally. The implementation added `src/lib/services/working-document-identity.ts` for pure display/prompt/preview/family identity, `src/lib/server/services/knowledge/store/working-document-file-serving.ts` for preview/download resolution, and ADR-0017 for the durable boundary decision. Final verification tracks `npm run check`, `npm run test:unit`, deployment, live smoke, and production log review.
+**Implementation Status, 2026-05-29:** WDI-01 through WDI-05 are finished. The implementation added `src/lib/services/working-document-identity.ts` for pure display/prompt/preview/family identity, `src/lib/server/services/knowledge/store/working-document-file-serving.ts` for preview/download resolution, and ADR-0017 for the durable boundary decision. Final verification covered `npm run check`, `npm run test:unit`, deployment, live smoke, and production log review.
 
 ## Evidence And Constraints
 
@@ -40,15 +40,15 @@ The review recommendation is to stop making callers inspect `displayArtifactId`,
 
 **Acceptance criteria**
 
-- [ ] The new module defines purpose-specific identity helpers or one typed resolver for display, prompt, preview, and family identity.
-- [ ] Uploaded source-plus-normalized documents return source/display id for display and preview, normalized id for prompt, and both ids for family matching.
-- [ ] Normalized-only documents, generated documents, and Skill Notes remain valid Working Documents with prompt and preview fallbacks matching current behavior.
-- [ ] Tests cover the invariant matrix without depending on routes or database mocks.
-- [ ] The public `KnowledgeDocumentItem` shape remains compatible unless a narrow additive field is necessary.
+- [x] The new module defines purpose-specific identity helpers or one typed resolver for display, prompt, preview, and family identity.
+- [x] Uploaded source-plus-normalized documents return source/display id for display and preview, normalized id for prompt, and both ids for family matching.
+- [x] Normalized-only documents, generated documents, and Skill Notes remain valid Working Documents with prompt and preview fallbacks matching current behavior.
+- [x] Tests cover the invariant matrix without depending on routes or database mocks.
+- [x] The public `KnowledgeDocumentItem` shape remains compatible unless a narrow additive field is necessary.
 
 **Verification**
 
-- [ ] `npm run test:unit -- <new identity test>`
+- [x] `npm run test:unit -- src/lib/server/services/knowledge/store/working-document-identity.test.ts`
 
 ### WDI-02. Make Knowledge Document Mapping Emit Canonical Identity
 
@@ -62,15 +62,15 @@ The review recommendation is to stop making callers inspect `displayArtifactId`,
 
 **Acceptance criteria**
 
-- [ ] Source-plus-normalized documents still expose source display id and normalized prompt id.
-- [ ] Generated document families still expose the latest generated document as display/prompt identity and all family artifacts as family identity.
-- [ ] Skill Notes still expose their own artifact id for display, prompt, preview, and family identity.
-- [ ] Existing document-list behavior stays compatible for Knowledge, Chat document picker, and linked-source chips.
-- [ ] Mapping tests assert identity through the new contract rather than restating route-specific assumptions.
+- [x] Source-plus-normalized documents still expose source display id and normalized prompt id.
+- [x] Generated document families still expose the latest generated document as display/prompt identity and all family artifacts as family identity.
+- [x] Skill Notes still expose their own artifact id for display, prompt, preview, and family identity.
+- [x] Existing document-list behavior stays compatible for Knowledge, Chat document picker, and linked-source chips.
+- [x] Mapping tests assert identity through the new contract rather than restating route-specific assumptions.
 
 **Verification**
 
-- [ ] `npm run test:unit -- src/lib/server/services/knowledge/store/documents.test.ts`
+- [x] `npm run test:unit -- src/lib/server/services/knowledge/store/documents.test.ts`
 
 ### WDI-03. Move Workspace And Linked-Source Callers Onto The Identity Boundary
 
@@ -84,15 +84,15 @@ The review recommendation is to stop making callers inspect `displayArtifactId`,
 
 **Acceptance criteria**
 
-- [ ] `toWorkspaceDocument` requests preview/workspace identity instead of directly choosing `displayArtifactId`.
-- [ ] `getWorkspaceDocumentForArtifact` matches documents through family identity from the identity contract.
-- [ ] Linked Context Source canonicalization requests display, prompt, and family identities from the module.
-- [ ] Linked source readiness still blocks documents without prompt identity.
-- [ ] Attachment dedupe still checks the whole Working Document family.
+- [x] `toWorkspaceDocument` requests preview/workspace identity instead of directly choosing `displayArtifactId`.
+- [x] `getWorkspaceDocumentForArtifact` matches documents through family identity from the identity contract.
+- [x] Linked Context Source canonicalization requests display, prompt, and family identities from the module.
+- [x] Linked source readiness still blocks documents without prompt identity.
+- [x] Attachment dedupe still checks the whole Working Document family.
 
 **Verification**
 
-- [ ] `npm run test:unit -- src/routes/(app)/knowledge/_helpers.test.ts src/lib/server/services/linked-context-sources.test.ts`
+- [x] `npm run test:unit -- src/routes/(app)/knowledge/_helpers.test.ts src/lib/server/services/linked-context-sources.test.ts`
 
 ### WDI-04. Deepen Preview/File-Serving Resolution
 
@@ -106,15 +106,15 @@ The review recommendation is to stop making callers inspect `displayArtifactId`,
 
 **Acceptance criteria**
 
-- [ ] Normalized documents with source artifacts resolve to the source binary for preview.
-- [ ] Generated-output artifacts with `sourceChatFileId` resolve to validated chat-file bytes for preview.
-- [ ] Text-only normalized/generated/Skill Note artifacts still preview as text when no better binary preview exists.
-- [ ] Preview route status codes and headers remain compatible.
-- [ ] File-serving tests cover both the new resolver and the route adapter.
+- [x] Normalized documents with source artifacts resolve to the source binary for preview.
+- [x] Generated-output artifacts with `sourceChatFileId` resolve to validated chat-file bytes for preview.
+- [x] Text-only normalized/generated/Skill Note artifacts still preview as text when no better binary preview exists.
+- [x] Preview route status codes and headers remain compatible.
+- [x] File-serving tests cover both the new resolver and the route adapter.
 
 **Verification**
 
-- [ ] `npm run test:unit -- src/routes/api/knowledge/[id]/preview/preview.test.ts`
+- [x] `npm run test:unit -- src/routes/api/knowledge/[id]/preview/preview.test.ts`
 
 ### WDI-05. Remove Stale Identity Knowledge And Document The Boundary
 
@@ -128,14 +128,14 @@ The review recommendation is to stop making callers inspect `displayArtifactId`,
 
 **Acceptance criteria**
 
-- [ ] Repo-wide search shows no caller comment telling future edits to choose `displayArtifactId` versus `promptArtifactId` directly for preview or prompt identity.
-- [ ] Stale tests that only assert old implementation details are removed or rewritten as identity-boundary tests.
-- [ ] `CONTEXT.md` defines **Working Document Identity** and its relationship to **Working Document**, **Document Workspace**, **Linked Context Source**, and preview/file serving.
-- [ ] A related ADR records that Working Document Identity is the authority for purpose-specific artifact ids while Context Selection remains prompt-budget authority.
-- [ ] The architecture review HTML marks `Deepen Working Document Identity` as finished and includes implementation status.
+- [x] Repo-wide search shows no caller comment telling future edits to choose `displayArtifactId` versus `promptArtifactId` directly for preview or prompt identity.
+- [x] Stale tests that only assert old implementation details are removed or rewritten as identity-boundary tests.
+- [x] `CONTEXT.md` defines **Working Document Identity** and its relationship to **Working Document**, **Document Workspace**, **Linked Context Source**, and preview/file serving.
+- [x] A related ADR records that Working Document Identity is the authority for purpose-specific artifact ids while Context Selection remains prompt-budget authority.
+- [x] The architecture review HTML marks `Deepen Working Document Identity` as finished and includes implementation status.
 
 **Verification**
 
-- [ ] `npm run check`
-- [ ] `npm run test:unit`
-- [ ] Remote live smoke after deploy, focused on Knowledge Library document preview, `/document` linked source flow, and a low-risk chat turn.
+- [x] `npm run check`
+- [x] `npm run test:unit`
+- [x] Remote live smoke after deploy, focused on Knowledge Library document preview, `/document` linked source flow, and a low-risk chat turn.

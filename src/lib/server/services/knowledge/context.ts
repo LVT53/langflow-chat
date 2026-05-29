@@ -137,6 +137,7 @@ function logWorkingDocumentSelection(params: {
 		correctionTargetArtifactIds: selection.correction.targetArtifactIds,
 		recentlyRefinedFamilyId: selection.recentRefinement.familyId,
 		recentlyRefinedArtifactIds: selection.recentRefinement.artifactIds,
+		suppressGeneratedCarryover: selection.retrieval.suppressGeneratedCarryover,
 		hasRecentUserCorrection: selection.correction.hasSignal,
 		hasContextResetSignal: selection.reset.hasSignal,
 		selectedArtifacts: selectedArtifacts.slice(0, 4),
@@ -347,6 +348,7 @@ export async function refreshConversationWorkingSet(params: {
 	const existingByArtifactId = new Map(existingItems.map((item) => [item.artifactId, item]));
 	const message = params.message?.trim() ?? '';
 	const linkedSourceArtifactIds = new Set(sourceArtifactIds);
+	const protectedArtifactIds = new Set(selection.taskEvidence.protectedArtifactIds);
 
 	const candidates: WorkingSetCandidate[] = artifactRows
 		.filter((artifact) => artifact.type !== 'work_capsule')
@@ -358,6 +360,11 @@ export async function refreshConversationWorkingSet(params: {
 		.map((artifact) => {
 			const candidateSignals =
 				selection.workingSet.candidateSignalsByArtifactId.get(artifact.id);
+			const suppressStaleGeneratedCarryover =
+				artifact.type === 'generated_output' &&
+				selection.retrieval.suppressGeneratedCarryover &&
+				!protectedArtifactIds.has(artifact.id);
+			const applyWorkingDocumentSignals = !suppressStaleGeneratedCarryover;
 			return {
 				artifactId: artifact.id,
 				artifactType: artifact.type as WorkingSetCandidate['artifactType'],
@@ -365,18 +372,28 @@ export async function refreshConversationWorkingSet(params: {
 				summary: artifact.summary,
 				contentText: artifact.contentText,
 				updatedAt: artifact.updatedAt,
-				isAttachedThisTurn: candidateSignals?.isAttachedThisTurn ?? false,
-				isActiveDocumentFocus: candidateSignals?.isActiveDocumentFocus ?? false,
-				isRecentUserCorrection: candidateSignals?.isRecentUserCorrection ?? false,
+				isAttachedThisTurn:
+					applyWorkingDocumentSignals &&
+					(candidateSignals?.isAttachedThisTurn ?? false),
+				isActiveDocumentFocus:
+					applyWorkingDocumentSignals &&
+					(candidateSignals?.isActiveDocumentFocus ?? false),
+				isRecentUserCorrection:
+					applyWorkingDocumentSignals &&
+					(candidateSignals?.isRecentUserCorrection ?? false),
 				isRecentlyRefinedDocumentFamily:
-					candidateSignals?.isRecentlyRefinedDocumentFamily ?? false,
-				isCurrentGeneratedDocument: candidateSignals?.isCurrentGeneratedDocument ?? false,
-				messageMatchScore: message
-					? scoreMatch(
-							message,
-							`${artifact.name}\n${artifact.summary ?? ''}\n${artifact.contentText ?? ''}`
-						)
-					: 0,
+					applyWorkingDocumentSignals &&
+					(candidateSignals?.isRecentlyRefinedDocumentFamily ?? false),
+				isCurrentGeneratedDocument:
+					applyWorkingDocumentSignals &&
+					(candidateSignals?.isCurrentGeneratedDocument ?? false),
+				messageMatchScore:
+					message && applyWorkingDocumentSignals
+						? scoreMatch(
+								message,
+								`${artifact.name}\n${artifact.summary ?? ''}\n${artifact.contentText ?? ''}`
+							)
+						: 0,
 			};
 		});
 

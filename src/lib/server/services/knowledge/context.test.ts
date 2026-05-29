@@ -15,6 +15,8 @@ const {
 	mockDbInsertValues,
 	mockDbSelect,
 	mockDbSelectQueue,
+	mockDbUpdate,
+	mockDbUpdateSet,
 } = vi.hoisted(() => {
 	const mockFindRelevantArtifactsByTypesDetailed = vi.fn(async () => []);
 	const mockGetArtifactsForUser = vi.fn(async () => []);
@@ -45,6 +47,12 @@ const {
 	}));
 	const mockDbInsert = vi.fn(() => ({
 		values: mockDbInsertValues,
+	}));
+	const mockDbUpdateSet = vi.fn(() => ({
+		where: vi.fn(async () => []),
+	}));
+	const mockDbUpdate = vi.fn(() => ({
+		set: mockDbUpdateSet,
 	}));
 	const createSelectChain = () => {
 		const queued = mockDbSelectQueue.shift() ?? { final: "where", rows: [] };
@@ -77,6 +85,8 @@ const {
 		mockDbInsertValues,
 		mockDbSelect,
 		mockDbSelectQueue,
+		mockDbUpdate,
+		mockDbUpdateSet,
 	};
 });
 
@@ -84,6 +94,7 @@ vi.mock("$lib/server/db", () => ({
 	db: {
 		select: mockDbSelect,
 		insert: mockDbInsert,
+		update: mockDbUpdate,
 	},
 }));
 
@@ -211,6 +222,8 @@ describe("knowledge context retrieval", () => {
 		mockMapArtifactSummary.mockImplementation((value) => value);
 		mockDbInsert.mockClear();
 		mockDbInsertValues.mockClear();
+		mockDbUpdate.mockClear();
+		mockDbUpdateSet.mockClear();
 		mockDbSelectQueue.length = 0;
 		mockResolveCurrentGeneratedDocumentSelection.mockClear();
 		mockResolveCurrentGeneratedDocumentSelection.mockReturnValue({
@@ -482,6 +495,83 @@ describe("knowledge context retrieval", () => {
 			}),
 		);
 		expect(refreshed.map((entry) => entry.id)).toEqual(["brief-v2"]);
+	});
+
+	it("suppresses stale generated working-set rows during new file creation refreshes", async () => {
+		const staleGenerated = artifact({
+			id: "brief-v1",
+			name: "legacy-brief.pdf",
+			summary: "Legacy project brief",
+			updatedAt: Date.now(),
+		});
+		const staleItem = workingSetItem({
+			artifactId: "brief-v1",
+			artifactType: "generated_output",
+			state: "active",
+			reasonCodesJson: JSON.stringify(["latest_generated_output"]),
+		});
+		mockDbSelectQueue.push(
+			{ final: "orderBy", rows: [staleItem] },
+			{ final: "limit", rows: [] },
+			{
+				final: "orderBy",
+				rows: [
+					{
+						item: staleItem,
+						artifact: staleGenerated,
+					},
+				],
+			},
+		);
+		mockGetArtifactsForUser.mockImplementation(
+			async (_userId: string, artifactIds: string[]) =>
+				artifactIds.includes("brief-v1") ? [staleGenerated] : [],
+		);
+		mockResolveWorkingDocumentSelection.mockReturnValueOnce(
+			workingDocumentSelection({
+				retrieval: {
+					preferredArtifactId: null,
+					preferredGeneratedFamilyId: null,
+					suppressGeneratedCarryover: true,
+					hasExplicitResetSignal: false,
+				},
+				prompt: {
+					reasonCodesByArtifactId: new Map([["brief-v1", []]]),
+				},
+				workingSet: {
+					candidateArtifactIds: ["brief-v1"],
+					candidateSignalsByArtifactId: new Map([
+						[
+							"brief-v1",
+							{
+								isAttachedThisTurn: false,
+								isActiveDocumentFocus: false,
+								isRecentUserCorrection: false,
+								isRecentlyRefinedDocumentFamily: false,
+								isCurrentGeneratedDocument: true,
+								isSelectedCurrentGeneratedDocument: true,
+							},
+						],
+					]),
+				},
+			}),
+		);
+
+		const { refreshConversationWorkingSet } = await import("./context");
+		const refreshed = await refreshConversationWorkingSet({
+			userId: "user-1",
+			conversationId: "conv-1",
+			message: "Create a PDF file called legacy-brief.pdf",
+		});
+
+		expect(refreshed).toEqual([]);
+		expect(mockDbUpdateSet).toHaveBeenCalledWith(
+			expect.objectContaining({
+				artifactType: "generated_output",
+				state: "cooling",
+				reasonCodesJson: JSON.stringify([]),
+			}),
+		);
 	});
 
 	it("does not include Skill Notes in default broad relevance retrieval", async () => {

@@ -77,7 +77,7 @@ Make the browser-facing chat SSE contract explicit without changing existing eve
 
 **Type:** AFK
 **Blocked by:** Slices 2 and 3
-**Status:** Complete for owned repo cleanup/docs on 2026-05-29. Architecture-review HTML status update intentionally left to the orchestrator per worker scope.
+**Status:** Complete on 2026-05-29, including repo cleanup/docs and the architecture-review HTML status update.
 **User stories covered:** As a future agent, I know the browser SSE protocol boundary is intentional and tests are not littered with stale raw-string helper copies.
 
 **What to build:** Remove any duplicate local SSE string builders/helpers made obsolete by the protocol module, update test fixtures to use shared helpers where this improves clarity, and document the boundary in `CONTEXT.md`, relevant ADRs, and the source architecture-review HTML status.
@@ -87,7 +87,7 @@ Make the browser-facing chat SSE contract explicit without changing existing eve
 - [x] Obsolete test-only SSE builders or duplicate protocol helpers are removed or replaced with shared helpers.
 - [x] `CONTEXT.md` defines the browser SSE protocol boundary and avoidance language.
 - [x] A relevant ADR records that browser SSE event names and payloads are owned by the shared protocol boundary.
-- [ ] The architecture-review HTML section is marked finished with implementation status and verification notes. Not changed by this worker because `/private/var/...` architecture review HTML is outside owned scope.
+- [x] The architecture-review HTML section is marked finished with implementation status and verification notes.
 
 **Implementation notes**
 

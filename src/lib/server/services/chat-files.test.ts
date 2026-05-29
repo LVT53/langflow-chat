@@ -229,15 +229,30 @@ function extractUserId(condition: unknown): string | undefined {
 function extractAssistantMessageId(condition: unknown): string | undefined {
 	if (Array.isArray(condition)) {
 		const assistantCondition = condition.find(
-			(c: { field: string }) => c.field === 'assistantMessageId'
+			(c: { field: string; operator?: string }) =>
+				c.field === 'assistantMessageId' && c.operator !== 'isNotNull'
 		);
 		if (assistantCondition) return assistantCondition.value;
 	}
 	if (typeof condition === 'object' && condition !== null && 'field' in condition) {
-		const c = condition as { field: string; value: string };
-		if (c.field === 'assistantMessageId') return c.value;
+		const c = condition as { field: string; value: string; operator?: string };
+		if (c.field === 'assistantMessageId' && c.operator !== 'isNotNull') return c.value;
 	}
 	return undefined;
+}
+
+function requiresAssistantMessage(condition: unknown): boolean {
+	if (Array.isArray(condition)) {
+		return condition.some(
+			(c: { field: string; operator?: string }) =>
+				c.field === 'assistantMessageId' && c.operator === 'isNotNull'
+		);
+	}
+	if (typeof condition === 'object' && condition !== null && 'field' in condition) {
+		const c = condition as { field: string; operator?: string };
+		return c.field === 'assistantMessageId' && c.operator === 'isNotNull';
+	}
+	return false;
 }
 
 function extractArtifactType(condition: unknown): string | undefined {
@@ -277,13 +292,15 @@ function selectRowsForTable(
 	const fileId = extractFileId(condition);
 	const userId = extractUserId(condition);
 	const assistantMessageId = extractAssistantMessageId(condition);
+	const assistantMessageRequired = requiresAssistantMessage(condition);
 	return mockRows
 		.filter(
 			(row) =>
 				(!conversationId || row.conversationId === conversationId) &&
 				(!fileId || row.id === fileId) &&
 				(!userId || row.userId === userId) &&
-				(!assistantMessageId || row.assistantMessageId === assistantMessageId)
+				(!assistantMessageId || row.assistantMessageId === assistantMessageId) &&
+				(!assistantMessageRequired || row.assistantMessageId !== null)
 		)
 		.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
 		.map((row) => ({ ...row }));
@@ -330,11 +347,14 @@ vi.mock('$lib/server/db/schema', () => ({
 }));
 
 vi.mock('drizzle-orm', () => ({
-	and: vi.fn((...conditions: unknown[]) => conditions.filter((c): c is { field: string; value: string } => 
-		typeof c === 'object' && c !== null && 'field' in c && 'value' in c
-	)),
+	and: vi.fn((...conditions: unknown[]) =>
+		conditions.filter(
+			(c): c is { field: string } => typeof c === 'object' && c !== null && 'field' in c
+		)
+	),
 	desc: vi.fn(() => 'desc'),
 	inArray: vi.fn((field: { name: string }, values: string[]) => ({ field: field.name, value: values })),
+	isNotNull: vi.fn((field: { name: string }) => ({ field: field.name, operator: 'isNotNull' })),
 	eq: vi.fn((field: { name: string }, value: string) => ({ field: field.name, value })),
 }));
 
@@ -427,6 +447,44 @@ describe('chat-files service', () => {
 	});
 
 	describe('getChatFiles', () => {
+		it('hides unassigned staged files from the conversation generated files surface', async () => {
+			const { getChatFiles } = await import('./chat-files');
+
+			mockRows.push(
+				{
+					id: 'file-staged-orphan',
+					conversationId: 'conv-a',
+					assistantMessageId: null,
+					userId: 'user-1',
+					filename: 'partial.csv',
+					mimeType: 'text/csv',
+					sizeBytes: 1000,
+					storagePath: 'conv-a/file-staged-orphan.csv',
+					createdAt: new Date('2026-01-04'),
+				},
+				{
+					id: 'file-visible',
+					conversationId: 'conv-a',
+					assistantMessageId: 'assistant-a',
+					userId: 'user-1',
+					filename: 'report.pdf',
+					mimeType: 'application/pdf',
+					sizeBytes: 2000,
+					storagePath: 'conv-a/file-visible.pdf',
+					createdAt: new Date('2026-01-03'),
+				}
+			);
+
+			const result = await getChatFiles('conv-a');
+
+			expect(result).toHaveLength(1);
+			expect(result[0]).toMatchObject({
+				id: 'file-visible',
+				assistantMessageId: 'assistant-a',
+			});
+			expect(result.map((file) => file.id)).not.toContain('file-staged-orphan');
+		});
+
 		it('returns only files for the specified conversation', async () => {
 			const { getChatFiles } = await import('./chat-files');
 
@@ -434,7 +492,7 @@ describe('chat-files service', () => {
 				{
 					id: 'file-1',
 					conversationId: 'conv-a',
-					assistantMessageId: null,
+					assistantMessageId: 'assistant-a',
 					userId: 'user-1',
 					filename: 'doc1.pdf',
 					mimeType: 'application/pdf',
@@ -456,7 +514,7 @@ describe('chat-files service', () => {
 				{
 					id: 'file-3',
 					conversationId: 'conv-a',
-					assistantMessageId: null,
+					assistantMessageId: 'assistant-c',
 					userId: 'user-1',
 					filename: 'doc3.pdf',
 					mimeType: 'application/pdf',
@@ -489,7 +547,7 @@ describe('chat-files service', () => {
 				{
 					id: 'file-1',
 					conversationId: 'conv-a',
-					assistantMessageId: null,
+					assistantMessageId: 'assistant-a',
 					userId: 'user-1',
 					filename: 'oldest.pdf',
 					mimeType: 'application/pdf',
@@ -500,7 +558,7 @@ describe('chat-files service', () => {
 				{
 					id: 'file-2',
 					conversationId: 'conv-a',
-					assistantMessageId: null,
+					assistantMessageId: 'assistant-b',
 					userId: 'user-1',
 					filename: 'newest.pdf',
 					mimeType: 'application/pdf',

@@ -40,7 +40,7 @@
 - **Stack**: SvelteKit, Tailwind CSS 4, SQLite (better-sqlite3 + Drizzle ORM), adapter-node
 - **Test suite**: ~100 unit test files + 19 Playwright spec files
 - **Server code**: 108 non-test `.ts` files under `src/lib/server/`
-- **No CONTEXT.md, no ADR directory** — AGENTS.md serves as domain guide
+- **Engineering context**: `CONTEXT.md` captures product/domain language, `docs/adr/` records durable architecture decisions, and AGENTS.md remains the canonical code-placement map
 
 ---
 
@@ -741,8 +741,8 @@ Pages (routes)  →  Stores  →  client/api/  →  http.ts (requestJson)
 
 ## Notes
 
-- **No CONTEXT.md exists** — this review uses AGENTS.md vocabulary for placement guidance
-- **No ADR directory exists** — candidates that are rejected for load-bearing reasons should be recorded as ADRs
+- **CONTEXT.md exists** — use it for product/domain vocabulary alongside AGENTS.md placement guidance
+- **ADR directory exists** — load-bearing architecture decisions should be recorded in `docs/adr/`
 - **`project-memory.ts` confirmed absent** — AGENTS.md is correct, functionality lives in `task-state/continuity.ts`
 - **Test suite is strong overall** (100+ unit tests, 19 Playwright specs) but concentrated gaps in `chat-turn/` directory
 
