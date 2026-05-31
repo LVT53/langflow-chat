@@ -4,11 +4,12 @@ Parent: [../AGENTS.md](../AGENTS.md) covers cross-service knowledge flow. This f
 
 ## Overview
 
-Artifact storage, retrieval, and working-document lifecycle. All semantic retrieval uses TEI embedder/reranker through shared boundaries.
+Artifact storage, retrieval, working-document lifecycle, and Knowledge Memory Overview shaping. All semantic retrieval uses TEI embedder/reranker through shared boundaries. Memory overview shaping translates Honcho/persona material for the Knowledge UI; it is not a local persona-memory subsystem.
 
 ## Structure
 
 ```
+memory-overview.ts     ← Honcho/persona overview → app-ready Knowledge Memory summary contract
 upload-intake.ts       ← durable upload completion after adapters receive bytes
 store.ts (facade — re-exports store/*)
   ├── store/core.ts         ← artifact CRUD, WORKING_SET_*_BUDGET constants
@@ -24,6 +25,7 @@ capsules.ts               ← work capsules, generated outputs (not lineage auth
 
 | Task | File |
 |------|------|
+| Shape Knowledge Memory Overview bullets/status | `memory-overview.ts` |
 | Complete Knowledge upload intake | `upload-intake.ts` |
 | Create artifact + chunks | `store/core.ts` `createArtifact()` |
 | Upload + prompt readiness | `store/attachments.ts` `saveUploadedArtifact()`, `resolvePromptAttachmentArtifacts()` |
@@ -39,6 +41,7 @@ capsules.ts               ← work capsules, generated outputs (not lineage auth
 - **Semantic retrieval**: `store/documents.ts` composes lexical fetch + embedding shortlist + TEI rerank; keeps deterministic filters above TEI scores
 - **Library uploads**: `conversationId` may be null; skip `attached_to_conversation` link when null. Filename conflicts auto-rename and remain separate uploaded documents; do not convert duplicate uploads into versions.
 - **Knowledge Upload Intake**: upload routes own auth, HTTP/body receipt, raw temp writes, and chunk assembly. `upload-intake.ts` owns shared limits, conversation validation, durable completion, normalized extraction, Honcho sync/fallback, readiness response, and upload trace output after bytes are available.
+- **Memory overview**: `memory-overview.ts` owns app-ready overview bullets, provenance-noise stripping, sensitive-value softening, source semantics, and status semantics for `memory.ts`; Knowledge page routes/views render the returned contract instead of parsing raw Honcho text.
 - **Document families**: generated-document families are metadata-driven via `store/document-metadata.ts`; `document-resolution.ts` is authority for "which generated version is current"
 - **Working Document Selection**: live focus, correction, recent-refinement, reset, prompt, retrieval, and task-evidence signal views come from `../working-document-selection.ts`
 - **Capsules**: workflow summaries only; document lineage lives in artifact metadata + links
@@ -51,6 +54,7 @@ capsules.ts               ← work capsules, generated outputs (not lineage auth
 - Do NOT put upload completion, prompt readiness, or Honcho sync back into upload routes
 - Do NOT make capsules the authority for document lineage
 - Do NOT add uploaded-file versioning or dedupe; duplicate uploads stay separate auto-renamed documents
+- Do NOT reintroduce page-local raw Honcho overview normalization; use `memory-overview.ts`
 - Do NOT route TEI reranking through control-model chat completions
 - Do NOT add per-candidate debug logs; keep retrieval observability summary-level
 - Do NOT bypass `document-resolution.ts` for generated-document selection heuristics
