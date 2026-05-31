@@ -40,7 +40,7 @@ function makeEvent(
 		params: { id: fileId },
 		url: new URL(`http://localhost/api/chat/files/${fileId}/download`),
 		route: { id: "/api/chat/files/[id]/download" },
-	} as any;
+	} as Parameters<typeof GET>[0];
 }
 
 describe("GET /api/chat/files/[id]/download", () => {
@@ -79,6 +79,31 @@ describe("GET /api/chat/files/[id]/download", () => {
 
 		const body = await response.arrayBuffer();
 		expect(Buffer.from(body).toString()).toBe("hello world");
+	});
+
+	it("downloads legacy generated shell scripts stored with generic MIME as shell content", async () => {
+		mockGetChatFileByUser.mockResolvedValue({
+			id: "file-1",
+			conversationId: "conv-1",
+			userId: "user-1",
+			filename: "install.sh",
+			mimeType: "application/octet-stream",
+			sizeBytes: 31,
+			storagePath: "conv-1/file-1.sh",
+			createdAt: Date.now(),
+		});
+		mockReadChatFileContentByUser.mockResolvedValue(
+			Buffer.from("#!/usr/bin/env bash\necho ok\n"),
+		);
+
+		const response = await GET(makeEvent());
+
+		expect(response.status).toBe(200);
+		expect(response.headers.get("Content-Type")).toBe("application/x-sh");
+		expect(response.headers.get("Content-Disposition")).toContain(
+			"attachment; filename*=UTF-8''install.sh",
+		);
+		expect(await response.text()).toBe("#!/usr/bin/env bash\necho ok\n");
 	});
 
 	it("returns 401 when unauthenticated", async () => {

@@ -150,6 +150,38 @@ describe("resolveWorkingDocumentFileServing", () => {
 		expect(Buffer.from(result.body)).toEqual(xlsxBuffer);
 	});
 
+	it("resolves a generated code output with legacy generic MIME for preview", async () => {
+		const shellContent = Buffer.from("#!/usr/bin/env bash\necho ok\n");
+		mockGetArtifactForUser.mockResolvedValue({
+			id: "generated-code-123",
+			name: "install.sh",
+			storagePath: null,
+			contentText: "Generated shell script",
+			mimeType: "text/plain",
+			extension: "sh",
+			type: "generated_output",
+			metadata: { sourceChatFileId: "chatfile-sh-456" },
+		});
+		mockGetChatFileByUser.mockResolvedValue({
+			id: "chatfile-sh-456",
+			filename: "install.sh",
+			mimeType: "application/octet-stream",
+		});
+		mockReadChatFileContentByUser.mockResolvedValue(shellContent);
+
+		const result = await resolveWorkingDocumentFileServing({
+			userId,
+			artifactId: "generated-code-123",
+			mode: "preview",
+		});
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error("expected successful resolution");
+		expect(result.headers["Content-Type"]).toBe("application/x-sh");
+		expect(result.headers["Content-Disposition"]).toContain("install.sh");
+		expect(Buffer.from(result.body)).toEqual(shellContent);
+	});
+
 	it("does not serve failed source-first generated document text as a preview", async () => {
 		mockGetArtifactForUser.mockResolvedValue({
 			id: "generated-failed",

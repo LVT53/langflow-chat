@@ -40,7 +40,7 @@ function makeEvent(
 		params: { id: fileId },
 		url: new URL(`http://localhost/api/chat/files/${fileId}/preview`),
 		route: { id: "/api/chat/files/[id]/preview" },
-	} as any;
+	} as Parameters<typeof GET>[0];
 }
 
 describe("GET /api/chat/files/[id]/preview", () => {
@@ -125,6 +125,31 @@ describe("GET /api/chat/files/[id]/preview", () => {
 
 		const body = await response.arrayBuffer();
 		expect(Buffer.from(body).toString()).toBe("hello world");
+	});
+
+	it("previews legacy generated shell scripts stored with generic MIME", async () => {
+		mockGetChatFileByUser.mockResolvedValue({
+			id: "file-1",
+			conversationId: "conv-1",
+			userId: "user-1",
+			filename: "install.sh",
+			mimeType: "application/octet-stream",
+			sizeBytes: 31,
+			storagePath: "conv-1/file-1.sh",
+			createdAt: Date.now(),
+		});
+		mockReadChatFileContentByUser.mockResolvedValue(
+			Buffer.from("#!/usr/bin/env bash\necho ok\n"),
+		);
+
+		const response = await GET(makeEvent());
+
+		expect(response.status).toBe(200);
+		expect(response.headers.get("Content-Type")).toBe("application/x-sh");
+		expect(response.headers.get("Content-Disposition")).toContain(
+			'inline; filename="install.sh"',
+		);
+		expect(await response.text()).toBe("#!/usr/bin/env bash\necho ok\n");
 	});
 
 	it("returns 500 when the generated file content cannot be read", async () => {
@@ -226,6 +251,28 @@ describe("GET /api/chat/files/[id]/preview", () => {
 		});
 		mockReadChatFileContentByUser.mockResolvedValue(
 			Buffer.from("not an ooxml zip"),
+		);
+
+		const response = await GET(makeEvent());
+		const body = await response.json();
+
+		expect(response.status).toBe(415);
+		expect(body.error).toBe("Invalid generated file content");
+	});
+
+	it("rejects binary content hidden behind a generic text/code extension", async () => {
+		mockGetChatFileByUser.mockResolvedValue({
+			id: "file-1",
+			conversationId: "conv-1",
+			userId: "user-1",
+			filename: "install.sh",
+			mimeType: "application/octet-stream",
+			sizeBytes: 4,
+			storagePath: "conv-1/file-1.sh",
+			createdAt: Date.now(),
+		});
+		mockReadChatFileContentByUser.mockResolvedValue(
+			Buffer.from([0x00, 0x01, 0x02, 0x03]),
 		);
 
 		const response = await GET(makeEvent());

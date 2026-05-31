@@ -195,4 +195,17 @@ describe("Markdown Rendering Service", () => {
 		expect(html).toContain("style=");
 		expect(html).toContain("answer");
 	});
+
+	it("renders shell scripts through the Bash highlighter", async () => {
+		const mod = await import("./markdown");
+		const html = await mod.renderHighlightedText(
+			"#!/usr/bin/env bash\necho ok",
+			"bash",
+			false,
+		);
+
+		expect(html).toContain("<pre");
+		expect(html).toContain("style=");
+		expect(html).toContain("echo");
+	});
 });

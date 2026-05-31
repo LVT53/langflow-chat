@@ -177,6 +177,62 @@ const OUTPUT_TYPE_EXTENSIONS: Record<string, string> = {
 	"application/zip": ".zip",
 };
 
+const GENERIC_MIME_TYPES = new Set([
+	"application/octet-stream",
+	"application/download",
+]);
+
+const TEXT_LIKE_EXTENSIONS = new Set([
+	".txt",
+	".md",
+	".markdown",
+	".csv",
+	".html",
+	".htm",
+	".css",
+	".scss",
+	".sass",
+	".less",
+	".js",
+	".mjs",
+	".cjs",
+	".jsx",
+	".ts",
+	".tsx",
+	".py",
+	".sh",
+	".bash",
+	".zsh",
+	".json",
+	".xml",
+	".yaml",
+	".yml",
+	".toml",
+	".sql",
+	".graphql",
+	".gql",
+	".ini",
+	".env",
+	".conf",
+	".log",
+	".rb",
+	".rs",
+	".go",
+	".java",
+	".kt",
+	".kts",
+	".swift",
+	".cs",
+	".cpp",
+	".cxx",
+	".cc",
+	".c",
+	".h",
+	".hpp",
+	".php",
+	".r",
+]);
+
 const XLSX_MIME_TYPE =
 	"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const DEFAULT_XLSX_VALIDATION_MAX_BYTES = 100 * 1024 * 1024;
@@ -212,6 +268,14 @@ function normalizeMimeType(mimeType: string | null | undefined): string {
 	return mimeType?.toLowerCase().split(";")[0]?.trim() ?? "";
 }
 
+function isGenericMimeType(mimeType: string): boolean {
+	return !mimeType || GENERIC_MIME_TYPES.has(mimeType);
+}
+
+function isTextLikeExtension(extension: string): boolean {
+	return TEXT_LIKE_EXTENSIONS.has(extension);
+}
+
 function normalizeRequestedOutputType(type: string): string {
 	return type.trim().toLowerCase();
 }
@@ -235,7 +299,10 @@ export function isGeneratedFileTypeAllowed(
 	}
 
 	const normalizedMimeType = mimeType.toLowerCase().split(";")[0]?.trim() ?? "";
-	return allowedMimeTypes.includes(normalizedMimeType);
+	return (
+		allowedMimeTypes.includes(normalizedMimeType) ||
+		(isGenericMimeType(normalizedMimeType) && isTextLikeExtension(extension))
+	);
 }
 
 function fail(
@@ -317,6 +384,13 @@ export async function validateGeneratedOutputFile(
 		);
 	}
 
+	if (isTextLikeExtension(extension)) {
+		const textValidation = validateTextLikeOutputBytes(file.content);
+		if (!textValidation.ok) {
+			return textValidation;
+		}
+	}
+
 	if (extension !== ".xlsx") {
 		return { ok: true };
 	}
@@ -332,6 +406,26 @@ export async function validateGeneratedOutputFile(
 	}
 
 	return validateXlsxBytes(file.content);
+}
+
+function validateTextLikeOutputBytes(
+	content: Buffer | Uint8Array,
+): FileProductionOutputValidationResult {
+	const bytes = Buffer.isBuffer(content) ? content : Buffer.from(content);
+	if (bytes.includes(0)) {
+		return fail(
+			"invalid_text_output",
+			"Text/code output contains binary NUL bytes.",
+		);
+	}
+
+	try {
+		new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+	} catch {
+		return fail("invalid_text_output", "Text/code output is not valid UTF-8.");
+	}
+
+	return { ok: true };
 }
 
 export async function validateProgramOutputContract(params: {

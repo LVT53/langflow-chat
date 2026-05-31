@@ -164,4 +164,41 @@ describe("file-production output validation", () => {
 			).resolves.toEqual({ ok: true });
 		}
 	});
+
+	it("accepts legacy generic MIME for text/code outputs after byte validation", async () => {
+		await expect(
+			validateGeneratedOutputFile({
+				filename: "install.sh",
+				mimeType: "application/octet-stream",
+				content: Buffer.from("#!/usr/bin/env bash\necho ok\n"),
+			}),
+		).resolves.toEqual({ ok: true });
+
+		await expect(
+			validateProgramOutputContract({
+				requestedOutputTypes: ["sh"],
+				programFilename: "install.sh",
+				files: [
+					{
+						filename: "install.sh",
+						mimeType: "application/octet-stream",
+						content: Buffer.from("#!/usr/bin/env bash\necho ok\n"),
+					},
+				],
+			}),
+		).resolves.toEqual({ ok: true });
+	});
+
+	it("rejects binary bytes for text/code outputs with generic MIME", async () => {
+		await expect(
+			validateGeneratedOutputFile({
+				filename: "install.sh",
+				mimeType: "application/octet-stream",
+				content: Buffer.from([0x00, 0x01, 0x02, 0x03]),
+			}),
+		).resolves.toMatchObject({
+			ok: false,
+			code: "invalid_text_output",
+		});
+	});
 });

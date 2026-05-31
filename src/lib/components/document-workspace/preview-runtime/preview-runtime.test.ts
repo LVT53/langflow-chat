@@ -117,6 +117,30 @@ describe("preview runtime", () => {
 		}
 	});
 
+	it("uses filename language hints when legacy text/code previews have generic MIME", async () => {
+		const result = await loadPreviewRuntime({
+			artifactId: "artifact-shell",
+			previewUrl: null,
+			filename: "install.sh",
+			mimeType: "application/octet-stream",
+			fetchImpl: vi.fn().mockResolvedValue(
+				makeFetchResponse(
+					new Blob(["#!/usr/bin/env bash\necho ok\n"], {
+						type: "application/octet-stream",
+					}),
+				),
+			),
+		});
+
+		expectReady(result);
+		expect(result.fileType).toBe("text");
+		expect(result.adapter).toMatchObject({
+			kind: "text",
+			textKind: "highlighted",
+			language: "bash",
+		});
+	});
+
 	it("classifies fetched previews from the response blob MIME when metadata is missing", async () => {
 		const result = await loadPreviewRuntime({
 			artifactId: "artifact-image",

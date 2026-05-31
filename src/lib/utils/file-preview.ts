@@ -61,6 +61,11 @@ const TEXT_EXTENSIONS = new Set([
 	"r",
 ]);
 
+const GENERIC_MIME_TYPES = new Set([
+	"application/octet-stream",
+	"application/download",
+]);
+
 const IMAGE_EXTENSIONS = new Set([
 	"jpg",
 	"jpeg",
@@ -155,11 +160,22 @@ function getExtension(name: string): string | null {
 	return ext ? ext : null;
 }
 
+function normalizeMimeType(mimeType: string | null): string | null {
+	const normalized = mimeType?.split(";")[0]?.trim().toLowerCase() ?? "";
+	return normalized || null;
+}
+
+function isGenericMimeType(mimeType: string | null): boolean {
+	const normalized = normalizeMimeType(mimeType);
+	return !normalized || GENERIC_MIME_TYPES.has(normalized);
+}
+
 export function getPreviewContentType(
 	filename: string,
 	mimeType: string | null,
 ): string {
-	if (mimeType) return mimeType;
+	const normalizedMimeType = normalizeMimeType(mimeType);
+	if (!isGenericMimeType(normalizedMimeType)) return normalizedMimeType;
 	const ext = getExtension(filename);
 	if (!ext) return "application/octet-stream";
 	return EXTENSION_CONTENT_TYPES[ext] ?? "application/octet-stream";
@@ -170,7 +186,7 @@ export function determinePreviewFileType(
 	filename: string,
 ): PreviewFileType {
 	const ext = getExtension(filename);
-	const mime = mimeType?.toLowerCase() ?? null;
+	const mime = normalizeMimeType(mimeType);
 
 	if (!mime) {
 		if (ext === "pdf") return "pdf";

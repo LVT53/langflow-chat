@@ -10,6 +10,7 @@ import {
 	isGeneratedFileTypeAllowed,
 	validateGeneratedOutputFile,
 } from "$lib/server/services/file-production/output-validation";
+import { getPreviewContentType } from "$lib/utils/file-preview";
 import type { RequestHandler } from "./$types";
 
 export const GET: RequestHandler = async (event) => {
@@ -19,7 +20,10 @@ export const GET: RequestHandler = async (event) => {
 		return json({ error: "Unauthorized" }, { status: 401 });
 	}
 
-	const user = event.locals.user!;
+	const user = event.locals.user;
+	if (!user) {
+		return json({ error: "Unauthorized" }, { status: 401 });
+	}
 	const fileId = event.params.id;
 	const chatFile =
 		(await getChatFileByUser(fileId, user.id)) ??
@@ -53,7 +57,10 @@ export const GET: RequestHandler = async (event) => {
 	return new Response(new Uint8Array(fileContent), {
 		status: 200,
 		headers: {
-			"Content-Type": chatFile.mimeType || "application/octet-stream",
+			"Content-Type": getPreviewContentType(
+				chatFile.filename,
+				chatFile.mimeType,
+			),
 			"Content-Length": fileContent.length.toString(),
 			"Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(chatFile.filename)}`,
 			"Cache-Control": "private, no-store",
