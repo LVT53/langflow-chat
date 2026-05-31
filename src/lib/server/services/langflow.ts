@@ -8,11 +8,11 @@ import type {
 } from "$lib/types";
 import { isProviderModelId } from "$lib/types";
 import { estimateTokenCount } from "$lib/utils/tokens";
-import type { ModelConfig, RuntimeConfig } from "../config-store";
+import type { RuntimeConfig } from "../config-store";
 import { getConfig } from "../config-store";
 import { getSystemPrompt, stripDeprecatedPromptSections } from "../prompts";
 import { truncateToTokenBudget } from "../utils/prompt-context";
-import { extractProviderUsage, type ProviderUsageSnapshot } from "./analytics";
+import type { ProviderUsageSnapshot } from "./analytics";
 import {
 	logAttachmentTrace,
 	summarizeAttachmentSectionInInput,
@@ -27,12 +27,28 @@ import {
 	type LegacyContextTraceSectionInput,
 } from "./chat-turn/context-trace";
 import { decryptApiKey, getProviderWithSecrets } from "./inference-providers";
+import {
+	executeLangflowJsonRun,
+	executeLangflowStreamRun,
+	extractLangflowMessageText,
+	type LangflowModelRunConfig,
+	type PromptContextLimits,
+	resolveProviderPromptContextLimits,
+	runLangflowModelRunWithFailover,
+	type TimeoutFailoverInfo,
+} from "./langflow-model-run";
 import { detectLanguage, type SupportedLanguage } from "./language";
-import { inferModelContextWindow } from "./model-context";
 import {
 	buildOpenAICompatibleUrl,
 	normalizeOpenAICompatibleBaseUrl,
 } from "./openai-compatible-url";
+
+export type { PromptContextLimits } from "./langflow-model-run";
+export {
+	isLangflowRateLimitError,
+	isLangflowTimeoutError,
+	resolveTimeoutFailoverTargetModelId,
+} from "./langflow-model-run";
 
 export type AuthenticatedPromptUser = {
 	id: string;
@@ -74,12 +90,6 @@ export type PreparedOutboundChatContext = {
 	contextTraceSections?: LegacyContextTraceSectionInput[];
 };
 
-export type PromptContextLimits = {
-	maxModelContext: number;
-	compactionUiThreshold: number;
-	targetConstructedContext: number;
-};
-
 type OutputTokenBudget = {
 	configuredMaxTokens: number | null;
 	effectiveMaxTokens: number | null;
@@ -104,32 +114,7 @@ type AutomaticContextCompressionResult = {
 	snapshotId?: string | null;
 };
 
-type LangflowModelRunConfig = ModelConfig & {
-	contextLimits?: PromptContextLimits;
-	providerId?: string;
-	providerReasoningEffort?: string | null;
-	providerThinkingType?: string | null;
-	requiresComponentTweaks?: boolean;
-};
-
 type EffectiveThinkingType = "enabled" | "disabled" | null;
-type LangflowFailoverReason = "timeout" | "rate_limit";
-type TimeoutFailoverInfo = {
-	fromModelId: ModelId;
-	toModelId: ModelId;
-	reason: LangflowFailoverReason;
-	fromModelName?: string;
-	toModelName?: string;
-};
-
-type LangflowFailoverTarget = {
-	modelId: ModelId;
-	modelConfig?: LangflowModelRunConfig;
-	timeoutMs: number;
-	logFrom: string;
-	logTo: string;
-	info: TimeoutFailoverInfo;
-};
 
 type LangflowRequestResult = {
 	text: string;
@@ -177,19 +162,11 @@ type JsonControlResponseSchema = {
 	strict?: boolean;
 };
 
-type LangflowTimeoutError = Error & { code?: string };
-type LangflowHttpError = Error & {
-	status?: number;
-	statusText?: string;
-	bodyPreview?: string;
-};
-
 const CURRENT_USER_MESSAGE_MARKER = "## Current User Message\n";
 const LANGFLOW_PROMPT_OVERHEAD_RESERVE_TOKENS = 512;
 const LANGFLOW_PROMPT_OVERHEAD_RESERVE_RATIO = 0.16;
 const LANGFLOW_PROMPT_MAX_OVERHEAD_RESERVE_TOKENS = 48_000;
 const LANGFLOW_PROMPT_TOKEN_SAFETY_FACTOR = 1.2;
-const UNKNOWN_PROVIDER_MAX_MODEL_CONTEXT_FALLBACK = 150_000;
 const GPT_OSS_HIGH_REASONING_DIRECTIVE = "Reasoning: high";
 const GPT_OSS_REASONING_DIRECTIVE_RE =
 	/(^|\n)Reasoning:\s*(?:low|medium|high)\s*(?=\n|$)/i;
@@ -405,7 +382,9 @@ async function buildEnhancedSystemPrompt(
 			? [
 					"## User Profile",
 					"The following account-level profile fields belong to the current human user.",
-					normalizedDisplayName ? `Display Name: ${normalizedDisplayName}` : null,
+					normalizedDisplayName
+						? `Display Name: ${normalizedDisplayName}`
+						: null,
 					normalizedEmail ? `Email: ${normalizedEmail}` : null,
 					"Use them for respectful personalization and direct address when helpful, especially early in a conversation before other memory exists.",
 					"Do not infer extra biography, preferences, or private facts beyond these explicit fields.",
@@ -609,27 +588,6 @@ function resolvePromptContextLimits(
 		maxModelContext: config.model1MaxModelContext,
 		compactionUiThreshold: config.model1CompactionUiThreshold,
 		targetConstructedContext: config.model1TargetConstructedContext,
-	};
-}
-
-function resolveProviderPromptContextLimits(provider: {
-	modelName?: string | null;
-	maxModelContext: number | null;
-	compactionUiThreshold?: number | null;
-	targetConstructedContext?: number | null;
-}): PromptContextLimits {
-	const budget = deriveModelContextBudget({
-		maxModelContext:
-			provider.maxModelContext ??
-			inferModelContextWindow(provider.modelName) ??
-			UNKNOWN_PROVIDER_MAX_MODEL_CONTEXT_FALLBACK,
-		compactionUiThreshold: provider.compactionUiThreshold,
-		targetConstructedContext: provider.targetConstructedContext,
-	});
-	return {
-		maxModelContext: budget.maxModelContext,
-		compactionUiThreshold: budget.compactionUiThreshold,
-		targetConstructedContext: budget.targetConstructedContext,
 	};
 }
 
@@ -1494,304 +1452,6 @@ function mergeAbortSignals(
 	return controller.signal;
 }
 
-function createLangflowTimeoutError(message: string): LangflowTimeoutError {
-	const error = new Error(message) as LangflowTimeoutError;
-	error.name = "LangflowRequestTimeoutError";
-	error.code = "langflow_request_timeout";
-	return error;
-}
-
-function createLangflowHttpError(params: {
-	status: number;
-	statusText: string;
-	body: string;
-}): LangflowHttpError {
-	const bodyPreview = params.body.slice(0, 500);
-	const error = new Error(
-		`Langflow API error: ${params.status} ${params.statusText}${bodyPreview ? ` - ${bodyPreview}` : ""}`,
-	) as LangflowHttpError;
-	error.name = "LangflowHttpError";
-	error.status = params.status;
-	error.statusText = params.statusText;
-	error.bodyPreview = params.body.slice(0, 1000);
-	return error;
-}
-
-export function isLangflowTimeoutError(error: unknown): boolean {
-	if (!(error instanceof Error)) return false;
-	const code = (error as LangflowTimeoutError).code;
-	const message = error.message.toLowerCase();
-	return (
-		error.name === "LangflowRequestTimeoutError" ||
-		error.name === "LangflowStreamConnectTimeoutError" ||
-		code === "langflow_request_timeout" ||
-		code === "langflow_stream_connect_timeout" ||
-		message.includes("timed out") ||
-		message.includes("apitimeouterror") ||
-		message.includes("readtimeout") ||
-		message.includes("read timeout")
-	);
-}
-
-function getLangflowErrorStatus(error: unknown): number | null {
-	if (!(error instanceof Error)) return null;
-	const status = (error as LangflowHttpError).status;
-	return typeof status === "number" && Number.isFinite(status) ? status : null;
-}
-
-export function isLangflowRateLimitError(error: unknown): boolean {
-	if (!(error instanceof Error)) return false;
-	const status = getLangflowErrorStatus(error);
-	if (status === 429) return true;
-
-	const bodyPreview = (error as LangflowHttpError).bodyPreview;
-	const haystack =
-		`${error.name}\n${error.message}\n${typeof bodyPreview === "string" ? bodyPreview : ""}`.toLowerCase();
-	if (!haystack.includes("fireworks")) return false;
-
-	return (
-		/\b429\b/.test(haystack) ||
-		haystack.includes("too many requests") ||
-		haystack.includes("rate limit") ||
-		haystack.includes("ratelimit")
-	);
-}
-
-function configuredAttemptTimeoutMs(
-	config: RuntimeConfig,
-	failoverCandidate: ModelId | null,
-): number {
-	if (!failoverCandidate) return config.requestTimeoutMs;
-	return Math.min(
-		config.requestTimeoutMs,
-		Math.max(1000, config.modelTimeoutFailoverTimeoutMs),
-	);
-}
-
-function readStringProperty(
-	record: Record<string, unknown>,
-	key: string,
-): string | null {
-	const value = record[key];
-	return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function readNumberProperty(
-	record: Record<string, unknown>,
-	key: string,
-): number | null {
-	const value = record[key];
-	return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function buildProviderRateLimitFallbackModelConfig(params: {
-	provider: unknown;
-	config: RuntimeConfig;
-}): {
-	modelConfig: LangflowModelRunConfig;
-	timeoutMs: number;
-	logFrom: string;
-	logTo: string;
-	info: Pick<TimeoutFailoverInfo, "fromModelName" | "toModelName">;
-} | null {
-	if (!params.provider || typeof params.provider !== "object") return null;
-	const provider = params.provider as Record<string, unknown>;
-	if (provider.rateLimitFallbackEnabled !== true) return null;
-
-	const baseUrl = readStringProperty(provider, "rateLimitFallbackBaseUrl");
-	const modelName = readStringProperty(provider, "rateLimitFallbackModelName");
-	const encryptedApiKey = readStringProperty(
-		provider,
-		"rateLimitFallbackApiKeyEncrypted",
-	);
-	const apiKeyIv = readStringProperty(provider, "rateLimitFallbackApiKeyIv");
-	if (!baseUrl || !modelName || !encryptedApiKey || !apiKeyIv) return null;
-
-	const providerId = readStringProperty(provider, "id") ?? undefined;
-	const providerModelName =
-		readStringProperty(provider, "modelName") ?? undefined;
-	const providerDisplayName =
-		readStringProperty(provider, "displayName") ??
-		params.config.model1.displayName;
-	const fallbackDisplayName = `${providerDisplayName} (rate-limit fallback)`;
-	const timeoutMs = Math.max(
-		1000,
-		readNumberProperty(provider, "rateLimitFallbackTimeoutMs") ??
-			params.config.requestTimeoutMs,
-	);
-	const apiKey = decryptApiKey(encryptedApiKey, apiKeyIv);
-	const normalizedBaseUrl = normalizeOpenAICompatibleBaseUrl(baseUrl);
-	const contextLimits = resolveProviderPromptContextLimits({
-		modelName,
-		maxModelContext:
-			typeof provider.maxModelContext === "number"
-				? provider.maxModelContext
-				: null,
-	});
-
-	return {
-		modelConfig: {
-			...params.config.model1,
-			baseUrl: normalizedBaseUrl,
-			apiKey,
-			modelName,
-			displayName: fallbackDisplayName,
-			maxTokens:
-				typeof provider.maxTokens === "number"
-					? provider.maxTokens
-					: params.config.model1.maxTokens,
-			flowId: params.config.model1.flowId || params.config.langflowFlowId,
-			componentId: params.config.model1.componentId.trim(),
-			contextLimits,
-			providerId,
-			providerReasoningEffort:
-				typeof provider.reasoningEffort === "string"
-					? provider.reasoningEffort
-					: null,
-			providerThinkingType:
-				typeof provider.thinkingType === "string"
-					? provider.thinkingType
-					: null,
-			requiresComponentTweaks: true,
-		},
-		timeoutMs,
-		logFrom: providerModelName
-			? `${providerId ? `provider:${providerId}` : "provider"}:${providerModelName}`
-			: providerId
-				? `provider:${providerId}`
-				: "provider",
-		logTo: providerId ? `provider:${providerId}:${modelName}` : modelName,
-		info: {
-			fromModelName: providerModelName,
-			toModelName: modelName,
-		},
-	};
-}
-
-async function resolveValidatedFailoverTargetModelId(
-	sourceModelId: ModelId,
-	candidate: ModelId | null,
-	config: RuntimeConfig,
-): Promise<ModelId | null> {
-	if (!candidate || candidate === sourceModelId) return null;
-
-	if (candidate === "model2" && config.model2Enabled === false) {
-		return null;
-	}
-
-	if (candidate.startsWith("provider:")) {
-		const provider = await getProviderWithSecrets(
-			candidate.slice("provider:".length),
-		).catch(() => null);
-		if (!provider?.enabled) return null;
-	}
-
-	return candidate;
-}
-
-function buildModelIdFailoverTarget(params: {
-	sourceModelId: ModelId;
-	targetModelId: ModelId | null;
-	timeoutMs: number;
-	reason: LangflowFailoverReason;
-}): LangflowFailoverTarget | null {
-	if (!params.targetModelId) return null;
-	return {
-		modelId: params.targetModelId,
-		timeoutMs: params.timeoutMs,
-		logFrom: params.sourceModelId,
-		logTo: params.targetModelId,
-		info: {
-			fromModelId: params.sourceModelId,
-			toModelId: params.targetModelId,
-			reason: params.reason,
-		},
-	};
-}
-
-export async function resolveTimeoutFailoverTargetModelId(
-	modelId?: ModelId | null,
-	config: RuntimeConfig = getConfig(),
-): Promise<ModelId | null> {
-	if (!config.modelTimeoutFailoverEnabled) return null;
-
-	const sourceModelId = modelId ?? "model1";
-	const targetModelId = config.modelTimeoutFailoverTargetModel;
-	return resolveValidatedFailoverTargetModelId(
-		sourceModelId,
-		targetModelId,
-		config,
-	);
-}
-
-async function resolveRateLimitFailoverTarget(
-	modelId?: ModelId | null,
-	config: RuntimeConfig = getConfig(),
-): Promise<LangflowFailoverTarget | null> {
-	const sourceModelId = modelId ?? "model1";
-	if (isProviderModelId(sourceModelId)) {
-		const provider = await getProviderWithSecrets(
-			sourceModelId.slice("provider:".length),
-		).catch(() => null);
-		const providerFallback = buildProviderRateLimitFallbackModelConfig({
-			provider,
-			config,
-		});
-		if (providerFallback) {
-			return {
-				modelId: sourceModelId,
-				modelConfig: providerFallback.modelConfig,
-				timeoutMs: providerFallback.timeoutMs,
-				logFrom: providerFallback.logFrom,
-				logTo: providerFallback.logTo,
-				info: {
-					fromModelId: sourceModelId,
-					toModelId: sourceModelId,
-					reason: "rate_limit",
-					...providerFallback.info,
-				},
-			};
-		}
-	}
-
-	const globalTarget = await resolveTimeoutFailoverTargetModelId(
-		sourceModelId,
-		config,
-	);
-	return buildModelIdFailoverTarget({
-		sourceModelId,
-		targetModelId: globalTarget,
-		timeoutMs: config.requestTimeoutMs,
-		reason: "rate_limit",
-	});
-}
-
-function logLangflowFailoverSwitch(params: {
-	label: "Request" | "Streaming request";
-	sessionId: string;
-	from: string;
-	to: string;
-	reason: LangflowFailoverReason;
-	status?: number | null;
-	timeoutMs?: number | null;
-}): void {
-	const status = params.status ?? null;
-	const timeoutMs = params.timeoutMs ?? null;
-	console.warn(
-		[
-			`[LANGFLOW] ${params.label} switching to failover model`,
-			`sessionId=${params.sessionId}`,
-			`from=${params.from}`,
-			`to=${params.to}`,
-			`reason=${params.reason}`,
-			status == null ? null : `status=${status}`,
-			timeoutMs == null ? null : `timeoutMs=${timeoutMs}`,
-		]
-			.filter(Boolean)
-			.join(" "),
-	);
-}
-
 export async function prepareOutboundChatContext(params: {
 	message: string;
 	sessionId: string;
@@ -1967,19 +1627,7 @@ export async function prepareOutboundChatContext(params: {
 }
 
 export function extractMessageText(response: LangflowRunResponse): string {
-	try {
-		const text = response.outputs?.[0]?.outputs?.[0]?.results?.message?.text;
-
-		if (typeof text !== "string" || text === "") {
-			throw new Error("Could not extract message text from Langflow response");
-		}
-
-		return text;
-	} catch (error) {
-		throw new Error(
-			`Failed to extract message text: ${error instanceof Error ? error.message : String(error)}`,
-		);
-	}
+	return extractLangflowMessageText(response);
 }
 
 function extractOpenAICompatibleMessageText(
@@ -2135,7 +1783,7 @@ export async function sendJsonControlMessage(
 	};
 }
 
-async function sendMessageAttempt(
+async function runPreparedMessage(
 	message: string,
 	sessionId: string,
 	modelId: ModelId | undefined,
@@ -2146,87 +1794,130 @@ async function sendMessageAttempt(
 	overrideModelConfig?: LangflowModelRunConfig,
 ): Promise<LangflowRequestResult> {
 	const config = getConfig();
-	let timedOut = false;
-	let timeoutId: ReturnType<typeof setTimeout> | null = null;
-	let timeoutController: AbortController | null = null;
+	const modelConfig =
+		overrideModelConfig ?? (await resolveLangflowRunConfig(modelId));
+	const flowId = modelConfig.flowId || config.langflowFlowId;
+	const modelName = modelConfig.modelName;
+	const baseUrl = modelConfig.baseUrl;
 
-	try {
-		const modelConfig =
-			overrideModelConfig ?? (await resolveLangflowRunConfig(modelId));
-		const flowId = modelConfig.flowId || config.langflowFlowId;
-		const url = `${config.langflowApiUrl}/api/v1/run/${flowId}`;
-		const modelName = modelConfig.modelName;
-		const baseUrl = modelConfig.baseUrl;
+	let inputValue = message;
+	let contextStatus: import("$lib/types").ConversationContextStatus | undefined;
+	let taskState: import("$lib/types").TaskState | null | undefined;
+	let contextDebug: import("$lib/types").ContextDebugState | null | undefined;
+	let honchoContext: import("$lib/types").HonchoContextInfo | null | undefined;
+	let honchoSnapshot:
+		| import("$lib/types").HonchoContextSnapshot
+		| null
+		| undefined;
+	let contextTraceSections: LegacyContextTraceSectionInput[] | undefined;
+	let prefetchedToolCalls: ToolCallEntry[] = [];
+	if (user?.id && !options?.skipHonchoContext) {
+		const constructed = await buildConstructedContext({
+			userId: user.id,
+			conversationId: sessionId,
+			message,
+			attachmentIds: options?.attachmentIds,
+			activeDocumentArtifactId: options?.activeDocumentArtifactId,
+			attachmentTraceId: options?.attachmentTraceId,
+			modelId: modelId ?? "model1",
+			contextLimits: modelConfig.contextLimits,
+		});
+		inputValue = constructed.inputValue;
+		contextStatus = constructed.contextStatus;
+		taskState = constructed.taskState;
+		contextDebug = constructed.contextDebug;
+		honchoContext = constructed.honchoContext;
+		honchoSnapshot = constructed.honchoSnapshot;
+		contextTraceSections = constructed.contextTraceSections;
+	}
+	const attachmentSection = summarizeAttachmentSectionInInput(inputValue);
+	if ((options?.attachmentIds?.length ?? 0) > 0) {
+		logAttachmentTrace("langflow_request", {
+			traceId: options?.attachmentTraceId ?? null,
+			sessionId,
+			inputValueLength: inputValue.length,
+			hasCurrentAttachmentsMarker: attachmentSection.hasMarker,
+			attachmentSectionPreview: attachmentSection.preview,
+			attachmentSectionPreviewHash: attachmentSection.previewHash,
+		});
+		if (!attachmentSection.hasMarker) {
+			console.warn(
+				"[LANGFLOW] Attachment marker missing from outgoing request bundle",
+				{
+					sessionId,
+					attachmentIds: options?.attachmentIds ?? [],
+					traceId: options?.attachmentTraceId ?? null,
+					inputValueLength: inputValue.length,
+				},
+			);
+		}
+	}
 
-		let inputValue = message;
-		let contextStatus:
-			| import("$lib/types").ConversationContextStatus
-			| undefined;
-		let taskState: import("$lib/types").TaskState | null | undefined;
-		let contextDebug: import("$lib/types").ContextDebugState | null | undefined;
-		let honchoContext:
-			| import("$lib/types").HonchoContextInfo
-			| null
-			| undefined;
-		let honchoSnapshot:
-			| import("$lib/types").HonchoContextSnapshot
-			| null
-			| undefined;
-		let contextTraceSections: LegacyContextTraceSectionInput[] | undefined;
-		let prefetchedToolCalls: ToolCallEntry[] = [];
-		if (user?.id && !options?.skipHonchoContext) {
-			const constructed = await buildConstructedContext({
-				userId: user.id,
-				conversationId: sessionId,
+	const configuredBasePrompt =
+		options?.systemPromptOverride ?? modelConfig.systemPrompt;
+	const baseSystemPrompt =
+		user?.id && !options?.systemPromptOverride
+			? await buildEnhancedSystemPrompt(configuredBasePrompt, {
+					userId: user.id,
+					displayName: user.displayName,
+					email: user.email,
+				})
+			: getSystemPrompt(configuredBasePrompt);
+	let systemPrompt = buildOutboundSystemPrompt({
+		basePrompt: baseSystemPrompt,
+		inputValue,
+		responseLanguage: detectLanguage(message),
+		modelDisplayName: modelConfig.displayName,
+		modelName: modelConfig.modelName,
+		systemPromptAppendix: options?.systemPromptAppendix,
+		personalityPrompt: options?.personalityPrompt,
+		forceWebSearch: options?.forceWebSearch,
+		skipDefaultRuntimeGuidance: options?.skipDefaultRuntimeGuidance,
+	});
+	const contextLimits = resolvePromptContextLimits(
+		modelId ?? "model1",
+		modelConfig,
+		config,
+	);
+	const automaticCompression = !options?.skipHonchoContext
+		? await maybeRunAutomaticContextCompression({
+				user,
+				sessionId,
 				message,
+				modelId: modelId ?? "model1",
+				modelConfig,
+				contextLimits,
+				inputValue,
+				systemPrompt,
 				attachmentIds: options?.attachmentIds,
 				activeDocumentArtifactId: options?.activeDocumentArtifactId,
 				attachmentTraceId: options?.attachmentTraceId,
-				modelId: modelId ?? "model1",
-				contextLimits: modelConfig.contextLimits,
+			}).catch((error) => {
+				console.warn("[LANGFLOW] Automatic context compression skipped", {
+					sessionId,
+					modelId: modelId ?? "model1",
+					error: error instanceof Error ? error.message : String(error),
+				});
+				return automaticCompressionResult({
+					outcome: "failed",
+					reason: error instanceof Error ? error.message : String(error),
+					attempted: true,
+				});
+			})
+		: automaticCompressionResult({
+				outcome: "not_possible",
+				reason: "honcho_context_disabled",
+				attempted: false,
 			});
-			inputValue = constructed.inputValue;
-			contextStatus = constructed.contextStatus;
-			taskState = constructed.taskState;
-			contextDebug = constructed.contextDebug;
-			honchoContext = constructed.honchoContext;
-			honchoSnapshot = constructed.honchoSnapshot;
-			contextTraceSections = constructed.contextTraceSections;
-		}
-		const attachmentSection = summarizeAttachmentSectionInInput(inputValue);
-		if ((options?.attachmentIds?.length ?? 0) > 0) {
-			logAttachmentTrace("langflow_request", {
-				traceId: options?.attachmentTraceId ?? null,
-				sessionId,
-				inputValueLength: inputValue.length,
-				hasCurrentAttachmentsMarker: attachmentSection.hasMarker,
-				attachmentSectionPreview: attachmentSection.preview,
-				attachmentSectionPreviewHash: attachmentSection.previewHash,
-			});
-			if (!attachmentSection.hasMarker) {
-				console.warn(
-					"[LANGFLOW] Attachment marker missing from outgoing request bundle",
-					{
-						sessionId,
-						attachmentIds: options?.attachmentIds ?? [],
-						traceId: options?.attachmentTraceId ?? null,
-						inputValueLength: inputValue.length,
-					},
-				);
-			}
-		}
-
-		const configuredBasePrompt =
-			options?.systemPromptOverride ?? modelConfig.systemPrompt;
-		const baseSystemPrompt =
-			user?.id && !options?.systemPromptOverride
-				? await buildEnhancedSystemPrompt(configuredBasePrompt, {
-						userId: user.id,
-						displayName: user.displayName,
-						email: user.email,
-					})
-				: getSystemPrompt(configuredBasePrompt);
-		let systemPrompt = buildOutboundSystemPrompt({
+	if (automaticCompression.context) {
+		inputValue = automaticCompression.context.inputValue;
+		contextStatus = automaticCompression.context.contextStatus;
+		taskState = automaticCompression.context.taskState;
+		contextDebug = automaticCompression.context.contextDebug;
+		honchoContext = automaticCompression.context.honchoContext;
+		honchoSnapshot = automaticCompression.context.honchoSnapshot;
+		contextTraceSections = automaticCompression.context.contextTraceSections;
+		systemPrompt = buildOutboundSystemPrompt({
 			basePrompt: baseSystemPrompt,
 			inputValue,
 			responseLanguage: detectLanguage(message),
@@ -2237,207 +1928,103 @@ async function sendMessageAttempt(
 			forceWebSearch: options?.forceWebSearch,
 			skipDefaultRuntimeGuidance: options?.skipDefaultRuntimeGuidance,
 		});
-		const contextLimits = resolvePromptContextLimits(
-			modelId ?? "model1",
-			modelConfig,
-			config,
-		);
-		const automaticCompression = !options?.skipHonchoContext
-			? await maybeRunAutomaticContextCompression({
-					user,
-					sessionId,
-					message,
-					modelId: modelId ?? "model1",
-					modelConfig,
-					contextLimits,
-					inputValue,
-					systemPrompt,
-					attachmentIds: options?.attachmentIds,
-					activeDocumentArtifactId: options?.activeDocumentArtifactId,
-					attachmentTraceId: options?.attachmentTraceId,
-				}).catch((error) => {
-					console.warn("[LANGFLOW] Automatic context compression skipped", {
-						sessionId,
-						modelId: modelId ?? "model1",
-						error: error instanceof Error ? error.message : String(error),
-					});
-					return automaticCompressionResult({
-						outcome: "failed",
-						reason: error instanceof Error ? error.message : String(error),
-						attempted: true,
-					});
-				})
-			: automaticCompressionResult({
-					outcome: "not_possible",
-					reason: "honcho_context_disabled",
-					attempted: false,
-				});
-		if (automaticCompression.context) {
-			inputValue = automaticCompression.context.inputValue;
-			contextStatus = automaticCompression.context.contextStatus;
-			taskState = automaticCompression.context.taskState;
-			contextDebug = automaticCompression.context.contextDebug;
-			honchoContext = automaticCompression.context.honchoContext;
-			honchoSnapshot = automaticCompression.context.honchoSnapshot;
-			contextTraceSections = automaticCompression.context.contextTraceSections;
-			systemPrompt = buildOutboundSystemPrompt({
-				basePrompt: baseSystemPrompt,
-				inputValue,
-				responseLanguage: detectLanguage(message),
-				modelDisplayName: modelConfig.displayName,
-				modelName: modelConfig.modelName,
-				systemPromptAppendix: options?.systemPromptAppendix,
-				personalityPrompt: options?.personalityPrompt,
-				forceWebSearch: options?.forceWebSearch,
-				skipDefaultRuntimeGuidance: options?.skipDefaultRuntimeGuidance,
-			});
-		}
-		const forcedWebPrefetch = await maybePrefetchForcedWebResearch({
-			inputValue,
-			message,
-			forceWebSearch: options?.forceWebSearch,
-			sessionId,
-			modelId: modelId ?? "model1",
-		});
-		inputValue = forcedWebPrefetch.inputValue;
-		prefetchedToolCalls = forcedWebPrefetch.prefetchedToolCalls;
-		if (prefetchedToolCalls.length > 0) {
-			systemPrompt = buildOutboundSystemPrompt({
-				basePrompt: baseSystemPrompt,
-				inputValue,
-				responseLanguage: detectLanguage(message),
-				modelDisplayName: modelConfig.displayName,
-				modelName: modelConfig.modelName,
-				systemPromptAppendix: options?.systemPromptAppendix,
-				personalityPrompt: options?.personalityPrompt,
-				forceWebSearch: options?.forceWebSearch,
-				skipDefaultRuntimeGuidance: options?.skipDefaultRuntimeGuidance,
-			});
-		}
-		const budgetedPrompt = applyOutboundPromptBudget({
-			inputValue,
-			message,
-			systemPrompt,
-			contextLimits,
-			maxTokens: modelConfig.maxTokens,
-			sessionId,
-			modelId: modelId ?? "model1",
-			modelName,
-			providerId: modelConfig.providerId ?? null,
-			automaticCompression,
-		});
-		inputValue = budgetedPrompt.inputValue;
-		emitOutboundContextTrace({
-			inputValue,
-			systemPrompt,
-			message,
-			contextLimits,
-			outputReserve: budgetedPrompt.outputTokenBudget.outputReserve,
-			sessionId,
-			userId: user?.id ?? null,
-			modelId: modelId ?? "model1",
-			providerId: modelConfig.providerId ?? null,
-			modelName,
-			honchoContext,
-			contextTraceSections,
-		});
-
-		const body: LangflowRunRequest & { tweaks?: Record<string, unknown> } = {
-			input_value: inputValue,
-			input_type: "chat",
-			output_type: "chat",
-			session_id: sessionId,
-			tweaks: buildLangflowTweaks(
-				modelConfig,
-				systemPrompt,
-				message,
-				budgetedPrompt.outputTokenBudget.effectiveMaxTokens,
-				options?.thinkingMode,
-				attemptTimeoutMs,
-			),
-		};
-
-		if (config.contextDiagnosticsDebug) {
-			console.info("[LANGFLOW] Starting request", {
-				url,
-				flowId,
-				sessionId,
-				userId: user?.id ?? null,
-				modelId: modelId ?? "model1",
-				providerId: modelConfig.providerId ?? null,
-				modelName,
-				baseUrl,
-				attachmentCount: options?.attachmentIds?.length ?? 0,
-				inputLength: inputValue.length,
-			});
-		}
-
-		timeoutController = new AbortController();
-		timeoutId = setTimeout(() => {
-			timedOut = true;
-			timeoutController?.abort();
-		}, attemptTimeoutMs);
-		const signal = mergeAbortSignals(options?.signal, timeoutController.signal);
-
-		const response = await fetch(url, {
-			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-				"x-api-key": config.langflowApiKey,
-			},
-			body: JSON.stringify(body),
-			signal,
-		});
-
-		if (!response.ok) {
-			const errorBody = await response.text().catch(() => "");
-			const httpError = createLangflowHttpError({
-				status: response.status,
-				statusText: response.statusText,
-				body: errorBody,
-			});
-			if (!isLangflowRateLimitError(httpError)) {
-				console.error("[LANGFLOW] sendMessage non-OK response", {
-					url,
-					status: response.status,
-					statusText: response.statusText,
-					bodyPreview: errorBody.slice(0, 1000),
-				});
-			}
-			throw httpError;
-		}
-
-		const rawResponse: LangflowRunResponse = await response.json();
-		const text = extractMessageText(rawResponse);
-		const providerUsage = extractProviderUsage(rawResponse);
-
-		return {
-			text,
-			rawResponse,
-			contextStatus,
-			taskState,
-			contextDebug,
-			honchoContext,
-			honchoSnapshot,
-			contextTraceSections,
-			prefetchedToolCalls,
-			providerUsage,
-			modelId: modelId ?? "model1",
-			modelDisplayName: modelConfig.displayName,
-			timeoutFailover,
-		};
-	} catch (error) {
-		if (timedOut) {
-			throw createLangflowTimeoutError(
-				`Timed out waiting ${attemptTimeoutMs}ms for Langflow response`,
-			);
-		}
-		throw error;
-	} finally {
-		if (timeoutId) {
-			clearTimeout(timeoutId);
-		}
 	}
+	const forcedWebPrefetch = await maybePrefetchForcedWebResearch({
+		inputValue,
+		message,
+		forceWebSearch: options?.forceWebSearch,
+		sessionId,
+		modelId: modelId ?? "model1",
+	});
+	inputValue = forcedWebPrefetch.inputValue;
+	prefetchedToolCalls = forcedWebPrefetch.prefetchedToolCalls;
+	if (prefetchedToolCalls.length > 0) {
+		systemPrompt = buildOutboundSystemPrompt({
+			basePrompt: baseSystemPrompt,
+			inputValue,
+			responseLanguage: detectLanguage(message),
+			modelDisplayName: modelConfig.displayName,
+			modelName: modelConfig.modelName,
+			systemPromptAppendix: options?.systemPromptAppendix,
+			personalityPrompt: options?.personalityPrompt,
+			forceWebSearch: options?.forceWebSearch,
+			skipDefaultRuntimeGuidance: options?.skipDefaultRuntimeGuidance,
+		});
+	}
+	const budgetedPrompt = applyOutboundPromptBudget({
+		inputValue,
+		message,
+		systemPrompt,
+		contextLimits,
+		maxTokens: modelConfig.maxTokens,
+		sessionId,
+		modelId: modelId ?? "model1",
+		modelName,
+		providerId: modelConfig.providerId ?? null,
+		automaticCompression,
+	});
+	inputValue = budgetedPrompt.inputValue;
+	emitOutboundContextTrace({
+		inputValue,
+		systemPrompt,
+		message,
+		contextLimits,
+		outputReserve: budgetedPrompt.outputTokenBudget.outputReserve,
+		sessionId,
+		userId: user?.id ?? null,
+		modelId: modelId ?? "model1",
+		providerId: modelConfig.providerId ?? null,
+		modelName,
+		honchoContext,
+		contextTraceSections,
+	});
+
+	const body: LangflowRunRequest & { tweaks?: Record<string, unknown> } = {
+		input_value: inputValue,
+		input_type: "chat",
+		output_type: "chat",
+		session_id: sessionId,
+		tweaks: buildLangflowTweaks(
+			modelConfig,
+			systemPrompt,
+			message,
+			budgetedPrompt.outputTokenBudget.effectiveMaxTokens,
+			options?.thinkingMode,
+			attemptTimeoutMs,
+		),
+	};
+	const run = await executeLangflowJsonRun({
+		config,
+		flowId,
+		body,
+		attemptTimeoutMs,
+		sessionId,
+		userId: user?.id ?? null,
+		modelId: modelId ?? "model1",
+		providerId: modelConfig.providerId ?? null,
+		modelName,
+		baseUrl,
+		attachmentCount: options?.attachmentIds?.length ?? 0,
+		inputLength: inputValue.length,
+		signal: options?.signal,
+		nonOkLogLabel: "sendMessage",
+	});
+
+	return {
+		text: run.text,
+		rawResponse: run.rawResponse,
+		contextStatus,
+		taskState,
+		contextDebug,
+		honchoContext,
+		honchoSnapshot,
+		contextTraceSections,
+		prefetchedToolCalls,
+		providerUsage: run.providerUsage,
+		modelId: modelId ?? "model1",
+		modelDisplayName: modelConfig.displayName,
+		timeoutFailover,
+	};
 }
 
 export async function sendMessage(
@@ -2448,88 +2035,32 @@ export async function sendMessage(
 	options?: SendMessageOptions,
 ): Promise<LangflowRequestResult> {
 	const config = getConfig();
-	const requestedModelId = modelId ?? "model1";
-	const failoverTargetModelId = await resolveTimeoutFailoverTargetModelId(
-		requestedModelId,
+	return runLangflowModelRunWithFailover({
 		config,
-	);
-	const attemptTimeoutMs = configuredAttemptTimeoutMs(
-		config,
-		failoverTargetModelId,
-	);
-
-	try {
-		return await sendMessageAttempt(
-			message,
-			sessionId,
-			requestedModelId,
-			user,
-			options,
+		label: "Request",
+		sessionId,
+		requestedModelId: modelId ?? "model1",
+		signal: options?.signal,
+		attempt: ({
+			modelId: attemptModelId,
 			attemptTimeoutMs,
-		);
-	} catch (error) {
-		if (options?.signal?.aborted) {
-			throw error;
-		}
-
-		if (isLangflowTimeoutError(error) && failoverTargetModelId) {
-			logLangflowFailoverSwitch({
-				label: "Request",
-				sessionId,
-				from: requestedModelId,
-				to: failoverTargetModelId,
-				reason: "timeout",
-				timeoutMs: attemptTimeoutMs,
-			});
-
-			return sendMessageAttempt(
+			timeoutFailover,
+			overrideModelConfig,
+		}) =>
+			runPreparedMessage(
 				message,
 				sessionId,
-				failoverTargetModelId,
+				attemptModelId,
 				user,
 				options,
 				attemptTimeoutMs,
-				{
-					fromModelId: requestedModelId,
-					toModelId: failoverTargetModelId,
-					reason: "timeout",
-				},
-			);
-		}
-
-		if (isLangflowRateLimitError(error)) {
-			const rateLimitFailoverTarget = await resolveRateLimitFailoverTarget(
-				requestedModelId,
-				config,
-			);
-			if (rateLimitFailoverTarget) {
-				logLangflowFailoverSwitch({
-					label: "Request",
-					sessionId,
-					from: rateLimitFailoverTarget.logFrom,
-					to: rateLimitFailoverTarget.logTo,
-					reason: "rate_limit",
-					status: getLangflowErrorStatus(error),
-				});
-
-				return sendMessageAttempt(
-					message,
-					sessionId,
-					rateLimitFailoverTarget.modelId,
-					user,
-					options,
-					rateLimitFailoverTarget.timeoutMs,
-					rateLimitFailoverTarget.info,
-					rateLimitFailoverTarget.modelConfig,
-				);
-			}
-		}
-
-		throw error;
-	}
+				timeoutFailover,
+				overrideModelConfig,
+			),
+	});
 }
 
-async function sendMessageStreamAttempt(
+async function runPreparedMessageStream(
 	message: string,
 	sessionId: string,
 	modelId: ModelId | undefined,
@@ -2539,94 +2070,134 @@ async function sendMessageStreamAttempt(
 	overrideModelConfig?: LangflowModelRunConfig,
 ): Promise<LangflowStreamResult> {
 	const config = getConfig();
-	let timedOut = false;
 	const connectTimeoutMs = Math.min(
 		attemptTimeoutMs,
 		Math.max(1000, options?.connectTimeoutMs ?? attemptTimeoutMs),
 	);
-	let connectTimedOut = false;
-	let timeoutId: ReturnType<typeof setTimeout> | null = null;
-	let connectTimeoutId: ReturnType<typeof setTimeout> | null = null;
-	let timeoutController: AbortController | null = null;
-	let connectTimeoutController: AbortController | null = null;
+	const modelConfig =
+		overrideModelConfig ?? (await resolveLangflowRunConfig(modelId));
+	const flowId = modelConfig.flowId || config.langflowFlowId;
+	const modelName = modelConfig.modelName;
+	const baseUrl = modelConfig.baseUrl;
 
-	try {
-		const modelConfig =
-			overrideModelConfig ?? (await resolveLangflowRunConfig(modelId));
-		const flowId = modelConfig.flowId || config.langflowFlowId;
-		const url = `${config.langflowApiUrl}/api/v1/run/${flowId}?stream=true`;
-		const modelName = modelConfig.modelName;
-		const baseUrl = modelConfig.baseUrl;
-
-		let inputValue = message;
-		let contextStatus:
-			| import("$lib/types").ConversationContextStatus
-			| undefined;
-		let taskState: import("$lib/types").TaskState | null | undefined;
-		let contextDebug: import("$lib/types").ContextDebugState | null | undefined;
-		let honchoContext:
-			| import("$lib/types").HonchoContextInfo
-			| null
-			| undefined;
-		let honchoSnapshot:
-			| import("$lib/types").HonchoContextSnapshot
-			| null
-			| undefined;
-		let contextTraceSections: LegacyContextTraceSectionInput[] | undefined;
-		let prefetchedToolCalls: ToolCallEntry[] = [];
-		if (options?.user?.id && !options.skipHonchoContext) {
-			const constructed = await buildConstructedContext({
-				userId: options.user.id,
-				conversationId: sessionId,
-				message,
-				attachmentIds: options.attachmentIds,
-				activeDocumentArtifactId: options.activeDocumentArtifactId,
-				attachmentTraceId: options.attachmentTraceId,
-				modelId: modelId ?? "model1",
-				contextLimits: modelConfig.contextLimits,
-			});
-			inputValue = constructed.inputValue;
-			contextStatus = constructed.contextStatus;
-			taskState = constructed.taskState;
-			contextDebug = constructed.contextDebug;
-			honchoContext = constructed.honchoContext;
-			honchoSnapshot = constructed.honchoSnapshot;
-			contextTraceSections = constructed.contextTraceSections;
+	let inputValue = message;
+	let contextStatus: import("$lib/types").ConversationContextStatus | undefined;
+	let taskState: import("$lib/types").TaskState | null | undefined;
+	let contextDebug: import("$lib/types").ContextDebugState | null | undefined;
+	let honchoContext: import("$lib/types").HonchoContextInfo | null | undefined;
+	let honchoSnapshot:
+		| import("$lib/types").HonchoContextSnapshot
+		| null
+		| undefined;
+	let contextTraceSections: LegacyContextTraceSectionInput[] | undefined;
+	let prefetchedToolCalls: ToolCallEntry[] = [];
+	if (options?.user?.id && !options.skipHonchoContext) {
+		const constructed = await buildConstructedContext({
+			userId: options.user.id,
+			conversationId: sessionId,
+			message,
+			attachmentIds: options.attachmentIds,
+			activeDocumentArtifactId: options.activeDocumentArtifactId,
+			attachmentTraceId: options.attachmentTraceId,
+			modelId: modelId ?? "model1",
+			contextLimits: modelConfig.contextLimits,
+		});
+		inputValue = constructed.inputValue;
+		contextStatus = constructed.contextStatus;
+		taskState = constructed.taskState;
+		contextDebug = constructed.contextDebug;
+		honchoContext = constructed.honchoContext;
+		honchoSnapshot = constructed.honchoSnapshot;
+		contextTraceSections = constructed.contextTraceSections;
+	}
+	const attachmentSection = summarizeAttachmentSectionInInput(inputValue);
+	if ((options?.attachmentIds?.length ?? 0) > 0) {
+		logAttachmentTrace("langflow_request", {
+			traceId: options?.attachmentTraceId ?? null,
+			sessionId,
+			inputValueLength: inputValue.length,
+			hasCurrentAttachmentsMarker: attachmentSection.hasMarker,
+			attachmentSectionPreview: attachmentSection.preview,
+			attachmentSectionPreviewHash: attachmentSection.previewHash,
+		});
+		if (!attachmentSection.hasMarker) {
+			console.warn(
+				"[LANGFLOW] Attachment marker missing from outgoing streaming bundle",
+				{
+					sessionId,
+					attachmentIds: options?.attachmentIds ?? [],
+					traceId: options?.attachmentTraceId ?? null,
+					inputValueLength: inputValue.length,
+				},
+			);
 		}
-		const attachmentSection = summarizeAttachmentSectionInInput(inputValue);
-		if ((options?.attachmentIds?.length ?? 0) > 0) {
-			logAttachmentTrace("langflow_request", {
-				traceId: options?.attachmentTraceId ?? null,
+	}
+
+	const configuredBasePrompt =
+		options?.systemPromptOverride ?? modelConfig.systemPrompt;
+	const baseSystemPrompt =
+		options?.user?.id && !options?.systemPromptOverride
+			? await buildEnhancedSystemPrompt(configuredBasePrompt, {
+					userId: options.user.id,
+					displayName: options.user.displayName,
+					email: options.user.email,
+				})
+			: getSystemPrompt(configuredBasePrompt);
+	let systemPrompt = buildOutboundSystemPrompt({
+		basePrompt: baseSystemPrompt,
+		inputValue,
+		responseLanguage: detectLanguage(message),
+		modelDisplayName: modelConfig.displayName,
+		modelName: modelConfig.modelName,
+		systemPromptAppendix: options?.systemPromptAppendix,
+		personalityPrompt: options?.personalityPrompt,
+		forceWebSearch: options?.forceWebSearch,
+		skipDefaultRuntimeGuidance: options?.skipDefaultRuntimeGuidance,
+	});
+	const contextLimits = resolvePromptContextLimits(
+		modelId ?? "model1",
+		modelConfig,
+		config,
+	);
+	const automaticCompression = !options?.skipHonchoContext
+		? await maybeRunAutomaticContextCompression({
+				user: options?.user,
 				sessionId,
-				inputValueLength: inputValue.length,
-				hasCurrentAttachmentsMarker: attachmentSection.hasMarker,
-				attachmentSectionPreview: attachmentSection.preview,
-				attachmentSectionPreviewHash: attachmentSection.previewHash,
+				message,
+				modelId: modelId ?? "model1",
+				modelConfig,
+				contextLimits,
+				inputValue,
+				systemPrompt,
+				attachmentIds: options?.attachmentIds,
+				activeDocumentArtifactId: options?.activeDocumentArtifactId,
+				attachmentTraceId: options?.attachmentTraceId,
+			}).catch((error) => {
+				console.warn("[LANGFLOW] Automatic context compression skipped", {
+					sessionId,
+					modelId: modelId ?? "model1",
+					error: error instanceof Error ? error.message : String(error),
+				});
+				return automaticCompressionResult({
+					outcome: "failed",
+					reason: error instanceof Error ? error.message : String(error),
+					attempted: true,
+				});
+			})
+		: automaticCompressionResult({
+				outcome: "not_possible",
+				reason: "honcho_context_disabled",
+				attempted: false,
 			});
-			if (!attachmentSection.hasMarker) {
-				console.warn(
-					"[LANGFLOW] Attachment marker missing from outgoing streaming bundle",
-					{
-						sessionId,
-						attachmentIds: options?.attachmentIds ?? [],
-						traceId: options?.attachmentTraceId ?? null,
-						inputValueLength: inputValue.length,
-					},
-				);
-			}
-		}
-
-		const configuredBasePrompt =
-			options?.systemPromptOverride ?? modelConfig.systemPrompt;
-		const baseSystemPrompt =
-			options?.user?.id && !options?.systemPromptOverride
-				? await buildEnhancedSystemPrompt(configuredBasePrompt, {
-						userId: options.user.id,
-						displayName: options.user.displayName,
-						email: options.user.email,
-					})
-				: getSystemPrompt(configuredBasePrompt);
-		let systemPrompt = buildOutboundSystemPrompt({
+	if (automaticCompression.context) {
+		inputValue = automaticCompression.context.inputValue;
+		contextStatus = automaticCompression.context.contextStatus;
+		taskState = automaticCompression.context.taskState;
+		contextDebug = automaticCompression.context.contextDebug;
+		honchoContext = automaticCompression.context.honchoContext;
+		honchoSnapshot = automaticCompression.context.honchoSnapshot;
+		contextTraceSections = automaticCompression.context.contextTraceSections;
+		systemPrompt = buildOutboundSystemPrompt({
 			basePrompt: baseSystemPrompt,
 			inputValue,
 			responseLanguage: detectLanguage(message),
@@ -2637,266 +2208,105 @@ async function sendMessageStreamAttempt(
 			forceWebSearch: options?.forceWebSearch,
 			skipDefaultRuntimeGuidance: options?.skipDefaultRuntimeGuidance,
 		});
-		const contextLimits = resolvePromptContextLimits(
-			modelId ?? "model1",
-			modelConfig,
-			config,
-		);
-		const automaticCompression = !options?.skipHonchoContext
-			? await maybeRunAutomaticContextCompression({
-					user: options?.user,
-					sessionId,
-					message,
-					modelId: modelId ?? "model1",
-					modelConfig,
-					contextLimits,
-					inputValue,
-					systemPrompt,
-					attachmentIds: options?.attachmentIds,
-					activeDocumentArtifactId: options?.activeDocumentArtifactId,
-					attachmentTraceId: options?.attachmentTraceId,
-				}).catch((error) => {
-					console.warn("[LANGFLOW] Automatic context compression skipped", {
-						sessionId,
-						modelId: modelId ?? "model1",
-						error: error instanceof Error ? error.message : String(error),
-					});
-					return automaticCompressionResult({
-						outcome: "failed",
-						reason: error instanceof Error ? error.message : String(error),
-						attempted: true,
-					});
-				})
-			: automaticCompressionResult({
-					outcome: "not_possible",
-					reason: "honcho_context_disabled",
-					attempted: false,
-				});
-		if (automaticCompression.context) {
-			inputValue = automaticCompression.context.inputValue;
-			contextStatus = automaticCompression.context.contextStatus;
-			taskState = automaticCompression.context.taskState;
-			contextDebug = automaticCompression.context.contextDebug;
-			honchoContext = automaticCompression.context.honchoContext;
-			honchoSnapshot = automaticCompression.context.honchoSnapshot;
-			contextTraceSections = automaticCompression.context.contextTraceSections;
-			systemPrompt = buildOutboundSystemPrompt({
-				basePrompt: baseSystemPrompt,
-				inputValue,
-				responseLanguage: detectLanguage(message),
-				modelDisplayName: modelConfig.displayName,
-				modelName: modelConfig.modelName,
-				systemPromptAppendix: options?.systemPromptAppendix,
-				personalityPrompt: options?.personalityPrompt,
-				forceWebSearch: options?.forceWebSearch,
-				skipDefaultRuntimeGuidance: options?.skipDefaultRuntimeGuidance,
-			});
-		}
-		const forcedWebPrefetch = await maybePrefetchForcedWebResearch({
-			inputValue,
-			message,
-			forceWebSearch: options?.forceWebSearch,
-			sessionId,
-			modelId: modelId ?? "model1",
-		});
-		inputValue = forcedWebPrefetch.inputValue;
-		prefetchedToolCalls = forcedWebPrefetch.prefetchedToolCalls;
-		if (prefetchedToolCalls.length > 0) {
-			systemPrompt = buildOutboundSystemPrompt({
-				basePrompt: baseSystemPrompt,
-				inputValue,
-				responseLanguage: detectLanguage(message),
-				modelDisplayName: modelConfig.displayName,
-				modelName: modelConfig.modelName,
-				systemPromptAppendix: options?.systemPromptAppendix,
-				personalityPrompt: options?.personalityPrompt,
-				forceWebSearch: options?.forceWebSearch,
-				skipDefaultRuntimeGuidance: options?.skipDefaultRuntimeGuidance,
-			});
-		}
-		const budgetedPrompt = applyOutboundPromptBudget({
-			inputValue,
-			message,
-			systemPrompt,
-			contextLimits,
-			maxTokens: modelConfig.maxTokens,
-			sessionId,
-			modelId: modelId ?? "model1",
-			modelName,
-			providerId: modelConfig.providerId ?? null,
-			automaticCompression,
-		});
-		inputValue = budgetedPrompt.inputValue;
-		emitOutboundContextTrace({
-			inputValue,
-			systemPrompt,
-			message,
-			contextLimits,
-			outputReserve: budgetedPrompt.outputTokenBudget.outputReserve,
-			sessionId,
-			userId: options?.user?.id ?? null,
-			modelId: modelId ?? "model1",
-			providerId: modelConfig.providerId ?? null,
-			modelName,
-			honchoContext,
-			contextTraceSections,
-		});
-
-		const body: LangflowRunRequest & { tweaks?: Record<string, unknown> } = {
-			input_value: inputValue,
-			input_type: "chat",
-			output_type: "chat",
-			session_id: sessionId,
-			tweaks: buildLangflowTweaks(
-				modelConfig,
-				systemPrompt,
-				message,
-				budgetedPrompt.outputTokenBudget.effectiveMaxTokens,
-				options?.thinkingMode,
-				attemptTimeoutMs,
-			),
-		};
-
-		if (config.contextDiagnosticsDebug) {
-			console.info("[LANGFLOW] Starting streaming request", {
-				url,
-				flowId,
-				sessionId,
-				userId: options?.user?.id ?? null,
-				modelId: modelId ?? "model1",
-				providerId: modelConfig.providerId ?? null,
-				modelName,
-				baseUrl,
-				attachmentCount: options?.attachmentIds?.length ?? 0,
-				inputLength: inputValue.length,
-			});
-		}
-
-		timeoutController = new AbortController();
-		timeoutId = setTimeout(() => {
-			timedOut = true;
-			timeoutController?.abort();
-		}, attemptTimeoutMs);
-		connectTimeoutController = new AbortController();
-		connectTimeoutId = setTimeout(() => {
-			connectTimedOut = true;
-			connectTimeoutController?.abort();
-		}, connectTimeoutMs);
-		const signal = mergeAbortSignals(
-			options?.signal,
-			timeoutController.signal,
-			connectTimeoutController.signal,
-		);
-
-		const response = await fetch(url, {
-			method: "POST",
-			headers: {
-				Accept: "application/json",
-				"Cache-Control": "no-cache",
-				"Content-Type": "application/json",
-				"x-api-key": config.langflowApiKey,
-			},
-			body: JSON.stringify(body),
-			signal,
-		});
-		if (connectTimeoutId) {
-			clearTimeout(connectTimeoutId);
-			connectTimeoutId = null;
-		}
-
-		if (!response.ok) {
-			const errorBody = await response.text().catch(() => "");
-			const httpError = createLangflowHttpError({
-				status: response.status,
-				statusText: response.statusText,
-				body: errorBody,
-			});
-			if (!isLangflowRateLimitError(httpError)) {
-				console.error("[LANGFLOW] sendMessageStream non-OK response", {
-					url,
-					status: response.status,
-					statusText: response.statusText,
-					bodyPreview: errorBody.slice(0, 1000),
-				});
-			}
-			throw httpError;
-		}
-
-		const contentType = response.headers.get("content-type") ?? "";
-		if (!contentType.includes("text/event-stream")) {
-			const rawResponse: LangflowRunResponse = await response.json();
-			const text = extractMessageText(rawResponse);
-			const providerUsage = extractProviderUsage(rawResponse);
-			console.warn(
-				"[LANGFLOW] sendMessageStream received non-stream JSON response",
-				{
-					url,
-					sessionId,
-					contentType,
-					textLength: text.length,
-				},
-			);
-			return {
-				text,
-				rawResponse,
-				contextStatus,
-				taskState,
-				contextDebug,
-				honchoContext,
-				honchoSnapshot,
-				contextTraceSections,
-				prefetchedToolCalls,
-				providerUsage,
-				modelId: modelId ?? "model1",
-				modelDisplayName: modelConfig.displayName,
-				timeoutFailover,
-			};
-		}
-
-		if (!response.body) {
-			console.error("[LANGFLOW] sendMessageStream missing response body", {
-				url,
-				sessionId,
-			});
-			throw new Error("Response body is empty");
-		}
-
-		return {
-			stream: response.body as ReadableStream<Uint8Array>,
-			contextStatus,
-			taskState,
-			contextDebug,
-			honchoContext,
-			honchoSnapshot,
-			contextTraceSections,
-			prefetchedToolCalls,
-			modelId: modelId ?? "model1",
-			modelDisplayName: modelConfig.displayName,
-			timeoutFailover,
-		};
-	} catch (error) {
-		if (connectTimedOut) {
-			const timeoutError = new Error(
-				`Timed out waiting ${connectTimeoutMs}ms for Langflow streaming response headers`,
-			) as Error & { code?: string };
-			timeoutError.name = "LangflowStreamConnectTimeoutError";
-			timeoutError.code = "langflow_stream_connect_timeout";
-			throw timeoutError;
-		}
-		if (timedOut) {
-			throw createLangflowTimeoutError(
-				`Timed out waiting ${attemptTimeoutMs}ms for Langflow streaming response`,
-			);
-		}
-		throw error;
-	} finally {
-		if (timeoutId) {
-			clearTimeout(timeoutId);
-		}
-		if (connectTimeoutId) {
-			clearTimeout(connectTimeoutId);
-		}
 	}
+	const forcedWebPrefetch = await maybePrefetchForcedWebResearch({
+		inputValue,
+		message,
+		forceWebSearch: options?.forceWebSearch,
+		sessionId,
+		modelId: modelId ?? "model1",
+	});
+	inputValue = forcedWebPrefetch.inputValue;
+	prefetchedToolCalls = forcedWebPrefetch.prefetchedToolCalls;
+	if (prefetchedToolCalls.length > 0) {
+		systemPrompt = buildOutboundSystemPrompt({
+			basePrompt: baseSystemPrompt,
+			inputValue,
+			responseLanguage: detectLanguage(message),
+			modelDisplayName: modelConfig.displayName,
+			modelName: modelConfig.modelName,
+			systemPromptAppendix: options?.systemPromptAppendix,
+			personalityPrompt: options?.personalityPrompt,
+			forceWebSearch: options?.forceWebSearch,
+			skipDefaultRuntimeGuidance: options?.skipDefaultRuntimeGuidance,
+		});
+	}
+	const budgetedPrompt = applyOutboundPromptBudget({
+		inputValue,
+		message,
+		systemPrompt,
+		contextLimits,
+		maxTokens: modelConfig.maxTokens,
+		sessionId,
+		modelId: modelId ?? "model1",
+		modelName,
+		providerId: modelConfig.providerId ?? null,
+		automaticCompression,
+	});
+	inputValue = budgetedPrompt.inputValue;
+	emitOutboundContextTrace({
+		inputValue,
+		systemPrompt,
+		message,
+		contextLimits,
+		outputReserve: budgetedPrompt.outputTokenBudget.outputReserve,
+		sessionId,
+		userId: options?.user?.id ?? null,
+		modelId: modelId ?? "model1",
+		providerId: modelConfig.providerId ?? null,
+		modelName,
+		honchoContext,
+		contextTraceSections,
+	});
+
+	const body: LangflowRunRequest & { tweaks?: Record<string, unknown> } = {
+		input_value: inputValue,
+		input_type: "chat",
+		output_type: "chat",
+		session_id: sessionId,
+		tweaks: buildLangflowTweaks(
+			modelConfig,
+			systemPrompt,
+			message,
+			budgetedPrompt.outputTokenBudget.effectiveMaxTokens,
+			options?.thinkingMode,
+			attemptTimeoutMs,
+		),
+	};
+	const run = await executeLangflowStreamRun({
+		config,
+		flowId,
+		body,
+		attemptTimeoutMs,
+		connectTimeoutMs,
+		sessionId,
+		userId: options?.user?.id ?? null,
+		modelId: modelId ?? "model1",
+		providerId: modelConfig.providerId ?? null,
+		modelName,
+		baseUrl,
+		attachmentCount: options?.attachmentIds?.length ?? 0,
+		inputLength: inputValue.length,
+		signal: options?.signal,
+		nonOkLogLabel: "sendMessageStream",
+	});
+
+	return {
+		stream: run.stream,
+		text: run.text,
+		rawResponse: run.rawResponse,
+		contextStatus,
+		taskState,
+		contextDebug,
+		honchoContext,
+		honchoSnapshot,
+		contextTraceSections,
+		prefetchedToolCalls,
+		providerUsage: run.providerUsage,
+		modelId: modelId ?? "model1",
+		modelDisplayName: modelConfig.displayName,
+		timeoutFailover,
+	};
 }
 
 export async function sendMessageStream(
@@ -2906,80 +2316,26 @@ export async function sendMessageStream(
 	options?: SendMessageStreamOptions,
 ): Promise<LangflowStreamResult> {
 	const config = getConfig();
-	const requestedModelId = modelId ?? "model1";
-	const failoverTargetModelId = await resolveTimeoutFailoverTargetModelId(
-		requestedModelId,
+	return runLangflowModelRunWithFailover({
 		config,
-	);
-	const attemptTimeoutMs = configuredAttemptTimeoutMs(
-		config,
-		failoverTargetModelId,
-	);
-
-	try {
-		return await sendMessageStreamAttempt(
-			message,
-			sessionId,
-			requestedModelId,
-			options,
+		label: "Streaming request",
+		sessionId,
+		requestedModelId: modelId ?? "model1",
+		signal: options?.signal,
+		attempt: ({
+			modelId: attemptModelId,
 			attemptTimeoutMs,
-		);
-	} catch (error) {
-		if (options?.signal?.aborted) {
-			throw error;
-		}
-
-		if (isLangflowTimeoutError(error) && failoverTargetModelId) {
-			logLangflowFailoverSwitch({
-				label: "Streaming request",
-				sessionId,
-				from: requestedModelId,
-				to: failoverTargetModelId,
-				reason: "timeout",
-				timeoutMs: attemptTimeoutMs,
-			});
-
-			return sendMessageStreamAttempt(
+			timeoutFailover,
+			overrideModelConfig,
+		}) =>
+			runPreparedMessageStream(
 				message,
 				sessionId,
-				failoverTargetModelId,
+				attemptModelId,
 				options,
 				attemptTimeoutMs,
-				{
-					fromModelId: requestedModelId,
-					toModelId: failoverTargetModelId,
-					reason: "timeout",
-				},
-			);
-		}
-
-		if (isLangflowRateLimitError(error)) {
-			const rateLimitFailoverTarget = await resolveRateLimitFailoverTarget(
-				requestedModelId,
-				config,
-			);
-			if (rateLimitFailoverTarget) {
-				logLangflowFailoverSwitch({
-					label: "Streaming request",
-					sessionId,
-					from: rateLimitFailoverTarget.logFrom,
-					to: rateLimitFailoverTarget.logTo,
-					reason: "rate_limit",
-					status: getLangflowErrorStatus(error),
-				});
-
-				return sendMessageStreamAttempt(
-					message,
-					sessionId,
-					rateLimitFailoverTarget.modelId,
-					options,
-					rateLimitFailoverTarget.timeoutMs,
-					rateLimitFailoverTarget.info,
-					rateLimitFailoverTarget.modelConfig,
-				);
-			}
-		}
-
-		throw error;
-	}
+				timeoutFailover,
+				overrideModelConfig,
+			),
+	});
 }
