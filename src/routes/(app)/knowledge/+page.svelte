@@ -32,7 +32,6 @@
 	import {
 		getDefaultPersonaMemoryFilter,
 		getFocusContinuityItemCount,
-		normalizeKnowledgeMemoryOverviewBullets,
 		toWorkspaceDocument,
 		type FocusContinuityView,
 
@@ -60,6 +59,7 @@
 		activeConstraintCount: 0,
 		currentProjectContextCount: 0,
 		overview: null,
+		overviewBullets: [],
 		overviewSource: null,
 		overviewStatus: 'disabled',
 		overviewUpdatedAt: null,
@@ -136,14 +136,11 @@
 		getFocusContinuityItemCount({ taskMemories, focusContinuities })
 	);
 
-	let honchoOverview = $derived(memorySummary.overview?.trim() ?? '');
-	let honchoOverviewBullets = $derived(
-		normalizeKnowledgeMemoryOverviewBullets(honchoOverview)
-	);
-	let honchoOverviewSource = $derived(memorySummary.overviewSource);
-	let honchoOverviewStatus = $derived(memorySummary.overviewStatus);
-	let honchoOverviewUpdatedAt = $derived(memorySummary.overviewUpdatedAt);
-	let honchoOverviewLastAttemptAt = $derived(memorySummary.overviewLastAttemptAt);
+	let overviewBullets = $derived(memorySummary.overviewBullets ?? []);
+	let overviewSource = $derived(memorySummary.overviewSource);
+	let overviewStatus = $derived(memorySummary.overviewStatus);
+	let overviewUpdatedAt = $derived(memorySummary.overviewUpdatedAt);
+	let overviewLastAttemptAt = $derived(memorySummary.overviewLastAttemptAt);
 	let durablePersonaCount = $derived(memorySummary.durablePersonaCount);
 	let activeConstraintCount = $derived(memorySummary.activeConstraintCount ?? 0);
 	let currentProjectContextCount = $derived(memorySummary.currentProjectContextCount ?? 0);
@@ -297,6 +294,7 @@
 					activeConstraintCount: payload.summary.activeConstraintCount ?? 0,
 					currentProjectContextCount: payload.summary.currentProjectContextCount ?? 0,
 					overview: payload.summary.overview ?? null,
+					overviewBullets: payload.summary.overviewBullets ?? [],
 					overviewSource: payload.summary.overviewSource ?? null,
 					overviewStatus:
 						payload.summary.overviewStatus ?? (honchoEnabled ? 'not_enough_durable_memory' : 'disabled'),
@@ -311,6 +309,7 @@
 			activeConstraintCount: 0,
 			currentProjectContextCount: 0,
 			overview: null,
+			overviewBullets: [],
 			overviewSource: null,
 			overviewStatus: honchoEnabled ? 'not_enough_durable_memory' : 'disabled',
 			overviewUpdatedAt: null,
@@ -333,6 +332,7 @@
 			currentProjectContextCount:
 				summary.currentProjectContextCount ?? memorySummary.currentProjectContextCount,
 			overview: summary.overview ?? null,
+			overviewBullets: summary.overviewBullets ?? [],
 			overviewSource: summary.overviewSource ?? null,
 			overviewStatus:
 				summary.overviewStatus ?? (honchoEnabled ? 'not_enough_durable_memory' : 'disabled'),
@@ -364,10 +364,10 @@
 	function shouldPollLiveOverview(): boolean {
 		if (!honchoEnabled || !memoryLoaded || memoryLoading) return false;
 		if (!memoryTabVisible) return false;
-		if (honchoOverviewSource === 'honcho_live' || honchoOverviewSource === 'honcho_scoped') return false;
+		if (overviewSource === 'honcho_live' || overviewSource === 'honcho_scoped') return false;
 		if (
-			honchoOverviewStatus === 'disabled' ||
-			honchoOverviewStatus === 'not_enough_durable_memory'
+			overviewStatus === 'disabled' ||
+			overviewStatus === 'not_enough_durable_memory'
 		) {
 			return false;
 		}
@@ -731,7 +731,7 @@
 
 		const startPolling = async () => {
 			await refreshLiveOverview(false);
-			if (cancelled || honchoOverviewSource === 'honcho_live' || honchoOverviewSource === 'honcho_scoped') return;
+			if (cancelled || overviewSource === 'honcho_live' || overviewSource === 'honcho_scoped') return;
 			intervalId = window.setInterval(() => {
 				if (cancelled || liveOverviewRefreshing) return;
 				if (liveOverviewPollAttempts >= OVERVIEW_POLL_MAX_ATTEMPTS) {
@@ -815,12 +815,11 @@
 			personaMemoryCount={personaMemories.length}
 			{focusContinuityItemCount}
 			{honchoEnabled}
-			{honchoOverview}
-			{honchoOverviewBullets}
-			{honchoOverviewSource}
-			{honchoOverviewStatus}
-			{honchoOverviewUpdatedAt}
-			{honchoOverviewLastAttemptAt}
+			{overviewBullets}
+			{overviewSource}
+			{overviewStatus}
+			{overviewUpdatedAt}
+			{overviewLastAttemptAt}
 			{durablePersonaCount}
 			{activeConstraintCount}
 			{currentProjectContextCount}

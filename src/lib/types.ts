@@ -1696,6 +1696,7 @@ export interface KnowledgeMemorySummary {
 	activeConstraintCount?: number;
 	currentProjectContextCount?: number;
 	overview: string | null;
+	overviewBullets: string[];
 	overviewSource: KnowledgeMemoryOverviewSource;
 	overviewStatus: KnowledgeMemoryOverviewStatus;
 	overviewUpdatedAt: number | null;

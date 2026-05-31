@@ -9,15 +9,14 @@ const baseProps = {
 	personaMemoryCount: 2,
 	focusContinuityItemCount: 0,
 	honchoEnabled: true,
-	honchoOverview: "raw overview",
-	honchoOverviewBullets: [
+	overviewBullets: [
 		"Levi owns an eBike that arrived on May 13, 2026.",
 		"Levi is interested in comparing insurance options.",
 	],
-	honchoOverviewSource: "honcho_scoped" as const,
-	honchoOverviewStatus: "ready" as const,
-	honchoOverviewUpdatedAt: Date.now(),
-	honchoOverviewLastAttemptAt: null,
+	overviewSource: "honcho_scoped" as const,
+	overviewStatus: "ready" as const,
+	overviewUpdatedAt: Date.now(),
+	overviewLastAttemptAt: null,
 	durablePersonaCount: 2,
 	activeConstraintCount: 0,
 	currentProjectContextCount: 0,
@@ -28,7 +27,7 @@ const baseProps = {
 };
 
 describe("KnowledgeMemoryView", () => {
-	it("renders memory overview notes as app-controlled list items", () => {
+	it("renders server-provided memory overview bullets as app-controlled list items", () => {
 		const { container } = render(KnowledgeMemoryView, {
 			props: baseProps,
 		});
@@ -42,7 +41,6 @@ describe("KnowledgeMemoryView", () => {
 		expect(
 			container.querySelector(".memory-overview-list"),
 		).toBeInTheDocument();
-		expect(container.querySelector(".memory-markdown")).not.toBeInTheDocument();
 		expect(
 			screen.queryByRole("heading", {
 				name: "Levi owns an eBike that arrived on May 13, 2026.",

@@ -199,7 +199,7 @@ A compact Honcho-led personalization profile available to an ordinary chat turn 
 _Avoid_: newest memories, raw conclusion list, local persona summary
 
 **Knowledge Memory Overview**:
-The user-facing Memory Profile summary in the Knowledge Base. Its deep server module, `src/lib/server/services/knowledge/memory-overview.ts`, translates Honcho/persona overview material into app-ready `KnowledgeMemorySummary.overviewBullets`, source, status, and attempt metadata for `src/lib/server/services/memory.ts`. Honcho remains the persona and memory authority; the module only shapes the user-facing overview contract. Knowledge page components such as `src/routes/(app)/knowledge/+page.svelte` and `_components/KnowledgeMemoryView.svelte` are UI adapters that render server-provided bullets/status/source and must not normalize raw Honcho text.
+The user-facing Memory Profile summary in the Knowledge Base. Its deep server module, `src/lib/server/services/knowledge/memory-overview.ts`, owns app-ready bullet shaping, **Memory Provenance Noise** removal, sensitive-value softening, source/status semantics, and the shared `KnowledgeMemorySummary.overviewBullets` contract returned through `src/lib/server/services/memory.ts`. Honcho remains the persona and memory authority; the module only translates Honcho/persona overview material into the user-facing overview contract. Knowledge page components such as `src/routes/(app)/knowledge/+page.svelte` and `_components/KnowledgeMemoryView.svelte` are UI adapters that render server-provided bullets/status/source and must not normalize raw Honcho text.
 _Avoid_: memory markdown, Honcho dump, conversation results list, generated report
 
 **Knowledge Memory Overview Bullet**:

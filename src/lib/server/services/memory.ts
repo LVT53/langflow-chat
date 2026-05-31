@@ -10,11 +10,12 @@ import {
 	forgetAllPersonaMemories,
 	forgetPersonaMemory,
 	getPeerContext,
+	type HonchoPersonaMemoryRecord,
 	isHonchoEnabled,
 	listPersonaMemories,
 	rotateHonchoPeerIdentity,
-	type HonchoPersonaMemoryRecord,
 } from "./honcho";
+import { buildKnowledgeMemoryOverview } from "./knowledge/memory-overview";
 import {
 	forgetFocusContinuity,
 	forgetTaskMemory,
@@ -24,46 +25,60 @@ import {
 
 function buildKnowledgeMemorySummary(
 	overview: string | null,
+	personaFallbackTexts: string[],
 	personaCount: number,
 	activeConstraintCount: number,
 	currentProjectContextCount: number,
 	taskCount: number,
 	focusContinuityCount: number,
-): {
-	personaCount: number;
-	taskCount: number;
-	focusContinuityCount: number;
-	activeConstraintCount: number;
-	currentProjectContextCount: number;
-	overview: string | null;
-	overviewSource: "honcho_scoped" | null;
-	overviewStatus: KnowledgeMemorySummary["overviewStatus"];
-	overviewUpdatedAt: number | null;
-	overviewLastAttemptAt: number | null;
-	durablePersonaCount: number;
-} {
-	const hasOverview = Boolean(overview?.trim());
+	overviewUnavailable = false,
+): KnowledgeMemorySummary {
 	const honchoEnabled = isHonchoEnabled();
+	const attemptedAt = honchoEnabled ? Date.now() : null;
+	const overviewContract = buildKnowledgeMemoryOverview({
+		rawOverview: overview,
+		personaFallbackTexts,
+		durablePersonaCount: personaCount,
+		honchoEnabled,
+		attemptedAt,
+		overviewUnavailable,
+	});
+
 	return {
 		personaCount,
 		taskCount,
 		focusContinuityCount,
 		activeConstraintCount,
 		currentProjectContextCount,
-		overview: hasOverview ? overview!.trim() : null,
-		overviewSource: hasOverview ? "honcho_scoped" : null,
-		overviewStatus: honchoEnabled
-			? hasOverview
-				? "ready"
-				: "not_enough_durable_memory"
-			: "disabled",
-		overviewUpdatedAt: hasOverview ? Date.now() : null,
-		overviewLastAttemptAt: honchoEnabled ? Date.now() : null,
-		durablePersonaCount: personaCount,
+		...overviewContract,
 	};
 }
 
-function mapHonchoPersonaMemory(record: HonchoPersonaMemoryRecord): PersonaMemoryItem {
+async function loadPeerContextOverview(
+	userId: string,
+	userDisplayName: string,
+): Promise<{ text: string | null; unavailable: boolean }> {
+	if (!isHonchoEnabled()) {
+		return { text: null, unavailable: false };
+	}
+
+	try {
+		const text = await getPeerContext(userId, userDisplayName, {
+			timeoutMs: getConfig().honchoPersonaContextWaitMs,
+		});
+		return { text, unavailable: false };
+	} catch (error) {
+		console.warn(
+			"[KNOWLEDGE_MEMORY] Honcho overview temporarily unavailable:",
+			error,
+		);
+		return { text: null, unavailable: true };
+	}
+}
+
+function mapHonchoPersonaMemory(
+	record: HonchoPersonaMemoryRecord,
+): PersonaMemoryItem {
 	return {
 		id: record.id,
 		canonicalText: record.content,
@@ -100,12 +115,13 @@ export async function getKnowledgeMemory(
 	userId: string,
 	userDisplayName: string,
 ): Promise<KnowledgeMemoryPayload> {
-	const [peerContext, personaRecords, taskMemories, focusContinuities] = await Promise.all([
-		getPeerContext(userId, userDisplayName, { timeoutMs: getConfig().honchoPersonaContextWaitMs }),
-		listPersonaMemories(userId),
-		listTaskMemoryItems(userId),
-		listFocusContinuityItems(userId),
-	]);
+	const [peerOverview, personaRecords, taskMemories, focusContinuities] =
+		await Promise.all([
+			loadPeerContextOverview(userId, userDisplayName),
+			listPersonaMemories(userId),
+			listTaskMemoryItems(userId),
+			listFocusContinuityItems(userId),
+		]);
 	const personaMemories = personaRecords.map(mapHonchoPersonaMemory);
 
 	return {
@@ -124,12 +140,14 @@ export async function getKnowledgeMemory(
 			conversationTitles: continuity.conversationTitles,
 		})),
 		summary: buildKnowledgeMemorySummary(
-			peerContext,
+			peerOverview.text,
+			personaRecords.map((record) => record.content),
 			personaMemories.length,
 			0,
 			0,
 			taskMemories.length,
 			focusContinuities.length,
+			peerOverview.unavailable,
 		),
 	};
 }
@@ -139,21 +157,21 @@ export async function getKnowledgeMemoryOverview(
 	userDisplayName: string,
 	_options: { awaitLive?: boolean; force?: boolean } = {},
 ): Promise<KnowledgeMemoryOverviewPayload> {
-	const [peerContext, personaRecords] = await Promise.all([
-		getPeerContext(userId, userDisplayName, {
-			timeoutMs: getConfig().honchoPersonaContextWaitMs,
-		}),
+	const [peerOverview, personaRecords] = await Promise.all([
+		loadPeerContextOverview(userId, userDisplayName),
 		listPersonaMemories(userId),
 	]);
 
 	return {
 		summary: buildKnowledgeMemorySummary(
-			peerContext,
+			peerOverview.text,
+			personaRecords.map((record) => record.content),
 			personaRecords.length,
 			0,
 			0,
 			0,
 			0,
+			peerOverview.unavailable,
 		),
 	};
 }
@@ -168,13 +186,17 @@ export async function applyKnowledgeMemoryAction(
 			if (typeof payload.conclusionId === "string") {
 				await forgetPersonaMemory(userId, payload.conclusionId);
 			}
-			console.info("[KNOWLEDGE_MEMORY] forget_persona_memory is a no-op with local clusters removed; delegated to Honcho");
+			console.info(
+				"[KNOWLEDGE_MEMORY] forget_persona_memory is a no-op with local clusters removed; delegated to Honcho",
+			);
 			break;
 		}
 		case "forget_all_persona_memory": {
 			await forgetAllPersonaMemories(userId);
 			await rotateHonchoPeerIdentity(userId);
-			console.info("[KNOWLEDGE_MEMORY] forget_all_persona_memory delegated to Honcho and rotated peer identity");
+			console.info(
+				"[KNOWLEDGE_MEMORY] forget_all_persona_memory delegated to Honcho and rotated peer identity",
+			);
 			break;
 		}
 		case "forget_task_memory":

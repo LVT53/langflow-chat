@@ -67,6 +67,7 @@ const memoryPayload = {
 		taskCount: 1,
 		focusContinuityCount: 1,
 		overview: 'The user likes concise responses.',
+		overviewBullets: ['The user likes concise responses.'],
 		overviewSource: 'honcho_scoped',
 		overviewStatus: 'ready',
 		overviewUpdatedAt: Date.now(),

@@ -13,12 +13,11 @@
 		personaMemoryCount,
 		focusContinuityItemCount,
 		honchoEnabled,
-		honchoOverview,
-		honchoOverviewBullets,
-		honchoOverviewSource,
-		honchoOverviewStatus,
-		honchoOverviewUpdatedAt,
-		honchoOverviewLastAttemptAt,
+		overviewBullets,
+		overviewSource,
+		overviewStatus,
+		overviewUpdatedAt,
+		overviewLastAttemptAt,
 		durablePersonaCount,
 		activeConstraintCount,
 		currentProjectContextCount,
@@ -33,12 +32,11 @@
 		personaMemoryCount: number;
 		focusContinuityItemCount: number;
 		honchoEnabled: boolean;
-		honchoOverview: string;
-		honchoOverviewBullets: string[];
-		honchoOverviewSource: KnowledgeMemoryOverviewSource;
-		honchoOverviewStatus: KnowledgeMemoryOverviewStatus;
-		honchoOverviewUpdatedAt: number | null;
-		honchoOverviewLastAttemptAt: number | null;
+		overviewBullets: string[];
+		overviewSource: KnowledgeMemoryOverviewSource;
+		overviewStatus: KnowledgeMemoryOverviewStatus;
+		overviewUpdatedAt: number | null;
+		overviewLastAttemptAt: number | null;
 		durablePersonaCount: number;
 		activeConstraintCount: number;
 		currentProjectContextCount: number;
@@ -178,13 +176,13 @@
 					<h2 class="text-lg font-sans font-semibold text-text-primary">
 						{$t('memory.overview')}
 					</h2>
-					{#if honchoOverviewUpdatedAt}
+					{#if overviewUpdatedAt}
 						<p class="mt-1 text-xs font-sans uppercase tracking-[0.08em] text-text-muted">
-							{$t('memory.lastLiveOverview')} {formatMediumDateTime(honchoOverviewUpdatedAt)}
+							{$t('memory.lastLiveOverview')} {formatMediumDateTime(overviewUpdatedAt)}
 						</p>
-					{:else if honchoOverviewLastAttemptAt}
+					{:else if overviewLastAttemptAt}
 						<p class="mt-1 text-xs font-sans uppercase tracking-[0.08em] text-text-muted">
-							{$t('memory.lastOverviewAttempt')} {formatMediumDateTime(honchoOverviewLastAttemptAt)}
+							{$t('memory.lastOverviewAttempt')} {formatMediumDateTime(overviewLastAttemptAt)}
 						</p>
 					{/if}
 				</div>
@@ -210,22 +208,22 @@
 					</button>
 				{/if}
 			</div>
-			{#if honchoOverview}
-				{#if honchoOverviewSource === 'honcho_cache'}
+			{#if overviewBullets.length > 0}
+				{#if overviewSource === 'honcho_cache'}
 					<p class="mt-4 text-xs font-sans uppercase tracking-[0.08em] text-text-muted">
 						{$t('memory.honchoCacheNotice')}
 					</p>
-				{:else if honchoOverviewSource === 'persona_fallback'}
+				{:else if overviewSource === 'persona_fallback'}
 					<p class="mt-4 text-xs font-sans uppercase tracking-[0.08em] text-text-muted">
 						{$t('memory.personaFallbackNotice')}
 					</p>
 				{/if}
 				<ul class="memory-overview-list mt-4 list-disc space-y-3 pl-5 text-sm font-sans leading-[1.65] text-text-secondary">
-					{#each honchoOverviewBullets as bullet (bullet)}
+					{#each overviewBullets as bullet (bullet)}
 						<li class="pl-1">{bullet}</li>
 					{/each}
 				</ul>
-			{:else if honchoOverviewStatus === 'temporarily_unavailable'}
+			{:else if overviewStatus === 'temporarily_unavailable'}
 				<p class="mt-4 text-sm font-sans leading-[1.6] text-text-muted">
 					{$t('memory.temporarilyUnavailable', { count: durablePersonaCount })}
 				</p>
