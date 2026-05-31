@@ -75,7 +75,8 @@ chat-turn/request.ts ──► chat-turn/preflight.ts
 - `auth/hooks.ts` — `requireAuth`, `getBearerToken` (canonical auth boundary for API routes)
 - `prompts.ts` (src/lib/server/prompts.ts) — shared prompt configuration helpers (consumed by langflow, honcho)
 - `analytics.ts` — analytics event ingestion (consumed by finalize.ts)
-- `file-production/` — durable generated-file jobs, source validation, renderers, sandbox execution, retry/cancel, and legacy generated-file backfill
+- `file-production/` — durable generated-file jobs, source validation, renderers, sandbox execution, retry/cancel, storage, and legacy generated-file backfill
+- `generated-file-serving.ts` — generated chat-file lookup, ownership fallback, assignment quarantine, byte/type validation, and preview/download headers for chat routes and Working Document generated-output serving
 - `image-search.ts` — image search integration (tool endpoint at api/tools/image-search)
 - `projects.ts` (src/lib/server/services/projects.ts) — project CRUD using db + schema.ts directly (active service, not legacy)
 - `server/api/responses.ts` — shared JSON response helpers for API routes (consumed across route files)
@@ -129,7 +130,7 @@ knowledge.ts (facade — re-exports from below)
 
 **Document search note**: `searchKnowledgeDocuments()` in `knowledge/store/documents.ts` is the shared document search path used by `/api/knowledge/search` and the shell search modal. Keep ranking and logical-document mapping there instead of duplicating it in routes or client components.
 
-**Chat-generated files note**: `chat-files.ts` is the single source of truth for generated-file storage, conversation-scoped listings, and authenticated user lookups for `/api/chat/files/[id]/download`. Durable creation requests enter through `/api/chat/files/produce`, while `file-production/` owns intake parsing, source validation, durable job creation/reuse, execution, retry/cancel, and legacy generated-file backfill. The preview route `/api/chat/files/[id]/preview` should stay a binary file endpoint that plugs into the shared rich viewer rather than a separate chat-only text-preview system.
+**Chat-generated files note**: `chat-files.ts` owns generated-file storage and conversation-scoped listings. Durable creation requests enter through `/api/chat/files/produce`, while `file-production/` owns intake parsing, source validation, durable job creation/reuse, execution, retry/cancel, storage-adapter linking, and legacy generated-file backfill. `generated-file-serving.ts` owns authenticated generated-file serving for `/api/chat/files/[id]/preview`, `/api/chat/files/[id]/download`, and Working Document generated-output `sourceChatFileId` delegation, including ownership fallback, assignment quarantine, byte/type validation, and preview/download headers. The preview route should stay a binary file endpoint that plugs into the shared rich viewer rather than a separate chat-only text-preview system.
 
 **Working-documents note**: the current working-document foundation should continue to build on existing artifacts, especially `generated_output`. Do not create a second persistence or memory path for generated files separate from artifact metadata, working-set retrieval, the shared document resolver, and Honcho sync. Family lifecycle state such as `documentFamilyStatus` belongs on that same metadata contract.
 
@@ -149,7 +150,7 @@ Authenticated account-level personalization fields such as display name and emai
 
 **Persona-memory note**: persona memory is delegated to Honcho in the current codebase. Do not reintroduce a local `persona-memory.ts` cluster pipeline, route-local persona caches, or a second temporal-memory subsystem.
 
-**Memory-overview note**: `memory.ts` treats Honcho overview text as auxiliary and source-attributed. Live/cached Honcho overviews should degrade to stored Honcho conclusions or an empty state when unavailable; do not block Knowledge Memory on live overview generation.
+**Memory-overview note**: `memory.ts` calls `knowledge/memory-overview.ts` to translate Honcho/persona overview material into `KnowledgeMemorySummary.overviewBullets`, source, status, updated-at, and last-attempt metadata for the Knowledge page. Live/cached Honcho overviews should degrade to stored Honcho conclusions or an empty state when unavailable; do not block Knowledge Memory on live overview generation. Honcho remains the persona/memory authority, and UI routes should not reintroduce raw Honcho overview cleanup.
 
 **Honcho reset note**: cleanup paths that promise a true memory reset must also rotate the per-user Honcho peer version. Deleting sessions, conclusions, cards, or local rows is not enough if the next chat would still reuse the same Honcho peer id.
 **Honcho chat-context note**: the chat prompt path should keep Honcho `session.context(...)` session-limited. Do not send a `searchQuery` there without the required `peerTarget`, do not let live Honcho context quietly broaden into workspace-level retrieval when the intent is current-session recall, and do not call live session context at all for a genuinely empty/new session that has no stored turns or snapshot yet.

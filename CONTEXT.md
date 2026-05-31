@@ -199,7 +199,7 @@ A compact Honcho-led personalization profile available to an ordinary chat turn 
 _Avoid_: newest memories, raw conclusion list, local persona summary
 
 **Knowledge Memory Overview**:
-The user-facing Memory Profile summary in the Knowledge Base. It should read as human-readable memory notes that explain what AlfyAI understands about the user, not as raw markdown, transcript metadata, conversation result logs, or a report outline.
+The user-facing Memory Profile summary in the Knowledge Base. Its deep server module, `src/lib/server/services/knowledge/memory-overview.ts`, translates Honcho/persona overview material into app-ready `KnowledgeMemorySummary.overviewBullets`, source, status, and attempt metadata for `src/lib/server/services/memory.ts`. Honcho remains the persona and memory authority; the module only shapes the user-facing overview contract. Knowledge page components such as `src/routes/(app)/knowledge/+page.svelte` and `_components/KnowledgeMemoryView.svelte` are UI adapters that render server-provided bullets/status/source and must not normalize raw Honcho text.
 _Avoid_: memory markdown, Honcho dump, conversation results list, generated report
 
 **Knowledge Memory Overview Bullet**:
@@ -1238,6 +1238,10 @@ _Avoid_: stream placeholder, temporary generated-file row, tool-call log
 A downloadable file produced by AlfyAI during chat.
 _Avoid_: uploaded document, attachment, artifact
 
+**Generated File Serving**:
+The server-side boundary at `src/lib/server/services/generated-file-serving.ts` that serves validated **Generated File** bytes for preview or download once a caller has selected a generated chat-file id.
+_Avoid_: route-local generated-file headers, preview-runtime authorization, working-document byte validator
+
 **Generated Document**:
 A **Generated File** whose content is a document-like work item that can be opened, revised, or versioned.
 _Avoid_: uploaded document, attachment, report, raw export
@@ -1302,6 +1306,9 @@ _Avoid_: source message button, primary document action, source viewer
 - A **Generated File** does not automatically become a **Generated Document**.
 - A **File Production Request** may produce one or more **Generated Files**.
 - A **File Production Request** is one user-facing capability even when AlfyAI uses different internal production methods.
+- **File Production** creates jobs, renders or executes outputs, and stores **Generated Files**; **Generated File Serving** serves already-stored generated-file bytes.
+- **Generated File Serving** owns generated-file lookup, conversation-owner fallback, assigned-file quarantine, generated-file type checks, byte validation, MIME/content-type selection, CSP/disposition/cache headers, and generated-HTML preview hardening.
+- Chat generated-file preview and download routes are transport adapters over **Generated File Serving**.
 - Every **File Production Request** enters **File Production Intake** before renderer, sandbox, or storage work begins.
 - **File Production Intake** creates or reuses durable **File Production Card** state; it is not a stream-only or tool-specific concern.
 - A malformed **File Production Request** still produces a durable failed **File Production Card** through **File Production Intake** when enough conversation ownership is known.
@@ -1347,7 +1354,9 @@ _Avoid_: source message button, primary document action, source viewer
 - **Working Document Selection** owns live per-turn signal collapse for **Working Documents**; callers should request its prompt, working-set, retrieval, and task-evidence views instead of re-deriving active focus, correction target, current-generated, recent-refinement, or reset rules locally.
 - `document-resolution.ts` remains the generated-document family ranking authority. **Working Document Selection** consumes that ranking to decide the live current/generated carryover view; it does not replace generated-family identity or version ordering.
 - **Document Workspace** and Knowledge preview/download routes use **Working Document Identity** preview/file-serving identity so source-plus-normalized documents open the display file while text-only documents degrade deliberately.
+- **Working Document Identity** and Working Document file serving select artifact identity or generated-output `sourceChatFileId`; when that identity points to generated chat-file bytes, they delegate byte validation and headers to **Generated File Serving**.
 - **Preview Runtime** consumes bytes served through **Working Document Identity** and server-side file serving; it does not decide which artifact or generated file is authorized or canonical.
+- **Preview Runtime** renders bytes in the browser; it does not own **Generated File Serving** concerns such as assignment quarantine, ownership fallback, MIME/byte validation, or CSP/disposition/cache headers.
 - **Preview Runtime** owns client-side file-type preview behavior for PDF, Office/OpenDocument, text/Markdown/CSV/HTML, source-style code/text files, and images; `DocumentPreviewRenderer.svelte` coordinates loading/error/unsupported state and adapter composition.
 - **Document Workspace** lazy-loads `DocumentPreviewRenderer.svelte`, and `DocumentPreviewRenderer.svelte` delegates heavy file-type work into **Preview Runtime** adapters so idle Chat and Knowledge shells do not eagerly import preview libraries.
 - Preview prewarm may warm the same preview URL bytes, but **Preview Runtime** remains the authoritative browser path for opening and rendering the preview.

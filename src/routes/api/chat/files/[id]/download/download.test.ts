@@ -4,31 +4,16 @@ vi.mock("$lib/server/auth/hooks", () => ({
 	requireAuth: vi.fn(),
 }));
 
-vi.mock("$lib/server/services/chat-files", () => ({
-	getChatFileByConversationOwner: vi.fn(),
-	getChatFileByUser: vi.fn(),
-	readChatFileContentByConversationOwner: vi.fn(),
-	readChatFileContentByUser: vi.fn(),
+vi.mock("$lib/server/services/generated-file-serving", () => ({
+	resolveGeneratedFileServing: vi.fn(),
 }));
 
 import { requireAuth } from "$lib/server/auth/hooks";
-import {
-	getChatFileByConversationOwner,
-	getChatFileByUser,
-	readChatFileContentByConversationOwner,
-	readChatFileContentByUser,
-} from "$lib/server/services/chat-files";
+import { resolveGeneratedFileServing } from "$lib/server/services/generated-file-serving";
 import { GET } from "./+server";
 
-const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
-const mockGetChatFileByUser = getChatFileByUser as ReturnType<typeof vi.fn>;
-const mockGetChatFileByConversationOwner =
-	getChatFileByConversationOwner as ReturnType<typeof vi.fn>;
-const mockReadChatFileContentByUser = readChatFileContentByUser as ReturnType<
-	typeof vi.fn
->;
-const mockReadChatFileContentByConversationOwner =
-	readChatFileContentByConversationOwner as ReturnType<typeof vi.fn>;
+const mockRequireAuth = vi.mocked(requireAuth);
+const mockResolveGeneratedFileServing = vi.mocked(resolveGeneratedFileServing);
 
 function makeEvent(
 	fileId = "file-1",
@@ -43,67 +28,26 @@ function makeEvent(
 	} as Parameters<typeof GET>[0];
 }
 
+function serviceSuccess(
+	body = "hello world",
+	headers: Record<string, string> = {
+		"Content-Type": "application/pdf",
+		"Content-Length": "11",
+		"Content-Disposition": "attachment; filename*=UTF-8''report.pdf",
+		"Cache-Control": "private, no-store",
+	},
+) {
+	return {
+		ok: true as const,
+		body: Buffer.from(body),
+		headers,
+	};
+}
+
 describe("GET /api/chat/files/[id]/download", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mockRequireAuth.mockReturnValue(undefined);
-	});
-
-	it("downloads a user-owned generated file", async () => {
-		mockGetChatFileByUser.mockResolvedValue({
-			id: "file-1",
-			conversationId: "conv-1",
-			userId: "user-1",
-			filename: "report.pdf",
-			mimeType: "application/pdf",
-			sizeBytes: 11,
-			storagePath: "conv-1/file-1.pdf",
-			createdAt: Date.now(),
-		});
-		mockReadChatFileContentByUser.mockResolvedValue(Buffer.from("hello world"));
-
-		const response = await GET(makeEvent());
-
-		expect(response.status).toBe(200);
-		expect(response.headers.get("Content-Type")).toBe("application/pdf");
-		expect(response.headers.get("Content-Length")).toBe("11");
-		expect(response.headers.get("Content-Disposition")).toContain(
-			"attachment; filename*=UTF-8''report.pdf",
-		);
-		expect(response.headers.get("Cache-Control")).toBe("private, no-store");
-		expect(mockGetChatFileByUser).toHaveBeenCalledWith("file-1", "user-1");
-		expect(mockReadChatFileContentByUser).toHaveBeenCalledWith(
-			"file-1",
-			"user-1",
-		);
-
-		const body = await response.arrayBuffer();
-		expect(Buffer.from(body).toString()).toBe("hello world");
-	});
-
-	it("downloads legacy generated shell scripts stored with generic MIME as shell content", async () => {
-		mockGetChatFileByUser.mockResolvedValue({
-			id: "file-1",
-			conversationId: "conv-1",
-			userId: "user-1",
-			filename: "install.sh",
-			mimeType: "application/octet-stream",
-			sizeBytes: 31,
-			storagePath: "conv-1/file-1.sh",
-			createdAt: Date.now(),
-		});
-		mockReadChatFileContentByUser.mockResolvedValue(
-			Buffer.from("#!/usr/bin/env bash\necho ok\n"),
-		);
-
-		const response = await GET(makeEvent());
-
-		expect(response.status).toBe(200);
-		expect(response.headers.get("Content-Type")).toBe("application/x-sh");
-		expect(response.headers.get("Content-Disposition")).toContain(
-			"attachment; filename*=UTF-8''install.sh",
-		);
-		expect(await response.text()).toBe("#!/usr/bin/env bash\necho ok\n");
 	});
 
 	it("returns 401 when unauthenticated", async () => {
@@ -116,31 +60,14 @@ describe("GET /api/chat/files/[id]/download", () => {
 
 		expect(response.status).toBe(401);
 		expect(body.error).toBe("Unauthorized");
-		expect(mockGetChatFileByUser).not.toHaveBeenCalled();
+		expect(mockResolveGeneratedFileServing).not.toHaveBeenCalled();
 	});
 
-	it("returns 404 when the file is not found", async () => {
-		mockGetChatFileByUser.mockResolvedValue(null);
-		mockGetChatFileByConversationOwner.mockResolvedValue(null);
-
-		const response = await GET(makeEvent());
-		const body = await response.json();
-
-		expect(response.status).toBe(404);
-		expect(body.error).toBe("File not found");
-	});
-
-	it("quarantines unassigned generated files from direct download access", async () => {
-		mockGetChatFileByUser.mockResolvedValue({
-			id: "file-1",
-			conversationId: "conv-1",
-			assistantMessageId: null,
-			userId: "user-1",
-			filename: "staged.pdf",
-			mimeType: "application/pdf",
-			sizeBytes: 11,
-			storagePath: "conv-1/file-1.pdf",
-			createdAt: Date.now(),
+	it("returns the service not-found response", async () => {
+		mockResolveGeneratedFileServing.mockResolvedValue({
+			ok: false,
+			status: 404,
+			error: "File not found",
 		});
 
 		const response = await GET(makeEvent());
@@ -148,66 +75,69 @@ describe("GET /api/chat/files/[id]/download", () => {
 
 		expect(response.status).toBe(404);
 		expect(body.error).toBe("File not found");
-		expect(mockReadChatFileContentByUser).not.toHaveBeenCalled();
-		expect(mockReadChatFileContentByConversationOwner).not.toHaveBeenCalled();
+		expect(mockResolveGeneratedFileServing).toHaveBeenCalledWith({
+			userId: "user-1",
+			fileId: "file-1",
+			mode: "download",
+		});
 	});
 
-	it("returns 500 when file content cannot be read", async () => {
-		mockGetChatFileByUser.mockResolvedValue({
-			id: "file-1",
-			conversationId: "conv-1",
-			userId: "user-1",
-			filename: "report.pdf",
-			mimeType: "application/pdf",
-			sizeBytes: 11,
-			storagePath: "conv-1/file-1.pdf",
-			createdAt: Date.now(),
+	it("preserves unassigned generated-file quarantine errors", async () => {
+		mockResolveGeneratedFileServing.mockResolvedValue({
+			ok: false,
+			status: 404,
+			error: "File not found",
 		});
-		mockReadChatFileContentByUser.mockResolvedValue(null);
-		mockReadChatFileContentByConversationOwner.mockResolvedValue(null);
 
-		const response = await GET(makeEvent());
+		const response = await GET(makeEvent("staged-file"));
 		const body = await response.json();
 
-		expect(response.status).toBe(500);
-		expect(body.error).toBe("Failed to read file content");
+		expect(response.status).toBe(404);
+		expect(body.error).toBe("File not found");
+		expect(mockResolveGeneratedFileServing).toHaveBeenCalledWith({
+			userId: "user-1",
+			fileId: "staged-file",
+			mode: "download",
+		});
 	});
 
-	it("falls back to conversation ownership lookup when user-scoped lookup misses", async () => {
-		mockGetChatFileByUser.mockResolvedValue(null);
-		mockGetChatFileByConversationOwner.mockResolvedValue({
-			id: "file-1",
-			conversationId: "conv-1",
-			userId: "legacy-mismatch",
-			filename: "legacy.pdf",
-			mimeType: "application/pdf",
-			sizeBytes: 5,
-			storagePath: "conv-1/file-1.pdf",
-			createdAt: Date.now(),
-		});
-		mockReadChatFileContentByUser.mockResolvedValue(null);
-		mockReadChatFileContentByConversationOwner.mockResolvedValue(
-			Buffer.from("hello"),
-		);
+	it("returns attachment download bytes and headers from the service", async () => {
+		mockResolveGeneratedFileServing.mockResolvedValue(serviceSuccess());
 
 		const response = await GET(makeEvent());
 
 		expect(response.status).toBe(200);
-		expect(await response.text()).toBe("hello");
+		expect(response.headers.get("Content-Type")).toBe("application/pdf");
+		expect(response.headers.get("Content-Length")).toBe("11");
+		expect(response.headers.get("Content-Disposition")).toContain(
+			"attachment; filename*=UTF-8''report.pdf",
+		);
+		expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+		expect(Buffer.from(await response.arrayBuffer()).toString()).toBe(
+			"hello world",
+		);
 	});
 
-	it("rejects mismatched generated-file MIME type and extension before download", async () => {
-		mockGetChatFileByUser.mockResolvedValue({
-			id: "file-1",
-			conversationId: "conv-1",
+	it("returns legacy conversation-owner fallback bytes resolved by the service", async () => {
+		mockResolveGeneratedFileServing.mockResolvedValue(serviceSuccess("legacy"));
+
+		const response = await GET(makeEvent("legacy-file"));
+
+		expect(response.status).toBe(200);
+		expect(await response.text()).toBe("legacy");
+		expect(mockResolveGeneratedFileServing).toHaveBeenCalledWith({
 			userId: "user-1",
-			filename: "report.pdf",
-			mimeType: "text/plain",
-			sizeBytes: 11,
-			storagePath: "conv-1/file-1.pdf",
-			createdAt: Date.now(),
+			fileId: "legacy-file",
+			mode: "download",
 		});
-		mockReadChatFileContentByUser.mockResolvedValue(Buffer.from("hello world"));
+	});
+
+	it("returns unsupported generated-file errors as JSON", async () => {
+		mockResolveGeneratedFileServing.mockResolvedValue({
+			ok: false,
+			status: 415,
+			error: "Unsupported generated file type",
+		});
 
 		const response = await GET(makeEvent());
 		const body = await response.json();
@@ -216,21 +146,12 @@ describe("GET /api/chat/files/[id]/download", () => {
 		expect(body.error).toBe("Unsupported generated file type");
 	});
 
-	it("rejects invalid XLSX bytes before download", async () => {
-		mockGetChatFileByUser.mockResolvedValue({
-			id: "file-1",
-			conversationId: "conv-1",
-			userId: "user-1",
-			filename: "workbook.xlsx",
-			mimeType:
-				"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-			sizeBytes: 16,
-			storagePath: "conv-1/file-1.xlsx",
-			createdAt: Date.now(),
+	it("returns invalid generated-file errors as JSON", async () => {
+		mockResolveGeneratedFileServing.mockResolvedValue({
+			ok: false,
+			status: 415,
+			error: "Invalid generated file content",
 		});
-		mockReadChatFileContentByUser.mockResolvedValue(
-			Buffer.from("not an ooxml zip"),
-		);
 
 		const response = await GET(makeEvent());
 		const body = await response.json();

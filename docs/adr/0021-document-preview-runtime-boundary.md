@@ -4,9 +4,11 @@ Document preview rendering belongs in a client-side **Preview Runtime** under `s
 
 `DocumentPreviewRenderer.svelte` remains the public embedded coordinator used by `DocumentWorkspace.svelte`. It owns shell states such as loading, fetch/runtime errors, unsupported-file fallback, retry, and adapter composition, but it should not reintroduce low-level PDF.js, Mammoth, ExcelJS, JSZip, PPTXViewer, CSV parsing, HTML sanitizing, syntax highlighting, or image interaction logic.
 
-Working Document Identity and the server-side working-document file-serving boundary remain the authority for which bytes a user is allowed to preview or download. Preview Runtime consumes those bytes after they reach the browser; it does not decide artifact identity, generated-file ownership, prompt eligibility, or canonical document family behavior.
+Working Document Identity and the server-side working-document file-serving boundary remain the authority for which Working Document bytes a user is allowed to preview or download. Generated File Serving is the server-side generated chat-file byte-serving authority for chat preview/download routes and Working Document generated-output `sourceChatFileId` delegation. Preview Runtime consumes those bytes after they reach the browser; it does not decide artifact identity, generated-file ownership, prompt eligibility, canonical document family behavior, byte validation, or server response headers.
 
 File Production remains the producer of generated-document sources and rendered generated files. Preview Runtime may render generated-file bytes once they are served through the existing preview route, but it must not create file-production jobs, validate generated output storage, or replace source-first document rendering.
+
+ADR-0023 records the Generated File Serving boundary. Future preview work should keep generated-file lookup, assignment quarantine, ownership fallback, MIME/byte validation, CSP, disposition, and cache policy server-side instead of pushing those rules into `DocumentPreviewRenderer.svelte` or Preview Runtime adapters.
 
 Heavy preview dependencies must stay off the idle shell path. `DocumentWorkspace.svelte` lazy-loads `DocumentPreviewRenderer.svelte`, and Preview Runtime adapters dynamically import browser-heavy libraries such as PDF.js, Mammoth, ExcelJS, JSZip, PPTXViewer, and the markdown highlighter only on the file-type paths that need them.
 

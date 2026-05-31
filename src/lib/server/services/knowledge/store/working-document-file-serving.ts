@@ -1,13 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import {
-	getChatFileByUser,
-	readChatFileContentByUser,
-} from "$lib/server/services/chat-files";
-import {
-	isGeneratedFileTypeAllowed,
-	validateGeneratedOutputFile,
-} from "$lib/server/services/file-production/output-validation";
+import { resolveGeneratedFileServing } from "$lib/server/services/generated-file-serving";
 import type { Artifact } from "$lib/types";
 import { getPreviewContentType } from "$lib/utils/file-preview";
 import {
@@ -126,62 +119,12 @@ async function resolveGeneratedOutputSource(params: {
 		return null;
 	}
 
-	const chatFile = await getChatFileByUser(sourceChatFileId, params.userId);
-	if (!chatFile) {
-		return null;
-	}
-
-	if (!isGeneratedFileTypeAllowed(chatFile.filename, chatFile.mimeType)) {
-		return {
-			ok: false,
-			status: 415,
-			error: "Unsupported generated file type",
-		};
-	}
-
-	const fileContent = await readChatFileContentByUser(
-		sourceChatFileId,
-		params.userId,
-	);
-	if (!fileContent) {
-		return null;
-	}
-
-	const contentValidation = await validateGeneratedOutputFile({
-		filename: chatFile.filename,
-		mimeType: chatFile.mimeType,
-		content: fileContent,
+	return resolveGeneratedFileServing({
+		userId: params.userId,
+		fileId: sourceChatFileId,
+		mode: params.mode,
+		displayFilename: params.artifact.name || null,
 	});
-	if (!contentValidation.ok) {
-		return {
-			ok: false,
-			status: 415,
-			error: "Invalid generated file content",
-		};
-	}
-
-	const filename = params.artifact.name || chatFile.filename;
-	const contentType =
-		params.mode === "preview"
-			? getPreviewContentType(chatFile.filename, chatFile.mimeType)
-			: chatFile.mimeType || "application/octet-stream";
-
-	return {
-		ok: true,
-		body: new Uint8Array(fileContent),
-		headers: {
-			"Content-Type": contentType,
-			"Content-Length": fileContent.length.toString(),
-			"Content-Disposition":
-				params.mode === "preview"
-					? `inline; filename="${encodeURIComponent(filename)}"`
-					: `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
-			"Cache-Control":
-				params.mode === "preview"
-					? "private, max-age=3600"
-					: "private, no-store",
-		},
-	};
 }
 
 async function resolveStoredArtifact(params: {
