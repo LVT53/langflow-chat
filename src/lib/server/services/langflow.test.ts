@@ -474,6 +474,90 @@ describe("sendMessage provider routing", () => {
 		expect(systemPrompt).toContain("tools are unavailable");
 	});
 
+	it("assembles matching Langflow payloads for send and stream turns", async () => {
+		const constructedInput = [
+			"Context from your conversation history:",
+			"## User Memory\nThe user prefers concise answers.",
+			"## Current User Message\nWhat changed today?",
+		].join("\n\n");
+		mocks.buildConstructedContext.mockResolvedValue({
+			inputValue: constructedInput,
+			contextStatus: undefined,
+			taskState: null,
+			contextDebug: null,
+			honchoContext: null,
+			honchoSnapshot: null,
+			contextTraceSections: [],
+		});
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string | URL | Request) => {
+				if (String(url).includes("stream=true")) {
+					return new Response('event: token\ndata: {"text":"OK"}\n\n', {
+						status: 200,
+						headers: { "Content-Type": "text/event-stream" },
+					});
+				}
+				return new Response(
+					JSON.stringify({
+						outputs: [
+							{
+								outputs: [
+									{ results: { message: { text: "Provider answer" } } },
+								],
+							},
+						],
+					}),
+					{
+						status: 200,
+						headers: { "Content-Type": "application/json" },
+					},
+				);
+			}),
+		);
+
+		await sendMessage(
+			"What changed today?",
+			"conv-1",
+			"model1",
+			{
+				id: "user-1",
+				displayName: "Ada",
+				email: "ada@example.com",
+			},
+			{
+				forceWebSearch: true,
+				personalityPrompt: "Be concise.",
+				thinkingMode: "off",
+			},
+		);
+		await sendMessageStream("What changed today?", "conv-1", "model1", {
+			user: {
+				id: "user-1",
+				displayName: "Ada",
+				email: "ada@example.com",
+			},
+			forceWebSearch: true,
+			personalityPrompt: "Be concise.",
+			thinkingMode: "off",
+		});
+
+		const sendBody = JSON.parse(
+			String(vi.mocked(fetch).mock.calls[0]?.[1]?.body),
+		);
+		const streamBody = JSON.parse(
+			String(vi.mocked(fetch).mock.calls[1]?.[1]?.body),
+		);
+		expect(streamBody).toEqual(sendBody);
+		expect(sendBody.input_value).toContain("## Current Web Research");
+		expect(sendBody.tweaks["ModelNode-1"].system_prompt).toContain(
+			"Display Name: Ada",
+		);
+		expect(sendBody.tweaks["ModelNode-1"].system_prompt).toContain(
+			"Be concise.",
+		);
+	});
+
 	it("uses a compact system-prompt override for control tasks", async () => {
 		mocks.getSystemPrompt.mockImplementation((prompt?: string) =>
 			prompt?.trim() ? prompt : "Base system prompt",
@@ -570,6 +654,132 @@ describe("sendMessage provider routing", () => {
 			max_tokens: 4096,
 		});
 		expect(body.messages[0].content).toContain("Reasoning: high");
+	});
+
+	it("removes caller abort listeners after JSON control tasks complete", async () => {
+		const abortController = new AbortController();
+		const addAbortListener = vi.spyOn(
+			abortController.signal,
+			"addEventListener",
+		);
+		const removeAbortListener = vi.spyOn(
+			abortController.signal,
+			"removeEventListener",
+		);
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(
+				async () =>
+					new Response(
+						JSON.stringify({
+							choices: [{ message: { content: '{"ok":true}' } }],
+						}),
+						{
+							status: 200,
+							headers: { "Content-Type": "application/json" },
+						},
+					),
+			),
+		);
+
+		try {
+			await sendJsonControlMessage("Return JSON", "model1", {
+				systemPrompt: "Control task. Return only JSON.",
+				signal: abortController.signal,
+			});
+
+			const abortListener = addAbortListener.mock.calls.find(
+				(call) => call[0] === "abort",
+			)?.[1];
+			expect(abortListener).toBeTypeOf("function");
+			expect(removeAbortListener).toHaveBeenCalledWith("abort", abortListener);
+		} finally {
+			addAbortListener.mockRestore();
+			removeAbortListener.mockRestore();
+		}
+	});
+
+	it("removes caller abort listeners after JSON control tasks fail", async () => {
+		const abortController = new AbortController();
+		const addAbortListener = vi.spyOn(
+			abortController.signal,
+			"addEventListener",
+		);
+		const removeAbortListener = vi.spyOn(
+			abortController.signal,
+			"removeEventListener",
+		);
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(
+				async () =>
+					new Response(JSON.stringify({ error: "bad request" }), {
+						status: 500,
+						statusText: "Internal Server Error",
+						headers: { "Content-Type": "application/json" },
+					}),
+			),
+		);
+
+		try {
+			await expect(
+				sendJsonControlMessage("Return JSON", "model1", {
+					systemPrompt: "Control task. Return only JSON.",
+					signal: abortController.signal,
+				}),
+			).rejects.toThrow("Control model request failed");
+
+			const abortListener = addAbortListener.mock.calls.find(
+				(call) => call[0] === "abort",
+			)?.[1];
+			expect(abortListener).toBeTypeOf("function");
+			expect(removeAbortListener).toHaveBeenCalledWith("abort", abortListener);
+		} finally {
+			addAbortListener.mockRestore();
+			removeAbortListener.mockRestore();
+		}
+	});
+
+	it("propagates caller aborts to JSON control task fetches", async () => {
+		const abortController = new AbortController();
+		let resolveFetchStarted: () => void;
+		const fetchStarted = new Promise<void>((resolve) => {
+			resolveFetchStarted = resolve;
+		});
+		let observedAbort = false;
+		let observedReason: unknown;
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(
+				async (_url: string | URL | Request, init?: RequestInit) =>
+					new Promise<Response>((_resolve, reject) => {
+						const signal = init?.signal;
+						if (!signal) {
+							reject(new Error("missing abort signal"));
+							return;
+						}
+						signal.addEventListener("abort", () => {
+							observedAbort = signal.aborted;
+							observedReason = signal.reason;
+							const error = new Error("aborted by caller");
+							error.name = "AbortError";
+							reject(error);
+						});
+						resolveFetchStarted();
+					}),
+			),
+		);
+
+		const pending = sendJsonControlMessage("Return JSON", "model1", {
+			systemPrompt: "Control task. Return only JSON.",
+			signal: abortController.signal,
+		});
+		await fetchStarted;
+		abortController.abort("caller-stop");
+
+		await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+		expect(observedAbort).toBe(true);
+		expect(observedReason).toBe("caller-stop");
 	});
 
 	it("rejects JSON control responses that only contain reasoning text", async () => {
@@ -1820,7 +2030,7 @@ describe("sendMessage provider routing", () => {
 				"fetch",
 				vi.fn(
 					async () =>
-						new Response("event: token\ndata: {\"text\":\"OK\"}\n\n", {
+						new Response('event: token\ndata: {"text":"OK"}\n\n', {
 							status: 200,
 							headers: { "Content-Type": "text/event-stream" },
 						}),

@@ -129,6 +129,68 @@ describe("Langflow model-run transport", () => {
 		);
 	});
 
+	it("removes caller abort listeners after JSON runs complete", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(
+				async () =>
+					new Response(
+						JSON.stringify({
+							outputs: [
+								{
+									outputs: [
+										{
+											results: {
+												message: { text: "JSON answer" },
+											},
+										},
+									],
+								},
+							],
+						}),
+						{
+							status: 200,
+							headers: { "Content-Type": "application/json" },
+						},
+					),
+			),
+		);
+		const callerController = new AbortController();
+		const addEventListener = vi.spyOn(
+			callerController.signal,
+			"addEventListener",
+		);
+		const removeEventListener = vi.spyOn(
+			callerController.signal,
+			"removeEventListener",
+		);
+
+		await executeLangflowJsonRun({
+			config: runtimeConfig,
+			flowId: "flow-1",
+			body: requestBody(),
+			attemptTimeoutMs: 30_000,
+			sessionId: "conv-1",
+			modelId: "model1",
+			modelName: "local-model",
+			baseUrl: "http://local-model/v1",
+			providerId: null,
+			attachmentCount: 0,
+			inputLength: 5,
+			signal: callerController.signal,
+		});
+
+		expect(addEventListener).toHaveBeenCalledWith(
+			"abort",
+			expect.any(Function),
+			{ once: true },
+		);
+		expect(removeEventListener).toHaveBeenCalledWith(
+			"abort",
+			expect.any(Function),
+		);
+	});
+
 	it("returns text and provider usage when a streaming run falls back to JSON", async () => {
 		vi.stubGlobal(
 			"fetch",
@@ -204,6 +266,140 @@ describe("Langflow model-run transport", () => {
 				contentType: "application/json",
 				textLength: 20,
 			}),
+		);
+	});
+
+	it("returns event streams without parsing and cleans up after the stream closes", async () => {
+		const stream = new ReadableStream<Uint8Array>({
+			start(controller) {
+				controller.enqueue(new TextEncoder().encode("data: chunk\n\n"));
+				controller.close();
+			},
+		});
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(
+				async () =>
+					new Response(stream, {
+						status: 200,
+						headers: { "Content-Type": "text/event-stream" },
+					}),
+			),
+		);
+		const callerController = new AbortController();
+		const removeEventListener = vi.spyOn(
+			callerController.signal,
+			"removeEventListener",
+		);
+
+		const result = await executeLangflowStreamRun({
+			config: runtimeConfig,
+			flowId: "flow-1",
+			body: requestBody(),
+			attemptTimeoutMs: 30_000,
+			connectTimeoutMs: 1_000,
+			sessionId: "conv-1",
+			modelId: "model1",
+			modelName: "local-model",
+			baseUrl: "http://local-model/v1",
+			providerId: null,
+			attachmentCount: 0,
+			inputLength: 5,
+			signal: callerController.signal,
+		});
+
+		expect(result).toEqual({
+			stream: expect.any(ReadableStream),
+		});
+		expect(removeEventListener).not.toHaveBeenCalled();
+		if (!result.stream) {
+			throw new Error("Expected Langflow streaming run to return a stream");
+		}
+		const reader = result.stream.getReader();
+		await expect(reader.read()).resolves.toMatchObject({
+			done: false,
+		});
+		await expect(reader.read()).resolves.toEqual({
+			done: true,
+			value: undefined,
+		});
+		expect(removeEventListener).toHaveBeenCalledWith(
+			"abort",
+			expect.any(Function),
+		);
+		expect(fetch).toHaveBeenCalledWith(
+			"http://langflow/api/v1/run/flow-1?stream=true",
+			expect.objectContaining({
+				method: "POST",
+				headers: expect.objectContaining({
+					Accept: "application/json",
+					"Cache-Control": "no-cache",
+					"Content-Type": "application/json",
+				}),
+			}),
+		);
+	});
+
+	it("keeps caller abort propagation alive while the returned event stream is consumed", async () => {
+		const callerController = new AbortController();
+		const removeEventListener = vi.spyOn(
+			callerController.signal,
+			"removeEventListener",
+		);
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(
+				async (_url: string | URL | Request, init?: RequestInit) =>
+					new Response(
+						new ReadableStream<Uint8Array>({
+							start(controller) {
+								controller.enqueue(new TextEncoder().encode("data: one\n\n"));
+								init?.signal?.addEventListener("abort", () => {
+									controller.error(new Error("upstream stream aborted"));
+								});
+							},
+						}),
+						{
+							status: 200,
+							headers: { "Content-Type": "text/event-stream" },
+						},
+					),
+			),
+		);
+
+		const result = await executeLangflowStreamRun({
+			config: runtimeConfig,
+			flowId: "flow-1",
+			body: requestBody(),
+			attemptTimeoutMs: 30_000,
+			connectTimeoutMs: 1_000,
+			sessionId: "conv-1",
+			modelId: "model1",
+			modelName: "local-model",
+			baseUrl: "http://local-model/v1",
+			providerId: null,
+			attachmentCount: 0,
+			inputLength: 5,
+			signal: callerController.signal,
+		});
+
+		expect(removeEventListener).not.toHaveBeenCalled();
+		if (!result.stream) {
+			throw new Error("Expected Langflow streaming run to return a stream");
+		}
+		const reader = result.stream.getReader();
+		await expect(reader.read()).resolves.toMatchObject({
+			done: false,
+		});
+		const pendingRead = reader.read();
+		const rejection = expect(pendingRead).rejects.toThrow(
+			"upstream stream aborted",
+		);
+		callerController.abort(new Error("user stopped stream"));
+		await rejection;
+		expect(removeEventListener).toHaveBeenCalledWith(
+			"abort",
+			expect.any(Function),
 		);
 	});
 
@@ -348,5 +544,59 @@ describe("Langflow model-run transport", () => {
 				"[LANGFLOW] Streaming request switching to failover model sessionId=conv-1 from=provider:provider-1:accounts/fireworks/routers/kimi-k2p6-turbo to=provider:provider-1:kimi-k2.6 reason=rate_limit status=429",
 			),
 		);
+	});
+
+	it("does not retry rate-limit failover when the caller aborts during fallback resolution", async () => {
+		const callerController = new AbortController();
+		let resolveProviderLookup: (provider: unknown) => void = () => undefined;
+		mocks.decryptApiKey.mockReturnValue("fallback-secret");
+		const providerLookupStarted = new Promise<void>((resolve) => {
+			mocks.getProviderWithSecrets.mockImplementation(
+				() =>
+					new Promise((providerResolve) => {
+						resolveProviderLookup = providerResolve;
+						resolve();
+					}),
+			);
+		});
+		const rateLimitError = Object.assign(
+			new Error("Langflow API error: 429 Too Many Requests"),
+			{
+				name: "LangflowHttpError",
+				status: 429,
+				statusText: "Too Many Requests",
+				bodyPreview: "provider rate limit",
+			},
+		);
+		const attempts: Array<{ modelId: string }> = [];
+
+		const pending = runLangflowModelRunWithFailover({
+			config: runtimeConfig,
+			label: "Streaming request",
+			sessionId: "conv-1",
+			requestedModelId: "provider:provider-1",
+			signal: callerController.signal,
+			attempt: async (attempt) => {
+				attempts.push({ modelId: attempt.modelId });
+				throw rateLimitError;
+			},
+		});
+
+		await providerLookupStarted;
+		callerController.abort(new Error("user stopped stream"));
+		resolveProviderLookup({
+			id: "provider-1",
+			displayName: "Provider One",
+			modelName: "provider-primary",
+			enabled: true,
+			rateLimitFallbackEnabled: true,
+			rateLimitFallbackBaseUrl: "https://api.moonshot.ai/chat/completions",
+			rateLimitFallbackApiKeyEncrypted: "encrypted-fallback",
+			rateLimitFallbackApiKeyIv: "fallback-iv",
+			rateLimitFallbackModelName: "kimi-k2.6",
+		});
+
+		await expect(pending).rejects.toBe(rateLimitError);
+		expect(attempts).toEqual([{ modelId: "provider:provider-1" }]);
 	});
 });

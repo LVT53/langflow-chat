@@ -10,24 +10,30 @@ Source: `/private/var/folders/6c/llmb9__97ngcxtc26hvg8jzh0000gn/T/architecture-r
 The Langflow Model Run boundary is implemented in `src/lib/server/services/langflow-model-run.ts`.
 
 - `langflow.ts` still owns model/provider resolution, outbound prompt assembly, context fit, context compression, forced web prefetch, Langflow tweaks, and final request-body construction.
-- `langflow-model-run.ts` owns JSON and streaming Langflow HTTP execution, request/connect timeout handling, HTTP and rate-limit classification, provider/global failover resolution, failover logging, response extraction, provider usage extraction, and compact `[LANGFLOW]` run diagnostics.
+- `langflow-model-run.ts` owns JSON and streaming Langflow HTTP execution, request/connect timeout handling, caller abort propagation, HTTP and rate-limit classification, provider/global failover resolution, failover logging, response extraction, provider usage extraction, and compact `[LANGFLOW]` run diagnostics.
 - `sendMessage` and `sendMessageStream` both use `runLangflowModelRunWithFailover` so timeout and rate-limit retry policy has one implementation.
+- Follow-up review fixes verified in the current worktree keep abort propagation alive during returned stream consumption, prevent rate-limit failover retries after a caller aborts during async fallback resolution, and clean up abort listeners in the separate control-model JSON helper.
 - Focused coverage now lives in `src/lib/server/services/langflow-model-run.test.ts`, with compatibility coverage retained in `src/lib/server/services/langflow.test.ts`.
 
 ## Context
 
-`src/lib/server/services/langflow.ts` currently owns both prompt assembly and model execution. The architecture review asks to keep Langflow prompt assembly in place, but deepen model execution behind a focused Model Run module so JSON and stream requests share attempt, timeout, rate-limit fallback, and run-diagnostic behavior.
+Before this refactor, `src/lib/server/services/langflow.ts` owned both prompt assembly and model execution. The architecture review asked to keep Langflow prompt assembly in place, but deepen model execution behind a focused Model Run module so JSON and stream requests share attempt, timeout, rate-limit fallback, and run-diagnostic behavior.
 
-Docs checked before planning:
+Review evidence:
 
 - Context7 Vitest v4.1.6 docs for ESM module mocks, `vi.mock`, fake timers, and mock reset patterns.
 - Context7 SvelteKit docs for `+server.ts` request handlers returning `json(...)`; no route behavior is expected to change in this refactor.
+- 2026-05-31 boundary check: `sendMessage` and `sendMessageStream` call `runLangflowModelRunWithFailover`; `executeLangflowJsonRun`, `executeLangflowStreamRun`, timeout/HTTP error creation, caller abort propagation, rate-limit classification, provider failover, global failover, provider usage extraction, and Langflow run diagnostics live in `langflow-model-run.ts`.
+- 2026-05-31 follow-up review check: streaming success wraps the returned upstream `ReadableStream` so merged abort-signal cleanup is delayed until stream consumption finishes or the stream is canceled, preserving caller abort propagation during active stream reads.
+- 2026-05-31 follow-up review check: rate-limit failover re-checks the caller abort signal after async fallback-target resolution and before retrying, so a user stop does not continue into fallback execution.
+- 2026-05-31 follow-up review check: `sendJsonControlMessage` remains a separate control-model transport path in `langflow.ts`, and its local abort-signal merge now cleans up listeners after the OpenAI-compatible JSON request completes.
+- 2026-05-31 stale-helper check: `createLangflowTimeoutError`, `createLangflowHttpError`, `resolveRateLimitFailoverTarget`, `sendMessageAttempt`, and `sendMessageStreamAttempt` do not remain as duplicate helper paths in `langflow.ts`.
 
 ## Done Criteria
 
 - `langflow.ts` keeps outbound prompt assembly, context fit, context compression, forced web prefetch, and Langflow request body construction.
 - A deep model-run module owns outbound Langflow HTTP execution for both JSON and stream runs.
-- Timeout handling, connect-timeout handling, HTTP error classification, rate-limit detection, failover target resolution, failover logging, and result diagnostics live in that model-run boundary.
+- Timeout handling, connect-timeout handling, caller abort propagation, HTTP error classification, rate-limit detection, failover target resolution, failover logging, and result diagnostics live in that model-run boundary.
 - `sendMessage` and `sendMessageStream` share one retry/failover policy instead of duplicating timeout and rate-limit retry orchestration.
 - Existing public `sendMessage`, `sendMessageStream`, `sendJsonControlMessage`, `isLangflowTimeoutError`, `isLangflowRateLimitError`, and failover result shapes remain compatible.
 - Stale helper code and tests left behind by the extraction are removed rather than kept as duplicate paths.
@@ -35,79 +41,51 @@ Docs checked before planning:
 
 ## Slice 1: Extract Model Run Transport
 
-Type: AFK
+Status: Done.
 
-Blocked by: None
+Implementation notes:
 
-What to build:
+- `executeLangflowJsonRun` accepts an already-built Langflow request body and run metadata, posts to `/api/v1/run/[flowId]`, handles request timeout and caller abort propagation, classifies non-OK responses, extracts text, and extracts provider usage.
+- `executeLangflowStreamRun` accepts the same already-built body shape, posts to the streaming Langflow endpoint, owns request and connect timeouts, preserves caller abort propagation while the returned event stream is consumed, preserves text/event-stream success, and handles non-stream JSON fallback with provider usage extraction.
+- `langflow.ts` builds prompt/context/tweaks and then calls the model-run transport boundary; it does not open-code Langflow JSON or stream `fetch` attempts for Normal Chat.
 
-Create a Langflow Model Run module that accepts an already-built request body plus run metadata and executes either a JSON request or a streaming request. It should own request URLs, headers, abort signal merging, body serialization, timeout timers, HTTP error creation, stream content-type handling, provider usage extraction for JSON responses, and compact attempt diagnostics. `langflow.ts` should call this boundary after prompt construction.
+Verification notes:
 
-Acceptance criteria:
-
-- JSON chat execution uses the new module and preserves response text extraction, provider usage, and existing returned metadata.
-- Streaming execution uses the same module and preserves text-event-stream success, non-stream JSON fallback, missing-body errors, and provider usage on JSON fallback.
-- Request and connect timeouts are created and cleared inside the model-run boundary.
-- User-supplied abort signals still bypass automatic failover.
-- Existing tests that inspect Langflow request bodies keep passing.
-
-Suggested verification:
-
-- `npx vitest run src/lib/server/services/langflow.test.ts`
-- Add focused model-run tests for timeout, HTTP error, and non-stream JSON fallback if the extracted module can be tested directly.
+- Covered by `src/lib/server/services/langflow-model-run.test.ts` for JSON response extraction, provider usage extraction, abort-listener cleanup, active stream abort propagation, non-stream JSON fallback, and stream connect timeout classification.
+- Existing Langflow compatibility tests remain in `src/lib/server/services/langflow.test.ts`.
 
 ## Slice 2: Centralize Failover Policy
 
-Type: AFK
+Status: Done.
 
-Blocked by: Slice 1
+Implementation notes:
 
-What to build:
+- `runLangflowModelRunWithFailover` is the shared JSON/stream failover policy.
+- Timeout failover returns the existing `timeoutFailover` shape with `{ fromModelId, toModelId, reason: "timeout" }`.
+- Provider rate-limit fallback preserves the provider `modelId` while using the provider fallback endpoint, display name, API key, context limits, and timeout.
+- Global rate-limit fallback still uses the configured timeout-failover target when provider endpoint fallback is unavailable.
+- Caller abort is re-checked after asynchronous rate-limit fallback resolution and before fallback retry.
+- Non-rate-limit HTTP failures are classified in the model-run boundary and are not retried.
 
-Move duplicated send/stream retry orchestration behind one Model Run failover policy. The policy should resolve timeout failover once, choose the shortened first-attempt timeout, retry on Langflow timeout errors when configured, retry on rate-limit errors with provider-specific fallback first and global fallback second, and emit the existing `[LANGFLOW] ... switching to failover model` log line.
+Verification notes:
 
-Acceptance criteria:
-
-- JSON and streaming runs use one shared failover orchestration function.
-- Timeout failover still returns `timeoutFailover: { fromModelId, toModelId, reason: "timeout" }`.
-- Provider rate-limit fallback still keeps `modelId` as the original provider id while changing model config and display name to the fallback endpoint.
-- Global rate-limit fallback still switches to the configured target model when provider endpoint fallback is unavailable.
-- Non-rate-limit HTTP failures are not retried.
-- The model-run module, not prompt assembly, owns `isLangflowTimeoutError`, `isLangflowRateLimitError`, HTTP status extraction, and failover target resolution.
-
-Suggested verification:
-
-- Focused timeout/rate-limit tests for both JSON and stream entrypoints.
-- `npx vitest run src/lib/server/services/langflow.test.ts`
+- Focused tests cover provider rate-limit fallback in `src/lib/server/services/langflow-model-run.test.ts`.
+- Focused tests cover abort during rate-limit fallback resolution in `src/lib/server/services/langflow-model-run.test.ts`.
+- Compatibility tests in `src/lib/server/services/langflow.test.ts` cover timeout failover, provider rate-limit fallback, global rate-limit fallback, and non-rate-limit error handling through the public `sendMessage` surface.
 
 ## Slice 3: Clean Stale Surfaces And Document The Boundary
 
-Type: AFK
+Status: Done.
 
-Blocked by: Slice 2
+Implementation notes:
 
-What to build:
+- Timeout, HTTP error, rate-limit, and failover helper logic moved out of `langflow.ts` and into `langflow-model-run.ts`.
+- The remaining `langflow.ts` abort-signal merge helper belongs to the separate control-model JSON path, not Normal Chat Langflow execution, and cleans up listeners after the request.
+- `CONTEXT.md` defines **Langflow Model Run** as the Normal Chat execution boundary between prompt/context assembly and **Normal Chat Turn Completion**.
+- ADR-0020 records why Model Run owns Langflow attempts/failover while **Normal Chat Turn Completion** and **Browser SSE Protocol** remain separate boundaries.
+- The architecture review HTML marks `Deepen Langflow Model Run` as finished and lists the implemented boundary files.
 
-Remove obsolete helper code, duplicate test fixtures, and stale TDD scaffolding left behind by the extraction. Update engineering docs so future agents know prompt assembly belongs in `langflow.ts` and model execution/failover belongs in the Model Run boundary.
+Verification notes:
 
-Acceptance criteria:
-
-- No duplicate timeout, rate-limit, HTTP error, or failover helpers remain in `langflow.ts`.
-- No stale tests assert internals that moved out of `langflow.ts`; tests either cover the public API or the new model-run boundary directly.
-- `CONTEXT.md` defines the Langflow Model Run boundary in Normal Chat vocabulary.
-- A related ADR records why the Model Run boundary owns run attempts/failover while Normal Chat Turn Completion and Browser SSE Protocol remain separate boundaries.
-- The architecture review HTML marks `Deepen Langflow Model Run` as finished with implementation status.
-
-Suggested verification:
-
-- `rg "createLangflowTimeoutError|createLangflowHttpError|resolveRateLimitFailoverTarget|sendMessageAttempt|sendMessageStreamAttempt" src/lib/server/services/langflow.ts src/lib/server/services`
-- `npm run check`
-- `npm run test:unit`
-
-## Final Verification
-
-Run after the slices are integrated:
-
-- `npm run check`
-- `npm run test:unit`
-- Targeted live smoke after deployment: health, authenticated chat send/stream, and recent `langflow-chat.service` journal inspection for `[LANGFLOW]` errors or failed failover paths.
+- Boundary-name/stale-helper `rg` checks should show old helper names only in `langflow-model-run.ts` and this historical slice document, not as duplicate paths in `langflow.ts`.
+- Run targeted Biome on this document, ADR-0020, `CONTEXT.md`, and the Langflow model-run files after any docs edit.

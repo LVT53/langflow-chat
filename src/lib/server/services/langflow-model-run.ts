@@ -493,6 +493,9 @@ export async function runLangflowModelRunWithFailover<T>(
 				requestedModelId,
 				config,
 			);
+			if (params.signal?.aborted) {
+				throw error;
+			}
 			if (rateLimitFailoverTarget) {
 				logLangflowFailoverSwitch({
 					label: params.label,
@@ -516,27 +519,84 @@ export async function runLangflowModelRunWithFailover<T>(
 	}
 }
 
-function mergeAbortSignals(
-	...signals: Array<AbortSignal | undefined>
-): AbortSignal | undefined {
+function mergeAbortSignals(...signals: Array<AbortSignal | undefined>): {
+	signal?: AbortSignal;
+	cleanup: () => void;
+} {
 	const activeSignals = signals.filter(Boolean) as AbortSignal[];
-	if (activeSignals.length === 0) return undefined;
-	if (activeSignals.length === 1) return activeSignals[0];
+	if (activeSignals.length === 0) {
+		return { signal: undefined, cleanup: () => undefined };
+	}
+	if (activeSignals.length === 1) {
+		return { signal: activeSignals[0], cleanup: () => undefined };
+	}
 
 	const controller = new AbortController();
-	const abort = () => {
-		if (!controller.signal.aborted) controller.abort();
+	const listeners: Array<{
+		signal: AbortSignal;
+		abort: () => void;
+	}> = [];
+	const abortFromSignal = (signal: AbortSignal) => {
+		if (controller.signal.aborted) return;
+		controller.abort(signal.reason);
 	};
 
 	for (const signal of activeSignals) {
 		if (signal.aborted) {
-			abort();
+			abortFromSignal(signal);
 			break;
 		}
+		const abort = () => abortFromSignal(signal);
+		listeners.push({ signal, abort });
 		signal.addEventListener("abort", abort, { once: true });
 	}
 
-	return controller.signal;
+	return {
+		signal: controller.signal,
+		cleanup: () => {
+			for (const listener of listeners) {
+				listener.signal.removeEventListener("abort", listener.abort);
+			}
+		},
+	};
+}
+
+function cleanupAfterStreamFinishes(
+	stream: ReadableStream<Uint8Array>,
+	cleanup: () => void,
+): ReadableStream<Uint8Array> {
+	const reader = stream.getReader();
+	let cleanedUp = false;
+	const cleanupOnce = () => {
+		if (cleanedUp) return;
+		cleanedUp = true;
+		reader.releaseLock();
+		cleanup();
+	};
+
+	return new ReadableStream<Uint8Array>({
+		async pull(controller) {
+			try {
+				const chunk = await reader.read();
+				if (chunk.done) {
+					cleanupOnce();
+					controller.close();
+					return;
+				}
+				controller.enqueue(chunk.value);
+			} catch (error) {
+				cleanupOnce();
+				controller.error(error);
+			}
+		},
+		async cancel(reason) {
+			try {
+				await reader.cancel(reason);
+			} finally {
+				cleanupOnce();
+			}
+		},
+	});
 }
 
 export function extractLangflowMessageText(
@@ -586,6 +646,7 @@ export async function executeLangflowJsonRun(
 	let timedOut = false;
 	let timeoutId: ReturnType<typeof setTimeout> | null = null;
 	const timeoutController = new AbortController();
+	let cleanupAbortSignal = () => undefined;
 
 	try {
 		if (params.config.contextDiagnosticsDebug) {
@@ -608,6 +669,12 @@ export async function executeLangflowJsonRun(
 			timeoutController.abort();
 		}, params.attemptTimeoutMs);
 
+		const mergedSignal = mergeAbortSignals(
+			params.signal,
+			timeoutController.signal,
+		);
+		cleanupAbortSignal = mergedSignal.cleanup;
+
 		const response = await fetch(url, {
 			method: "POST",
 			headers: {
@@ -615,7 +682,7 @@ export async function executeLangflowJsonRun(
 				"x-api-key": params.config.langflowApiKey,
 			},
 			body: JSON.stringify(params.body),
-			signal: mergeAbortSignals(params.signal, timeoutController.signal),
+			signal: mergedSignal.signal,
 		});
 
 		if (!response.ok) {
@@ -643,6 +710,7 @@ export async function executeLangflowJsonRun(
 		}
 		throw error;
 	} finally {
+		cleanupAbortSignal();
 		if (timeoutId) {
 			clearTimeout(timeoutId);
 		}
@@ -663,6 +731,7 @@ export async function executeLangflowStreamRun(
 	let connectTimeoutId: ReturnType<typeof setTimeout> | null = null;
 	const timeoutController = new AbortController();
 	const connectTimeoutController = new AbortController();
+	let cleanupAbortSignal = () => undefined;
 
 	try {
 		if (params.config.contextDiagnosticsDebug) {
@@ -689,6 +758,13 @@ export async function executeLangflowStreamRun(
 			connectTimeoutController.abort();
 		}, connectTimeoutMs);
 
+		const mergedSignal = mergeAbortSignals(
+			params.signal,
+			timeoutController.signal,
+			connectTimeoutController.signal,
+		);
+		cleanupAbortSignal = mergedSignal.cleanup;
+
 		const response = await fetch(url, {
 			method: "POST",
 			headers: {
@@ -698,11 +774,7 @@ export async function executeLangflowStreamRun(
 				"x-api-key": params.config.langflowApiKey,
 			},
 			body: JSON.stringify(params.body),
-			signal: mergeAbortSignals(
-				params.signal,
-				timeoutController.signal,
-				connectTimeoutController.signal,
-			),
+			signal: mergedSignal.signal,
 		});
 		if (connectTimeoutId) {
 			clearTimeout(connectTimeoutId);
@@ -746,8 +818,13 @@ export async function executeLangflowStreamRun(
 			throw new Error("Response body is empty");
 		}
 
+		const stream = cleanupAfterStreamFinishes(
+			response.body as ReadableStream<Uint8Array>,
+			cleanupAbortSignal,
+		);
+		cleanupAbortSignal = () => undefined;
 		return {
-			stream: response.body as ReadableStream<Uint8Array>,
+			stream,
 		};
 	} catch (error) {
 		if (connectTimedOut) {
@@ -762,6 +839,7 @@ export async function executeLangflowStreamRun(
 		}
 		throw error;
 	} finally {
+		cleanupAbortSignal();
 		if (timeoutId) {
 			clearTimeout(timeoutId);
 		}

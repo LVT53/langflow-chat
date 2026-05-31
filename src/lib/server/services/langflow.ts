@@ -8,7 +8,7 @@ import type {
 } from "$lib/types";
 import { isProviderModelId } from "$lib/types";
 import { estimateTokenCount } from "$lib/utils/tokens";
-import type { RuntimeConfig } from "../config-store";
+import type { ModelConfig, RuntimeConfig } from "../config-store";
 import { getConfig } from "../config-store";
 import { getSystemPrompt, stripDeprecatedPromptSections } from "../prompts";
 import { truncateToTokenBudget } from "../utils/prompt-context";
@@ -160,6 +160,16 @@ type JsonControlResponseSchema = {
 	name: string;
 	schema: Record<string, unknown>;
 	strict?: boolean;
+};
+
+type PreparedLangflowRunPayload = PreparedOutboundChatContext & {
+	body: LangflowRunRequest & { tweaks?: Record<string, unknown> };
+	flowId: string;
+	modelName: string;
+	baseUrl: string;
+	inputLength: number;
+	prefetchedToolCalls: ToolCallEntry[];
+	outputTokenBudget: OutputTokenBudget;
 };
 
 const CURRENT_USER_MESSAGE_MARKER = "## Current User Message\n";
@@ -1426,30 +1436,48 @@ function buildLangflowTweaks(
 	};
 }
 
-function mergeAbortSignals(
-	...signals: Array<AbortSignal | undefined>
-): AbortSignal {
+function mergeAbortSignals(...signals: Array<AbortSignal | undefined>): {
+	signal?: AbortSignal;
+	cleanup: () => void;
+} {
 	const activeSignals = signals.filter((signal): signal is AbortSignal =>
 		Boolean(signal),
 	);
 
+	if (activeSignals.length === 0) {
+		return { signal: undefined, cleanup: () => undefined };
+	}
+
 	if (activeSignals.length === 1) {
-		return activeSignals[0];
+		return { signal: activeSignals[0], cleanup: () => undefined };
 	}
 
 	const controller = new AbortController();
-	const abort = () => controller.abort();
+	const listeners: Array<{ signal: AbortSignal; abort: () => void }> = [];
+	const abortFromSignal = (signal: AbortSignal) => {
+		if (controller.signal.aborted) return;
+		controller.abort(signal.reason);
+	};
 
 	for (const signal of activeSignals) {
 		if (signal.aborted) {
-			controller.abort();
+			abortFromSignal(signal);
 			break;
 		}
 
+		const abort = () => abortFromSignal(signal);
+		listeners.push({ signal, abort });
 		signal.addEventListener("abort", abort, { once: true });
 	}
 
-	return controller.signal;
+	return {
+		signal: controller.signal,
+		cleanup: () => {
+			for (const listener of listeners) {
+				listener.signal.removeEventListener("abort", listener.abort);
+			}
+		},
+	};
 }
 
 export async function prepareOutboundChatContext(params: {
@@ -1753,49 +1781,54 @@ export async function sendJsonControlMessage(
 		};
 	}
 
-	const response = await fetch(
-		buildOpenAICompatibleUrl(modelConfig.baseUrl, "/v1/chat/completions"),
-		{
-			method: "POST",
-			headers,
-			body: JSON.stringify(body),
-			signal: mergeAbortSignals(
-				options.signal,
-				AbortSignal.timeout(config.requestTimeoutMs),
-			),
-		},
+	const mergedSignal = mergeAbortSignals(
+		options.signal,
+		AbortSignal.timeout(config.requestTimeoutMs),
 	);
-	if (!response.ok) {
-		const errorBody = await response.text().catch(() => "");
-		throw new Error(
-			`Control model request failed: ${response.status} ${response.statusText}${errorBody ? ` - ${errorBody.slice(0, 500)}` : ""}`,
+	try {
+		const response = await fetch(
+			buildOpenAICompatibleUrl(modelConfig.baseUrl, "/v1/chat/completions"),
+			{
+				method: "POST",
+				headers,
+				body: JSON.stringify(body),
+				signal: mergedSignal.signal,
+			},
 		);
-	}
+		if (!response.ok) {
+			const errorBody = await response.text().catch(() => "");
+			throw new Error(
+				`Control model request failed: ${response.status} ${response.statusText}${errorBody ? ` - ${errorBody.slice(0, 500)}` : ""}`,
+			);
+		}
 
-	const rawResponse = await response.json();
-	return {
-		text: extractOpenAICompatibleMessageText(rawResponse, {
-			allowReasoningFallback: options.allowReasoningFallback,
-		}),
-		rawResponse,
-		modelId: modelId ?? "model1",
-		modelDisplayName: modelConfig.displayName,
-	};
+		const rawResponse = await response.json();
+		return {
+			text: extractOpenAICompatibleMessageText(rawResponse, {
+				allowReasoningFallback: options.allowReasoningFallback,
+			}),
+			rawResponse,
+			modelId: modelId ?? "model1",
+			modelDisplayName: modelConfig.displayName,
+		};
+	} finally {
+		mergedSignal.cleanup();
+	}
 }
 
-async function runPreparedMessage(
-	message: string,
-	sessionId: string,
-	modelId: ModelId | undefined,
-	user: AuthenticatedPromptUser | undefined,
-	options: SendMessageOptions | undefined,
-	attemptTimeoutMs: number,
-	timeoutFailover?: TimeoutFailoverInfo,
-	overrideModelConfig?: LangflowModelRunConfig,
-): Promise<LangflowRequestResult> {
-	const config = getConfig();
-	const modelConfig =
-		overrideModelConfig ?? (await resolveLangflowRunConfig(modelId));
+async function prepareLangflowRunPayload(params: {
+	message: string;
+	sessionId: string;
+	modelId: ModelId;
+	user?: AuthenticatedPromptUser;
+	options?: SendMessageOptions;
+	modelConfig: LangflowModelRunConfig;
+	config: RuntimeConfig;
+	attemptTimeoutMs: number;
+	attachmentLogLabel: "request bundle" | "streaming bundle";
+}): Promise<PreparedLangflowRunPayload> {
+	const { message, sessionId, modelId, user, options, modelConfig, config } =
+		params;
 	const flowId = modelConfig.flowId || config.langflowFlowId;
 	const modelName = modelConfig.modelName;
 	const baseUrl = modelConfig.baseUrl;
@@ -1819,7 +1852,7 @@ async function runPreparedMessage(
 			attachmentIds: options?.attachmentIds,
 			activeDocumentArtifactId: options?.activeDocumentArtifactId,
 			attachmentTraceId: options?.attachmentTraceId,
-			modelId: modelId ?? "model1",
+			modelId,
 			contextLimits: modelConfig.contextLimits,
 		});
 		inputValue = constructed.inputValue;
@@ -1842,7 +1875,7 @@ async function runPreparedMessage(
 		});
 		if (!attachmentSection.hasMarker) {
 			console.warn(
-				"[LANGFLOW] Attachment marker missing from outgoing request bundle",
+				`[LANGFLOW] Attachment marker missing from outgoing ${params.attachmentLogLabel}`,
 				{
 					sessionId,
 					attachmentIds: options?.attachmentIds ?? [],
@@ -1875,7 +1908,7 @@ async function runPreparedMessage(
 		skipDefaultRuntimeGuidance: options?.skipDefaultRuntimeGuidance,
 	});
 	const contextLimits = resolvePromptContextLimits(
-		modelId ?? "model1",
+		modelId,
 		modelConfig,
 		config,
 	);
@@ -1884,7 +1917,7 @@ async function runPreparedMessage(
 				user,
 				sessionId,
 				message,
-				modelId: modelId ?? "model1",
+				modelId,
 				modelConfig,
 				contextLimits,
 				inputValue,
@@ -1895,7 +1928,7 @@ async function runPreparedMessage(
 			}).catch((error) => {
 				console.warn("[LANGFLOW] Automatic context compression skipped", {
 					sessionId,
-					modelId: modelId ?? "model1",
+					modelId,
 					error: error instanceof Error ? error.message : String(error),
 				});
 				return automaticCompressionResult({
@@ -1934,7 +1967,7 @@ async function runPreparedMessage(
 		message,
 		forceWebSearch: options?.forceWebSearch,
 		sessionId,
-		modelId: modelId ?? "model1",
+		modelId,
 	});
 	inputValue = forcedWebPrefetch.inputValue;
 	prefetchedToolCalls = forcedWebPrefetch.prefetchedToolCalls;
@@ -1958,7 +1991,7 @@ async function runPreparedMessage(
 		contextLimits,
 		maxTokens: modelConfig.maxTokens,
 		sessionId,
-		modelId: modelId ?? "model1",
+		modelId,
 		modelName,
 		providerId: modelConfig.providerId ?? null,
 		automaticCompression,
@@ -1972,47 +2005,16 @@ async function runPreparedMessage(
 		outputReserve: budgetedPrompt.outputTokenBudget.outputReserve,
 		sessionId,
 		userId: user?.id ?? null,
-		modelId: modelId ?? "model1",
+		modelId,
 		providerId: modelConfig.providerId ?? null,
 		modelName,
 		honchoContext,
 		contextTraceSections,
 	});
 
-	const body: LangflowRunRequest & { tweaks?: Record<string, unknown> } = {
-		input_value: inputValue,
-		input_type: "chat",
-		output_type: "chat",
-		session_id: sessionId,
-		tweaks: buildLangflowTweaks(
-			modelConfig,
-			systemPrompt,
-			message,
-			budgetedPrompt.outputTokenBudget.effectiveMaxTokens,
-			options?.thinkingMode,
-			attemptTimeoutMs,
-		),
-	};
-	const run = await executeLangflowJsonRun({
-		config,
-		flowId,
-		body,
-		attemptTimeoutMs,
-		sessionId,
-		userId: user?.id ?? null,
-		modelId: modelId ?? "model1",
-		providerId: modelConfig.providerId ?? null,
-		modelName,
-		baseUrl,
-		attachmentCount: options?.attachmentIds?.length ?? 0,
-		inputLength: inputValue.length,
-		signal: options?.signal,
-		nonOkLogLabel: "sendMessage",
-	});
-
 	return {
-		text: run.text,
-		rawResponse: run.rawResponse,
+		inputValue,
+		systemPrompt,
 		contextStatus,
 		taskState,
 		contextDebug,
@@ -2020,8 +2022,82 @@ async function runPreparedMessage(
 		honchoSnapshot,
 		contextTraceSections,
 		prefetchedToolCalls,
+		outputTokenBudget: budgetedPrompt.outputTokenBudget,
+		flowId,
+		modelName,
+		baseUrl,
+		inputLength: inputValue.length,
+		body: {
+			input_value: inputValue,
+			input_type: "chat",
+			output_type: "chat",
+			session_id: sessionId,
+			tweaks: buildLangflowTweaks(
+				modelConfig,
+				systemPrompt,
+				message,
+				budgetedPrompt.outputTokenBudget.effectiveMaxTokens,
+				options?.thinkingMode,
+				params.attemptTimeoutMs,
+			),
+		},
+	};
+}
+
+async function runPreparedMessage(
+	message: string,
+	sessionId: string,
+	modelId: ModelId | undefined,
+	user: AuthenticatedPromptUser | undefined,
+	options: SendMessageOptions | undefined,
+	attemptTimeoutMs: number,
+	timeoutFailover?: TimeoutFailoverInfo,
+	overrideModelConfig?: LangflowModelRunConfig,
+): Promise<LangflowRequestResult> {
+	const resolvedModelId = modelId ?? "model1";
+	const config = getConfig();
+	const modelConfig =
+		overrideModelConfig ?? (await resolveLangflowRunConfig(modelId));
+	const prepared = await prepareLangflowRunPayload({
+		message,
+		sessionId,
+		modelId: resolvedModelId,
+		user,
+		options,
+		modelConfig,
+		config,
+		attemptTimeoutMs,
+		attachmentLogLabel: "request bundle",
+	});
+	const run = await executeLangflowJsonRun({
+		config,
+		flowId: prepared.flowId,
+		body: prepared.body,
+		attemptTimeoutMs,
+		sessionId,
+		userId: user?.id ?? null,
+		modelId: resolvedModelId,
+		providerId: modelConfig.providerId ?? null,
+		modelName: prepared.modelName,
+		baseUrl: prepared.baseUrl,
+		attachmentCount: options?.attachmentIds?.length ?? 0,
+		inputLength: prepared.inputLength,
+		signal: options?.signal,
+		nonOkLogLabel: "sendMessage",
+	});
+
+	return {
+		text: run.text,
+		rawResponse: run.rawResponse,
+		contextStatus: prepared.contextStatus,
+		taskState: prepared.taskState,
+		contextDebug: prepared.contextDebug,
+		honchoContext: prepared.honchoContext,
+		honchoSnapshot: prepared.honchoSnapshot,
+		contextTraceSections: prepared.contextTraceSections,
+		prefetchedToolCalls: prepared.prefetchedToolCalls,
 		providerUsage: run.providerUsage,
-		modelId: modelId ?? "model1",
+		modelId: resolvedModelId,
 		modelDisplayName: modelConfig.displayName,
 		timeoutFailover,
 	};
@@ -2069,6 +2145,7 @@ async function runPreparedMessageStream(
 	timeoutFailover?: TimeoutFailoverInfo,
 	overrideModelConfig?: LangflowModelRunConfig,
 ): Promise<LangflowStreamResult> {
+	const resolvedModelId = modelId ?? "model1";
 	const config = getConfig();
 	const connectTimeoutMs = Math.min(
 		attemptTimeoutMs,
@@ -2076,217 +2153,31 @@ async function runPreparedMessageStream(
 	);
 	const modelConfig =
 		overrideModelConfig ?? (await resolveLangflowRunConfig(modelId));
-	const flowId = modelConfig.flowId || config.langflowFlowId;
-	const modelName = modelConfig.modelName;
-	const baseUrl = modelConfig.baseUrl;
-
-	let inputValue = message;
-	let contextStatus: import("$lib/types").ConversationContextStatus | undefined;
-	let taskState: import("$lib/types").TaskState | null | undefined;
-	let contextDebug: import("$lib/types").ContextDebugState | null | undefined;
-	let honchoContext: import("$lib/types").HonchoContextInfo | null | undefined;
-	let honchoSnapshot:
-		| import("$lib/types").HonchoContextSnapshot
-		| null
-		| undefined;
-	let contextTraceSections: LegacyContextTraceSectionInput[] | undefined;
-	let prefetchedToolCalls: ToolCallEntry[] = [];
-	if (options?.user?.id && !options.skipHonchoContext) {
-		const constructed = await buildConstructedContext({
-			userId: options.user.id,
-			conversationId: sessionId,
-			message,
-			attachmentIds: options.attachmentIds,
-			activeDocumentArtifactId: options.activeDocumentArtifactId,
-			attachmentTraceId: options.attachmentTraceId,
-			modelId: modelId ?? "model1",
-			contextLimits: modelConfig.contextLimits,
-		});
-		inputValue = constructed.inputValue;
-		contextStatus = constructed.contextStatus;
-		taskState = constructed.taskState;
-		contextDebug = constructed.contextDebug;
-		honchoContext = constructed.honchoContext;
-		honchoSnapshot = constructed.honchoSnapshot;
-		contextTraceSections = constructed.contextTraceSections;
-	}
-	const attachmentSection = summarizeAttachmentSectionInInput(inputValue);
-	if ((options?.attachmentIds?.length ?? 0) > 0) {
-		logAttachmentTrace("langflow_request", {
-			traceId: options?.attachmentTraceId ?? null,
-			sessionId,
-			inputValueLength: inputValue.length,
-			hasCurrentAttachmentsMarker: attachmentSection.hasMarker,
-			attachmentSectionPreview: attachmentSection.preview,
-			attachmentSectionPreviewHash: attachmentSection.previewHash,
-		});
-		if (!attachmentSection.hasMarker) {
-			console.warn(
-				"[LANGFLOW] Attachment marker missing from outgoing streaming bundle",
-				{
-					sessionId,
-					attachmentIds: options?.attachmentIds ?? [],
-					traceId: options?.attachmentTraceId ?? null,
-					inputValueLength: inputValue.length,
-				},
-			);
-		}
-	}
-
-	const configuredBasePrompt =
-		options?.systemPromptOverride ?? modelConfig.systemPrompt;
-	const baseSystemPrompt =
-		options?.user?.id && !options?.systemPromptOverride
-			? await buildEnhancedSystemPrompt(configuredBasePrompt, {
-					userId: options.user.id,
-					displayName: options.user.displayName,
-					email: options.user.email,
-				})
-			: getSystemPrompt(configuredBasePrompt);
-	let systemPrompt = buildOutboundSystemPrompt({
-		basePrompt: baseSystemPrompt,
-		inputValue,
-		responseLanguage: detectLanguage(message),
-		modelDisplayName: modelConfig.displayName,
-		modelName: modelConfig.modelName,
-		systemPromptAppendix: options?.systemPromptAppendix,
-		personalityPrompt: options?.personalityPrompt,
-		forceWebSearch: options?.forceWebSearch,
-		skipDefaultRuntimeGuidance: options?.skipDefaultRuntimeGuidance,
-	});
-	const contextLimits = resolvePromptContextLimits(
-		modelId ?? "model1",
+	const prepared = await prepareLangflowRunPayload({
+		message,
+		sessionId,
+		modelId: resolvedModelId,
+		user: options?.user,
+		options,
 		modelConfig,
 		config,
-	);
-	const automaticCompression = !options?.skipHonchoContext
-		? await maybeRunAutomaticContextCompression({
-				user: options?.user,
-				sessionId,
-				message,
-				modelId: modelId ?? "model1",
-				modelConfig,
-				contextLimits,
-				inputValue,
-				systemPrompt,
-				attachmentIds: options?.attachmentIds,
-				activeDocumentArtifactId: options?.activeDocumentArtifactId,
-				attachmentTraceId: options?.attachmentTraceId,
-			}).catch((error) => {
-				console.warn("[LANGFLOW] Automatic context compression skipped", {
-					sessionId,
-					modelId: modelId ?? "model1",
-					error: error instanceof Error ? error.message : String(error),
-				});
-				return automaticCompressionResult({
-					outcome: "failed",
-					reason: error instanceof Error ? error.message : String(error),
-					attempted: true,
-				});
-			})
-		: automaticCompressionResult({
-				outcome: "not_possible",
-				reason: "honcho_context_disabled",
-				attempted: false,
-			});
-	if (automaticCompression.context) {
-		inputValue = automaticCompression.context.inputValue;
-		contextStatus = automaticCompression.context.contextStatus;
-		taskState = automaticCompression.context.taskState;
-		contextDebug = automaticCompression.context.contextDebug;
-		honchoContext = automaticCompression.context.honchoContext;
-		honchoSnapshot = automaticCompression.context.honchoSnapshot;
-		contextTraceSections = automaticCompression.context.contextTraceSections;
-		systemPrompt = buildOutboundSystemPrompt({
-			basePrompt: baseSystemPrompt,
-			inputValue,
-			responseLanguage: detectLanguage(message),
-			modelDisplayName: modelConfig.displayName,
-			modelName: modelConfig.modelName,
-			systemPromptAppendix: options?.systemPromptAppendix,
-			personalityPrompt: options?.personalityPrompt,
-			forceWebSearch: options?.forceWebSearch,
-			skipDefaultRuntimeGuidance: options?.skipDefaultRuntimeGuidance,
-		});
-	}
-	const forcedWebPrefetch = await maybePrefetchForcedWebResearch({
-		inputValue,
-		message,
-		forceWebSearch: options?.forceWebSearch,
-		sessionId,
-		modelId: modelId ?? "model1",
+		attemptTimeoutMs,
+		attachmentLogLabel: "streaming bundle",
 	});
-	inputValue = forcedWebPrefetch.inputValue;
-	prefetchedToolCalls = forcedWebPrefetch.prefetchedToolCalls;
-	if (prefetchedToolCalls.length > 0) {
-		systemPrompt = buildOutboundSystemPrompt({
-			basePrompt: baseSystemPrompt,
-			inputValue,
-			responseLanguage: detectLanguage(message),
-			modelDisplayName: modelConfig.displayName,
-			modelName: modelConfig.modelName,
-			systemPromptAppendix: options?.systemPromptAppendix,
-			personalityPrompt: options?.personalityPrompt,
-			forceWebSearch: options?.forceWebSearch,
-			skipDefaultRuntimeGuidance: options?.skipDefaultRuntimeGuidance,
-		});
-	}
-	const budgetedPrompt = applyOutboundPromptBudget({
-		inputValue,
-		message,
-		systemPrompt,
-		contextLimits,
-		maxTokens: modelConfig.maxTokens,
-		sessionId,
-		modelId: modelId ?? "model1",
-		modelName,
-		providerId: modelConfig.providerId ?? null,
-		automaticCompression,
-	});
-	inputValue = budgetedPrompt.inputValue;
-	emitOutboundContextTrace({
-		inputValue,
-		systemPrompt,
-		message,
-		contextLimits,
-		outputReserve: budgetedPrompt.outputTokenBudget.outputReserve,
-		sessionId,
-		userId: options?.user?.id ?? null,
-		modelId: modelId ?? "model1",
-		providerId: modelConfig.providerId ?? null,
-		modelName,
-		honchoContext,
-		contextTraceSections,
-	});
-
-	const body: LangflowRunRequest & { tweaks?: Record<string, unknown> } = {
-		input_value: inputValue,
-		input_type: "chat",
-		output_type: "chat",
-		session_id: sessionId,
-		tweaks: buildLangflowTweaks(
-			modelConfig,
-			systemPrompt,
-			message,
-			budgetedPrompt.outputTokenBudget.effectiveMaxTokens,
-			options?.thinkingMode,
-			attemptTimeoutMs,
-		),
-	};
 	const run = await executeLangflowStreamRun({
 		config,
-		flowId,
-		body,
+		flowId: prepared.flowId,
+		body: prepared.body,
 		attemptTimeoutMs,
 		connectTimeoutMs,
 		sessionId,
 		userId: options?.user?.id ?? null,
-		modelId: modelId ?? "model1",
+		modelId: resolvedModelId,
 		providerId: modelConfig.providerId ?? null,
-		modelName,
-		baseUrl,
+		modelName: prepared.modelName,
+		baseUrl: prepared.baseUrl,
 		attachmentCount: options?.attachmentIds?.length ?? 0,
-		inputLength: inputValue.length,
+		inputLength: prepared.inputLength,
 		signal: options?.signal,
 		nonOkLogLabel: "sendMessageStream",
 	});
@@ -2295,15 +2186,15 @@ async function runPreparedMessageStream(
 		stream: run.stream,
 		text: run.text,
 		rawResponse: run.rawResponse,
-		contextStatus,
-		taskState,
-		contextDebug,
-		honchoContext,
-		honchoSnapshot,
-		contextTraceSections,
-		prefetchedToolCalls,
+		contextStatus: prepared.contextStatus,
+		taskState: prepared.taskState,
+		contextDebug: prepared.contextDebug,
+		honchoContext: prepared.honchoContext,
+		honchoSnapshot: prepared.honchoSnapshot,
+		contextTraceSections: prepared.contextTraceSections,
+		prefetchedToolCalls: prepared.prefetchedToolCalls,
 		providerUsage: run.providerUsage,
-		modelId: modelId ?? "model1",
+		modelId: resolvedModelId,
 		modelDisplayName: modelConfig.displayName,
 		timeoutFailover,
 	};

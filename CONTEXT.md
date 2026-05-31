@@ -159,7 +159,7 @@ One user request and assistant response cycle in **Normal Chat**, including **Co
 _Avoid_: message send, Langflow run, SSE session
 
 **Langflow Model Run**:
-The outbound execution boundary for a Normal Chat model call through Langflow, owned by `src/lib/server/services/langflow-model-run.ts`. It runs already-assembled Langflow JSON or streaming request bodies, classifies timeout/connect-timeout and HTTP/rate-limit failures, applies configured failover policy, and emits compact run diagnostics.
+The outbound execution boundary for a Normal Chat model call through Langflow, owned by `src/lib/server/services/langflow-model-run.ts`. It is a deep module that runs already-assembled Langflow JSON or streaming request bodies, owns request/connect timeout handling, abort-signal cleanup, caller abort propagation for active returned streams, classifies HTTP/rate-limit failures, applies configured failover policy, extracts model text and provider usage, and emits compact run diagnostics. It receives prompt/context/tweak output from `langflow.ts`; it does not decide what context or guidance should be sent.
 _Avoid_: prompt assembly, Context Selection, Browser SSE Protocol, Normal Chat Turn Completion
 
 **Normal Chat Turn Completion**:
@@ -540,7 +540,7 @@ _Avoid_: uploaded attachment, file copy, hidden retrieval hint
 - **Prompt Context** is selected per **Normal Chat** turn.
 - **Context Selection** starts a **Normal Chat Turn** by choosing **Prompt Context** from **Available Context**.
 - **Langflow Model Run** happens after prompt/context assembly and before **Normal Chat Turn Completion**.
-- **Langflow Model Run** owns Langflow JSON/stream attempts, request and connect timeouts, HTTP/rate-limit classification, configured failover, and run diagnostics; it does not select **Prompt Context**.
+- **Langflow Model Run** owns Langflow JSON/stream attempts, request and connect timeouts, abort handling for outbound Langflow calls, HTTP/rate-limit classification, configured failover, provider usage extraction, and run diagnostics; it does not select **Prompt Context** or build Langflow tweaks.
 - **Normal Chat Turn Completion** ends a **Normal Chat Turn** by turning assistant output into durable conversation state and response-facing **Context Sources**.
 - Transport surfaces may expose the result of **Normal Chat Turn Completion**, but they should not redefine what completion means.
 - The **Browser SSE Protocol** exposes streaming, replay, waiting, completion, and error transport events for **Normal Chat**, but it does not own durable turn completion.

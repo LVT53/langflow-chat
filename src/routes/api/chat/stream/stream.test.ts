@@ -216,6 +216,7 @@ import {
 import { applySkillControlOperations } from "$lib/server/services/skills/sessions";
 import { getConversationTaskState } from "$lib/server/services/task-state";
 import { POST } from "./+server";
+import { POST as stopStream } from "./stop/+server";
 
 const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
 const mockGetConversation = getConversation as ReturnType<typeof vi.fn>;
@@ -244,6 +245,7 @@ const mockAssignFileProductionJobsToAssistantMessage =
 const mockListConversationFileProductionJobs =
 	listConversationFileProductionJobs as ReturnType<typeof vi.fn>;
 type StreamPostEvent = Parameters<typeof POST>[0];
+type StopStreamPostEvent = Parameters<typeof stopStream>[0];
 
 function makeEvent(
 	body: unknown,
@@ -268,6 +270,25 @@ function makeEvent(
 		url: new URL("http://localhost/api/chat/stream"),
 		route: { id: "/api/chat/stream" },
 	} as StreamPostEvent;
+}
+
+function makeStopEvent(body: unknown, userId = "user-1"): StopStreamPostEvent {
+	return {
+		request: new Request("http://localhost/api/chat/stream/stop", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(body),
+		}),
+		locals: {
+			user: {
+				id: userId,
+				email: "test@example.com",
+			},
+		},
+		params: {},
+		url: new URL("http://localhost/api/chat/stream/stop"),
+		route: { id: "/api/chat/stream/stop" },
+	} as StopStreamPostEvent;
 }
 
 function buildSseStream(lines: string[]): {
@@ -1026,6 +1047,84 @@ describe("POST /api/chat/stream", () => {
 			);
 		});
 		expect(mockTouchConversation).toHaveBeenCalledWith("user-1", "conv-1");
+	});
+
+	it("aborts the upstream body when the user explicitly stops after stream headers", async () => {
+		const conversation = {
+			id: "conv-1",
+			title: "Test",
+			createdAt: 0,
+			updatedAt: 0,
+		};
+		mockGetConversation.mockResolvedValue(conversation);
+
+		let upstreamAbortSignal: AbortSignal | undefined;
+		mockSendMessageStream.mockImplementationOnce(
+			async (
+				_message: string,
+				_conversationId: string,
+				_modelId: string,
+				options?: { signal?: AbortSignal },
+			) => {
+				upstreamAbortSignal = options?.signal;
+				const stream = new ReadableStream<Uint8Array>({
+					start(controller) {
+						options?.signal?.addEventListener(
+							"abort",
+							() => {
+								const error = new Error("upstream stream aborted");
+								error.name = "AbortError";
+								controller.error(error);
+							},
+							{ once: true },
+						);
+					},
+				});
+				return {
+					stream,
+					contextStatus: undefined,
+					taskState: null,
+					contextDebug: null,
+					honchoContext: null,
+					honchoSnapshot: null,
+				};
+			},
+		);
+
+		const response = await POST(
+			makeEvent({
+				message: "Hi",
+				conversationId: "conv-1",
+				streamId: "stream-explicit-stop",
+			}),
+		);
+		const reader = response.body?.getReader();
+		if (!reader) {
+			throw new Error("Missing response body");
+		}
+
+		await expect(reader.read()).resolves.toMatchObject({ done: false });
+
+		const stopResponse = await stopStream(
+			makeStopEvent({ streamId: "stream-explicit-stop" }),
+		);
+		const stopPayload = await stopResponse.json();
+		const remainingChunks: Uint8Array[] = [];
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			if (value) remainingChunks.push(value);
+		}
+		const remainingBody = remainingChunks
+			.map((chunk) => new TextDecoder().decode(chunk))
+			.join("");
+
+		expect(stopResponse.status).toBe(200);
+		expect(stopPayload.stopped).toBe(true);
+		expect(upstreamAbortSignal?.aborted).toBe(true);
+		expect(remainingBody).toContain("event: end");
+		expect(remainingBody).toContain('"wasStopped":true');
+		expect(mockSendMessage).not.toHaveBeenCalled();
 	});
 
 	it("parses CRLF-delimited SSE blocks from Langflow", async () => {
