@@ -84,13 +84,13 @@ If using scratch computation, report the result and the relevant method, not the
 Use produce_file for downloadable files when the tool is available. Do not merely describe a file in prose when the user asked for a generated artifact.
 Every produce_file call includes idempotencyKey, requestTitle, requestedOutputs, sourceMode, and documentIntent. Optional fields are templateHint, documentSource, and program. The active conversationId is supplied by the tool runtime, not by you. Langflow validates requestedOutputs, documentSource, and program as text fields before the tool runs, so pass each one as a JSON-encoded string rather than a nested object or array.
 For PDFs, reports, brochures, fact sheets, DOCX, and HTML documents, prefer sourceMode: "document_source" with documentSource in the AlfyAI Standard Report shape. Use structured blocks for headings, paragraphs, lists, tables, callouts, quotes, code, dividers, images, and charts.
-For document outputs, set requestedOutputs to JSON strings such as "[{\"type\":\"pdf\"}]", "[{\"type\":\"docx\"}]", "[{\"type\":\"html\"}]", or a multi-output array string when requested. documentIntent is a hint only; server classification and validation remain authoritative.
+For document outputs, set requestedOutputs to JSON strings such as "[{"type":"pdf"}]", "[{"type":"docx"}]", "[{"type":"html"}]", or a multi-output array string when requested. documentIntent is a hint only; server classification and validation remain authoritative.
 For documentSource, keep section headings directly followed by their section content; do not place all headings first and all paragraphs later. Include a concise date value when the generated document should show a date.
 For headings, use { "type": "heading", "level": 2, "text": "Section title" }. Supported heading levels are 1, 2, and 3.
 For tables, the safest documentSource block shape is { "type": "table", "title": "...", "headers": ["Column"], "rows": [["Value"]] }. Do not use merged cells, nested tables, rowspan, or colspan.
 For simple bar/line/area charts, Chart.js-style data is accepted: { "type": "chart", "chartType": "bar", "title": "...", "caption": "...", "altText": "...", "data": { "labels": ["A"], "datasets": [{ "label": "Score", "data": [8] }] } }.
-For CSV, JSON, TXT, SVG, ZIP, XLSX, PPTX, custom DOCX/ODT packaging, and other code-generated artifacts, use sourceMode: "program" with program as a JSON string containing language, sourceCode, and optional filename.
-Use Python for standard-library-friendly text/data exports. Use JavaScript for .xlsx via exceljs, .pptx via pptxgenjs, .docx via docx, and .odt via jszip packaging. For PptxGenJS charts, slide.addChart data must be an array of series objects like [{ name: "Series", labels: ["A"], values: [1] }], not a plain { labels, values } object. Program source must write final requested files to /output.
+For CSV, JSON, TXT, Markdown, CSS, JavaScript/TypeScript, shell scripts, SVG, ZIP, XLSX, PPTX, custom DOCX/ODT packaging, and other code-generated artifacts, use sourceMode: "program" with program as a JSON string containing language, sourceCode, and optional filename.
+Use Python for standard-library-friendly text/data/code exports such as CSV, JSON, TXT, Markdown, CSS, JS/TS source, shell scripts, simple HTML, and SVG. For code/text artifacts, set requestedOutputs to the requested extension or language such as "[{"type":"css"}]", "[{"type":"js"}]", "[{"type":"ts"}]", or "[{"type":"sh"}]", and set program.filename to the exact final filename. Use JavaScript for .xlsx via exceljs, .pptx via pptxgenjs, .docx via docx, and .odt via jszip packaging. For PptxGenJS charts, slide.addChart data must be an array of series objects like [{ name: "Series", labels: ["A"], values: [1] }], not a plain { labels, values } object. Program source must write final requested files to /output.
 For images inside polished PDFs or reports, use image_search first when real-world images are needed, then reference the safe image URLs in documentSource image blocks with alt text.
 run_python_repl is scratch work only. It does not create downloadable files and must not substitute for produce_file.
 Only say a generated file is ready after the tool succeeds.
@@ -178,7 +178,7 @@ const DEPRECATED_TRANSLATION_CONTRACT_RE = new RegExp(
 const DEPRECATED_TRANSLATION_CONTRACT_LINE_RE = new RegExp(
 	[
 		String.raw`(?:^|\n)[ \t]*(?:`,
-		String.raw`## Translation Layer Contract [—-] Critical|`,
+		"## Translation Layer Contract [—-] Critical|",
 		String.raw`You ALWAYS respond in English\. Every word you write must be in English\.|`,
 		String.raw`Never attempt to generate text in Hungarian, German, French, or any other non-English language, even if the user asks you to\.|`,
 		String.raw`The system has a dedicated translation layer that handles language conversion automatically\.|`,

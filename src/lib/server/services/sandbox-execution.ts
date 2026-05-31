@@ -40,17 +40,56 @@ const MIME_TYPES: Record<string, string> = {
 	".jpg": "image/jpeg",
 	".jpeg": "image/jpeg",
 	".js": "text/javascript",
+	".mjs": "text/javascript",
+	".cjs": "text/javascript",
+	".jsx": "text/jsx",
 	".py": "text/x-python",
+	".ts": "application/typescript",
+	".tsx": "text/tsx",
 	".css": "text/css",
+	".scss": "text/x-scss",
+	".sass": "text/x-sass",
+	".less": "text/x-less",
 	".csv": "text/csv",
 	".json": "application/json",
 	".zip": "application/zip",
 	".txt": "text/plain",
 	".md": "text/markdown",
+	".markdown": "text/markdown",
 	".xml": "application/xml",
 	".rtf": "application/rtf",
 	".svg": "image/svg+xml",
 	".html": "text/html",
+	".htm": "text/html",
+	".yaml": "application/yaml",
+	".yml": "application/yaml",
+	".sh": "application/x-sh",
+	".bash": "application/x-sh",
+	".zsh": "application/x-sh",
+	".sql": "application/sql",
+	".graphql": "application/graphql",
+	".gql": "application/graphql",
+	".toml": "application/toml",
+	".ini": "text/plain",
+	".env": "text/plain",
+	".conf": "text/plain",
+	".log": "text/plain",
+	".rb": "text/x-ruby",
+	".rs": "text/rust",
+	".go": "text/x-go",
+	".java": "text/x-java-source",
+	".kt": "text/x-kotlin",
+	".kts": "text/x-kotlin",
+	".swift": "text/x-swift",
+	".cs": "text/x-csharp",
+	".cpp": "text/x-c++src",
+	".cxx": "text/x-c++src",
+	".cc": "text/x-c++src",
+	".c": "text/x-csrc",
+	".h": "text/x-csrc",
+	".hpp": "text/x-c++src",
+	".php": "application/x-httpd-php",
+	".r": "text/x-r-source",
 };
 
 const OUTPUT_DIR = "/output";
@@ -345,7 +384,7 @@ function compactErrorDetail(value: string): string | null {
 function formatNonZeroExitError(
 	stderr: string,
 	stdout: string,
-	exitCode: number
+	exitCode: number,
 ): string {
 	const stderrDetail = compactErrorDetail(stderr);
 	const stdoutDetail = compactErrorDetail(stdout);
@@ -551,7 +590,7 @@ async function extractFilesFromContainer(
 function classifyError(
 	stderr: string,
 	exitCode: number,
-	stdout = ""
+	stdout = "",
 ): string | undefined {
 	if (
 		exitCode === 137 ||

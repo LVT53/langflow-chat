@@ -80,6 +80,43 @@ describe("preview runtime", () => {
 		});
 	});
 
+	it("selects syntax highlighting languages for code-like text previews", async () => {
+		for (const file of [
+			{ filename: "theme.css", mimeType: "text/css", language: "css" },
+			{
+				filename: "widget.js",
+				mimeType: "text/javascript",
+				language: "javascript",
+			},
+			{
+				filename: "install.sh",
+				mimeType: "application/x-sh",
+				language: "bash",
+			},
+			{ filename: "component.tsx", mimeType: "text/tsx", language: "tsx" },
+		]) {
+			const result = await loadPreviewRuntime({
+				artifactId: "artifact-code",
+				previewUrl: null,
+				filename: file.filename,
+				mimeType: file.mimeType,
+				fetchImpl: vi
+					.fn()
+					.mockResolvedValue(
+						makeFetchResponse(new Blob(["content"], { type: file.mimeType })),
+					),
+			});
+
+			expectReady(result);
+			expect(result.fileType).toBe("text");
+			expect(result.adapter).toMatchObject({
+				kind: "text",
+				textKind: "highlighted",
+				language: file.language,
+			});
+		}
+	});
+
 	it("classifies fetched previews from the response blob MIME when metadata is missing", async () => {
 		const result = await loadPreviewRuntime({
 			artifactId: "artifact-image",

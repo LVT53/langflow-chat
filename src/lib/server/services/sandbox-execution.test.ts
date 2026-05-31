@@ -179,7 +179,9 @@ describe("sandbox-execution", () => {
 			const result = await executeCode("makeDeck()", "javascript");
 
 			expect(result.error).toContain("exit code 1");
-			expect(result.error).toContain("TypeError: pptx.writeFile is not a function");
+			expect(result.error).toContain(
+				"TypeError: pptx.writeFile is not a function",
+			);
 			expect(result.exitCode).toBe(1);
 			expect(mockSandbox.destroy).toHaveBeenCalled();
 		});
@@ -262,6 +264,42 @@ describe("sandbox-execution", () => {
 			expect(mockSandbox.destroy).toHaveBeenCalled();
 		});
 
+		it("assigns previewable MIME types to generated code artifacts", async () => {
+			const mockResult: SandboxResult = {
+				stdout: "Code files generated",
+				stderr: "",
+				exitCode: 0,
+			};
+			mockSandbox.execute.mockResolvedValue(mockResult);
+
+			const tarContent = createTarArchive([
+				{
+					name: "output/theme.css",
+					content: Buffer.from("body { color: red; }"),
+				},
+				{
+					name: "output/widget.js",
+					content: Buffer.from("export const answer = 42;"),
+				},
+				{
+					name: "output/install.sh",
+					content: Buffer.from("#!/usr/bin/env bash\n"),
+				},
+			]);
+
+			mockContainer.getArchive.mockResolvedValue(Readable.from(tarContent));
+
+			const result = await executeCode('print("test")', "python");
+
+			expect(
+				result.files.map((file) => [file.filename, file.mimeType]),
+			).toEqual([
+				["theme.css", "text/css"],
+				["widget.js", "text/javascript"],
+				["install.sh", "application/x-sh"],
+			]);
+		});
+
 		it("wraps JavaScript code with sandbox helper names that do not collide with user fs variables", async () => {
 			const mockResult: SandboxResult = {
 				stdout: "ok",
@@ -310,7 +348,9 @@ describe("sandbox-execution", () => {
 				expect.stringContaining("slide.addChart(pptx.ChartType.bar"),
 			);
 			const wrappedCode = mockSandbox.execute.mock.calls[0][0] as string;
-			expect(() => new Function("require", "process", wrappedCode)).not.toThrow();
+			expect(
+				() => new Function("require", "process", wrappedCode),
+			).not.toThrow();
 		});
 
 		it("extracts generated files after a leading directory entry", async () => {

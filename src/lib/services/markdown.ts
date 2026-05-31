@@ -36,6 +36,9 @@ const HIGHLIGHT_LANGS = {
 	json: () => import("@shikijs/langs/json"),
 	html: () => import("@shikijs/langs/html"),
 	css: () => import("@shikijs/langs/css"),
+	scss: () => import("@shikijs/langs/scss"),
+	sass: () => import("@shikijs/langs/sass"),
+	less: () => import("@shikijs/langs/less"),
 	yaml: () => import("@shikijs/langs/yaml"),
 	markdown: () => import("@shikijs/langs/markdown"),
 	ruby: () => import("@shikijs/langs/ruby"),
@@ -46,11 +49,13 @@ const HIGHLIGHT_LANGS = {
 	swift: () => import("@shikijs/langs/swift"),
 	csharp: () => import("@shikijs/langs/csharp"),
 	cpp: () => import("@shikijs/langs/cpp"),
+	c: () => import("@shikijs/langs/c"),
 	php: () => import("@shikijs/langs/php"),
 	sql: () => import("@shikijs/langs/sql"),
 	graphql: () => import("@shikijs/langs/graphql"),
 	dockerfile: () => import("@shikijs/langs/dockerfile"),
 	toml: () => import("@shikijs/langs/toml"),
+	ini: () => import("@shikijs/langs/ini"),
 	xml: () => import("@shikijs/langs/xml"),
 	r: () => import("@shikijs/langs/r"),
 } as const;
@@ -133,15 +138,28 @@ function normalizeLanguage(lang: string): string {
 		rs: "rust",
 		cs: "csharp",
 		cpp: "cpp",
+		cxx: "cpp",
+		cc: "cpp",
+		hpp: "cpp",
+		c: "c",
+		h: "c",
 		go: "go",
 		java: "java",
 		kt: "kotlin",
+		kts: "kotlin",
 		swift: "swift",
 		sql: "sql",
+		gql: "graphql",
 		graphql: "graphql",
 		dockerfile: "dockerfile",
 		toml: "toml",
+		ini: "ini",
+		env: "ini",
+		conf: "ini",
 		xml: "xml",
+		scss: "scss",
+		sass: "sass",
+		less: "less",
 		php: "php",
 		r: "r",
 	};
@@ -469,7 +487,10 @@ async function collectSourceReferenceCandidates(
 	const frontmatter = await extractFrontmatter(content);
 	const displayContent = normalizeMarkdownContent(frontmatter.content);
 	const sourceDisplayContent = stripPlainSourceReferenceMarkers(displayContent);
-	const references = collectInlineSourceReferences(sourceDisplayContent, marked);
+	const references = collectInlineSourceReferences(
+		sourceDisplayContent,
+		marked,
+	);
 
 	return [...references.entries()].map(([label, reference]) => ({
 		label,
@@ -545,7 +566,8 @@ function inlineSourceReferenceMapFromCandidates(
 		const parsedHref = parseExternalHref(href);
 		if (!parsedHref || !isCompactSourceLink(parsedHref)) continue;
 
-		const sourceName = compactWhitespace(candidate.sourceName ?? label) || label;
+		const sourceName =
+			compactWhitespace(candidate.sourceName ?? label) || label;
 		references.set(label, { href, sourceName });
 	}
 
@@ -693,8 +715,8 @@ export {
 	normalizeLanguage,
 	prepareCodeHighlighting,
 	type RenderMarkdownOptions,
-	type SourceReferenceCandidate,
 	renderCodeBlock,
 	renderHighlightedText,
 	renderMarkdown,
+	type SourceReferenceCandidate,
 };

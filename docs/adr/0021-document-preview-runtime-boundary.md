@@ -12,6 +12,8 @@ Heavy preview dependencies must stay off the idle shell path. `DocumentWorkspace
 
 **Implementation Status, 2026-05-31:** implemented and live verified. `DocumentPreviewRenderer.svelte` delegates to `preview-runtime/index.ts`, `pdf/PdfPreview.svelte`, `image/ImagePreview.svelte`, `office/index.ts`, and `text/index.ts`. The old monolithic renderer tests were rewritten into focused adapter/runtime tests plus a smaller coordinator test. Verification covered focused preview runtime tests, `npm run check`, the full `npm run test:unit` suite, `npm run build`, remote deployment to `https://ai.alfydesign.com`, service health/log inspection, and a live Knowledge Document Workspace smoke test for Markdown, image, and PDF previews.
 
+**Implementation Status, 2026-05-31:** code/text preview coverage now includes common generated source artifacts beyond Markdown, including CSS, JavaScript, TypeScript, shell scripts, GraphQL, TOML, SQL, Ruby, Rust, Go, Java, Kotlin, Swift, C/C++, PHP, R, and related plain-text configuration files. File Production remains responsible for allowing and validating those generated artifacts; Preview Runtime consumes the served bytes and maps previewable text/code files to the shared Shiki-backed highlighting path.
+
 **Considered Options**
 
 - Keep all preview rendering logic inside `DocumentPreviewRenderer.svelte`.

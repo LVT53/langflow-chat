@@ -109,4 +109,59 @@ describe("file-production output validation", () => {
 			}),
 		).resolves.toEqual({ ok: true });
 	});
+
+	it("accepts code and stylesheet program output types", async () => {
+		for (const file of [
+			{
+				requestedType: "css",
+				filename: "theme.css",
+				mimeType: "text/css",
+				content: "body { color: rebeccapurple; }\n",
+			},
+			{
+				requestedType: "js",
+				filename: "widget.js",
+				mimeType: "text/javascript",
+				content: "export const answer = 42;\n",
+			},
+			{
+				requestedType: "ts",
+				filename: "widget.ts",
+				mimeType: "application/typescript",
+				content: "export const answer: number = 42;\n",
+			},
+			{
+				requestedType: "sh",
+				filename: "install.sh",
+				mimeType: "application/x-sh",
+				content: "#!/usr/bin/env bash\nset -euo pipefail\n",
+			},
+			{
+				requestedType: "graphql",
+				filename: "schema.graphql",
+				mimeType: "application/graphql",
+				content: "type Query { status: String }\n",
+			},
+			{
+				requestedType: "rust",
+				filename: "main.rs",
+				mimeType: "text/rust",
+				content: "fn main() {}\n",
+			},
+		]) {
+			await expect(
+				validateProgramOutputContract({
+					requestedOutputTypes: [file.requestedType],
+					programFilename: file.filename,
+					files: [
+						{
+							filename: file.filename,
+							mimeType: file.mimeType,
+							content: Buffer.from(file.content),
+						},
+					],
+				}),
+			).resolves.toEqual({ ok: true });
+		}
+	});
 });

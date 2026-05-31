@@ -1331,7 +1331,8 @@ _Avoid_: source message button, primary document action, source viewer
 - Within the **App Typography Set**, Nimbus Sans L is the primary generated-document font; Libre Baskerville is reserved for restrained title or cover accents.
 - Missing **App Typography Set** font files are a packaging error for generated-document rendering and should fail visibly rather than falling back to host fonts.
 - AlfyAI owns document layout and rendering; the assistant supplies semantic content, not PDF layout code.
-- Non-document outputs such as raw data files, code files, images, or bundles may remain **Generated Files** without entering generated-document version history.
+- Non-document outputs such as raw data files, code files, stylesheets, scripts, images, or bundles may remain **Generated Files** without entering generated-document version history.
+- Program-mode **File Production Requests** may produce source/text artifacts such as CSS, JavaScript, TypeScript, shell scripts, GraphQL, TOML, SQL, language source files, configuration files, and logs when the requested output type, filename extension, stored MIME type, and bytes agree.
 - A **Filename Conflict** creates an **Auto-Renamed Upload**.
 - A **Filename Conflict** does not create a **Generated Document Version**.
 - An **Auto-Renamed Upload** remains a separate **Uploaded Document**.
@@ -1343,7 +1344,7 @@ _Avoid_: source message button, primary document action, source viewer
 - `document-resolution.ts` remains the generated-document family ranking authority. **Working Document Selection** consumes that ranking to decide the live current/generated carryover view; it does not replace generated-family identity or version ordering.
 - **Document Workspace** and Knowledge preview/download routes use **Working Document Identity** preview/file-serving identity so source-plus-normalized documents open the display file while text-only documents degrade deliberately.
 - **Preview Runtime** consumes bytes served through **Working Document Identity** and server-side file serving; it does not decide which artifact or generated file is authorized or canonical.
-- **Preview Runtime** owns client-side file-type preview behavior for PDF, Office/OpenDocument, text/Markdown/CSV/HTML, and images; `DocumentPreviewRenderer.svelte` coordinates loading/error/unsupported state and adapter composition.
+- **Preview Runtime** owns client-side file-type preview behavior for PDF, Office/OpenDocument, text/Markdown/CSV/HTML, source-style code/text files, and images; `DocumentPreviewRenderer.svelte` coordinates loading/error/unsupported state and adapter composition.
 - **Document Workspace** lazy-loads `DocumentPreviewRenderer.svelte`, and `DocumentPreviewRenderer.svelte` delegates heavy file-type work into **Preview Runtime** adapters so idle Chat and Knowledge shells do not eagerly import preview libraries.
 - Preview prewarm may warm the same preview URL bytes, but **Preview Runtime** remains the authoritative browser path for opening and rendering the preview.
 - **Linked Context Sources** use **Working Document Identity** canonical display, prompt, and family identity for dedupe, stale-selection matching, and prompt readiness.

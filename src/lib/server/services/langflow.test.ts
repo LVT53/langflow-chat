@@ -164,6 +164,10 @@ describe("buildOutboundSystemPrompt", () => {
 		expect(prompt).toContain("document_source");
 		expect(prompt).toContain("documentSource");
 		expect(prompt).toContain("program");
+		expect(prompt).toContain("CSS, JavaScript/TypeScript, shell scripts");
+		expect(prompt).toContain('"type\\":\\"css\\"');
+		expect(prompt).toContain('"type\\":\\"js\\"');
+		expect(prompt).toContain('"type\\":\\"sh\\"');
 		expect(prompt).toContain("PptxGenJS charts");
 		expect(prompt).toContain("array of series objects");
 		expect(prompt).toContain("idempotencyKey");

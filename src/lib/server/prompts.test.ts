@@ -47,17 +47,27 @@ describe("prompts", () => {
 		expect(ALFYAI_NEMOTRON_PROMPT).toContain("document_source");
 		expect(ALFYAI_NEMOTRON_PROMPT).toContain("documentSource");
 		expect(ALFYAI_NEMOTRON_PROMPT).toContain("program");
+		expect(ALFYAI_NEMOTRON_PROMPT).toContain(
+			"CSS, JavaScript/TypeScript, shell scripts",
+		);
+		expect(ALFYAI_NEMOTRON_PROMPT).toContain('"type":"css"');
+		expect(ALFYAI_NEMOTRON_PROMPT).toContain('"type":"js"');
+		expect(ALFYAI_NEMOTRON_PROMPT).toContain('"type":"sh"');
 		expect(ALFYAI_NEMOTRON_PROMPT).toContain("idempotencyKey");
 		expect(ALFYAI_NEMOTRON_PROMPT).toContain("requestTitle");
 		expect(ALFYAI_NEMOTRON_PROMPT).toContain("requestedOutputs");
 		expect(ALFYAI_NEMOTRON_PROMPT).toContain("documentIntent");
 		expect(ALFYAI_NEMOTRON_PROMPT).toContain("JSON-encoded string");
-		expect(ALFYAI_NEMOTRON_PROMPT).toContain("rather than a nested object or array");
+		expect(ALFYAI_NEMOTRON_PROMPT).toContain(
+			"rather than a nested object or array",
+		);
 		expect(ALFYAI_NEMOTRON_PROMPT).toContain('"type": "heading"');
 		expect(ALFYAI_NEMOTRON_PROMPT).toContain('"level": 2');
 		expect(ALFYAI_NEMOTRON_PROMPT).toContain("headers");
 		expect(ALFYAI_NEMOTRON_PROMPT).toContain("Chart.js-style data");
-		expect(ALFYAI_NEMOTRON_PROMPT).toContain("directly followed by their section content");
+		expect(ALFYAI_NEMOTRON_PROMPT).toContain(
+			"directly followed by their section content",
+		);
 		expect(ALFYAI_NEMOTRON_PROMPT).not.toContain("generate_file");
 		expect(ALFYAI_NEMOTRON_PROMPT).not.toContain("export_document");
 		expect(ALFYAI_NEMOTRON_PROMPT).not.toContain("createPDF");
