@@ -108,6 +108,35 @@ describe("resolveGeneratedFileServing", () => {
 		expect(result.headers["Referrer-Policy"]).toBe("no-referrer");
 	});
 
+	it("serves generated SVG previews with restrictive browser headers", async () => {
+		mockGetChatFileByUser.mockResolvedValue(
+			chatFile({
+				filename: "diagram.svg",
+				mimeType: "image/svg+xml",
+				sizeBytes: 38,
+				storagePath: "conv-1/file-1.svg",
+			}),
+		);
+		mockReadChatFileContentByUser.mockResolvedValue(
+			Buffer.from('<svg><script>alert("xss")</script></svg>'),
+		);
+
+		const result = await resolveGeneratedFileServing({
+			userId: "user-1",
+			fileId: "file-1",
+			mode: "preview",
+		});
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.headers["Content-Type"]).toBe("image/svg+xml");
+		expect(result.headers["Content-Security-Policy"]).toBe(
+			"default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'",
+		);
+		expect(result.headers["X-Content-Type-Options"]).toBe("nosniff");
+		expect(result.headers["Referrer-Policy"]).toBe("no-referrer");
+	});
+
 	it("infers preview content type for ODT files from the filename", async () => {
 		mockGetChatFileByUser.mockResolvedValue(
 			chatFile({

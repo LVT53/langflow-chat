@@ -25,8 +25,8 @@ The review recommendation is to stop making chat preview, chat download, and Wor
 - [x] A server-side **Generated File Serving** module exists and owns generated-file lookup, conversation-owner fallback, assigned/succeeded-job eligibility, allowed-type checks, byte reads, content validation, MIME/content-type resolution, and preview/download headers.
 - [x] Chat preview and download routes are thin adapters: authenticate, call Generated File Serving in the requested mode, and translate the service result into `Response` or JSON error.
 - [x] Working Document serving delegates generated-output `sourceChatFileId` bytes to Generated File Serving instead of duplicating generated-file validation and headers.
-- [x] Preview and download headers are consistent across chat routes and Working Document generated-output serving, including CSP/nosniff/referrer policy for generated HTML previews.
-- [x] Existing user-visible behavior remains stable for PDFs, Office files, ODT, text/code files, generated HTML, legacy generic MIME generated files, invalid/mismatched files, unreadable content, conversation-owner fallback, unassigned-file quarantine, and pre-finalization succeeded job-linked downloads.
+- [x] Preview and download headers are consistent across chat routes and Working Document generated-output serving, including CSP/nosniff/referrer policy for generated HTML and SVG previews.
+- [x] Existing user-visible behavior remains stable for PDFs, Office files, ODT, text/code files, generated HTML/SVG, legacy generic MIME generated files, invalid/mismatched files, unreadable content, conversation-owner fallback, unassigned-file quarantine, and pre-finalization succeeded job-linked downloads.
 - [x] Stale route tests or service tests that only preserve the old duplicated implementation are removed or rewritten around the new boundary.
 - [x] `CONTEXT.md`, relevant ADRs, and the architecture review HTML explain the **Generated File Serving** boundary so future edits do not collapse it back into routes, Working Document serving, or Preview Runtime.
 
@@ -49,7 +49,7 @@ The review recommendation is to stop making chat preview, chat download, and Wor
 - [x] Conversation-owner fallback still supports legacy generated files whose `userId` does not match the current user row.
 - [x] Unsupported filename/MIME pairs return 415 before content reads when possible.
 - [x] Invalid bytes return 415 after content validation.
-- [x] Preview mode uses inline disposition, preview content type, preview cache policy, and generated-HTML CSP/nosniff/referrer headers.
+- [x] Preview mode uses inline disposition, preview content type, preview cache policy, and generated HTML/SVG CSP/nosniff/referrer headers.
 - [x] Download mode uses attachment disposition, download cache policy, and the same safe content-type inference as existing generated-file downloads.
 - [x] Focused unit tests cover the service contract without importing SvelteKit route handlers.
 
@@ -90,7 +90,7 @@ The review recommendation is to stop making chat preview, chat download, and Wor
 
 **Acceptance criteria**
 
-- [x] Generated-output `sourceChatFileId` preview/download uses the same allowed-type, byte-validation, MIME, cache, disposition, and HTML security headers as chat-generated-file routes.
+- [x] Generated-output `sourceChatFileId` preview/download uses the same allowed-type, byte-validation, MIME, cache, disposition, and active-content security headers as chat-generated-file routes.
 - [x] Working Document serving can still override the display filename with the artifact name when serving a generated-output source chat file.
 - [x] Failed or pending source-first generated-document source artifacts still do not fall through to text-only preview/download.
 - [x] Stored knowledge files and text-only Skill Notes keep their current Working Document serving behavior.
@@ -131,4 +131,4 @@ Focused implementation verification from orchestration passed before this status
 npm run test:unit -- src/lib/server/services/generated-file-serving.test.ts 'src/routes/api/chat/files/[id]/preview/preview.test.ts' 'src/routes/api/chat/files/[id]/download/download.test.ts' src/lib/server/services/knowledge/store/working-document-file-serving.test.ts
 ```
 
-Result: 4 files, 32 tests passed after adding the succeeded job-linked unassigned-file regression.
+Result: 4 files, 32 tests passed after adding the succeeded job-linked unassigned-file regression; the generated-file-serving service test later covered generated SVG preview hardening as well.

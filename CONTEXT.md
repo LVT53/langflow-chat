@@ -1311,7 +1311,7 @@ _Avoid_: source message button, primary document action, source viewer
 - A **File Production Request** may produce one or more **Generated Files**.
 - A **File Production Request** is one user-facing capability even when AlfyAI uses different internal production methods.
 - **File Production** creates jobs, renders or executes outputs, and stores **Generated Files**; **Generated File Serving** serves already-stored generated-file bytes.
-- **Generated File Serving** owns generated-file lookup, conversation-owner fallback, assigned/succeeded-job eligibility, generated-file type checks, byte validation, MIME/content-type selection, CSP/disposition/cache headers, and generated-HTML preview hardening.
+- **Generated File Serving** owns generated-file lookup, conversation-owner fallback, assigned/succeeded-job eligibility, generated-file type checks, byte validation, MIME/content-type selection, CSP/disposition/cache headers, and generated HTML/SVG preview hardening.
 - Chat generated-file preview and download routes are transport adapters over **Generated File Serving**.
 - Every **File Production Request** enters **File Production Intake** before renderer, sandbox, or storage work begins.
 - **File Production Intake** creates or reuses durable **File Production Card** state; it is not a stream-only or tool-specific concern.

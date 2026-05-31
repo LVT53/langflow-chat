@@ -29,6 +29,13 @@ export type GeneratedFileServingResult =
 	| GeneratedFileServingSuccess
 	| GeneratedFileServingError;
 
+const RESTRICTED_PREVIEW_CSP =
+	"default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
+
+function hasSvgFilename(filename: string): boolean {
+	return filename.toLowerCase().endsWith(".svg");
+}
+
 export async function resolveGeneratedFileServing(params: {
 	userId: string;
 	fileId: string;
@@ -88,6 +95,10 @@ export async function resolveGeneratedFileServing(params: {
 	const filename = params.displayFilename || chatFile.filename;
 	const contentType = getPreviewContentType(chatFile.filename, chatFile.mimeType);
 	const isHtmlPreview = params.mode === "preview" && contentType === "text/html";
+	const isSvgPreview =
+		params.mode === "preview" &&
+		(contentType === "image/svg+xml" || hasSvgFilename(chatFile.filename));
+	const isRestrictedPreview = isHtmlPreview || isSvgPreview;
 	const headers: Record<string, string> = {
 		"Content-Type": isHtmlPreview ? "text/html; charset=utf-8" : contentType,
 		"Content-Length": fileContent.length.toString(),
@@ -98,9 +109,8 @@ export async function resolveGeneratedFileServing(params: {
 		"Cache-Control":
 			params.mode === "preview" ? "private, max-age=3600" : "private, no-store",
 	};
-	if (isHtmlPreview) {
-		headers["Content-Security-Policy"] =
-			"default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
+	if (isRestrictedPreview) {
+		headers["Content-Security-Policy"] = RESTRICTED_PREVIEW_CSP;
 		headers["X-Content-Type-Options"] = "nosniff";
 		headers["Referrer-Policy"] = "no-referrer";
 	}

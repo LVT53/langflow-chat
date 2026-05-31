@@ -97,7 +97,7 @@ function requireEnv(name: string, value: string | undefined): string {
 }
 
 export function parseJsonObject(text: string): Record<string, unknown> | null {
-	const trimmed = text.trim();
+	const trimmed = unwrapJsonOnlyText(text);
 	try {
 		const parsed: unknown = JSON.parse(trimmed);
 		if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
@@ -107,6 +107,12 @@ export function parseJsonObject(text: string): Record<string, unknown> | null {
 		return null;
 	}
 	return null;
+}
+
+function unwrapJsonOnlyText(text: string): string {
+	const trimmed = text.trim();
+	const fenced = /^```(?:json)?\s*\n([\s\S]*?)\n```$/i.exec(trimmed);
+	return fenced ? fenced[1].trim() : trimmed;
 }
 
 export function structuredRecallHasValue(params: {

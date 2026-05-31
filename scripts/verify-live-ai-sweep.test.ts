@@ -127,6 +127,18 @@ describe("live AI sweep structured recall validation", () => {
 		]);
 	});
 
+	it("accepts a full fenced JSON object without accepting surrounding prose", () => {
+		expect(
+			getMissingStandardRecallNeedles(
+				["```json", standardRecallJson(), "```"].join("\n"),
+			),
+		).toEqual([]);
+
+		expect(
+			parseJsonObject(["Here is the JSON:", "```json", "{}", "```"].join("\n")),
+		).toBeNull();
+	});
+
 	it("rejects standard post-compaction recall values found only in the wrong JSON field", () => {
 		expect(
 			getMissingStandardRecallNeedles(
