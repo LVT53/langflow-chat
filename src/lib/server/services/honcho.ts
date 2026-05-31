@@ -603,6 +603,7 @@ export async function forgetPersonaMemory(userId: string, conclusionId: string):
 	} else {
 		await deleteScopeConclusions(assistantAboutUserScope, [conclusionId]);
 	}
+	clearHonchoCaches({ userId });
 	return true;
 }
 
@@ -1064,12 +1065,12 @@ export async function loadHonchoPromptContext(params: {
 export async function getPeerContext(
 	userId: string,
 	userDisplayName?: string | null,
-	options?: { timeoutMs?: number }
+	options?: { timeoutMs?: number; force?: boolean; throwOnError?: boolean }
 ): Promise<string | null> {
 	if (!isHonchoEnabled()) return null;
 
 	const cacheKey = `${userId}:${userDisplayName ?? ''}`;
-	const cached = peerContextCache.get(cacheKey);
+	const cached = options?.force ? null : peerContextCache.get(cacheKey);
 	if (cached && Date.now() < cached.expiresAt) {
 		return cached.value;
 	}
@@ -1094,18 +1095,34 @@ export async function getPeerContext(
 		);
 
 		let result: string | null = null;
+		let cacheable = false;
 		if (response.value) {
 			const serialized = serializePeerContext(response.value).trim();
 			result = serialized
 				? sanitizePersonaMemoryText(serialized, userId, userDisplayName)
 				: null;
+			cacheable = true;
 		} else if (response.error) {
+			if (options?.throwOnError) {
+				return Promise.reject(response.error);
+			}
 			console.error('[HONCHO] getPeerContext failed:', response.error);
+		} else if (response.timedOut && options?.throwOnError) {
+			return Promise.reject(
+				new Error('Timed out waiting for Honcho scoped persona conclusions')
+			);
+		} else if (!response.timedOut) {
+			cacheable = true;
 		}
 
-		peerContextCache.set(cacheKey, { value: result, expiresAt: Date.now() + PEER_CONTEXT_CACHE_TTL_MS });
+		if (cacheable) {
+			peerContextCache.set(cacheKey, { value: result, expiresAt: Date.now() + PEER_CONTEXT_CACHE_TTL_MS });
+		}
 		return result;
 	} catch (err) {
+		if (options?.throwOnError) {
+			throw err;
+		}
 		console.error('[HONCHO] getPeerContext failed:', err);
 		return null;
 	}

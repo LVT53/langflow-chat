@@ -46,9 +46,9 @@ export const POST: RequestHandler = async (event) => {
 	const user = event.locals.user!;
 	const traceId = createAttachmentTraceId("upload");
 	const limits = resolveKnowledgeUploadLimits();
-	const maxBodySize =
-		limits.maxFileUploadSize + limits.multipartOverheadAllowance;
 	const requestBodyLimit = limits.multipartBodyLimit;
+	const rawUploadLimit = limits.storedFileLimit;
+	const chunkBodyLimit = limits.chunkBodyLimit;
 
 	let payload: unknown;
 	try {
@@ -68,6 +68,8 @@ export const POST: RequestHandler = async (event) => {
 		maxFileUploadSize: limits.maxFileUploadSize,
 		adapterBodySizeLimit: limits.adapterBodySizeLimit,
 		requestBodyLimit,
+		rawUploadLimit,
+		chunkBodyLimit,
 	});
 
 	if (intent.fileSize === null) {
@@ -98,29 +100,12 @@ export const POST: RequestHandler = async (event) => {
 		);
 	}
 
-	if (intent.fileSize > requestBodyLimit) {
-		return json(
-			{
-				error: `Upload exceeded the server request body size limit of ${formatBytes(requestBodyLimit)}. Try uploading a smaller file or increase BODY_SIZE_LIMIT for this deployment.`,
-				code: "upload_body_too_large",
-				errorKey: "knowledge.uploadBodyTooLarge",
-				traceId,
-				details: {
-					fileName: intent.fileName,
-					fileSize: intent.fileSize,
-					maxBodySize,
-					adapterBodySizeLimit: limits.adapterBodySizeLimit,
-					requestBodyLimit,
-				},
-			},
-			{ status: 413 },
-		);
-	}
-
 	return json({
 		traceId,
 		maxFileUploadSize: limits.maxFileUploadSize,
 		adapterBodySizeLimit: limits.adapterBodySizeLimit,
 		requestBodyLimit,
+		rawUploadLimit,
+		chunkBodyLimit,
 	});
 };

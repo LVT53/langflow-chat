@@ -59,6 +59,9 @@ const UPLOAD_CHUNK_BYTES = 256 * 1024;
 
 type KnowledgeUploadIntentResponse = {
 	traceId: string;
+	chunkBodyLimit?: number;
+	rawUploadLimit?: number;
+	requestBodyLimit?: number;
 };
 
 type ChunkUploadResponse =
@@ -120,6 +123,33 @@ function isUploadTransportAbort(error: unknown): boolean {
 		name === 'AbortError' ||
 		/\baborted\b|operation was aborted|failed to fetch|load failed|networkerror|network request failed|fetch failed/i.test(message)
 	);
+}
+
+function positiveFiniteBytes(value: number | undefined): number | null {
+	if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+	const bytes = Math.floor(value);
+	return bytes > 0 ? bytes : null;
+}
+
+function resolveRawUploadLimit(intent: KnowledgeUploadIntentResponse): number {
+	return (
+		positiveFiniteBytes(intent.rawUploadLimit) ??
+		positiveFiniteBytes(intent.requestBodyLimit) ??
+		CHUNKED_UPLOAD_THRESHOLD_BYTES
+	);
+}
+
+function resolveChunkSize(intent: KnowledgeUploadIntentResponse): number {
+	const chunkBodyLimit =
+		intent.chunkBodyLimit === undefined
+			? UPLOAD_CHUNK_BYTES
+			: positiveFiniteBytes(intent.chunkBodyLimit);
+	if (chunkBodyLimit === null) {
+		throw new Error(
+			'Upload chunk size limit is too low for this file. Ask an administrator to increase the server upload body limit.'
+		);
+	}
+	return Math.min(UPLOAD_CHUNK_BYTES, chunkBodyLimit);
 }
 
 export async function fetchKnowledgeLibrary(): Promise<KnowledgeLibrary> {
@@ -220,8 +250,14 @@ export async function uploadKnowledgeAttachment(
 		fetchImpl
 	);
 	try {
-		if (file.size > CHUNKED_UPLOAD_THRESHOLD_BYTES) {
-			return await uploadChunkedKnowledgeAttachment(file, intent.traceId, conversationId, fetchImpl);
+		if (file.size > resolveRawUploadLimit(intent)) {
+			return await uploadChunkedKnowledgeAttachment(
+				file,
+				intent.traceId,
+				conversationId,
+				fetchImpl,
+				resolveChunkSize(intent)
+			);
 		}
 		return await requestJson<KnowledgeUploadResponse>(
 			'/api/knowledge/upload/raw',
@@ -248,14 +284,15 @@ async function uploadChunkedKnowledgeAttachment(
 	file: File,
 	traceId: string,
 	conversationId: string | null | undefined,
-	fetchImpl: FetchLike
+	fetchImpl: FetchLike,
+	chunkSize: number
 ): Promise<KnowledgeUploadResponse> {
-	const totalChunks = Math.max(1, Math.ceil(file.size / UPLOAD_CHUNK_BYTES));
+	const totalChunks = Math.max(1, Math.ceil(file.size / chunkSize));
 	let finalResponse: KnowledgeUploadResponse | null = null;
 
 	for (let chunkIndex = 0; chunkIndex < totalChunks; chunkIndex += 1) {
-		const start = chunkIndex * UPLOAD_CHUNK_BYTES;
-		const end = Math.min(file.size, start + UPLOAD_CHUNK_BYTES);
+		const start = chunkIndex * chunkSize;
+		const end = Math.min(file.size, start + chunkSize);
 		const chunk = file.slice(start, end, file.type || 'application/octet-stream');
 		const isFinal = chunkIndex === totalChunks - 1;
 		const response = await requestJson<ChunkUploadResponse>(

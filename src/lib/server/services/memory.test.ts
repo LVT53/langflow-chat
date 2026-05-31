@@ -135,24 +135,69 @@ describe("knowledge memory service", () => {
 		expect(payload.summary.overviewStatus).toBe("temporarily_unavailable");
 		expect(payload.summary.overviewUpdatedAt).toBeNull();
 		expect(payload.summary.overviewLastAttemptAt).toEqual(expect.any(Number));
+		expect(mockGetPeerContext).toHaveBeenCalledWith(
+			"user-1",
+			"Test User",
+			expect.objectContaining({
+				throwOnError: true,
+			}),
+		);
 	});
 
 	it("returns app-ready overview bullets from the overview-only service", async () => {
+		const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
 		mockGetPeerContext.mockResolvedValue(
 			"## Memory Overview\n- Prefers concise responses.\n- Uses Hungarian and English interfaces.",
 		);
 
+		try {
+			const { getKnowledgeMemoryOverview } = await import("./memory");
+			const payload = await getKnowledgeMemoryOverview("user-1", "Test User");
+
+			expect(payload.summary.overviewBullets).toEqual([
+				"Prefers concise responses.",
+				"Uses Hungarian and English interfaces.",
+			]);
+			expect(payload.summary.overview).toBe(
+				"Prefers concise responses.\nUses Hungarian and English interfaces.",
+			);
+			expect(payload.summary.overviewStatus).toBe("ready");
+			expect(infoSpy).toHaveBeenCalledWith(
+				"[KNOWLEDGE_MEMORY] Selected overview source",
+				{
+					source: "honcho_scoped",
+					status: "ready",
+					durablePersonaCount: 0,
+					overviewBulletCount: 2,
+					unavailable: false,
+				},
+			);
+		} finally {
+			infoSpy.mockRestore();
+		}
+	});
+
+	it("passes force refresh through to the Honcho overview lookup", async () => {
+		mockGetPeerContext.mockResolvedValue(
+			"## Memory Overview\n- Freshly refreshed scoped memory.",
+		);
+
 		const { getKnowledgeMemoryOverview } = await import("./memory");
-		const payload = await getKnowledgeMemoryOverview("user-1", "Test User");
+		const payload = await getKnowledgeMemoryOverview("user-1", "Test User", {
+			force: true,
+		});
 
 		expect(payload.summary.overviewBullets).toEqual([
-			"Prefers concise responses.",
-			"Uses Hungarian and English interfaces.",
+			"Freshly refreshed scoped memory.",
 		]);
-		expect(payload.summary.overview).toBe(
-			"Prefers concise responses.\nUses Hungarian and English interfaces.",
+		expect(mockGetPeerContext).toHaveBeenCalledWith(
+			"user-1",
+			"Test User",
+			expect.objectContaining({
+				force: true,
+				throwOnError: true,
+			}),
 		);
-		expect(payload.summary.overviewStatus).toBe("ready");
 	});
 
 	it("rotates Honcho peer identity after forget-all persona memory", async () => {
@@ -164,5 +209,34 @@ describe("knowledge memory service", () => {
 
 		expect(mockForgetAllPersonaMemories).toHaveBeenCalledWith("user-1");
 		expect(mockRotateHonchoPeerIdentity).toHaveBeenCalledWith("user-1");
+	});
+
+	it("forgets a persona memory when the accepted route payload provides a cluster id", async () => {
+		const { applyKnowledgeMemoryAction } = await import("./memory");
+
+		await applyKnowledgeMemoryAction("user-1", "Test User", {
+			action: "forget_persona_memory",
+			clusterId: "conclusion-1",
+		});
+
+		expect(mockForgetPersonaMemory).toHaveBeenCalledWith(
+			"user-1",
+			"conclusion-1",
+		);
+	});
+
+	it("uses the first non-empty persona memory id when conclusion id is blank", async () => {
+		const { applyKnowledgeMemoryAction } = await import("./memory");
+
+		await applyKnowledgeMemoryAction("user-1", "Test User", {
+			action: "forget_persona_memory",
+			conclusionId: "",
+			clusterId: " conclusion-1 ",
+		});
+
+		expect(mockForgetPersonaMemory).toHaveBeenCalledWith(
+			"user-1",
+			"conclusion-1",
+		);
 	});
 });

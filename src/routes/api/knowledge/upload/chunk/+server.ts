@@ -23,7 +23,6 @@ const CHUNK_TOTAL_HEADER = "x-alfyai-chunk-total";
 const CHUNK_START_HEADER = "x-alfyai-chunk-start";
 const CHUNK_SIZE_HEADER = "x-alfyai-chunk-size";
 const CHUNK_FINAL_HEADER = "x-alfyai-chunk-final";
-const MAX_CHUNK_BYTES = 1024 * 1024;
 
 function parseNonNegativeInteger(value: string | null): number | null {
 	if (!value) return null;
@@ -175,6 +174,10 @@ export const POST: RequestHandler = async (event) => {
 	const mimeType =
 		event.request.headers.get("content-type")?.split(";")[0]?.trim() || null;
 	const fileLimit = limits.chunkFileLimit;
+	const chunkBodyLimit = limits.chunkBodyLimit;
+	const contentLength = parseNonNegativeInteger(
+		event.request.headers.get("content-length"),
+	);
 
 	if (
 		!fileName ||
@@ -206,10 +209,13 @@ export const POST: RequestHandler = async (event) => {
 		);
 	}
 
-	if (declaredChunkSize > MAX_CHUNK_BYTES) {
+	if (
+		declaredChunkSize > chunkBodyLimit ||
+		(contentLength !== null && contentLength > chunkBodyLimit)
+	) {
 		return json(
 			{
-				error: `Upload chunk too large. Maximum chunk size is ${formatBytes(MAX_CHUNK_BYTES)}.`,
+				error: `Upload chunk too large. Maximum chunk size is ${formatBytes(chunkBodyLimit)}.`,
 				code: "upload_chunk_too_large",
 				traceId,
 			},
@@ -228,27 +234,33 @@ export const POST: RequestHandler = async (event) => {
 		);
 	}
 
-	const expectedChunkSize =
-		chunkIndex === totalChunks - 1
-			? totalSize - chunkStart
-			: Math.min(declaredChunkSize, totalSize - chunkStart);
-	if (expectedChunkSize !== declaredChunkSize || expectedChunkSize < 0) {
+	const isLastChunk = chunkIndex === totalChunks - 1;
+	const expectedChunkStart = isLastChunk
+		? totalSize - declaredChunkSize
+		: chunkIndex * declaredChunkSize;
+	if (
+		expectedChunkStart < 0 ||
+		!Number.isSafeInteger(expectedChunkStart) ||
+		chunkStart !== expectedChunkStart
+	) {
 		return json(
 			{
-				error: "Invalid upload chunk size metadata",
-				code: "chunk_size_invalid",
+				error: "Invalid upload chunk start metadata",
+				code: "chunk_start_invalid",
 				traceId,
 			},
 			{ status: 400 },
 		);
 	}
 
-	const chunkBuffer = Buffer.from(await event.request.arrayBuffer());
-	if (chunkBuffer.length !== declaredChunkSize) {
+	const expectedChunkSize = isLastChunk
+		? totalSize - chunkStart
+		: Math.min(declaredChunkSize, totalSize - chunkStart);
+	if (expectedChunkSize !== declaredChunkSize || expectedChunkSize < 0) {
 		return json(
 			{
-				error: `Chunk size mismatch. Browser declared ${declaredChunkSize} bytes but the server received ${chunkBuffer.length} bytes.`,
-				code: "chunk_size_mismatch",
+				error: "Invalid upload chunk size metadata",
+				code: "chunk_size_invalid",
 				traceId,
 			},
 			{ status: 400 },
@@ -273,6 +285,18 @@ export const POST: RequestHandler = async (event) => {
 			);
 		}
 		throw error;
+	}
+
+	const chunkBuffer = Buffer.from(await event.request.arrayBuffer());
+	if (chunkBuffer.length !== declaredChunkSize) {
+		return json(
+			{
+				error: `Chunk size mismatch. Browser declared ${declaredChunkSize} bytes but the server received ${chunkBuffer.length} bytes.`,
+				code: "chunk_size_mismatch",
+				traceId,
+			},
+			{ status: 400 },
+		);
 	}
 
 	const uploadDir = join(

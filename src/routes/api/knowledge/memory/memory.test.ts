@@ -165,6 +165,21 @@ describe('knowledge memory routes', () => {
 		);
 	});
 
+	it('rejects persona forget payloads with only blank ids', async () => {
+		const response = await POST_MEMORY_ACTION(
+			makePostEvent({
+				action: 'forget_persona_memory',
+				conclusionId: '',
+				clusterId: '   ',
+			})
+		);
+		const data = await response.json();
+
+		expect(response.status).toBe(400);
+		expect(data.error).toMatch(/invalid memory action payload/i);
+		expect(mockApplyKnowledgeMemoryAction).not.toHaveBeenCalled();
+	});
+
 	it('supports forgetting a focus continuity item', async () => {
 		mockApplyKnowledgeMemoryAction.mockResolvedValue(memoryPayload);
 

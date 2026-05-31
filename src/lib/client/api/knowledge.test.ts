@@ -7,10 +7,17 @@ describe("knowledge client API", () => {
 		const fetchImpl = vi
 			.fn()
 			.mockResolvedValueOnce(
-				new Response(JSON.stringify({ traceId: "trace-upload" }), {
-					status: 200,
-					headers: { "Content-Type": "application/json" },
-				}),
+				new Response(
+					JSON.stringify({
+						traceId: "trace-upload",
+						rawUploadLimit: 1024,
+						chunkBodyLimit: 1024 * 1024,
+					}),
+					{
+						status: 200,
+						headers: { "Content-Type": "application/json" },
+					},
+				),
 			)
 			.mockResolvedValueOnce(
 				new Response(
@@ -171,6 +178,178 @@ describe("knowledge client API", () => {
 			"X-AlfyAI-Chunk-Size": "1",
 			"X-AlfyAI-Chunk-Final": "true",
 		});
+	});
+
+	it("uses chunked upload when the server raw upload limit is below the file size", async () => {
+		const fileBytes = new Uint8Array(1024 * 1024 + 1);
+		const file = new File([fileBytes], "adapter-limited.pdf", {
+			type: "application/pdf",
+		});
+		const totalChunks = 5;
+		const fetchImpl = vi.fn().mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					traceId: "trace-upload",
+					rawUploadLimit: 1024 * 1024,
+					chunkBodyLimit: 1024 * 1024,
+				}),
+				{
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				},
+			),
+		);
+		for (let index = 0; index < totalChunks - 1; index += 1) {
+			fetchImpl.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						complete: false,
+						traceId: "trace-upload",
+						receivedBytes: (index + 1) * 256 * 1024,
+						totalSize: file.size,
+						chunkIndex: index,
+						totalChunks,
+					}),
+					{
+						status: 200,
+						headers: { "Content-Type": "application/json" },
+					},
+				),
+			);
+		}
+		fetchImpl.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					complete: true,
+					traceId: "trace-upload",
+					receivedBytes: file.size,
+					totalSize: file.size,
+					artifact: { id: "artifact-limited" },
+					promptReady: true,
+				}),
+				{
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				},
+			),
+		);
+
+		await expect(
+			uploadKnowledgeAttachment(file, "conv-1", fetchImpl),
+		).resolves.toMatchObject({
+			artifact: { id: "artifact-limited" },
+			promptReady: true,
+		});
+
+		expect(fetchImpl).toHaveBeenNthCalledWith(
+			2,
+			"/api/knowledge/upload/chunk",
+			expect.objectContaining({
+				method: "POST",
+				body: expect.any(Blob),
+			}),
+		);
+	});
+
+	it("caps chunk size to the server-reported chunk body limit", async () => {
+		const chunkBodyLimit = 64 * 1024;
+		const fileBytes = new Uint8Array(2 * chunkBodyLimit + 1);
+		const file = new File([fileBytes], "small-chunks.pdf", {
+			type: "application/pdf",
+		});
+		const totalChunks = 3;
+		const fetchImpl = vi.fn().mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					traceId: "trace-upload",
+					rawUploadLimit: 1024,
+					chunkBodyLimit,
+				}),
+				{
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				},
+			),
+		);
+		for (let index = 0; index < totalChunks - 1; index += 1) {
+			fetchImpl.mockResolvedValueOnce(
+				new Response(
+					JSON.stringify({
+						complete: false,
+						traceId: "trace-upload",
+						receivedBytes: (index + 1) * chunkBodyLimit,
+						totalSize: file.size,
+						chunkIndex: index,
+						totalChunks,
+					}),
+					{
+						status: 200,
+						headers: { "Content-Type": "application/json" },
+					},
+				),
+			);
+		}
+		fetchImpl.mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					complete: true,
+					traceId: "trace-upload",
+					receivedBytes: file.size,
+					totalSize: file.size,
+					artifact: { id: "artifact-small-chunks" },
+					promptReady: true,
+				}),
+				{
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				},
+			),
+		);
+
+		await expect(
+			uploadKnowledgeAttachment(file, "conv-1", fetchImpl),
+		).resolves.toMatchObject({
+			artifact: { id: "artifact-small-chunks" },
+			promptReady: true,
+		});
+
+		expect(fetchImpl).toHaveBeenCalledTimes(totalChunks + 1);
+		const [, firstChunkInit] = fetchImpl.mock.calls[1];
+		expect(firstChunkInit.headers).toMatchObject({
+			"X-AlfyAI-Chunk-Total": String(totalChunks),
+			"X-AlfyAI-Chunk-Size": String(chunkBodyLimit),
+		});
+		const [, finalChunkInit] = fetchImpl.mock.calls[totalChunks];
+		expect(finalChunkInit.headers).toMatchObject({
+			"X-AlfyAI-Chunk-Index": String(totalChunks - 1),
+			"X-AlfyAI-Chunk-Size": "1",
+			"X-AlfyAI-Chunk-Final": "true",
+		});
+	});
+
+	it("fails before sending file bytes when the server chunk body limit cannot make progress", async () => {
+		const fetchImpl = vi.fn().mockResolvedValueOnce(
+			new Response(
+				JSON.stringify({
+					traceId: "trace-upload",
+					rawUploadLimit: 1024,
+					chunkBodyLimit: 0,
+				}),
+				{
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				},
+			),
+		);
+		const file = new File([new Uint8Array(1025)], "blocked.pdf", {
+			type: "application/pdf",
+		});
+
+		await expect(
+			uploadKnowledgeAttachment(file, "conv-1", fetchImpl),
+		).rejects.toThrow(/chunk size limit is too low/i);
+
+		expect(fetchImpl).toHaveBeenCalledTimes(1);
 	});
 
 	it("preserves server-side upload aborted errors", async () => {

@@ -118,7 +118,8 @@ describe("Knowledge Upload Intake", () => {
 			adapterBodySizeLimit: 40 * 1024 * 1024,
 			multipartBodyLimit: 40 * 1024 * 1024,
 			storedFileLimit: 40 * 1024 * 1024,
-			chunkFileLimit: 40 * 1024 * 1024,
+			chunkFileLimit: 50 * 1024 * 1024,
+			chunkBodyLimit: 1024 * 1024,
 			multipartOverheadAllowance: 1024 * 1024,
 		});
 	});

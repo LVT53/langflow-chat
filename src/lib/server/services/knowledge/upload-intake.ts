@@ -14,6 +14,7 @@ import {
 const DEFAULT_READINESS_ERROR =
 	"This file could not be prepared for chat. Remove it or upload a supported text-readable document.";
 const MULTIPART_OVERHEAD_ALLOWANCE_BYTES = 1024 * 1024;
+const CHUNK_BODY_LIMIT_BYTES = 1024 * 1024;
 
 export class KnowledgeUploadConversationError extends Error {
 	code = "invalid_conversation" as const;
@@ -55,6 +56,7 @@ export function resolveKnowledgeUploadLimits(): {
 	multipartBodyLimit: number;
 	storedFileLimit: number;
 	chunkFileLimit: number;
+	chunkBodyLimit: number;
 	multipartOverheadAllowance: number;
 } {
 	const { maxFileUploadSize } = getConfig();
@@ -71,7 +73,8 @@ export function resolveKnowledgeUploadLimits(): {
 		adapterBodySizeLimit,
 		multipartBodyLimit: effectiveLimit(multipartAppLimit, adapterBodySizeLimit),
 		storedFileLimit,
-		chunkFileLimit: storedFileLimit,
+		chunkFileLimit: maxFileUploadSize,
+		chunkBodyLimit: effectiveLimit(CHUNK_BODY_LIMIT_BYTES, adapterBodySizeLimit),
 		multipartOverheadAllowance: MULTIPART_OVERHEAD_ALLOWANCE_BYTES,
 	};
 }

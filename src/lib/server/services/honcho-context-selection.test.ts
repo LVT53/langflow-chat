@@ -2062,9 +2062,11 @@ describe('honcho learning - syncArtifactToHoncho', () => {
 });
 
 describe('honcho learning - getPeerContext', () => {
-	beforeEach(() => {
+	beforeEach(async () => {
 		vi.clearAllMocks();
 		vi.resetModules();
+		const { clearHonchoCaches } = await import('./honcho');
+		clearHonchoCaches({ userId: 'user-1' });
 		mockScopeList.mockResolvedValue({ toArray: async () => [] });
 		mockPeerContext.mockResolvedValue({
 			representation: 'User peer context for testing',
@@ -2154,6 +2156,41 @@ describe('honcho learning - getPeerContext', () => {
 		expect(mockPeerChat).not.toHaveBeenCalled();
 	});
 
+	it('throws peer context retrieval failures when requested by callers that distinguish unavailable from empty', async () => {
+		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+		mockPeerContext.mockRejectedValueOnce(new Error('Honcho unavailable'));
+
+		try {
+			const { getPeerContext } = await import('./honcho');
+
+			await expect(
+				getPeerContext('user-1', 'Test User', { throwOnError: true }),
+			).rejects.toThrow('Honcho unavailable');
+			expect(errorSpy).not.toHaveBeenCalled();
+			expect(mockPeerChat).not.toHaveBeenCalled();
+		} finally {
+			errorSpy.mockRestore();
+		}
+	});
+
+	it('does not cache failed peer context responses as empty context', async () => {
+		mockPeerContext
+			.mockRejectedValueOnce(new Error('Honcho unavailable'))
+			.mockResolvedValueOnce({
+				representation: 'Recovered scoped memory overview.',
+				peerCard: null,
+			});
+
+		const { getPeerContext } = await import('./honcho');
+
+		await expect(getPeerContext('user-1', 'Test User')).resolves.toBeNull();
+		await expect(
+			getPeerContext('user-1', 'Test User', { throwOnError: true }),
+		).resolves.toContain('Recovered scoped memory overview.');
+		expect(mockPeerContext).toHaveBeenCalledTimes(2);
+		expect(mockPeerChat).not.toHaveBeenCalled();
+	});
+
 	it('builds peer context from Honcho baseline representation without peer.chat', async () => {
 		mockPeerContext.mockResolvedValueOnce({
 			representation: 'user-1 prefers concise responses and is preparing a report',
@@ -2168,6 +2205,74 @@ describe('honcho learning - getPeerContext', () => {
 		expect(context).toContain('- Works in short implementation slices');
 		expect(context).not.toContain('user-1');
 		expect(mockPeerChat).not.toHaveBeenCalled();
+	});
+
+	it('bypasses cached peer context when force refresh is requested', async () => {
+		mockPeerContext
+			.mockResolvedValueOnce({
+				representation: 'First scoped memory overview.',
+				peerCard: null,
+			})
+			.mockResolvedValueOnce({
+				representation: 'Second scoped memory overview.',
+				peerCard: null,
+			});
+
+		const { getPeerContext } = await import('./honcho');
+
+		expect(await getPeerContext('user-1', 'Test User')).toContain(
+			'First scoped memory overview.',
+		);
+		expect(await getPeerContext('user-1', 'Test User')).toContain(
+			'First scoped memory overview.',
+		);
+		expect(mockPeerContext).toHaveBeenCalledTimes(1);
+
+		expect(
+			await getPeerContext('user-1', 'Test User', { force: true }),
+		).toContain('Second scoped memory overview.');
+		expect(mockPeerContext).toHaveBeenCalledTimes(2);
+	});
+
+	it('refreshes peer context after forgetting one persona memory', async () => {
+		mockPeerContext
+			.mockResolvedValueOnce({
+				representation: 'Old scoped memory overview.',
+				peerCard: null,
+			})
+			.mockResolvedValueOnce({
+				representation: 'Fresh scoped memory overview.',
+				peerCard: null,
+			});
+
+		const { forgetPersonaMemory, getPeerContext } = await import('./honcho');
+
+		expect(await getPeerContext('user-1', 'Test User')).toContain(
+			'Old scoped memory overview.',
+		);
+		expect(mockPeerContext).toHaveBeenCalledTimes(1);
+
+		mockScopeList
+			.mockResolvedValueOnce({
+				toArray: async () => [
+					{
+						id: 'conclusion-1',
+						content: 'Old scoped memory overview.',
+						sessionId: 'conv-1',
+						createdAt: new Date().toISOString(),
+					},
+				],
+			})
+			.mockResolvedValueOnce({ toArray: async () => [] });
+
+		await expect(
+			forgetPersonaMemory('user-1', 'conclusion-1'),
+		).resolves.toBe(true);
+
+		expect(await getPeerContext('user-1', 'Test User')).toContain(
+			'Fresh scoped memory overview.',
+		);
+		expect(mockPeerContext).toHaveBeenCalledTimes(2);
 	});
 
 	it('recalls persona memory from the assistant representation of the user and sanitizes peer ids', async () => {

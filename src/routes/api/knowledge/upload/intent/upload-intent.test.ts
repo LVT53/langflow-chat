@@ -15,14 +15,18 @@ vi.mock("$lib/server/services/knowledge/upload-intake", () => ({
 		multipartBodyLimit: 100 * 1024 * 1024,
 		storedFileLimit: 100 * 1024 * 1024,
 		chunkFileLimit: 100 * 1024 * 1024,
+		chunkBodyLimit: 1024 * 1024,
 		multipartOverheadAllowance: 1024 * 1024,
 	})),
 }));
 
 import { requireAuth } from "$lib/server/auth/hooks";
+import { resolveKnowledgeUploadLimits } from "$lib/server/services/knowledge/upload-intake";
 import { POST } from "./+server";
 
 const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
+const mockResolveKnowledgeUploadLimits =
+	resolveKnowledgeUploadLimits as ReturnType<typeof vi.fn>;
 let consoleInfoSpy: ReturnType<typeof vi.spyOn> | null = null;
 
 function makeEvent(payload: unknown) {
@@ -44,6 +48,15 @@ describe("POST /api/knowledge/upload/intent", () => {
 			.spyOn(console, "info")
 			.mockImplementation(() => undefined);
 		mockRequireAuth.mockReturnValue(undefined);
+		mockResolveKnowledgeUploadLimits.mockReturnValue({
+			maxFileUploadSize: 100 * 1024 * 1024,
+			adapterBodySizeLimit: 100 * 1024 * 1024,
+			multipartBodyLimit: 100 * 1024 * 1024,
+			storedFileLimit: 100 * 1024 * 1024,
+			chunkFileLimit: 100 * 1024 * 1024,
+			chunkBodyLimit: 1024 * 1024,
+			multipartOverheadAllowance: 1024 * 1024,
+		});
 	});
 
 	afterEach(() => {
@@ -65,6 +78,62 @@ describe("POST /api/knowledge/upload/intent", () => {
 		expect(response.status).toBe(200);
 		expect(data.traceId).toBe("trace-upload");
 		expect(data.maxFileUploadSize).toBeGreaterThan(1024);
+	});
+
+	it("allows a chunked upload intent above the adapter body limit when it is under the app file limit", async () => {
+		mockResolveKnowledgeUploadLimits.mockReturnValueOnce({
+			maxFileUploadSize: 100 * 1024 * 1024,
+			adapterBodySizeLimit: 40 * 1024 * 1024,
+			multipartBodyLimit: 40 * 1024 * 1024,
+			storedFileLimit: 40 * 1024 * 1024,
+			chunkFileLimit: 100 * 1024 * 1024,
+			chunkBodyLimit: 1024 * 1024,
+			multipartOverheadAllowance: 1024 * 1024,
+		});
+
+		const response = await POST(
+			makeEvent({
+				fileName: "field-guide.pdf",
+				fileSize: 46 * 1024 * 1024,
+				mimeType: "application/pdf",
+				conversationId: "conv-1",
+			}),
+		);
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(data.traceId).toBe("trace-upload");
+		expect(data.maxFileUploadSize).toBe(100 * 1024 * 1024);
+		expect(data.requestBodyLimit).toBe(40 * 1024 * 1024);
+		expect(data.rawUploadLimit).toBe(40 * 1024 * 1024);
+		expect(data.chunkBodyLimit).toBe(1024 * 1024);
+	});
+
+	it("reports explicit raw and chunk body limits for the browser upload client", async () => {
+		mockResolveKnowledgeUploadLimits.mockReturnValueOnce({
+			maxFileUploadSize: 100 * 1024 * 1024,
+			adapterBodySizeLimit: 128 * 1024,
+			multipartBodyLimit: 128 * 1024,
+			storedFileLimit: 128 * 1024,
+			chunkFileLimit: 100 * 1024 * 1024,
+			chunkBodyLimit: 128 * 1024,
+			multipartOverheadAllowance: 1024 * 1024,
+		});
+
+		const response = await POST(
+			makeEvent({
+				fileName: "adapter-limited.pdf",
+				fileSize: 129 * 1024,
+				mimeType: "application/pdf",
+				conversationId: "conv-1",
+			}),
+		);
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(data.rawUploadLimit).toBe(128 * 1024);
+		expect(data.chunkBodyLimit).toBe(128 * 1024);
+		expect(data.maxFileUploadSize).toBe(100 * 1024 * 1024);
 	});
 
 	it("rejects oversized uploads before the browser sends the multipart body", async () => {

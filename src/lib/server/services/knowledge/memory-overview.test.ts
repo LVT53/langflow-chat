@@ -139,6 +139,22 @@ describe("Knowledge Memory Overview", () => {
 		expect(overview.durablePersonaCount).toBe(0);
 	});
 
+	it("does not use persona fallback when Honcho returns an available empty overview", () => {
+		const overview = buildKnowledgeMemoryOverview({
+			rawOverview: "Memory Overview\n",
+			personaFallbackTexts: ["Prefers concise responses."],
+			durablePersonaCount: 1,
+			honchoEnabled: true,
+			attemptedAt: 1_780_000_000_005,
+		});
+
+		expect(overview.overview).toBeNull();
+		expect(overview.overviewBullets).toEqual([]);
+		expect(overview.overviewSource).toBeNull();
+		expect(overview.overviewStatus).toBe("not_enough_durable_memory");
+		expect(overview.durablePersonaCount).toBe(1);
+	});
+
 	it("returns temporarily unavailable when live overview generation fails without fallback text", () => {
 		const overview = buildKnowledgeMemoryOverview({
 			rawOverview: null,

@@ -1,6 +1,5 @@
 import { getConfig } from "$lib/server/config-store";
 import type {
-	KnowledgeMemoryAction,
 	KnowledgeMemoryOverviewPayload,
 	KnowledgeMemoryPayload,
 	KnowledgeMemorySummary,
@@ -23,6 +22,28 @@ import {
 	listTaskMemoryItems,
 } from "./task-state";
 
+type KnowledgeMemoryAction =
+	| {
+			action: "forget_persona_memory";
+			clusterId?: string;
+			conclusionId?: string;
+	  }
+	| { action: "forget_all_persona_memory" }
+	| { action: "forget_task_memory"; taskId: string }
+	| { action: "forget_focus_continuity"; continuityId: string }
+	| { action: "forget_project_memory"; projectId: string };
+
+function normalizePersonaMemoryId(
+	payload: Extract<KnowledgeMemoryAction, { action: "forget_persona_memory" }>,
+): string | null {
+	for (const candidate of [payload.conclusionId, payload.clusterId]) {
+		if (typeof candidate !== "string") continue;
+		const trimmed = candidate.trim();
+		if (trimmed) return trimmed;
+	}
+	return null;
+}
+
 function buildKnowledgeMemorySummary(
 	overview: string | null,
 	personaFallbackTexts: string[],
@@ -43,6 +64,13 @@ function buildKnowledgeMemorySummary(
 		attemptedAt,
 		overviewUnavailable,
 	});
+	console.info("[KNOWLEDGE_MEMORY] Selected overview source", {
+		source: overviewContract.overviewSource,
+		status: overviewContract.overviewStatus,
+		durablePersonaCount: overviewContract.durablePersonaCount,
+		overviewBulletCount: overviewContract.overviewBullets.length,
+		unavailable: overviewUnavailable,
+	});
 
 	return {
 		personaCount,
@@ -57,6 +85,7 @@ function buildKnowledgeMemorySummary(
 async function loadPeerContextOverview(
 	userId: string,
 	userDisplayName: string,
+	options: { force?: boolean } = {},
 ): Promise<{ text: string | null; unavailable: boolean }> {
 	if (!isHonchoEnabled()) {
 		return { text: null, unavailable: false };
@@ -65,6 +94,8 @@ async function loadPeerContextOverview(
 	try {
 		const text = await getPeerContext(userId, userDisplayName, {
 			timeoutMs: getConfig().honchoPersonaContextWaitMs,
+			force: options.force,
+			throwOnError: true,
 		});
 		return { text, unavailable: false };
 	} catch (error) {
@@ -155,10 +186,12 @@ export async function getKnowledgeMemory(
 export async function getKnowledgeMemoryOverview(
 	userId: string,
 	userDisplayName: string,
-	_options: { awaitLive?: boolean; force?: boolean } = {},
+	options: { awaitLive?: boolean; force?: boolean } = {},
 ): Promise<KnowledgeMemoryOverviewPayload> {
 	const [peerOverview, personaRecords] = await Promise.all([
-		loadPeerContextOverview(userId, userDisplayName),
+		loadPeerContextOverview(userId, userDisplayName, {
+			force: options.force,
+		}),
 		listPersonaMemories(userId),
 	]);
 
@@ -183,11 +216,15 @@ export async function applyKnowledgeMemoryAction(
 ): Promise<KnowledgeMemoryPayload> {
 	switch (payload.action) {
 		case "forget_persona_memory": {
-			if (typeof payload.conclusionId === "string") {
-				await forgetPersonaMemory(userId, payload.conclusionId);
+			const personaMemoryId = normalizePersonaMemoryId(payload);
+			if (!personaMemoryId) {
+				throw new Error(
+					"forget_persona_memory requires a conclusionId or clusterId",
+				);
 			}
+			await forgetPersonaMemory(userId, personaMemoryId);
 			console.info(
-				"[KNOWLEDGE_MEMORY] forget_persona_memory is a no-op with local clusters removed; delegated to Honcho",
+				"[KNOWLEDGE_MEMORY] forget_persona_memory delegated to Honcho",
 			);
 			break;
 		}

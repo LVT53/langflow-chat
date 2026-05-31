@@ -20,6 +20,7 @@ vi.mock("$lib/server/services/knowledge/upload-intake", () => ({
 		multipartBodyLimit: 100 * 1024 * 1024,
 		storedFileLimit: 100 * 1024 * 1024,
 		chunkFileLimit: 100 * 1024 * 1024,
+		chunkBodyLimit: 1024 * 1024,
 		multipartOverheadAllowance: 1024 * 1024,
 	})),
 	validateKnowledgeUploadConversation: vi.fn(
@@ -173,6 +174,126 @@ describe("POST /api/knowledge/upload/chunk", () => {
 			traceId: "upload-chunktest",
 		});
 		expect(uploadDir).toBeNull();
+		expect(mockCompleteKnowledgeUploadFromStoredFile).not.toHaveBeenCalled();
+	});
+
+	it("rejects an invalid conversation before reading the chunk body", async () => {
+		const error = new Error("Conversation not found or access denied");
+		mockValidateKnowledgeUploadConversation.mockImplementation(
+			async (params: { conversationId?: string | null }) => {
+				if (params.conversationId === "missing-conv") {
+					throw error;
+				}
+				return params.conversationId?.trim() || null;
+			},
+		);
+		mockIsKnowledgeUploadConversationError.mockImplementation(
+			(candidate: unknown) => candidate === error,
+		);
+		const event = makeChunkEvent(
+			Buffer.from("hello"),
+			chunkHeaders({
+				"x-alfyai-conversation-id": "missing-conv",
+				"x-alfyai-chunk-index": "0",
+				"x-alfyai-chunk-start": "0",
+				"x-alfyai-chunk-size": "5",
+				"x-alfyai-chunk-final": "false",
+			}),
+		);
+		const arrayBufferSpy = vi
+			.spyOn(event.request, "arrayBuffer")
+			.mockRejectedValue(new Error("chunk body should not be consumed"));
+
+		const response = await POST(event);
+		const data = await response.json();
+
+		expect(response.status).toBe(400);
+		expect(data).toMatchObject({
+			error: "Conversation not found or access denied",
+			code: "conversation_not_found",
+			traceId: "upload-chunktest",
+		});
+		expect(arrayBufferSpy).not.toHaveBeenCalled();
+		expect(mockCompleteKnowledgeUploadFromStoredFile).not.toHaveBeenCalled();
+	});
+
+	it("rejects a request content length above the chunk cap before reading the chunk body", async () => {
+		const event = makeChunkEvent(
+			Buffer.from("hello"),
+			chunkHeaders({
+				"content-length": String(1024 * 1024 + 1),
+				"x-alfyai-chunk-index": "0",
+				"x-alfyai-chunk-start": "0",
+				"x-alfyai-chunk-size": "5",
+				"x-alfyai-chunk-final": "false",
+			}),
+		);
+		const arrayBufferSpy = vi
+			.spyOn(event.request, "arrayBuffer")
+			.mockRejectedValue(new Error("chunk body should not be consumed"));
+
+		const response = await POST(event);
+		const data = await response.json();
+
+		expect(response.status).toBe(413);
+		expect(data).toMatchObject({
+			code: "upload_chunk_too_large",
+			traceId: "upload-chunktest",
+		});
+		expect(arrayBufferSpy).not.toHaveBeenCalled();
+		expect(mockCompleteKnowledgeUploadFromStoredFile).not.toHaveBeenCalled();
+	});
+
+	it("rejects declared chunk metadata above the chunk cap before reading the chunk body", async () => {
+		const event = makeChunkEvent(
+			Buffer.from("hello"),
+			chunkHeaders({
+				"x-alfyai-upload-size": String(3 * 1024 * 1024),
+				"x-alfyai-chunk-index": "0",
+				"x-alfyai-chunk-start": "0",
+				"x-alfyai-chunk-size": String(1024 * 1024 + 1),
+				"x-alfyai-chunk-final": "false",
+			}),
+		);
+		const arrayBufferSpy = vi
+			.spyOn(event.request, "arrayBuffer")
+			.mockRejectedValue(new Error("chunk body should not be consumed"));
+
+		const response = await POST(event);
+		const data = await response.json();
+
+		expect(response.status).toBe(413);
+		expect(data).toMatchObject({
+			code: "upload_chunk_too_large",
+			traceId: "upload-chunktest",
+		});
+		expect(arrayBufferSpy).not.toHaveBeenCalled();
+		expect(mockCompleteKnowledgeUploadFromStoredFile).not.toHaveBeenCalled();
+	});
+
+	it("rejects chunk metadata with a start offset that does not match the chunk index", async () => {
+		const event = makeChunkEvent(
+			Buffer.from("hello"),
+			chunkHeaders({
+				"x-alfyai-chunk-index": "0",
+				"x-alfyai-chunk-start": "5",
+				"x-alfyai-chunk-size": "5",
+				"x-alfyai-chunk-final": "false",
+			}),
+		);
+		const arrayBufferSpy = vi
+			.spyOn(event.request, "arrayBuffer")
+			.mockRejectedValue(new Error("chunk body should not be consumed"));
+
+		const response = await POST(event);
+		const data = await response.json();
+
+		expect(response.status).toBe(400);
+		expect(data).toMatchObject({
+			code: "chunk_start_invalid",
+			traceId: "upload-chunktest",
+		});
+		expect(arrayBufferSpy).not.toHaveBeenCalled();
 		expect(mockCompleteKnowledgeUploadFromStoredFile).not.toHaveBeenCalled();
 	});
 

@@ -21,6 +21,7 @@ vi.mock("$lib/server/services/knowledge/upload-intake", () => ({
 		multipartBodyLimit: 100 * 1024 * 1024,
 		storedFileLimit: 100 * 1024 * 1024,
 		chunkFileLimit: 100 * 1024 * 1024,
+		chunkBodyLimit: 1024 * 1024,
 		multipartOverheadAllowance: 1024 * 1024,
 	})),
 	validateKnowledgeUploadConversation: vi.fn(

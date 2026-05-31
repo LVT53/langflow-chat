@@ -120,7 +120,7 @@ export function buildKnowledgeMemoryOverview(
 		input.rawOverview,
 	);
 	const personaFallbackBullets =
-		overviewBullets.length > 0
+		overviewBullets.length > 0 || !input.overviewUnavailable
 			? []
 			: normalizeKnowledgeMemoryOverviewBullets(
 					(input.personaFallbackTexts ?? []).join("\n"),
