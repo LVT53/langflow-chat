@@ -247,6 +247,18 @@ class WebResearchToolComponent(Component):
             ]
         return compact
 
+    @staticmethod
+    def _data_for_model(payload: dict[str, Any]) -> Data:
+        text_payload = {
+            key: value
+            for key, value in payload.items()
+            if key != "conversationId"
+        }
+        return Data(
+            data=payload,
+            text=json.dumps(text_payload, ensure_ascii=False, separators=(",", ":")),
+        )
+
     def _build_service_assertion(self, conversation_id: str) -> str | None:
         signing_key = str(getattr(self, "alfyai_api_signing_key", "") or "").strip()
         if not signing_key:
@@ -390,13 +402,13 @@ class WebResearchToolComponent(Component):
 
         if not conversation_id:
             logger.error("No conversation ID available - cannot research web")
-            return Data(data={
+            return self._data_for_model({
                 "success": False,
                 "error": "No conversation context available.",
             })
 
         if not query:
-            return Data(data={
+            return self._data_for_model({
                 "success": False,
                 "error": "No research query provided.",
             })
@@ -448,7 +460,7 @@ class WebResearchToolComponent(Component):
                 "candidates": model_sources,
             })
 
-            return Data(data={
+            return self._data_for_model({
                 "success": True,
                 "name": "research_web",
                 "sourceType": "web",
@@ -483,7 +495,7 @@ class WebResearchToolComponent(Component):
             "candidates": [],
         })
 
-        return Data(data={
+        return self._data_for_model({
             "success": False,
             "error": error_msg,
             "conversationId": conversation_id,
