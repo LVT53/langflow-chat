@@ -6,7 +6,7 @@ Source: `/private/var/folders/6c/llmb9__97ngcxtc26hvg8jzh0000gn/T/architecture-r
 
 Before commit `23b3e628`, the conversation detail route assembled the full chat hydration payload directly in `src/routes/api/conversations/[id]/+server.ts`. That route knew the bootstrap payload, full payload shape, messages plus child-fork hydration, attached artifacts, working set, context status/debug, Context Sources, task state continuity, draft, legacy generated files, File Production jobs, Deep Research jobs, context compression snapshots, cost totals, project reference fallback behavior, and active Skill Session serialization.
 
-The architecture target was to move that recipe behind one server read-model module so route adapters stay thin and payload evolution has one owner. At HEAD `b7691557`, `src/routes/api/conversations/[id]/+server.ts` delegates GET payload assembly to `getConversationDetail(...)` in `src/lib/server/services/conversation-detail/read-model.ts`, and the chat page load and browser hydration keep consuming the same stable `ConversationDetail` contract.
+The architecture target was to move that recipe behind one server read-model module so route adapters stay thin and payload evolution has one owner. At audit HEAD `25a43462`, `src/routes/api/conversations/[id]/+server.ts` delegates GET payload assembly to `getConversationDetail(...)` in `src/lib/server/services/conversation-detail/read-model.ts`, and the chat page load and browser hydration keep consuming the same stable `ConversationDetail` contract.
 
 Docs checked before planning:
 
@@ -17,7 +17,7 @@ Docs checked before planning:
 
 ## Done Criteria
 
-Status: satisfied by commit `23b3e628` and still consistent at HEAD `b7691557`.
+Status: satisfied by commit `23b3e628` and still consistent at audit HEAD `25a43462`.
 
 - `src/routes/api/conversations/[id]/+server.ts` remains a thin adapter for GET/PATCH/DELETE; GET authenticates, delegates conversation detail assembly to a read-model module, maps not-found to 404, and returns JSON.
 - A Conversation Detail Read Model deep module owns bootstrap and full conversation detail assembly, including defaults, fallbacks, child-fork message decoration, task-state continuity attachment, Context Sources construction, snapshot serialization, and active Skill Session public serialization.
