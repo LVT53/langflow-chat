@@ -1,7 +1,11 @@
 import { json } from "@sveltejs/kit";
 import { requireAuth } from "$lib/server/auth/hooks";
 import { createAttachmentTraceId } from "$lib/server/services/attachment-trace";
-import { resolveKnowledgeUploadLimits } from "$lib/server/services/knowledge/upload-intake";
+import {
+	isKnowledgeUploadConversationError,
+	resolveKnowledgeUploadLimits,
+	validateKnowledgeUploadConversation,
+} from "$lib/server/services/knowledge/upload-intake";
 import type { RequestHandler } from "./$types";
 
 function formatBytes(value: number | null): string {
@@ -98,6 +102,25 @@ export const POST: RequestHandler = async (event) => {
 			},
 			{ status: 413 },
 		);
+	}
+
+	try {
+		await validateKnowledgeUploadConversation({
+			userId: user.id,
+			conversationId: intent.conversationId,
+		});
+	} catch (error) {
+		if (isKnowledgeUploadConversationError(error)) {
+			return json(
+				{
+					error: "Conversation not found or access denied",
+					code: "conversation_not_found",
+					traceId,
+				},
+				{ status: 400 },
+			);
+		}
+		throw error;
 	}
 
 	return json({

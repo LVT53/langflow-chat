@@ -34,6 +34,21 @@ describe("prompts", () => {
 		expect(getSystemPrompt(legacyPrompt)).toBe(ALFYAI_NEMOTRON_PROMPT);
 	});
 
+	it("normalizes the old file-production prompt body back to the current key", () => {
+		const legacyPrompt = ALFYAI_NEMOTRON_PROMPT.replace(
+			"Every produce_file call includes idempotencyKey, requestTitle, requestedOutputs, sourceMode, and documentIntent. Optional fields are templateHint, documentSource, and program. The active conversationId is supplied by the tool runtime, not by you. requestedOutputs remains a JSON-encoded array string because Langflow exposes it as text. Pass documentSource and program as nested objects, not JSON-encoded strings.",
+			"Every produce_file call includes idempotencyKey, requestTitle, requestedOutputs, sourceMode, and documentIntent. Optional fields are templateHint, documentSource, and program. The active conversationId is supplied by the tool runtime, not by you. Langflow validates requestedOutputs, documentSource, and program as text fields before the tool runs, so pass each one as a JSON-encoded string rather than a nested object or array.",
+		).replace(
+			'For CSV, JSON, TXT, Markdown, CSS, JavaScript/TypeScript, shell scripts, SVG, ZIP, XLSX, PPTX, custom DOCX/ODT packaging, and other code-generated artifacts, use sourceMode: "program" with program as an object containing language, sourceCode, and optional filename.',
+			'For CSV, JSON, TXT, Markdown, CSS, JavaScript/TypeScript, shell scripts, SVG, ZIP, XLSX, PPTX, custom DOCX/ODT packaging, and other code-generated artifacts, use sourceMode: "program" with program as a JSON string containing language, sourceCode, and optional filename.',
+		);
+
+		expect(normalizeSystemPromptReference(legacyPrompt)).toBe(
+			"alfyai-nemotron",
+		);
+		expect(getSystemPrompt(legacyPrompt)).toBe(ALFYAI_NEMOTRON_PROMPT);
+	});
+
 	it("leaves custom prompt text untouched", () => {
 		const customPrompt = "You are a custom assistant.";
 
@@ -57,8 +72,16 @@ describe("prompts", () => {
 		expect(ALFYAI_NEMOTRON_PROMPT).toContain("requestTitle");
 		expect(ALFYAI_NEMOTRON_PROMPT).toContain("requestedOutputs");
 		expect(ALFYAI_NEMOTRON_PROMPT).toContain("documentIntent");
-		expect(ALFYAI_NEMOTRON_PROMPT).toContain("JSON-encoded string");
 		expect(ALFYAI_NEMOTRON_PROMPT).toContain(
+			"requestedOutputs remains a JSON-encoded array string",
+		);
+		expect(ALFYAI_NEMOTRON_PROMPT).toContain(
+			"Pass documentSource and program as nested objects",
+		);
+		expect(ALFYAI_NEMOTRON_PROMPT).not.toContain(
+			"documentSource, and program as text fields",
+		);
+		expect(ALFYAI_NEMOTRON_PROMPT).not.toContain(
 			"rather than a nested object or array",
 		);
 		expect(ALFYAI_NEMOTRON_PROMPT).toContain('"type": "heading"');

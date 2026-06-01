@@ -93,9 +93,26 @@ function isUnrenderedGeneratedDocumentSource(artifact: Artifact): boolean {
 	}
 
 	return (
-		metadata.generatedDocumentSourceVersion !== undefined &&
-		typeof metadata.sourceChatFileId !== "string"
+		isGeneratedDocumentSourceMetadata(metadata) && !readSourceChatFileId(metadata)
 	);
+}
+
+function isGeneratedDocumentSourceMetadata(
+	metadata: Record<string, unknown>,
+): boolean {
+	return (
+		metadata.generatedDocumentSourceVersion !== undefined ||
+		metadata.generatedDocumentSourceStatus !== undefined
+	);
+}
+
+function readSourceChatFileId(
+	metadata: Record<string, unknown> | null | undefined,
+): string | null {
+	const sourceChatFileId = metadata?.sourceChatFileId;
+	return typeof sourceChatFileId === "string" && sourceChatFileId.trim()
+		? sourceChatFileId.trim()
+		: null;
 }
 
 async function resolveGeneratedOutputSource(params: {
@@ -110,11 +127,7 @@ async function resolveGeneratedOutputSource(params: {
 		return null;
 	}
 
-	const sourceChatFileId =
-		typeof params.artifact.metadata?.sourceChatFileId === "string" &&
-		params.artifact.metadata.sourceChatFileId.trim()
-			? params.artifact.metadata.sourceChatFileId.trim()
-			: null;
+	const sourceChatFileId = readSourceChatFileId(params.artifact.metadata);
 	if (!sourceChatFileId) {
 		return null;
 	}

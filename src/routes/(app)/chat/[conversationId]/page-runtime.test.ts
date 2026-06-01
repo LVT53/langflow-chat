@@ -7,6 +7,7 @@ const runtimeHarness = vi.hoisted(() => ({
 		message: string;
 		callbacks: {
 			onWaiting?: () => void;
+			onError: (error: Error) => void;
 		};
 	}>,
 }));
@@ -184,6 +185,10 @@ describe("chat page runtime integration", () => {
 			callback(0);
 			return 0;
 		});
+		Object.defineProperty(document, "visibilityState", {
+			configurable: true,
+			value: "visible",
+		});
 	});
 
 	it("keeps Deep Research handoff sends visible to the runtime queue adapter", async () => {
@@ -262,6 +267,63 @@ describe("chat page runtime integration", () => {
 		});
 		expect(runtimeHarness.streamInvocations[1].message).toBe(
 			"Queued after waiting",
+		);
+	});
+
+	it("preserves a restored queued draft when background recovery falls back to persisted detail", async () => {
+		vi.mocked(fetchConversationDetail).mockResolvedValue({
+			conversation: { id: "conv-1", title: "Chat", status: "open" },
+			messages: [
+				{
+					id: "server-user-1",
+					role: "user",
+					content: "First turn",
+					timestamp: 1,
+				},
+				{
+					id: "server-assistant-1",
+					role: "assistant",
+					content: "Finished while hidden",
+					timestamp: 2,
+				},
+			],
+		});
+		render(Page, { data: pageData() });
+
+		await fireEvent.input(screen.getByTestId("message-input"), {
+			target: { value: "First turn" },
+		});
+		await fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+		await fireEvent.input(screen.getByTestId("message-input"), {
+			target: { value: "Queued while hidden" },
+		});
+		await fireEvent.click(screen.getByTestId("queue-button"));
+
+		Object.defineProperty(document, "visibilityState", {
+			configurable: true,
+			value: "hidden",
+		});
+		const abortError = new Error("backgrounded");
+		abortError.name = "AbortError";
+		runtimeHarness.streamInvocations[0].callbacks.onError(abortError);
+
+		await waitFor(() => {
+			expect(screen.getByTestId("message-input")).toHaveValue(
+				"Queued while hidden",
+			);
+		});
+
+		Object.defineProperty(document, "visibilityState", {
+			configurable: true,
+			value: "visible",
+		});
+		document.dispatchEvent(new Event("visibilitychange"));
+
+		await waitFor(() => {
+			expect(fetchConversationDetail).toHaveBeenCalledWith("conv-1");
+		});
+		expect(screen.getByTestId("message-input")).toHaveValue(
+			"Queued while hidden",
 		);
 	});
 });

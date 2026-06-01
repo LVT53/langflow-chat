@@ -300,7 +300,7 @@ export function getPreviewLanguage(
 	if (ext === "php") return "php";
 	if (ext === "r") return "r";
 
-	const mime = mimeType?.toLowerCase() ?? null;
+	const mime = normalizeMimeType(mimeType);
 	if (mime === "application/json") return "json";
 	if (mime === "application/xml") return "xml";
 	if (mime === "text/html") return "html";

@@ -130,7 +130,7 @@ export type NormalChatClientTurnRuntimeAdapters = {
 		placeholderId: string,
 		clientUserMessageId?: string | null,
 	) => void;
-	loadPersistedData: () => void;
+	loadPersistedData: () => Promise<void> | void;
 	mergeGeneratedFiles?: (files: NonNullable<StreamMetadata["generatedFiles"]>) => void;
 	setContextCompressionMarkers?: (
 		markers: NonNullable<StreamMetadata["contextCompressionSnapshots"]>,
@@ -419,18 +419,22 @@ export function createNormalChatClientTurnRuntime(
 
 				adapters.removeMessage(params.placeholderId);
 				completeTurn();
+
+				if (isBackgroundAbort) {
+					if (!params.isReconnect) {
+						restoreQueuedTurnToDraft();
+					}
+					streamInterruptedByBackground = true;
+					adapters.onBackgroundInterrupted();
+					emitState();
+					return;
+				}
+
 				if (!params.isReconnect) {
 					if (takeQueuedContextCompression()) {
 						void adapters.runManualContextCompression();
 					}
 					restoreQueuedTurnToDraft();
-				}
-
-				if (isBackgroundAbort) {
-					streamInterruptedByBackground = true;
-					adapters.onBackgroundInterrupted();
-					emitState();
-					return;
 				}
 
 				if (
@@ -733,7 +737,7 @@ export function createNormalChatClientTurnRuntime(
 		streamInterruptedByBackground = false;
 		emitState();
 		adapters.onBackgroundVisibilityRestore?.();
-		void checkForOrphanedStreamOnMount();
+		return recoverBackgroundInterruptedStream();
 	}
 
 	async function reconnectToOrphanedStream(
@@ -741,7 +745,7 @@ export function createNormalChatClientTurnRuntime(
 		userMessage = "",
 		retryCount = 0,
 	) {
-		if (isSending || activeStream) return;
+		if (isSending || activeStream) return false;
 
 		beginTurn();
 		adapters.markHasPersistedMessages?.();
@@ -776,6 +780,7 @@ export function createNormalChatClientTurnRuntime(
 				thinkingMode: adapters.getThinkingMode(),
 			},
 		});
+		return true;
 	}
 
 	function findExistingReconnectUserMessageId(userMessage: string) {
@@ -791,14 +796,22 @@ export function createNormalChatClientTurnRuntime(
 
 	async function checkForOrphanedStreamOnMount() {
 		if (isSending || activeStream) {
-			return;
+			return false;
 		}
 		const streamId = await adapters.checkForOrphanedStream(
 			adapters.getConversationId(),
 		);
-		if (!streamId) return;
+		if (!streamId) return false;
 		const bufferInfo = await adapters.getStreamBufferInfo(streamId);
-		void reconnectToOrphanedStream(streamId, bufferInfo?.userMessage ?? "");
+		return reconnectToOrphanedStream(streamId, bufferInfo?.userMessage ?? "");
+	}
+
+	async function recoverBackgroundInterruptedStream() {
+		const reconnected = await checkForOrphanedStreamOnMount();
+		if (!reconnected) {
+			await adapters.loadPersistedData();
+			await drainPostTurnQueue();
+		}
 	}
 
 	return {

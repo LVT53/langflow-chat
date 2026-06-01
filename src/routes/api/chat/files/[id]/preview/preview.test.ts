@@ -17,7 +17,10 @@ const mockResolveGeneratedFileServing = vi.mocked(resolveGeneratedFileServing);
 
 function makeEvent(
 	fileId = "file-1",
-	user = { id: "user-1", email: "test@example.com" },
+	user: { id: string; email: string } | null = {
+		id: "user-1",
+		email: "test@example.com",
+	},
 ) {
 	return {
 		request: new Request(`http://localhost/api/chat/files/${fileId}/preview`),
@@ -56,6 +59,15 @@ describe("GET /api/chat/files/[id]/preview", () => {
 		});
 
 		const response = await GET(makeEvent());
+		const body = await response.json();
+
+		expect(response.status).toBe(401);
+		expect(body.error).toBe("Unauthorized");
+		expect(mockResolveGeneratedFileServing).not.toHaveBeenCalled();
+	});
+
+	it("returns 401 when auth passes but the local user is missing", async () => {
+		const response = await GET(makeEvent("file-1", null));
 		const body = await response.json();
 
 		expect(response.status).toBe(401);

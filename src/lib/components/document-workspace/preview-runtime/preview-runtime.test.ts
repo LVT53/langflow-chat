@@ -80,6 +80,30 @@ describe("preview runtime", () => {
 		});
 	});
 
+	it("renders extension-only .markdown files through the Markdown document adapter", async () => {
+		const result = await loadPreviewRuntime({
+			artifactId: "artifact-markdown",
+			previewUrl: null,
+			filename: "research-notes.markdown",
+			mimeType: "application/octet-stream",
+			fetchImpl: vi.fn().mockResolvedValue(
+				makeFetchResponse(
+					new Blob(["# Research notes"], {
+						type: "application/octet-stream",
+					}),
+				),
+			),
+		});
+
+		expectReady(result);
+		expect(result.fileType).toBe("text");
+		expect(result.adapter).toMatchObject({
+			kind: "text",
+			textKind: "markdown",
+			language: "markdown",
+		});
+	});
+
 	it("selects syntax highlighting languages for code-like text previews", async () => {
 		for (const file of [
 			{ filename: "theme.css", mimeType: "text/css", language: "css" },

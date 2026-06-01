@@ -9,6 +9,7 @@ vi.mock("$lib/server/services/attachment-trace", () => ({
 }));
 
 vi.mock("$lib/server/services/knowledge/upload-intake", () => ({
+	isKnowledgeUploadConversationError: vi.fn(() => false),
 	resolveKnowledgeUploadLimits: vi.fn(() => ({
 		maxFileUploadSize: 100 * 1024 * 1024,
 		adapterBodySizeLimit: 100 * 1024 * 1024,
@@ -18,15 +19,27 @@ vi.mock("$lib/server/services/knowledge/upload-intake", () => ({
 		chunkBodyLimit: 1024 * 1024,
 		multipartOverheadAllowance: 1024 * 1024,
 	})),
+	validateKnowledgeUploadConversation: vi.fn(
+		async (params: { conversationId?: string | null }) =>
+			params.conversationId?.trim() || null,
+	),
 }));
 
 import { requireAuth } from "$lib/server/auth/hooks";
-import { resolveKnowledgeUploadLimits } from "$lib/server/services/knowledge/upload-intake";
+import {
+	isKnowledgeUploadConversationError,
+	resolveKnowledgeUploadLimits,
+	validateKnowledgeUploadConversation,
+} from "$lib/server/services/knowledge/upload-intake";
 import { POST } from "./+server";
 
 const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
+const mockIsKnowledgeUploadConversationError =
+	isKnowledgeUploadConversationError as ReturnType<typeof vi.fn>;
 const mockResolveKnowledgeUploadLimits =
 	resolveKnowledgeUploadLimits as ReturnType<typeof vi.fn>;
+const mockValidateKnowledgeUploadConversation =
+	validateKnowledgeUploadConversation as ReturnType<typeof vi.fn>;
 let consoleInfoSpy: ReturnType<typeof vi.spyOn> | null = null;
 
 function makeEvent(payload: unknown) {
@@ -48,6 +61,7 @@ describe("POST /api/knowledge/upload/intent", () => {
 			.spyOn(console, "info")
 			.mockImplementation(() => undefined);
 		mockRequireAuth.mockReturnValue(undefined);
+		mockIsKnowledgeUploadConversationError.mockReturnValue(false);
 		mockResolveKnowledgeUploadLimits.mockReturnValue({
 			maxFileUploadSize: 100 * 1024 * 1024,
 			adapterBodySizeLimit: 100 * 1024 * 1024,
@@ -57,6 +71,10 @@ describe("POST /api/knowledge/upload/intent", () => {
 			chunkBodyLimit: 1024 * 1024,
 			multipartOverheadAllowance: 1024 * 1024,
 		});
+		mockValidateKnowledgeUploadConversation.mockImplementation(
+			async (params: { conversationId?: string | null }) =>
+				params.conversationId?.trim() || null,
+		);
 	});
 
 	afterEach(() => {
@@ -149,5 +167,32 @@ describe("POST /api/knowledge/upload/intent", () => {
 		expect(response.status).toBe(413);
 		expect(data.code).toBe("upload_file_too_large");
 		expect(data.traceId).toBe("trace-upload");
+	});
+
+	it("rejects an inaccessible conversation during upload preflight", async () => {
+		const error = new Error("Conversation not found or access denied");
+		mockValidateKnowledgeUploadConversation.mockRejectedValueOnce(error);
+		mockIsKnowledgeUploadConversationError.mockReturnValueOnce(true);
+
+		const response = await POST(
+			makeEvent({
+				fileName: "brief.pdf",
+				fileSize: 1024,
+				mimeType: "application/pdf",
+				conversationId: "missing-conv",
+			}),
+		);
+		const data = await response.json();
+
+		expect(response.status).toBe(400);
+		expect(data).toMatchObject({
+			error: "Conversation not found or access denied",
+			code: "conversation_not_found",
+			traceId: "trace-upload",
+		});
+		expect(mockValidateKnowledgeUploadConversation).toHaveBeenCalledWith({
+			userId: "user-1",
+			conversationId: "missing-conv",
+		});
 	});
 });

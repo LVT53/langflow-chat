@@ -10,7 +10,10 @@ export const GET: RequestHandler = async (event) => {
 		return json({ error: "Unauthorized" }, { status: 401 });
 	}
 
-	const user = event.locals.user!;
+	const user = event.locals.user;
+	if (!user) {
+		return json({ error: "Unauthorized" }, { status: 401 });
+	}
 	const fileId = event.params.id;
 	const result = await resolveGeneratedFileServing({
 		userId: user.id,

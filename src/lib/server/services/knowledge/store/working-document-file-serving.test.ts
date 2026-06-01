@@ -137,6 +137,97 @@ describe("resolveWorkingDocumentFileServing", () => {
 		});
 	});
 
+	it("propagates generated HTML source chat file active-content preview headers", async () => {
+		const htmlBody = Buffer.from("<!doctype html><h1>Report</h1>");
+		const restrictedPreviewCsp =
+			"default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
+		const delegatedResult = {
+			ok: true,
+			body: new Uint8Array(htmlBody),
+			headers: {
+				"Content-Type": "text/html; charset=utf-8",
+				"Content-Length": htmlBody.length.toString(),
+				"Content-Disposition": 'inline; filename="interactive_report.html"',
+				"Cache-Control": "private, max-age=3600",
+				"Content-Security-Policy": restrictedPreviewCsp,
+				"X-Content-Type-Options": "nosniff",
+				"Referrer-Policy": "no-referrer",
+			},
+		};
+		mockGetArtifactForUser.mockResolvedValue({
+			id: "generated-html",
+			name: "interactive_report.html",
+			storagePath: null,
+			contentText: "Fallback text must not be served",
+			mimeType: "text/plain",
+			extension: "html",
+			type: "generated_output",
+			metadata: { sourceChatFileId: "chatfile-html" },
+		});
+		mockResolveGeneratedFileServing.mockResolvedValue(delegatedResult);
+
+		const result = await resolveWorkingDocumentFileServing({
+			userId,
+			artifactId: "generated-html",
+			mode: "preview",
+		});
+
+		expect(result).toBe(delegatedResult);
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error("expected successful resolution");
+		expect(result.headers["Content-Security-Policy"]).toBe(
+			restrictedPreviewCsp,
+		);
+		expect(result.headers["X-Content-Type-Options"]).toBe("nosniff");
+		expect(result.headers["Referrer-Policy"]).toBe("no-referrer");
+		expect(Buffer.from(result.body).toString()).toBe(
+			"<!doctype html><h1>Report</h1>",
+		);
+		expect(mockResolveGeneratedFileServing).toHaveBeenCalledWith({
+			userId,
+			fileId: "chatfile-html",
+			mode: "preview",
+			displayFilename: "interactive_report.html",
+		});
+	});
+
+	it("returns invalid generated source chat file bytes instead of falling back to artifact text", async () => {
+		const delegatedResult = {
+			ok: false,
+			status: 415,
+			error: "Invalid generated file content",
+		};
+		mockGetArtifactForUser.mockResolvedValue({
+			id: "generated-invalid-html",
+			name: "invalid_report.html",
+			storagePath: null,
+			contentText: "Fallback text must not be served",
+			mimeType: "text/plain",
+			extension: "html",
+			type: "generated_output",
+			metadata: { sourceChatFileId: "chatfile-invalid-html" },
+		});
+		mockResolveGeneratedFileServing.mockResolvedValue(delegatedResult);
+
+		const result = await resolveWorkingDocumentFileServing({
+			userId,
+			artifactId: "generated-invalid-html",
+			mode: "preview",
+		});
+
+		expect(result).toEqual(delegatedResult);
+		expect(result.ok).toBe(false);
+		if (result.ok) throw new Error("expected invalid generated file result");
+		expect(result.status).toBe(415);
+		expect(result.error).toBe("Invalid generated file content");
+		expect(mockResolveGeneratedFileServing).toHaveBeenCalledWith({
+			userId,
+			fileId: "chatfile-invalid-html",
+			mode: "preview",
+			displayFilename: "invalid_report.html",
+		});
+	});
+
 	it("does not serve failed source-first generated document text as a preview", async () => {
 		mockGetArtifactForUser.mockResolvedValue({
 			id: "generated-failed",
@@ -191,6 +282,36 @@ describe("resolveWorkingDocumentFileServing", () => {
 			ok: false,
 			status: 404,
 			error: "File not available for download",
+		});
+		expect(mockResolveGeneratedFileServing).not.toHaveBeenCalled();
+	});
+
+	it("does not serve source-first generated document text when the source chat file id is blank", async () => {
+		mockGetArtifactForUser.mockResolvedValue({
+			id: "generated-blank-source",
+			name: "blank_source_report.pdf",
+			storagePath: null,
+			contentText: "Generated document source projection",
+			mimeType: "application/vnd.alfyai.generated-document+json",
+			extension: "alfyidoc.json",
+			type: "generated_output",
+			metadata: {
+				generatedDocumentSourceVersion: 1,
+				generatedDocumentSourceStatus: "succeeded",
+				sourceChatFileId: "   ",
+			},
+		});
+
+		const result = await resolveWorkingDocumentFileServing({
+			userId,
+			artifactId: "generated-blank-source",
+			mode: "preview",
+		});
+
+		expect(result).toEqual({
+			ok: false,
+			status: 404,
+			error: "File not available for preview",
 		});
 		expect(mockResolveGeneratedFileServing).not.toHaveBeenCalled();
 	});

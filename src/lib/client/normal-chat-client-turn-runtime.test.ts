@@ -543,6 +543,49 @@ describe("Normal Chat Client Turn Runtime", () => {
 		});
 	});
 
+	it("defers queued manual compression until background recovery loads persisted detail", async () => {
+		let browserHidden = true;
+		const order: string[] = [];
+		const { adapters, streamInvocations } = makeAdapters({
+			isBrowserHidden: vi.fn(() => browserHidden),
+			checkForOrphanedStream: vi.fn(async () => null),
+			loadPersistedData: vi.fn(async () => {
+				order.push("load-persisted");
+			}),
+			runManualContextCompression: vi.fn(async () => {
+				order.push("compress");
+			}),
+		});
+		const runtime = createNormalChatClientTurnRuntime(adapters);
+
+		await runtime.send({
+			message: "First",
+			attachmentIds: [],
+			attachments: [],
+			pendingAttachments: [],
+		});
+		runtime.compact();
+		const abortError = new Error("backgrounded");
+		abortError.name = "AbortError";
+
+		streamInvocations[0].callbacks.onError(abortError);
+
+		expect(adapters.runManualContextCompression).not.toHaveBeenCalled();
+		expect(runtime.snapshot()).toMatchObject({
+			streamInterruptedByBackground: true,
+			queuedContextCompression: true,
+		});
+
+		browserHidden = false;
+		await runtime.handleVisibilityVisible();
+
+		expect(order).toEqual(["load-persisted", "compress"]);
+		expect(runtime.snapshot()).toMatchObject({
+			streamInterruptedByBackground: false,
+			queuedContextCompression: false,
+		});
+	});
+
 	it("keeps generic stream errors retryable and retries against the previous assistant message", async () => {
 		const { adapters, streamInvocations, messages } = makeAdapters({
 			getSelectedModel: vi.fn(() => "fallback-model" as ModelId),
@@ -717,6 +760,37 @@ describe("Normal Chat Client Turn Runtime", () => {
 				assistantMessageId: "assistant-1",
 				userMessageId: "server-user-1",
 			},
+		});
+	});
+
+	it("loads persisted conversation detail when a backgrounded stream has no orphan to reconnect", async () => {
+		let browserHidden = true;
+		const { adapters, streamInvocations } = makeAdapters({
+			isBrowserHidden: vi.fn(() => browserHidden),
+			checkForOrphanedStream: vi.fn(async () => null),
+		});
+		const runtime = createNormalChatClientTurnRuntime(adapters);
+
+		await runtime.send({
+			message: "Finish while hidden",
+			attachmentIds: [],
+			attachments: [],
+			pendingAttachments: [],
+		});
+		const abortError = new Error("backgrounded");
+		abortError.name = "AbortError";
+		streamInvocations[0].callbacks.onError(abortError);
+
+		browserHidden = false;
+		await runtime.handleVisibilityVisible();
+
+		expect(adapters.checkForOrphanedStream).toHaveBeenCalledWith("conv-1");
+		expect(adapters.loadPersistedData).toHaveBeenCalledTimes(1);
+		expect(streamInvocations).toHaveLength(1);
+		expect(runtime.snapshot()).toMatchObject({
+			streamInterruptedByBackground: false,
+			active: false,
+			isSending: false,
 		});
 	});
 });

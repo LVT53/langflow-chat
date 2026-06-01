@@ -428,7 +428,7 @@ const normalChatRuntime = createBrowserNormalChatClientTurnRuntime({
 		void pollForCompletion(placeholderId, clientUserMessageId ?? null);
 	},
 	loadPersistedData: () => {
-		void loadPersistedData();
+		return loadPersistedData();
 	},
 	mergeGeneratedFiles: (files) => {
 		const existingIds = new Set(generatedFiles.map((file) => file.id));

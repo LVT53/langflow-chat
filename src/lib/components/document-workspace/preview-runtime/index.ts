@@ -228,7 +228,12 @@ function getTextPreviewKind(
 	if (mimeType === "text/csv" || filename.toLowerCase().endsWith(".csv")) {
 		return "csv";
 	}
-	if (mimeType === "text/markdown" || filename.toLowerCase().endsWith(".md")) {
+	const lowercaseFilename = filename.toLowerCase();
+	if (
+		mimeType === "text/markdown" ||
+		lowercaseFilename.endsWith(".md") ||
+		lowercaseFilename.endsWith(".markdown")
+	) {
 		return "markdown";
 	}
 	return "highlighted";

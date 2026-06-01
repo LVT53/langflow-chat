@@ -111,6 +111,15 @@ describe("file-preview utils", () => {
 		expect(getPreviewLanguage("application/x-sh", "script.bin")).toBe("bash");
 	});
 
+	it("normalizes MIME parameters when selecting preview languages", () => {
+		expect(getPreviewLanguage("text/markdown; charset=utf-8", "download")).toBe(
+			"markdown",
+		);
+		expect(
+			getPreviewLanguage("application/javascript; charset=utf-8", "download"),
+		).toBe("javascript");
+	});
+
 	it("marks generated document and code formats as previewable", () => {
 		expect(
 			isPreviewableFile("application/vnd.oasis.opendocument.text", "draft.odt"),

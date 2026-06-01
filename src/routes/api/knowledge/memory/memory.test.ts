@@ -203,6 +203,29 @@ describe('knowledge memory routes', () => {
 		);
 	});
 
+	it('supports forgetting project memory through the route adapter', async () => {
+		mockApplyKnowledgeMemoryAction.mockResolvedValue(memoryPayload);
+
+		const response = await POST_MEMORY_ACTION(
+			makePostEvent({
+				action: 'forget_project_memory',
+				projectId: 'project-1',
+			})
+		);
+		const data = await response.json();
+
+		expect(response.status).toBe(200);
+		expect(data.summary.focusContinuityCount).toBe(1);
+		expect(mockApplyKnowledgeMemoryAction).toHaveBeenCalledWith(
+			'user-1',
+			'Test User',
+			{
+				action: 'forget_project_memory',
+				projectId: 'project-1',
+			}
+		);
+	});
+
 	it('rejects invalid memory action payloads', async () => {
 		const response = await POST_MEMORY_ACTION(makePostEvent({ action: 'forget_task_memory' }));
 		const data = await response.json();
