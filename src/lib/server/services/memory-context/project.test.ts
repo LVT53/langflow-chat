@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("$lib/server/services/task-state", () => ({
+	findProjectFolderReferenceContextByQuery: vi.fn(),
 	getProjectReferenceContext: vi.fn(),
 }));
 
@@ -173,15 +174,21 @@ vi.mock("drizzle-orm", () => ({
 	})),
 }));
 
-import { getProjectReferenceContext } from "$lib/server/services/task-state";
+import {
+	findProjectFolderReferenceContextByQuery,
+	getProjectReferenceContext,
+} from "$lib/server/services/task-state";
 import { getProjectContext } from "./project";
 
 const mockGetProjectReferenceContext =
 	getProjectReferenceContext as ReturnType<typeof vi.fn>;
+const mockFindProjectFolderReferenceContextByQuery =
+	findProjectFolderReferenceContextByQuery as ReturnType<typeof vi.fn>;
 
 describe("getProjectContext", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mockFindProjectFolderReferenceContextByQuery.mockResolvedValue(null);
 		artifactRows.splice(0, artifactRows.length);
 		deepResearchRows.splice(0, deepResearchRows.length);
 		messageRows.splice(0, messageRows.length);
@@ -331,6 +338,7 @@ describe("getProjectContext", () => {
 
 	it("returns an explicit non-error result when no folder or continuity exists", async () => {
 		mockGetProjectReferenceContext.mockResolvedValue(null);
+		mockFindProjectFolderReferenceContextByQuery.mockResolvedValue(null);
 
 		const result = await getProjectContext({
 			userId: "user-1",
@@ -353,6 +361,67 @@ describe("getProjectContext", () => {
 				noProjectReason: "no_memory_context",
 			},
 		});
+	});
+
+	it("finds a named project folder from the query when the active chat is unrelated", async () => {
+		mockGetProjectReferenceContext.mockResolvedValue(null);
+		mockFindProjectFolderReferenceContextByQuery.mockResolvedValue({
+			source: "project_folder",
+			projectId: "folder-almalinux",
+			projectName: "AlmaLinux Server",
+			omittedSiblingCount: 0,
+			entries: [
+				{
+					conversationId: "conv-alma-1",
+					title: "AlmaLinux hardening notes",
+					objective: "Document AlmaLinux Server deployment",
+					summary: "Configured SSH, Cockpit, storage, and update policy.",
+				},
+			],
+		});
+
+		const result = await getProjectContext({
+			userId: "user-1",
+			conversationId: "conv-unrelated",
+			mode: "summary",
+			query:
+				"Generate a detailed PDF report with the content from AlmaLinux Server project folder",
+			includeEvidenceCandidates: true,
+		});
+
+		expect(mockFindProjectFolderReferenceContextByQuery).toHaveBeenCalledWith({
+			userId: "user-1",
+			conversationId: "conv-unrelated",
+			query:
+				"Generate a detailed PDF report with the content from AlmaLinux Server project folder",
+		});
+		expect(result).toMatchObject({
+			success: true,
+			mode: "summary",
+			hasProjectContext: true,
+			source: "project_folder",
+			project: {
+				id: "folder-almalinux",
+				name: "AlmaLinux Server",
+				authority: "project_folder",
+			},
+			siblings: [
+				{
+					conversationId: "conv-alma-1",
+					title: "AlmaLinux hardening notes",
+					objective: "Document AlmaLinux Server deployment",
+					summary: "Configured SSH, Cockpit, storage, and update policy.",
+				},
+			],
+		});
+		expect(result.evidenceCandidates).toEqual([
+			{
+				id: "conversation-summary:conv-alma-1",
+				title: "AlmaLinux hardening notes",
+				snippet: "Configured SSH, Cockpit, storage, and update policy.",
+				sourceType: "memory",
+			},
+		]);
 	});
 
 	it("scales summary sibling limits above the old fixed cap for medium context windows", async () => {

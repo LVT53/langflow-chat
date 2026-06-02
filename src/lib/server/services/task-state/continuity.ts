@@ -50,6 +50,8 @@ const PROJECT_FOLDER_SIBLING_CANDIDATE_LIMIT = 24;
 const PROJECT_FOLDER_SIBLING_MESSAGE_LIMIT = 6;
 const PROJECT_FOLDER_SIBLING_MIN_SCORE = 8;
 const PROJECT_FOLDER_SIBLING_MIN_MATCHED_TERMS = 2;
+const PROJECT_FOLDER_LOOKUP_LIMIT = 64;
+const PROJECT_FOLDER_LOOKUP_CONVERSATION_LIMIT = 64;
 const PROJECT_FOLDER_SIBLING_TITLE_MAX = 160;
 const PROJECT_FOLDER_SIBLING_OBJECTIVE_MAX = 360;
 const PROJECT_FOLDER_SIBLING_SUMMARY_MAX = 600;
@@ -168,6 +170,34 @@ function tokenizeSiblingPromotionText(value: string | null | undefined): string[
         .filter((token) => !PROJECT_FOLDER_SIBLING_STOP_TERMS.has(token)),
     ),
   );
+}
+
+function normalizeProjectFolderLookupText(value: string | null | undefined): string {
+  return normalizeWhitespace(value ?? "")
+    .toLowerCase()
+    .replace(/['’]s\b/g, "")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function scoreProjectFolderNameMatch(params: {
+  query: string;
+  folderName: string;
+}): number {
+  const query = normalizeProjectFolderLookupText(params.query);
+  const folderName = normalizeProjectFolderLookupText(params.folderName);
+  if (!query || !folderName) return 0;
+  if (query === folderName) return 1_000;
+  if (query.includes(folderName)) return 900;
+  if (folderName.includes(query)) return 800;
+
+  const queryTerms = tokenizeSiblingPromotionText(query);
+  const folderTerms = tokenizeSiblingPromotionText(folderName);
+  const overlap = overlapScore(folderTerms, queryTerms);
+  if (overlap === 0) return 0;
+  const requiredOverlap = Math.min(2, folderTerms.length);
+  if (overlap < requiredOverlap) return 0;
+  return overlap * 40;
 }
 
 function scoreSiblingPromotionCandidate(params: {
@@ -597,6 +627,88 @@ export async function getProjectFolderReferenceContext(params: {
       };
     }),
     omittedSiblingCount: Math.max(0, siblingCount - siblingRows.length),
+  };
+}
+
+export async function findProjectFolderReferenceContextByQuery(params: {
+  userId: string;
+  conversationId: string;
+  query: string | null | undefined;
+}): Promise<ProjectReferenceContext | null> {
+  const query = normalizeWhitespace(params.query ?? "");
+  if (!query) return null;
+
+  const folders = await db
+    .select({
+      projectId: projects.id,
+      projectName: projects.name,
+      updatedAt: projects.updatedAt,
+    })
+    .from(projects)
+    .where(eq(projects.userId, params.userId))
+    .orderBy(desc(projects.updatedAt), asc(projects.id))
+    .limit(PROJECT_FOLDER_LOOKUP_LIMIT);
+
+  const ranked = folders
+    .map((folder) => ({
+      ...folder,
+      score: scoreProjectFolderNameMatch({
+        query,
+        folderName: folder.projectName,
+      }),
+    }))
+    .filter((folder) => folder.score > 0)
+    .sort((left, right) => {
+      if (right.score !== left.score) return right.score - left.score;
+      const leftUpdatedAt =
+        left.updatedAt instanceof Date ? left.updatedAt.getTime() : Number(left.updatedAt ?? 0);
+      const rightUpdatedAt =
+        right.updatedAt instanceof Date ? right.updatedAt.getTime() : Number(right.updatedAt ?? 0);
+      return rightUpdatedAt - leftUpdatedAt;
+    });
+  const selected = ranked[0];
+  if (!selected) return null;
+
+  const folderWhere = and(
+    eq(conversations.userId, params.userId),
+    eq(conversations.projectId, selected.projectId),
+  );
+  const [conversationCountRows, conversationRows] = await Promise.all([
+    db.select({ siblingCount: count() }).from(conversations).where(folderWhere),
+    db
+      .select({
+        conversationId: conversations.id,
+        title: conversations.title,
+        updatedAt: conversations.updatedAt,
+      })
+      .from(conversations)
+      .where(folderWhere)
+      .orderBy(desc(conversations.updatedAt), asc(conversations.id))
+      .limit(PROJECT_FOLDER_LOOKUP_CONVERSATION_LIMIT),
+  ]);
+  const summaryByConversation = await getConversationSummaryMap({
+    userId: params.userId,
+    conversationIds: conversationRows.map((row) => row.conversationId),
+  });
+
+  return {
+    source: "project_folder",
+    projectId: selected.projectId,
+    projectName: selected.projectName,
+    entries: conversationRows.map((row) => ({
+      conversationId: row.conversationId,
+      title: clipRequired(row.title, PROJECT_FOLDER_AWARENESS_TITLE_MAX),
+      objective: null,
+      summary: clipNullable(
+        summaryByConversation.get(row.conversationId),
+        PROJECT_FOLDER_AWARENESS_SUMMARY_MAX,
+      ),
+    })),
+    omittedSiblingCount: Math.max(
+      0,
+      (conversationCountRows[0]?.siblingCount ?? conversationRows.length) -
+        conversationRows.length,
+    ),
   };
 }
 

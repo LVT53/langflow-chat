@@ -459,6 +459,89 @@ describe('task continuity memory events', () => {
 		).resolves.toBeNull();
 	});
 
+	it('finds a named project folder by query for explicit memory_context lookup', async () => {
+		projectFolderRows.push(
+			{
+				id: 'folder-almalinux',
+				userId: 'user-1',
+				name: 'AlmaLinux Server',
+				updatedAt: new Date('2026-05-14T09:10:00.000Z'),
+			},
+			{
+				id: 'folder-other',
+				userId: 'user-1',
+				name: 'Other Server',
+				updatedAt: new Date('2026-05-14T09:11:00.000Z'),
+			}
+		);
+		conversationRows.push(
+			{
+				id: 'conv-current',
+				userId: 'user-1',
+				title: 'Unrelated active chat',
+				projectId: null,
+				updatedAt: new Date('2026-05-14T09:00:00.000Z'),
+			},
+			{
+				id: 'conv-alma-1',
+				userId: 'user-1',
+				title: 'AlmaLinux hardening notes',
+				projectId: 'folder-almalinux',
+				updatedAt: new Date('2026-05-14T09:08:00.000Z'),
+			},
+			{
+				id: 'conv-alma-2',
+				userId: 'user-1',
+				title: 'AlmaLinux backup plan',
+				projectId: 'folder-almalinux',
+				updatedAt: new Date('2026-05-14T09:07:00.000Z'),
+			},
+			{
+				id: 'conv-other',
+				userId: 'user-1',
+				title: 'Other server notes',
+				projectId: 'folder-other',
+				updatedAt: new Date('2026-05-14T09:09:00.000Z'),
+			}
+		);
+		conversationSummaryRows.push({
+			conversationId: 'conv-alma-1',
+			userId: 'user-1',
+			summary: 'Configured SSH, Cockpit, storage, and update policy.',
+			updatedAt: new Date('2026-05-14T09:09:00.000Z'),
+		});
+
+		const { findProjectFolderReferenceContextByQuery } = await import('./continuity');
+
+		const context = await findProjectFolderReferenceContextByQuery({
+			userId: 'user-1',
+			conversationId: 'conv-current',
+			query:
+				'Generate a detailed PDF report with the content from AlmaLinux Server project folder',
+		});
+
+		expect(context).toEqual({
+			source: 'project_folder',
+			projectId: 'folder-almalinux',
+			projectName: 'AlmaLinux Server',
+			entries: [
+				{
+					conversationId: 'conv-alma-1',
+					title: 'AlmaLinux hardening notes',
+					objective: null,
+					summary: 'Configured SSH, Cockpit, storage, and update policy.',
+				},
+				{
+					conversationId: 'conv-alma-2',
+					title: 'AlmaLinux backup plan',
+					objective: null,
+					summary: null,
+				},
+			],
+			omittedSiblingCount: 0,
+		});
+	});
+
 	it('returns bounded Project Continuity Awareness for an unorganized conversation linked to memory project work', async () => {
 		projectRows.push({
 			projectId: 'memory-project-1',

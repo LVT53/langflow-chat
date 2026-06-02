@@ -1,15 +1,16 @@
+import { and, count, desc, eq, inArray } from "drizzle-orm";
+import { getTargetConstructedContext } from "$lib/server/config-store";
+import { db } from "$lib/server/db";
+import { artifacts, deepResearchJobs, messages } from "$lib/server/db/schema";
+import { messageOrderDesc } from "$lib/server/services/message-ordering";
+import { repairConversationMessageSequences } from "$lib/server/services/message-sequences";
 import {
+	findProjectFolderReferenceContextByQuery,
 	getProjectReferenceContext,
 	type ProjectReferenceContext,
 } from "$lib/server/services/task-state";
-import { db } from "$lib/server/db";
-import { artifacts, deepResearchJobs, messages } from "$lib/server/db/schema";
-import { and, count, desc, eq, inArray } from "drizzle-orm";
 import { clipNullableText, normalizeWhitespace } from "$lib/server/utils/text";
 import type { ToolEvidenceCandidate } from "$lib/types";
-import { getTargetConstructedContext } from "$lib/server/config-store";
-import { messageOrderDesc } from "$lib/server/services/message-ordering";
-import { repairConversationMessageSequences } from "$lib/server/services/message-sequences";
 
 const MIN_MAX_SIBLINGS = 5;
 const OPERATIONAL_MAX_SIBLINGS = 64;
@@ -39,10 +40,11 @@ export type ProjectContextDetailMessage = {
 	createdAt: number;
 };
 
-export type ProjectContextSelectedSiblingDetail = ProjectContextSiblingSummary & {
-	messages: ProjectContextDetailMessage[];
-	omittedMessageCount: number;
-};
+export type ProjectContextSelectedSiblingDetail =
+	ProjectContextSiblingSummary & {
+		messages: ProjectContextDetailMessage[];
+		omittedMessageCount: number;
+	};
 
 export type ProjectContextDeepResearchResult = {
 	jobId: string;
@@ -119,7 +121,10 @@ export type GetProjectContextParams = {
 
 function deriveMaxSiblingsCap(): number {
 	const targetConstructedContext = getTargetConstructedContext();
-	if (!Number.isFinite(targetConstructedContext) || targetConstructedContext <= 0) {
+	if (
+		!Number.isFinite(targetConstructedContext) ||
+		targetConstructedContext <= 0
+	) {
 		return MIN_MAX_SIBLINGS;
 	}
 	return Math.max(
@@ -149,7 +154,10 @@ function normalizeMaxMessages(value: number | null | undefined): number {
 
 function deriveMaxMessagesCap(): number {
 	const targetConstructedContext = getTargetConstructedContext();
-	if (!Number.isFinite(targetConstructedContext) || targetConstructedContext <= 0) {
+	if (
+		!Number.isFinite(targetConstructedContext) ||
+		targetConstructedContext <= 0
+	) {
 		return MIN_MAX_MESSAGES;
 	}
 	return Math.max(
@@ -168,7 +176,9 @@ function toTimestampMs(value: Date | number | null | undefined): number {
 }
 
 function clipMessageContent(value: string): string {
-	return clipNullableText(normalizeWhitespace(value), MESSAGE_CONTENT_MAX) ?? "";
+	return (
+		clipNullableText(normalizeWhitespace(value), MESSAGE_CONTENT_MAX) ?? ""
+	);
 }
 
 function clipDeepResearchText(
@@ -198,13 +208,17 @@ function mapDeepResearchResultRow(
 	return {
 		jobId: row.jobId,
 		title: row.title,
-		userRequest: clipDeepResearchText(row.userRequest, DEEP_RESEARCH_SUMMARY_MAX) ?? "",
+		userRequest:
+			clipDeepResearchText(row.userRequest, DEEP_RESEARCH_SUMMARY_MAX) ?? "",
 		depth: row.depth,
 		completedAt: toTimestampMs(row.completedAt),
 		reportArtifact: {
 			id: row.reportArtifactId,
 			title: row.reportTitle,
-			summary: clipDeepResearchText(row.reportSummary, DEEP_RESEARCH_SUMMARY_MAX),
+			summary: clipDeepResearchText(
+				row.reportSummary,
+				DEEP_RESEARCH_SUMMARY_MAX,
+			),
 			...(includeContent
 				? {
 						content: clipDeepResearchText(
@@ -386,7 +400,9 @@ async function buildDetailResult(params: {
 		throw new Error("siblingConversationId is required for detail mode");
 	}
 	if (siblingConversationId === params.conversationId) {
-		throw new Error("Current conversation is not a valid memory_context sibling");
+		throw new Error(
+			"Current conversation is not a valid memory_context sibling",
+		);
 	}
 
 	const sibling =
@@ -461,22 +477,30 @@ export async function getProjectContext(
 	}
 
 	const requestedMaxSiblings =
-		typeof params.maxSiblings === "number" && Number.isFinite(params.maxSiblings)
+		typeof params.maxSiblings === "number" &&
+		Number.isFinite(params.maxSiblings)
 			? params.maxSiblings
 			: null;
 	const maxSiblings = normalizeMaxSiblings(params.maxSiblings);
 	const requestedMaxMessages =
-		typeof params.maxMessages === "number" && Number.isFinite(params.maxMessages)
+		typeof params.maxMessages === "number" &&
+		Number.isFinite(params.maxMessages)
 			? params.maxMessages
 			: null;
 	const maxMessages = normalizeMaxMessages(params.maxMessages);
-	const includeEvidenceCandidates =
-		params.includeEvidenceCandidates !== false;
+	const includeEvidenceCandidates = params.includeEvidenceCandidates !== false;
 
-	const reference = await getProjectReferenceContext({
+	const currentReference = await getProjectReferenceContext({
 		userId: params.userId,
 		conversationId: params.conversationId,
 	});
+	const reference =
+		currentReference ??
+		(await findProjectFolderReferenceContextByQuery({
+			userId: params.userId,
+			conversationId: params.conversationId,
+			query: params.query,
+		}));
 
 	if (!reference) {
 		return {
@@ -495,7 +519,9 @@ export async function getProjectContext(
 				requestedMaxSiblings,
 				appliedMaxSiblings: maxSiblings,
 				siblingConversationId:
-					mode === "detail" ? (params.siblingConversationId?.trim() ?? null) : undefined,
+					mode === "detail"
+						? (params.siblingConversationId?.trim() ?? null)
+						: undefined,
 				requestedMaxMessages,
 				appliedMaxMessages: maxMessages,
 				includeEvidenceCandidates,
@@ -532,7 +558,10 @@ export async function getProjectContext(
 	const siblings = baseSiblings.map((sibling) =>
 		attachDeepResearchResults(sibling, deepResearchResults),
 	);
-	const omittedByRequest = Math.max(0, reference.entries.length - siblings.length);
+	const omittedByRequest = Math.max(
+		0,
+		reference.entries.length - siblings.length,
+	);
 	const omittedSiblingCount = reference.omittedSiblingCount + omittedByRequest;
 
 	return {

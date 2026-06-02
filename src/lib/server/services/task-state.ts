@@ -72,6 +72,7 @@ export {
   attachContinuityToTaskState,
   deleteAllProjectMemory,
   detectProjectContinuitySignal,
+  findProjectFolderReferenceContextByQuery,
   forgetFocusContinuity,
   forgetProjectMemory,
   forgetTaskMemory,

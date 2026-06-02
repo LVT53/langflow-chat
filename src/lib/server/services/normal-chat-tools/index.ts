@@ -40,15 +40,64 @@ const researchWebInputSchema = z.object({
 });
 
 const memoryContextInputSchema = z.object({
-	mode: z.enum(["persona", "project", "history"]).optional(),
-	query: z.string().min(1).optional(),
-	maxSiblings: z.number().int().min(1).optional(),
-	siblingConversationId: z.string().min(1).optional(),
-	maxMessages: z.number().int().min(1).optional(),
-	maxHistoryConversations: z.number().int().min(1).optional(),
-	historyConversationId: z.string().min(1).optional(),
-	selectedConversationId: z.string().min(1).optional(),
-	includeEvidenceCandidates: z.boolean().optional(),
+	mode: z
+		.enum(["persona", "project", "history"])
+		.optional()
+		.describe(
+			"Memory scope. Use project for project folders/continuity, persona for user preferences/profile, and history for older account chats outside a project.",
+		),
+	query: z
+		.string()
+		.min(1)
+		.optional()
+		.describe(
+			"Specific lookup question or named entity. For named project folders, include the exact folder name, e.g. 'AlmaLinux Server'.",
+		),
+	maxSiblings: z
+		.number()
+		.int()
+		.min(1)
+		.optional()
+		.describe("Maximum project sibling conversation summaries to return."),
+	siblingConversationId: z
+		.string()
+		.min(1)
+		.optional()
+		.describe(
+			"One conversation id returned by a previous project result when requesting deeper project detail.",
+		),
+	maxMessages: z
+		.number()
+		.int()
+		.min(1)
+		.optional()
+		.describe("Maximum recent messages to return for a selected conversation."),
+	maxHistoryConversations: z
+		.number()
+		.int()
+		.min(1)
+		.optional()
+		.describe("Maximum older history conversations to return."),
+	historyConversationId: z
+		.string()
+		.min(1)
+		.optional()
+		.describe(
+			"One conversation id returned by history mode for deeper detail.",
+		),
+	selectedConversationId: z
+		.string()
+		.min(1)
+		.optional()
+		.describe(
+			"Alias for selecting one returned history conversation for detail.",
+		),
+	includeEvidenceCandidates: z
+		.boolean()
+		.optional()
+		.describe(
+			"Whether to include bounded evidence candidates for UI citations.",
+		),
 });
 
 const imageSearchInputSchema = z.object({
@@ -290,7 +339,7 @@ export function createNormalChatTools(ctx: CreateNormalChatToolsContext) {
 		}),
 		memory_context: tool({
 			description:
-				"Retrieve bounded durable memory, project continuity, or account history for this conversation.",
+				"Retrieve bounded durable memory, named project-folder context, project continuity, persona memory, or account history for this conversation.",
 			inputSchema: memoryContextInputSchema,
 			execute: async (
 				input: MemoryContextInput,
