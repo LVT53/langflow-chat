@@ -93,6 +93,10 @@ describe("web research planning", () => {
 		expect(queries).toEqual([
 			{ query: "SvelteKit form actions error handling", purpose: "broad" },
 			{
+				query: "site:svelte.dev sveltekit form actions error handling",
+				purpose: "official",
+			},
+			{
 				query: "SvelteKit form actions error handling official documentation",
 				purpose: "technical",
 			},
@@ -112,6 +116,10 @@ describe("web research planning", () => {
 
 		expect(queries).toEqual([
 			{ query: "Framework Laptop 16 review", purpose: "broad" },
+			{
+				query: "site:frame.work framework laptop 16 review",
+				purpose: "official",
+			},
 			{
 				query: "Framework Laptop 16 review official store specifications",
 				purpose: "official",
@@ -137,6 +145,15 @@ describe("web research planning", () => {
 			classifySourceAuthority("https://reddit.com/r/example", "technical"),
 		).toMatchObject({
 			authorityClass: "low",
+		});
+		expect(
+			classifySourceAuthority(
+				"https://www.belastingdienst.nl/wps/wcm/connect/nl/zzp",
+				"medical_legal_financial",
+			),
+		).toMatchObject({
+			authorityClass: "official",
+			authorityScore: 95,
 		});
 	});
 
@@ -495,6 +512,163 @@ describe("researchWeb with SearXNG", () => {
 		expect(result.diagnostics.fallbackReasons).toContain("page_open_failed");
 		expect(result.evidence[0]?.quote).toContain("exponential backoff");
 		expect(result.answerBrief.markdown).toContain("Official API Docs");
+	});
+
+	it("retries a SearXNG query without time_range when strict freshness returns no results", async () => {
+		const searchUrls: URL[] = [];
+		const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+			const url = input.toString();
+			if (url.startsWith("http://127.0.0.1:8080/search?")) {
+				const parsed = new URL(url);
+				searchUrls.push(parsed);
+				if (parsed.searchParams.has("time_range")) {
+					return searxngSearchResponse([]);
+				}
+				return searxngSearchResponse([
+					{
+						title: "Official SvelteKit form actions",
+						url: "https://svelte.dev/docs/kit/form-actions",
+						content: "Official documentation for SvelteKit form actions.",
+						score: 1,
+					},
+				]);
+			}
+			return htmlResponse(
+				"<html><body>Official documentation for SvelteKit form actions.</body></html>",
+			);
+		});
+
+		const result = await researchWeb(
+			{
+				query: "current SvelteKit form actions documentation",
+				mode: "research",
+				freshness: "recent",
+				sourcePolicy: "technical",
+				maxSources: 1,
+			},
+			{
+				config: webConfig,
+				fetch: fetchMock,
+				now: new Date("2026-05-02T12:00:00.000Z"),
+			},
+		);
+
+		expect(searchUrls.some((url) => url.searchParams.has("time_range"))).toBe(
+			true,
+		);
+		expect(searchUrls.some((url) => !url.searchParams.has("time_range"))).toBe(
+			true,
+		);
+		expect(result.sources[0]?.canonicalUrl).toBe(
+			"https://svelte.dev/docs/kit/form-actions",
+		);
+		expect(result.diagnostics.fallbackReasons).not.toContain(
+			"no_search_results",
+		);
+	});
+
+	it("keeps explicit official-sources-only product follow-ups on official candidates", async () => {
+		const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+			const url = input.toString();
+			if (url.startsWith("http://127.0.0.1:8080/search?")) {
+				return searxngSearchResponse([
+					{
+						title: "Unrelated AMD discussion",
+						url: "https://github.com/example/amd-discussion",
+						content:
+							"High ranking but unrelated technical discussion about AMD hardware.",
+						score: 10,
+					},
+					{
+						title: "Framework Laptop 13 specs",
+						url: "https://frame.work/laptop13?tab=specs",
+						content:
+							"Official Framework Laptop 13 page with price and processor options.",
+						score: 0.4,
+					},
+					{
+						title: "Framework Laptop 13 order page",
+						url: "https://frame.work/laptop13",
+						content:
+							"Official Framework Laptop 13 order page with availability details.",
+						score: 0.3,
+					},
+				]);
+			}
+			if (url.startsWith("https://frame.work/laptop13")) {
+				return htmlResponse(
+					"<html><body>Framework Laptop 13 official page. Starting at $849. Processor options include AMD Ryzen AI 300 Series.</body></html>",
+				);
+			}
+			return htmlResponse(
+				"<html><body>Unrelated AMD discussion with no Framework product details.</body></html>",
+			);
+		});
+
+		const result = await researchWeb(
+			{
+				query:
+					"For the Framework Laptop 13 AMD Ryzen AI 300, focus on official Framework sources only and verify price, processor options, display, and availability.",
+				mode: "exact",
+				sourcePolicy: "commerce",
+				maxSources: 3,
+				quoteRequired: true,
+			},
+			{
+				config: webConfig,
+				fetch: fetchMock,
+				now: new Date("2026-05-02T12:00:00.000Z"),
+			},
+		);
+
+		expect(
+			result.sources.map((source) => new URL(source.url).hostname),
+		).toEqual(["frame.work", "frame.work"]);
+		expect(result.answerBrief.markdown).not.toContain("github.com");
+	});
+
+	it("filters explicit adult domains and snippets before sources reach the model", async () => {
+		const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+			const url = input.toString();
+			if (url.startsWith("http://127.0.0.1:8080/search?")) {
+				return searxngSearchResponse([
+					{
+						title: "Blocked explicit result",
+						url: "https://porn.example/search-result",
+						content: "Explicit adult video result.",
+						score: 10,
+					},
+					{
+						title: "Safe official guidance",
+						url: "https://docs.example.com/guidance",
+						content: "Official guidance for the requested benign topic.",
+						score: 1,
+					},
+				]);
+			}
+			return htmlResponse(
+				"<html><body>Official guidance for the requested benign topic.</body></html>",
+			);
+		});
+
+		const result = await researchWeb(
+			{
+				query: "benign official guidance",
+				mode: "research",
+				sourcePolicy: "technical",
+				maxSources: 3,
+			},
+			{
+				config: webConfig,
+				fetch: fetchMock,
+				now: new Date("2026-05-02T12:00:00.000Z"),
+			},
+		);
+
+		expect(result.sources.map((source) => source.url)).toEqual([
+			"https://docs.example.com/guidance",
+		]);
+		expect(result.answerBrief.markdown).not.toMatch(/porn|adult video/i);
 	});
 
 	it("extracts exact value quotes from deep opened page text before generic chunk caps", async () => {

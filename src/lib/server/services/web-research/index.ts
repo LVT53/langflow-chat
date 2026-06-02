@@ -220,11 +220,15 @@ export interface DiscoveryResearchRequest extends ResearchRequest {
 }
 
 const OFFICIAL_HOST_RE =
-	/(^|\.)((gov|edu)$|who\.int$|cdc\.gov$|fda\.gov$|nih\.gov$|europa\.eu$)/i;
+	/(^|\.)(gov|edu|who\.int|cdc\.gov|fda\.gov|nih\.gov|europa\.eu|ec\.europa\.eu|ema\.europa\.eu|ecdc\.europa\.eu|belastingdienst\.nl|rijksoverheid\.nl|overheid\.nl|business\.gov\.nl|kvk\.nl|acm\.nl|autoriteitpersoonsgegevens\.nl)$/i;
 const TECHNICAL_HOST_RE =
-	/(^|\.)((docs|developer|developers|support|help)\.|github\.com$|gitlab\.com$|npmjs\.com$|pypi\.org$|readthedocs\.io$)/i;
+	/(^|\.)((docs|developer|developers|support|help)\.|github\.com$|gitlab\.com$|npmjs\.com$|pypi\.org$|readthedocs\.io$|svelte\.dev$|docs\.searxng\.org$)/i;
 const LOW_AUTHORITY_RE =
-	/(^|\.)((reddit|quora|pinterest|medium|substack)\.com$|facebook\.com$|x\.com$|twitter\.com$)/i;
+	/(^|\.)((reddit|quora|pinterest|medium|substack|instagram|linkedin|tiktok)\.com$|facebook\.com$|x\.com$|twitter\.com$)/i;
+const EXPLICIT_ADULT_HOST_RE =
+	/(^|\.)(porn|xvideos|xnxx|redtube|youporn|pornhub|xhamster|onlyfans|fansly)\./i;
+const EXPLICIT_ADULT_TEXT_RE =
+	/\b(porn(?:o|ography)?|xxx|x-rated|adult\s+video|adult\s+movie|nude\s+(?:photos?|videos?)|camgirl|escort\s+service|sex\s+(?:video|tube|chat|cam)|hardcore\s+adult)\b/i;
 const NEWS_HOST_RE =
 	/(^|\.)(reuters\.com$|apnews\.com$|bbc\.com$|bbc\.co\.uk$|nytimes\.com$|theguardian\.com$|wsj\.com$|bloomberg\.com$)/i;
 const EXACT_FACT_RE =
@@ -242,12 +246,13 @@ const HIGH_STAKES_RE =
 const VIDEO_RESEARCH_RE =
 	/\b(youtube|video|review|reviews?|unboxing|hands-on|hands on|comparison|versus|vs|pros and cons|worth it|best)\b/i;
 const MAX_PLANNED_QUERIES = 6;
+const MAX_PROVIDER_SEARCH_CALLS = 4;
 const SOURCE_RERANK_CONFIDENCE_MIN = 40;
 const EXACT_CONTENT_CHARS_MIN = 12_000;
 const RESEARCH_CONTENT_CHARS_MIN = 8_000;
 const MAX_YOUTUBE_TRANSCRIPTS = 3;
 const YOUTUBE_TRANSCRIPT_TIMEOUT_MS = 12_000;
-const PAGE_FETCH_TIMEOUT_MS = 8_000;
+const PAGE_FETCH_TIMEOUT_MS = 6_000;
 const PAGE_OPEN_CONCURRENCY = 4;
 const DEFAULT_WEB_RESEARCH_CONFIG: WebResearchConfig = {
 	searxngBaseUrl: "",
@@ -268,18 +273,31 @@ const QUERY_STOP_WORDS = new Set([
 	"about",
 	"after",
 	"also",
+	"and",
 	"from",
+	"based",
+	"before",
+	"focus",
+	"for",
 	"have",
 	"into",
 	"latest",
 	"much",
+	"only",
 	"price",
 	"show",
 	"shown",
+	"source",
+	"sources",
+	"should",
 	"that",
+	"the",
 	"their",
 	"there",
 	"this",
+	"use",
+	"using",
+	"verify",
 	"what",
 	"when",
 	"where",
@@ -419,6 +437,23 @@ export function planResearchQueries(
 	};
 
 	addQuery(normalized.query, "broad");
+	const compactQuery = compactSearchQuery(normalized.query) || normalized.query;
+	if (/\bframework\s+laptop\b/i.test(normalized.query)) {
+		addQuery(`site:frame.work ${compactQuery}`, "official");
+	}
+	if (/\bsvelte(?:kit)?\b/i.test(normalized.query)) {
+		addQuery(`site:svelte.dev ${compactQuery}`, "official");
+	}
+	if (/\bsearxng\b/i.test(normalized.query)) {
+		addQuery(`site:docs.searxng.org ${compactQuery}`, "official");
+	}
+	if (/\b(eu ai act|gpai|general-purpose ai)\b/i.test(normalized.query)) {
+		addQuery(`site:europa.eu ${compactQuery}`, "official");
+	}
+	if (/\b(zzp|belastingdienst|dutch|netherlands)\b/i.test(normalized.query)) {
+		addQuery(`site:business.gov.nl ${compactQuery}`, "official");
+		addQuery(`site:belastingdienst.nl ${compactQuery}`, "official");
+	}
 
 	if (normalized.sourcePolicy === "technical") {
 		addQuery(`${normalized.query} official documentation`, "technical");
@@ -490,6 +525,78 @@ function hostOf(value: string): string {
 	}
 }
 
+function isQueryOfficialHost(host: string, query: string): boolean {
+	if (!host) return false;
+	if (/\bframework(?:\s+laptop)?\b/i.test(query)) {
+		return host === "frame.work" || host.endsWith(".frame.work");
+	}
+	if (/\bsvelte(?:kit)?\b/i.test(query)) {
+		return host === "svelte.dev" || host.endsWith(".svelte.dev");
+	}
+	if (/\bsearxng\b/i.test(query)) {
+		return host === "docs.searxng.org" || host.endsWith(".searxng.org");
+	}
+	if (/\b(eu ai act|gpai|general-purpose ai)\b/i.test(query)) {
+		return host.endsWith(".europa.eu");
+	}
+	if (/\b(zzp|belastingdienst|netherlands|dutch)\b/i.test(query)) {
+		return (
+			host === "belastingdienst.nl" ||
+			host.endsWith(".belastingdienst.nl") ||
+			host === "business.gov.nl" ||
+			host.endsWith(".business.gov.nl") ||
+			host === "rijksoverheid.nl" ||
+			host.endsWith(".rijksoverheid.nl") ||
+			host === "kvk.nl" ||
+			host.endsWith(".kvk.nl")
+		);
+	}
+	return false;
+}
+
+function isStrictOfficialSourceRequest(query: string): boolean {
+	return (
+		/\bofficial\b/i.test(query) &&
+		/\bsources?\b/i.test(query) &&
+		/\bonly\b/i.test(query)
+	);
+}
+
+function isOfficialCandidateForQuery(
+	source: ResearchSource,
+	request: NormalizedResearchRequest,
+): boolean {
+	return (
+		source.authorityClass === "official" ||
+		isQueryOfficialHost(hostOf(source.canonicalUrl), request.query)
+	);
+}
+
+function hasExplicitAdultContent(value: string): boolean {
+	return EXPLICIT_ADULT_TEXT_RE.test(value);
+}
+
+function isExplicitAdultSource(params: {
+	url: string;
+	title: string;
+	snippet?: string | null;
+	highlights?: string[];
+	text?: string | null;
+}): boolean {
+	const host = hostOf(params.url);
+	if (host && EXPLICIT_ADULT_HOST_RE.test(host)) return true;
+	return hasExplicitAdultContent(
+		normalizeWhitespace(
+			[
+				params.title,
+				params.snippet ?? "",
+				...(params.highlights ?? []),
+				params.text ?? "",
+			].join(" "),
+		),
+	);
+}
+
 export function classifySourceAuthority(
 	url: string,
 	policy: ResearchSourcePolicy,
@@ -536,6 +643,17 @@ function createSource(params: {
 	if (!url || !/^https?:\/\//i.test(url)) return null;
 	const title = normalizeWhitespace(params.title || url);
 	const canonicalUrl = canonicalizeUrl(url);
+	if (
+		isExplicitAdultSource({
+			url: canonicalUrl,
+			title,
+			snippet: params.snippet,
+			highlights: params.highlights,
+			text: params.text,
+		})
+	) {
+		return null;
+	}
 	const authority = classifySourceAuthority(canonicalUrl, params.policy);
 	return {
 		id: `${params.provider}:${canonicalUrl}`,
@@ -607,49 +725,58 @@ async function searchSearxng(
 ): Promise<ResearchSource[]> {
 	if (!params.config.searxngBaseUrl.trim()) return [];
 
-	const url = searxngSearchUrl(params.config.searxngBaseUrl);
-	url.searchParams.set("q", params.query.query);
-	url.searchParams.set("format", "json");
-	url.searchParams.set("pageno", "1");
-	url.searchParams.set(
-		"categories",
-		params.config.webResearchSearxngCategories || "general",
-	);
-	url.searchParams.set(
-		"language",
-		params.config.webResearchSearxngLanguage || "en",
-	);
-	url.searchParams.set(
-		"safesearch",
-		String(
-			Math.max(0, Math.min(2, params.config.webResearchSearxngSafesearch)),
-		),
-	);
 	const timeRange = searxngTimeRange(params.request, params.config);
-	if (timeRange) url.searchParams.set("time_range", timeRange);
-
-	const response = await params.fetch(url.toString(), {
-		method: "GET",
-		headers: {
-			Accept: "application/json",
-		},
-	});
-
-	if (!response.ok) {
-		const text = await response.text().catch(() => "");
-		const hint =
-			response.status === 403
-				? " Check that the local SearXNG settings.yml enables the json search format."
-				: "";
-		throw new Error(
-			`SearXNG search failed: ${response.status} ${response.statusText}${text ? ` - ${text.slice(0, 300)}` : ""}${hint}`,
+	const fetchResults = async (activeTimeRange: string | null) => {
+		const url = searxngSearchUrl(params.config.searxngBaseUrl);
+		url.searchParams.set("q", params.query.query);
+		url.searchParams.set("format", "json");
+		url.searchParams.set("pageno", "1");
+		url.searchParams.set(
+			"categories",
+			params.config.webResearchSearxngCategories || "general",
 		);
+		url.searchParams.set(
+			"language",
+			params.config.webResearchSearxngLanguage || "en",
+		);
+		url.searchParams.set(
+			"safesearch",
+			String(
+				Math.max(0, Math.min(2, params.config.webResearchSearxngSafesearch)),
+			),
+		);
+		if (activeTimeRange) url.searchParams.set("time_range", activeTimeRange);
+
+		const response = await params.fetch(url.toString(), {
+			method: "GET",
+			headers: {
+				Accept: "application/json",
+			},
+		});
+
+		if (!response.ok) {
+			const text = await response.text().catch(() => "");
+			const hint =
+				response.status === 403
+					? " Check that the local SearXNG settings.yml enables the json search format."
+					: "";
+			throw new Error(
+				`SearXNG search failed: ${response.status} ${response.statusText}${text ? ` - ${text.slice(0, 300)}` : ""}${hint}`,
+			);
+		}
+
+		const data = (await response.json()) as {
+			results?: Array<Record<string, unknown>>;
+		};
+		return data.results ?? [];
+	};
+
+	let results = await fetchResults(timeRange);
+	if (results.length === 0 && timeRange) {
+		results = await fetchResults(null);
 	}
 
-	const data = (await response.json()) as {
-		results?: Array<Record<string, unknown>>;
-	};
-	return (data.results ?? [])
+	return results
 		.slice(
 			0,
 			Math.min(100, Math.max(1, params.config.webResearchSearxngNumResults)),
@@ -703,6 +830,19 @@ function sourceFusionScore(
 	const sourceText = normalizeWhitespace(
 		`${source.title} ${source.snippet ?? ""} ${source.highlights.join(" ")}`,
 	).toLowerCase();
+	const host = hostOf(source.canonicalUrl);
+	const terms = queryTerms(request.query);
+	const termHits = termHitCount(`${sourceText} ${host}`, terms);
+	const relevanceBoost =
+		terms.length === 0
+			? 0
+			: termHits === 0
+				? -60
+				: termHits === 1 && terms.length >= 4
+					? -20
+					: termHits >= Math.min(3, terms.length)
+						? 10
+						: 0;
 	const exactBoost =
 		request.mode === "exact" &&
 		sourceText.includes(request.query.toLowerCase().slice(0, 80))
@@ -727,6 +867,11 @@ function sourceFusionScore(
 		)
 			? 12
 			: 0;
+	const queryOfficialHostBoost = isQueryOfficialHost(host, request.query)
+		? request.sourcePolicy === "commerce"
+			? 55
+			: 35
+		: 0;
 	const videoIntentBoost =
 		isYouTubeVideoUrl(source.url) && VIDEO_RESEARCH_RE.test(request.query)
 			? 18
@@ -749,10 +894,12 @@ function sourceFusionScore(
 		rankScore +
 		providerScore +
 		source.authorityScore +
+		relevanceBoost +
 		exactBoost +
 		freshnessBoost +
 		officialTextBoost +
 		commerceIntentBoost +
+		queryOfficialHostBoost +
 		videoIntentBoost +
 		transcriptBoost +
 		technicalIntentBoost -
@@ -856,12 +1003,19 @@ function selectResearchSources(
 	} = {},
 ): ResearchSource[] {
 	const limit = request.maxSources;
+	const hasOfficialCandidates = sources.some((source) =>
+		isOfficialCandidateForQuery(source, request),
+	);
+	const candidateSources =
+		isStrictOfficialSourceRequest(request.query) && hasOfficialCandidates
+			? sources.filter((source) => isOfficialCandidateForQuery(source, request))
+			: sources;
 	const selected: ResearchSource[] = [];
 	const selectedUrls = new Set<string>();
 	const hostCounts = new Map<string, number>();
 	const hostLimit = hostDiversityLimit(request);
 	const lowLimit = lowAuthorityLimit(request);
-	const hasNonLowAuthority = sources.some(
+	const hasNonLowAuthority = candidateSources.some(
 		(source) => source.authorityClass !== "low",
 	);
 
@@ -902,27 +1056,27 @@ function selectResearchSources(
 	}
 
 	if (options.preferSourceOrder) {
-		for (const source of sources) {
+		for (const source of candidateSources) {
 			addSource(source, { enforceHostLimit: true, enforceLowLimit: true });
 		}
 
-		for (const source of sources) {
+		for (const source of candidateSources) {
 			addSource(source, { enforceHostLimit: false, enforceLowLimit: false });
 		}
 
 		return selected;
 	}
 
-	for (const source of sources) {
+	for (const source of candidateSources) {
 		if (source.authorityScore < 70) continue;
 		addSource(source, { enforceHostLimit: true, enforceLowLimit: true });
 	}
 
-	for (const source of sources) {
+	for (const source of candidateSources) {
 		addSource(source, { enforceHostLimit: true, enforceLowLimit: true });
 	}
 
-	for (const source of sources) {
+	for (const source of candidateSources) {
 		addSource(source, { enforceHostLimit: false, enforceLowLimit: false });
 	}
 
@@ -1109,6 +1263,17 @@ async function fetchPageContent(params: {
 			? htmlToReadableText(rawText)
 			: normalizeWhitespace(rawText);
 		if (!text) return null;
+		if (
+			isExplicitAdultSource({
+				url: params.source.canonicalUrl,
+				title: params.source.title,
+				snippet: params.source.snippet,
+				highlights: params.source.highlights,
+				text,
+			})
+		) {
+			return null;
+		}
 		const contentCharacters = contentCharacterBudget(
 			params.request,
 			params.config,
@@ -1216,8 +1381,16 @@ function queryTerms(query: string): string[] {
 		.toLowerCase()
 		.split(/[^a-z0-9]+/)
 		.map((term) => term.trim())
-		.filter((term) => term.length >= 3 && !QUERY_STOP_WORDS.has(term));
+		.filter(
+			(term) =>
+				(term.length >= 3 || /^\d{2,4}$/.test(term)) &&
+				!QUERY_STOP_WORDS.has(term),
+		);
 	return [...new Set(terms)].slice(0, 12);
+}
+
+function compactSearchQuery(query: string): string {
+	return queryTerms(query).join(" ");
 }
 
 function termHitCount(value: string, terms: string[]): number {
@@ -1649,9 +1822,11 @@ export async function researchWeb(
 	const enabledProviders: ResearchProvider[] = config.searxngBaseUrl.trim()
 		? ["searxng"]
 		: [];
-	const providerCalls = queries.flatMap((query) =>
-		enabledProviders.map((provider) => ({ provider, query })),
-	);
+	const providerCalls = queries
+		.flatMap((query) =>
+			enabledProviders.map((provider) => ({ provider, query })),
+		)
+		.slice(0, MAX_PROVIDER_SEARCH_CALLS);
 	const directUrlSources = createDirectUrlSources({
 		request: normalized,
 		nowIso,
@@ -1661,40 +1836,42 @@ export async function researchWeb(
 		directUrlSources.map((source) => source.canonicalUrl),
 	);
 
-	const sourceBatches = await Promise.all(
-		providerCalls.map(async (call) => {
-			const startedAt = Date.now();
-			try {
-				const sources = await searchSearxng({
-					query: call.query,
-					request: normalized,
-					config,
-					fetch: fetchImpl,
-					nowIso,
-				});
-				return {
-					sources,
-					providerCall: {
-						provider: call.provider,
-						query: call.query.query,
-						resultCount: sources.length,
-						latencyMs: Date.now() - startedAt,
-					},
-				};
-			} catch (error) {
-				return {
-					sources: [],
-					providerCall: {
-						provider: call.provider,
-						query: call.query.query,
-						resultCount: 0,
-						latencyMs: Date.now() - startedAt,
-						error: error instanceof Error ? error.message : String(error),
-					},
-				};
-			}
-		}),
-	);
+	const sourceBatches: Array<{
+		sources: ResearchSource[];
+		providerCall: ResearchDiagnostics["providerCalls"][number];
+	}> = [];
+	for (const call of providerCalls) {
+		const startedAt = Date.now();
+		try {
+			const sources = await searchSearxng({
+				query: call.query,
+				request: normalized,
+				config,
+				fetch: fetchImpl,
+				nowIso,
+			});
+			sourceBatches.push({
+				sources,
+				providerCall: {
+					provider: call.provider,
+					query: call.query.query,
+					resultCount: sources.length,
+					latencyMs: Date.now() - startedAt,
+				},
+			});
+		} catch (error) {
+			sourceBatches.push({
+				sources: [],
+				providerCall: {
+					provider: call.provider,
+					query: call.query.query,
+					resultCount: 0,
+					latencyMs: Date.now() - startedAt,
+					error: error instanceof Error ? error.message : String(error),
+				},
+			});
+		}
+	}
 	diagnostics.providerCalls = sourceBatches.map((batch) => batch.providerCall);
 	diagnostics.fetchedSourceCount = sourceBatches.reduce(
 		(total, batch) => total + batch.sources.length,
