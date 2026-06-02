@@ -495,7 +495,7 @@ const dictionary = {
 		"chat.error.network":
 			"The chat service could not stay connected to the model provider. Check the server connection and retry; if it keeps happening, the provider endpoint may be unavailable.",
 		"chat.error.backend":
-			"The model provider or Langflow returned an error before a complete response was produced. Retry the message; if it repeats, check the model and provider logs.",
+			"The model provider returned an error before a complete response was produced. Retry the message; if it repeats, check the model and provider logs.",
 		"chat.error.capacity":
 			"The chat service is already handling the maximum number of active responses. Wait a moment, then retry.",
 		"chat.error.fileTooLarge":
@@ -508,7 +508,8 @@ const dictionary = {
 			"One of the linked Library documents is no longer available. Remove the missing source or link it again, then retry.",
 		// Admin - Models section
 		"admin.models": "Models",
-		"admin.builtIn": "Built-in",
+		"admin.local": "Local",
+		"admin.uploadModelIconDescription": "Leave empty to keep the current icon.",
 		"admin.addProvider": "Add Provider",
 		"admin.providerAdded": "Provider added.",
 		"admin.providerUpdated": "Provider updated.",
@@ -528,12 +529,30 @@ const dictionary = {
 		"admin.providerValid": '"{name}" is valid.',
 		"admin.validationFailed": "Validation failed: {error}",
 		"admin.thirdPartyDescription":
-			"Third-party models route through the shared Langflow Agent flow and use the same connected tools as built-in models.",
+			"Third-party models use the same OpenAI-compatible chat runtime and connected tools as built-in models.",
+		"admin.modelCapabilities": "Capabilities",
+		"admin.capability.chat": "Chat",
+		"admin.capability.streaming": "Streaming",
+		"admin.capability.tools": "Tools",
+		"admin.capability.structuredOutput": "Structured output",
+		"admin.capability.reasoningControls": "Reasoning",
+		"admin.capability.usageReporting": "Usage",
+		"admin.capability.fileMessageParts": "Files",
+		"admin.capability.imageMessageParts": "Images",
+		"admin.capability.modelsEndpoint": "Models API",
+		"admin.capabilityState.detected": "Detected",
+		"admin.capabilityState.notDetected": "Not detected",
+		"admin.capabilityState.unknown": "Unknown",
+		"admin.capabilityState.manualOverride": "Manual override",
+		"admin.capabilityState.manualOverrideSupported":
+			"Manual override: supported",
+		"admin.capabilityState.manualOverrideUnsupported":
+			"Manual override: not supported",
 		"admin.defaultNewUserModel": "Default model for new users",
 		"admin.defaultNewUserModelDescription":
 			"Choose the initial preferred model assigned to newly created users. Enabled providers are listed first; built-in models remain available.",
 		"admin.loadingModels": "Loading models...",
-		"admin.langflow": "Langflow",
+		"admin.openAiCompatible": "OpenAI-compatible",
 		"admin.model1": "Model 1",
 		"admin.model2": "Model 2",
 		// Admin - Model 2 Visibility
@@ -786,16 +805,12 @@ const dictionary = {
 		"admin.model1DisplayName": "Model 1 Display Name",
 		"admin.model1IconAssetId": "Model 1 Icon Asset ID",
 		"admin.model1SystemPrompt": "Model 1 System Prompt",
-		"admin.model1FlowId": "Model 1 Flow ID",
-		"admin.model1ComponentId": "Model 1 Component ID",
 		"admin.model2BaseUrl": "Model 2 Base URL",
 		"admin.model2ApiKey": "Model 2 API Key",
 		"admin.model2Name": "Model 2 Name",
 		"admin.model2DisplayName": "Model 2 Display Name",
 		"admin.model2IconAssetId": "Model 2 Icon Asset ID",
 		"admin.model2SystemPrompt": "Model 2 System Prompt",
-		"admin.model2FlowId": "Model 2 Flow ID",
-		"admin.model2ComponentId": "Model 2 Component ID",
 		"admin.model2Enabled": "Enable Model 2",
 		"admin.deepResearchEnabled": "Enable Deep Research",
 		"admin.deepResearchWorkerEnabled": "Enable Deep Research Worker",
@@ -906,15 +921,9 @@ const dictionary = {
 		"admin.modelNamePlaceholderProvider":
 			"e.g. accounts/fireworks/models/llama-v3-70b",
 		"admin.maxTokens": "Max Tokens",
-		"admin.maxTokensPlaceholder": "Use Langflow node default",
+		"admin.maxTokensPlaceholder": "Use provider default",
 		"admin.maxTokensDescription":
-			"Passed to the shared Langflow model node as `max_tokens`. Leave empty to use the node default.",
-		"admin.flowId": "Flow ID",
-		"admin.flowIdPlaceholder": "Langflow flow ID",
-		"admin.componentId": "Component ID",
-		"admin.componentIdPlaceholder": "Langflow node ID",
-		"admin.componentIdDescription":
-			"Langflow node ID for tweaks. Leave empty for legacy flat payload.",
+			"Passed to the selected model as `max_tokens`. Leave empty to use the provider default.",
 		"admin.reasoningEffort": "Reasoning Effort",
 		"admin.providerDefault": "Provider default",
 		"admin.low": "Low",
@@ -2048,7 +2057,7 @@ const dictionary = {
 		"chat.error.network":
 			"A chatszolgáltatás nem tudta fenntartani a kapcsolatot a modellszolgáltatóval. Ellenőrizd a szerverkapcsolatot, majd próbáld újra; ha ismétlődik, lehet, hogy a szolgáltatói végpont nem elérhető.",
 		"chat.error.backend":
-			"A modellszolgáltató vagy a Langflow hibát adott vissza, mielőtt teljes válasz készült volna. Próbáld újra az üzenetet; ha ismétlődik, ellenőrizd a modell- és szolgáltatói naplókat.",
+			"A modellszolgáltató hibát adott vissza, mielőtt teljes válasz készült volna. Próbáld újra az üzenetet; ha ismétlődik, ellenőrizd a modell- és szolgáltatói naplókat.",
 		"chat.error.capacity":
 			"A chatszolgáltatás már a maximális számú aktív választ kezeli. Várj egy kicsit, majd próbáld újra.",
 		"chat.error.fileTooLarge":
@@ -2061,7 +2070,8 @@ const dictionary = {
 			"Az egyik kapcsolt könyvtári dokumentum már nem érhető el. Távolítsd el a hiányzó forrást, vagy kapcsold újra, majd próbáld meg ismét.",
 		// Admin - Models section
 		"admin.models": "Modellek",
-		"admin.builtIn": "Beépített",
+		"admin.local": "Helyi",
+		"admin.uploadModelIconDescription": "Hagyd üresen a jelenlegi ikon megtartásához.",
 		"admin.addProvider": "Szolgáltató hozzáadása",
 		"admin.providerAdded": "Szolgáltató hozzáadva.",
 		"admin.providerUpdated": "Szolgáltató frissítve.",
@@ -2083,12 +2093,30 @@ const dictionary = {
 		"admin.providerValid": 'A(z) "{name}" érvényes.',
 		"admin.validationFailed": "Az ellenőrzés sikertelen: {error}",
 		"admin.thirdPartyDescription":
-			"A külső modellek a megosztott Langflow Agent-folyamaton keresztül futnak, és ugyanazokat a csatlakoztatott eszközöket használják, mint a beépített modellek.",
+			"A külső modellek ugyanazt az OpenAI-kompatibilis chat futtatást és csatlakoztatott eszközöket használják, mint a beépített modellek.",
+		"admin.modelCapabilities": "Képességek",
+		"admin.capability.chat": "Chat",
+		"admin.capability.streaming": "Stream",
+		"admin.capability.tools": "Eszközök",
+		"admin.capability.structuredOutput": "Strukturált kimenet",
+		"admin.capability.reasoningControls": "Gondolkodás",
+		"admin.capability.usageReporting": "Használat",
+		"admin.capability.fileMessageParts": "Fájlok",
+		"admin.capability.imageMessageParts": "Képek",
+		"admin.capability.modelsEndpoint": "Models API",
+		"admin.capabilityState.detected": "Észlelve",
+		"admin.capabilityState.notDetected": "Nem észlelve",
+		"admin.capabilityState.unknown": "Ismeretlen",
+		"admin.capabilityState.manualOverride": "Kézi felülírás",
+		"admin.capabilityState.manualOverrideSupported":
+			"Kézi felülírás: támogatott",
+		"admin.capabilityState.manualOverrideUnsupported":
+			"Kézi felülírás: nem támogatott",
 		"admin.defaultNewUserModel": "Új felhasználók alapértelmezett modellje",
 		"admin.defaultNewUserModelDescription":
 			"Válaszd ki az újonnan létrehozott felhasználók kezdeti preferált modelljét. Az engedélyezett szolgáltatók jelennek meg elöl, a beépített modellek továbbra is választhatók.",
 		"admin.loadingModels": "Modellek betöltése...",
-		"admin.langflow": "Langflow",
+		"admin.openAiCompatible": "OpenAI-kompatibilis",
 		"admin.model1": "1. modell",
 		"admin.model2": "2. modell",
 		// Admin - Model 2 Visibility
@@ -2353,16 +2381,12 @@ const dictionary = {
 		"admin.model1DisplayName": "1. modell megjelenített neve",
 		"admin.model1IconAssetId": "1. modell ikon eszközazonosítója",
 		"admin.model1SystemPrompt": "1. modell rendszerpromptja",
-		"admin.model1FlowId": "1. modell folyamatazonosító",
-		"admin.model1ComponentId": "1. modell komponensazonosító",
 		"admin.model2BaseUrl": "2. modell alap-URL-je",
 		"admin.model2ApiKey": "2. modell API-kulcsa",
 		"admin.model2Name": "2. modell neve",
 		"admin.model2DisplayName": "2. modell megjelenített neve",
 		"admin.model2IconAssetId": "2. modell ikon eszközazonosítója",
 		"admin.model2SystemPrompt": "2. modell rendszerpromptja",
-		"admin.model2FlowId": "2. modell folyamatazonosító",
-		"admin.model2ComponentId": "2. modell komponensazonosító",
 		"admin.model2Enabled": "2. modell engedélyezése",
 		"admin.deepResearchEnabled": "Mély kutatás engedélyezése",
 		"admin.deepResearchWorkerEnabled": "Mély kutatás worker engedélyezése",
@@ -2480,16 +2504,9 @@ const dictionary = {
 		"admin.modelNamePlaceholderProvider":
 			"pl. accounts/fireworks/models/llama-v3-70b",
 		"admin.maxTokens": "Maximális tokenek",
-		"admin.maxTokensPlaceholder":
-			"Langflow-csomópont alapértelmezésének használata",
+		"admin.maxTokensPlaceholder": "Szolgáltatói alapértelmezés használata",
 		"admin.maxTokensDescription":
-			"A megosztott Langflow-modellcsomópontnak átadott `max_tokens` érték. Hagyd üresen a csomópont alapértelmezésének használatához.",
-		"admin.flowId": "Folyamatazonosító",
-		"admin.flowIdPlaceholder": "Langflow-folyamatazonosító",
-		"admin.componentId": "Komponensazonosító",
-		"admin.componentIdPlaceholder": "Langflow-csomópont azonosítója",
-		"admin.componentIdDescription":
-			"Langflow-csomópont azonosítója a tweak-ekhez. Hagyd üresen a régi, egyszerű payloadhoz.",
+			"A kiválasztott modellnek átadott `max_tokens` érték. Hagyd üresen a szolgáltatói alapértelmezés használatához.",
 		"admin.reasoningEffort": "Gondolkodási erőfeszítés",
 		"admin.providerDefault": "Szolgáltató alapértelmezés",
 		"admin.low": "Alacsony",

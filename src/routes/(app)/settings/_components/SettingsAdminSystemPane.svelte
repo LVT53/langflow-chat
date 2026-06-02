@@ -845,7 +845,7 @@ function placeholderFor(key: string): string {
 					</div>
 					<div class="flex flex-wrap items-center justify-end gap-2">
 						<span class="inline-block h-2 w-2 rounded-full bg-success"></span>
-						<span class="text-xs text-text-muted">{$t('admin.builtIn')}</span>
+						<span class="text-xs text-text-muted">{$t('admin.local')}</span>
 						<button class="btn-small" onclick={() => openEditBuiltIn('model1')}>{$t('common.edit')}</button>
 					</div>
 				</div>
@@ -861,7 +861,7 @@ function placeholderFor(key: string): string {
 					</div>
 					<div class="flex flex-wrap items-center justify-end gap-2">
 						<span class={`inline-block h-2 w-2 rounded-full ${adminConfig.MODEL_2_ENABLED !== 'false' ? 'bg-success' : 'bg-text-muted'}`}></span>
-						<span class="text-xs text-text-muted">{$t('admin.builtIn')}</span>
+						<span class="text-xs text-text-muted">{$t('admin.local')}</span>
 						<button class="btn-small" onclick={() => openEditBuiltIn('model2')}>{$t('common.edit')}</button>
 					</div>
 				</div>
@@ -912,11 +912,11 @@ function placeholderFor(key: string): string {
 								</div>
 							</div>
 						</div>
-						<div class="flex flex-wrap items-center justify-end gap-2">
+						<div class="flex items-center justify-end gap-2">
 							<span class={`inline-block h-2 w-2 rounded-full ${provider.enabled ? 'bg-success' : 'bg-text-muted'}`}></span>
-							<button class="btn-small" onclick={() => handleValidate(provider)}>{$t('common.test')}</button>
-							<button class="btn-small" onclick={() => openEditProvider(provider)}>{$t('common.edit')}</button>
-							<button class="btn-small text-danger" onclick={() => handleDelete(provider)}>{$t('common.delete')}</button>
+							<button class="btn-small whitespace-nowrap" onclick={() => handleValidate(provider)}>{$t('common.test')}</button>
+							<button class="btn-small whitespace-nowrap" onclick={() => openEditProvider(provider)}>{$t('common.edit')}</button>
+							<button class="btn-small text-danger whitespace-nowrap" onclick={() => handleDelete(provider)}>{$t('common.delete')}</button>
 						</div>
 					</div>
 				{/each}
