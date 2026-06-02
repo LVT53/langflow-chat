@@ -657,6 +657,145 @@ describe("stream-orchestrator SSE contract", () => {
 		);
 	});
 
+	it("recovers a file request when produce_file completed with invalid input", async () => {
+		const { runStreamingNormalChatSendModel } = await import(
+			"$lib/server/services/chat-turn/streaming-normal-chat-model-run"
+		);
+		const { submitFileProductionIntake } = await import(
+			"$lib/server/services/file-production"
+		);
+		const upstreamMessage =
+			"Could you please generate a pdf report with the content from AlmaLinux Server project folder? I want it to be detailed and long.";
+		const memoryToolCall = {
+			callId: "call-memory-1",
+			name: "memory_context",
+			input: { mode: "project", query: "AlmaLinux Server" },
+			status: "done" as const,
+			outputSummary: "Project memory found: AlmaLinux Server",
+			sourceType: "memory" as const,
+			candidates: [
+				{
+					id: "memory-context:project-detail:conv-1",
+					title: "Server Setup and Maintenance Tasks",
+					sourceType: "memory" as const,
+					snippet: "Disk cleanup, Docker pruning, and system maintenance.",
+				},
+			],
+			metadata: { ok: true, evidenceReady: true },
+		};
+		const failedFileToolCall = {
+			callId: "call-file-1",
+			name: "produce_file",
+			input: {
+				requestTitle: "AlmaLinux Server Project Report",
+				requestedOutputs: [{ type: "pdf" }],
+				sourceMode: "document_source",
+				documentSource: {},
+			},
+			status: "done" as const,
+			outputSummary:
+				"documentSource must contain substantive content when sourceMode is document_source",
+			sourceType: "tool" as const,
+			candidates: [],
+			metadata: { ok: false, evidenceReady: false, intakeStatus: 422 },
+		};
+		(
+			runStreamingNormalChatSendModel as ReturnType<typeof vi.fn>
+		).mockResolvedValue(
+			createNeutralStreamingResult(
+				[
+					{
+						type: "tool_call",
+						callId: "call-memory-1",
+						toolName: "memory_context",
+						input: memoryToolCall.input,
+					},
+					{
+						type: "tool_result",
+						callId: "call-memory-1",
+						toolName: "memory_context",
+						output: { ok: true },
+					},
+					{
+						type: "tool_call",
+						callId: "call-file-1",
+						toolName: "produce_file",
+						input: failedFileToolCall.input,
+					},
+					{
+						type: "tool_result",
+						callId: "call-file-1",
+						toolName: "produce_file",
+						output: { ok: false },
+					},
+					{
+						type: "text_delta",
+						text: "I could not start the PDF because the document source was invalid.",
+					},
+					finishEvent,
+				],
+				{ normalChatToolCalls: [memoryToolCall, failedFileToolCall] },
+			),
+		);
+
+		const response = runChatStreamOrchestrator({
+			user: {
+				id: "u1",
+				displayName: "User",
+				email: "u@test.com",
+			},
+			turn: createTurn({
+				normalizedMessage: upstreamMessage,
+			}),
+			upstreamMessage,
+			downstreamAbortSignal: new AbortController().signal,
+			requestStartTime: Date.now(),
+		});
+		const chunks = await readSseResponse(response);
+		const toolPayloads = uiDataParts<Record<string, unknown>>(
+			parseUiStreamParts(chunks),
+			"data-tool-call",
+		);
+
+		expect(submitFileProductionIntake).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userId: "u1",
+				body: expect.objectContaining({
+					conversationId: "test-conv",
+					requestedOutputs: [{ type: "pdf" }],
+					sourceMode: "document_source",
+					documentSource: expect.objectContaining({
+						blocks: expect.arrayContaining([
+							expect.objectContaining({
+								type: "list",
+								items: expect.arrayContaining([
+									expect.stringContaining("Disk cleanup"),
+								]),
+							}),
+						]),
+					}),
+				}),
+			}),
+		);
+		expect(toolPayloads).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					name: "produce_file",
+					status: "done",
+					metadata: expect.objectContaining({ ok: false }),
+				}),
+				expect.objectContaining({
+					name: "produce_file",
+					status: "done",
+					metadata: expect.objectContaining({
+						ok: true,
+						recoveredDirectly: true,
+					}),
+				}),
+			]),
+		);
+	});
+
 	it("emits failed tool events as not evidence-ready", async () => {
 		const { runStreamingNormalChatSendModel } = await import(
 			"$lib/server/services/chat-turn/streaming-normal-chat-model-run"

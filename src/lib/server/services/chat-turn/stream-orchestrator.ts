@@ -728,10 +728,12 @@ export function runChatStreamOrchestrator(
 				chunkRuntime.toolCallRecords.filter(
 					(record) => record.status === "done",
 				);
-			const hasCompletedFileProductionToolCall = () =>
-				completedToolCallRecords().some((record) =>
-					isFileProductionToolName(record.name),
-				);
+			const isSuccessfulFileProductionToolCall = (record: ToolCallEntry) =>
+				isFileProductionToolName(record.name) &&
+				record.status === "done" &&
+				record.metadata?.ok !== false;
+			const hasSuccessfulFileProductionToolCall = () =>
+				completedToolCallRecords().some(isSuccessfulFileProductionToolCall);
 			const hasCompletedNonFileToolCall = () =>
 				completedToolCallRecords().some(
 					(record) => !isFileProductionToolName(record.name),
@@ -739,7 +741,7 @@ export function runChatStreamOrchestrator(
 			const hasPersistableStreamOutput = () =>
 				Boolean(
 					chunkRuntime.fullResponse.trim() ||
-						hasCompletedFileProductionToolCall(),
+						hasSuccessfulFileProductionToolCall(),
 				);
 			const flushBufferedStreamOutput = () => {
 				flushPendingThinking();
@@ -839,13 +841,13 @@ export function runChatStreamOrchestrator(
 				}
 				const shouldRecoverMissingFileProduction =
 					isProduceFileRequest(upstreamMessage) &&
-					!hasCompletedFileProductionToolCall() &&
+					!hasSuccessfulFileProductionToolCall() &&
 					!attemptedNonStreamFallback &&
 					!wasActiveChatStreamStopRequested(streamId) &&
 					Boolean(fallbackToNonStreaming);
 				if (shouldRecoverMissingFileProduction) {
 					console.warn(
-						"[STREAM] File request ended without produce_file tool call",
+						"[STREAM] File request ended without successful produce_file tool call",
 						{
 							conversationId,
 							streamId,
@@ -865,7 +867,9 @@ export function runChatStreamOrchestrator(
 					await fallbackToNonStreaming(
 						"stream_read_failure",
 						latestUpstreamAttempt,
-						new Error("File request completed without produce_file tool call"),
+						new Error(
+							"File request completed without successful produce_file tool call",
+						),
 					);
 					return;
 				}
@@ -1443,7 +1447,7 @@ export function runChatStreamOrchestrator(
 										return;
 									}
 									if (
-										hasCompletedFileProductionToolCall() &&
+										hasSuccessfulFileProductionToolCall() &&
 										flushBufferedStreamOutput() &&
 										hasPersistableStreamOutput()
 									) {

@@ -397,7 +397,7 @@ describe("getProjectContext", () => {
 		});
 		expect(result).toMatchObject({
 			success: true,
-			mode: "summary",
+			mode: "report",
 			hasProjectContext: true,
 			source: "project_folder",
 			project: {
@@ -414,13 +414,18 @@ describe("getProjectContext", () => {
 				},
 			],
 		});
-		expect(result.evidenceCandidates).toEqual([
-			{
-				id: "conversation-summary:conv-alma-1",
+		expect(result.reportSiblings).toEqual([
+			expect.objectContaining({
+				conversationId: "conv-alma-1",
 				title: "AlmaLinux hardening notes",
-				snippet: "Configured SSH, Cockpit, storage, and update policy.",
+			}),
+		]);
+		expect(result.evidenceCandidates).toEqual([
+			expect.objectContaining({
+				id: "memory-context:project-detail:conv-alma-1",
+				title: "AlmaLinux hardening notes",
 				sourceType: "memory",
-			},
+			}),
 		]);
 	});
 

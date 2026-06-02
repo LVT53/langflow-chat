@@ -615,18 +615,20 @@ export async function getProjectContext(
 			conversationId: params.conversationId,
 			query: params.query,
 		}));
+	const effectiveMode =
+		mode === "summary" && !currentReference && reference ? "report" : mode;
 
 	if (!reference) {
 		return {
 			success: true,
-			mode,
+			mode: effectiveMode,
 			hasProjectContext: false,
 			source: "none",
 			project: null,
 			siblings: [],
 			omittedSiblingCount: 0,
-			selectedSibling: mode === "detail" ? null : undefined,
-			reportSiblings: mode === "report" ? [] : undefined,
+			selectedSibling: effectiveMode === "detail" ? null : undefined,
+			reportSiblings: effectiveMode === "report" ? [] : undefined,
 			evidenceCandidates: [],
 			audit: {
 				conversationId: params.conversationId,
@@ -634,20 +636,20 @@ export async function getProjectContext(
 				requestedMaxSiblings,
 				appliedMaxSiblings: maxSiblings,
 				siblingConversationId:
-					mode === "detail"
+					effectiveMode === "detail"
 						? (params.siblingConversationId?.trim() ?? null)
 						: undefined,
 				requestedMaxMessages,
 				appliedMaxMessages:
-					mode === "report" ? reportMessagesPerSibling : maxMessages,
-				reportConversationCount: mode === "report" ? 0 : undefined,
+					effectiveMode === "report" ? reportMessagesPerSibling : maxMessages,
+				reportConversationCount: effectiveMode === "report" ? 0 : undefined,
 				includeEvidenceCandidates,
 				noProjectReason: "no_memory_context",
 			},
 		};
 	}
 
-	if (mode === "detail") {
+	if (effectiveMode === "detail") {
 		return buildDetailResult({
 			reference,
 			userId: params.userId,
@@ -661,7 +663,7 @@ export async function getProjectContext(
 		});
 	}
 
-	if (mode === "report") {
+	if (effectiveMode === "report") {
 		return buildReportResult({
 			reference,
 			userId: params.userId,
