@@ -96,7 +96,7 @@ describe("prepareOutboundChatContext", () => {
 			'produce_file({ requestTitle: "News summary", filename: "hungarian-parliament-news.md", markdown: "# Hungarian Parliament News\\n\\n## Latest Session\\n\\nThe parliament passed..." })',
 		);
 		expect(prompt).toContain(
-			"For raw provider follow-up retrieval, chain `search` calls first, then use the connected content retrieval tool if one is listed.",
+			"It handles searching, page fetching, evidence extraction, and answer-brief assembly in one call — there is no separate search or fetch step.",
 		);
 		expect(prompt).not.toMatch(/Langflow/i);
 		expect(prompt).not.toContain("JSON string containing an array");

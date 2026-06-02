@@ -142,18 +142,23 @@ const IMAGE_SEARCH_GUARD = [
 
 const WEB_RESEARCH_GUARD = [
 	"Web research workflow:",
-	"- Use web retrieval only when the corresponding tool is actually listed in the runtime tool schema.",
-	"- If `research_web` is available, prefer it over raw provider tools for current facts, prices, availability, specs, policies, page-backed claims, comparisons, and multi-source research.",
-	'- For `research_web`, pass at least {"query": "your exact research question"}. Use mode `exact` and freshness `live` for prices, availability, dates, specs, policies, or other volatile exact values.',
-	"- For product reviews, hands-on comparisons, buying advice, or questions about YouTube videos, include `review`, `YouTube`, or `video` in the research query when relevant so `research_web` can surface transcript-backed evidence from selected YouTube results.",
-	"- Treat `research_web.evidence` as the strongest source of page-backed facts. If an exact value is not present in evidence or fetched source text, say that the retrieved source did not expose it.",
+	"- If `research_web` is available, use it for current facts, prices, availability, specs, policies, page-backed claims, comparisons, and multi-source research. It handles searching, page fetching, evidence extraction, and answer-brief assembly in one call — there is no separate search or fetch step.",
+	'- Pass at least {"query": "your exact research question"}. Full input schema:',
+	'  - query (required, string): The research question.',
+	'  - mode (optional): "quick" (fast answers), "research" (deep multi-source), "exact" (precise values like prices/dates).',
+	'  - freshness (optional): "auto", "live" (current day), "recent" (configured window), "cache" (no time restriction).',
+	'  - sourcePolicy (optional): "general", "technical" (API/docs/library), "news", "commerce" (product/purchase), "medical_legal_financial".',
+	'  - maxSources (optional, integer 1-12): Maximum sources to return.',
+	'  - quoteRequired (optional, boolean): Whether exact quotes are required.',
+	'- Example for prices/availability: {"query": "iPhone 16 Pro Max price 2026", "mode": "exact", "freshness": "live", "sourcePolicy": "commerce"}',
+	'- Example for technical docs: {"query": "SvelteKit form actions API", "mode": "quick", "sourcePolicy": "technical"}',
+	'- Example for product reviews: {"query": "Framework Laptop 16 review YouTube hands-on", "mode": "research", "sourcePolicy": "commerce"}',
+	"- For product reviews, hands-on comparisons, or buying advice, include `review`, `YouTube`, or `video` in the research query when relevant so `research_web` can surface transcript-backed evidence from selected YouTube results.",
+	"- Treat `research_web.evidence` as the strongest source of page-backed facts. If an exact value is not present in evidence or source text, say that the retrieved source did not expose it.",
 	"- Cite final web claims with markdown links using the returned source title and URL. Do not cite a source unless it supports the sentence.",
-	"- Never paste raw tool output into the final answer. Do not expose raw JSON, field names, diagnostics, source/evidence arrays, numbered search dumps, fetched page text dumps, or `Found N sources` summaries from `research_web`, `search`, `get_contents`, or `fetch_content`.",
+	"- Never paste raw tool output into the final answer. Do not expose raw JSON, field names, diagnostics, source/evidence arrays, numbered search dumps, or fetched page text dumps from `research_web`.",
 	"- If a tool returns `answerBriefMarkdown`, use it as evidence for your own concise answer; do not copy the field name or dump the raw brief.",
-	"- If `research_web` is unavailable, use only web/search tools that are explicitly listed in the runtime tool schema; otherwise say web retrieval is unavailable.",
-	"- For raw provider follow-up retrieval, chain `search` calls first, then use the connected content retrieval tool if one is listed.",
-	"- For raw content retrieval tools, follow the exact runtime schema and use URLs from search results unless the user supplied a URL.",
-	"- Use `find_similar` only when that tool is connected and the user provides a URL for similar-page discovery.",
+	"- If `research_web` is not available, say web retrieval is unavailable rather than attempting non-existent alternative tools.",
 	"- Use the injected current date for temporal context before searching.",
 ].join("\n");
 
@@ -199,11 +204,10 @@ const MEMORY_CONTEXT_GUARD = [
 
 const WEB_FACT_EXTRACTION_GUARD = [
 	"Exact web facts and prices:",
-	"- For prices, availability, dates, specs, policies, contact details, addresses, numeric values, or claims from a specific webpage, do not rely on search-result snippets alone.",
-	"- After finding candidate pages, call the connected page/content retrieval tool for the relevant result before answering.",
-	"- Extract the exact value from the fetched page content and cite that page. If the fetched content does not contain the value, say that the page did not expose it instead of guessing.",
-	"- When fetched pages conflict, prefer the primary/original page over aggregators, ads, snippets, or third-party summaries, and mention the conflict briefly.",
-	"- Do not copy an old price, a nearby unrelated price, or a search-result preview into the final answer unless the fetched page content supports it.",
+	"- For prices, availability, dates, specs, policies, contact details, addresses, numeric values, or claims from a specific webpage, use `research_web` with `mode: \"exact\"` and `freshness: \"live\"`. The tool handles page fetching and evidence extraction internally.",
+	"- Extract the exact value from the returned evidence snippets and cite the source page. If the evidence does not contain the value, say that the retrieved source did not expose it instead of guessing.",
+	"- When sources conflict, prefer the primary/original page over aggregators, ads, snippets, or third-party summaries, and mention the conflict briefly.",
+	"- Do not copy an old price, a nearby unrelated price, or a search-result preview into the final answer unless the returned evidence supports it.",
 ].join("\n");
 
 const PERSONA_MEMORY_GUARD = [

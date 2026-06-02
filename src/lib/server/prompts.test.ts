@@ -21,10 +21,10 @@ describe("prompts", () => {
 
 	it("normalizes the old fetch_content prompt body back to the current key", () => {
 		const legacyPrompt = ALFYAI_NEMOTRON_PROMPT.replace(
-			"| search | Search the web for information | Current events, recent facts, product research, general-topic research, verification, when connected |\n| get_contents | Fetch and read search result content | Search snippets are insufficient or exact page details matter, when connected |\n| find_similar | Find pages similar to a URL | The user gives a source URL and wants similar pages, when connected |",
+			"| research_web | Search and retrieve web sources with citation-ready evidence (handles searching, page fetching, evidence extraction in one call) | Current facts, prices, availability, specs, policies, page-backed claims, comparisons, multi-source research |\n| memory_context | Retrieve durable memory, project context, persona memory, or account history | User preferences, project continuity, earlier decisions, deep-research reports, personal context |",
 			"| search | Search the web for information | Current events, recent facts, product research, general-topic research, verification |\n| fetch_content | Fetch and read a specific URL | The user gives a link, search snippets are insufficient, or exact page details matter |",
 		).replace(
-			"Use search for web research when it is connected. Use get_contents when search snippets are not enough and that content tool is connected. If a different content-fetching tool is connected, use the exact runtime tool name shown by the tool schema instead of inventing fetch_content.",
+			"Use research_web for web-backed research. It handles searching, page fetching, evidence extraction, and answer-brief assembly in one call — there is no separate search or fetch step.",
 			"Use search for web research. Use fetch_content when the user gives a URL or when snippets are not enough.",
 		);
 
