@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { mkdir, rename, unlink, writeFile } from "fs/promises";
 import { join } from "path";
-import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import {
   artifactChunks,
@@ -677,10 +677,7 @@ export async function listConversationSourceArtifactIds(
         eq(artifactLinks.userId, userId),
         eq(artifactLinks.conversationId, conversationId),
         eq(artifactLinks.linkType, "attached_to_conversation"),
-        or(
-          eq(artifacts.type, "source_document"),
-          eq(artifacts.type, "normalized_document"),
-        ),
+        eq(artifacts.type, "source_document"),
       ),
     );
   return Array.from(new Set(rows.map((row) => row.artifactId)));

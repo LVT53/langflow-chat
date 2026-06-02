@@ -679,6 +679,129 @@ describe("DocumentsList", () => {
 		});
 	});
 
+	describe("Normalized Document Filtering", () => {
+		it("hides normalized_document type items from the document list", () => {
+			render(DocumentsList, {
+				props: {
+					documents: [
+						mockUploadedDocument,
+						{
+							id: "norm-1",
+							name: "Budget.md",
+							type: "normalized_document",
+							displayArtifactId: "norm-1",
+							promptArtifactId: "norm-1",
+							familyArtifactIds: ["doc-1", "norm-1"],
+							mimeType: "text/markdown",
+							sizeBytes: 1024,
+							createdAt: Date.now(),
+							normalizedAvailable: true,
+							documentOrigin: undefined,
+						},
+					],
+				},
+			});
+
+			// The source document should still be visible
+			expect(screen.getByText("Budget.pdf")).toBeInTheDocument();
+			// The normalized .md file should NOT be shown as a standalone row
+			expect(screen.queryByText("Budget.md")).toBeNull();
+		});
+
+		it("shows expand toggle on rows where normalizedAvailable is true", async () => {
+			render(DocumentsList, {
+				props: {
+					documents: [
+						{
+							...mockUploadedDocument,
+							normalizedAvailable: true,
+							promptArtifactId: "prompt-1",
+						},
+					],
+				},
+			});
+
+			expect(
+				screen.getByRole("button", { name: /view ai version/i }),
+			).toBeInTheDocument();
+		});
+
+		it("does not show expand toggle when normalizedAvailable is false", () => {
+			render(DocumentsList, {
+				props: {
+					documents: [
+						{
+							...mockUploadedDocument,
+							normalizedAvailable: false,
+							promptArtifactId: null,
+						},
+					],
+				},
+			});
+
+			expect(
+				screen.queryByRole("button", { name: /view ai version/i }),
+			).toBeNull();
+			expect(
+				screen.queryByRole("button", { name: /hide ai version/i }),
+			).toBeNull();
+		});
+
+		it("toggles AI-facing version panel", async () => {
+			render(DocumentsList, {
+				props: {
+					documents: [
+						{
+							...mockUploadedDocument,
+							normalizedAvailable: true,
+							promptArtifactId: "prompt-1",
+						},
+					],
+				},
+			});
+
+			const toggleButton = screen.getByRole("button", {
+				name: /view ai version/i,
+			});
+			await fireEvent.click(toggleButton);
+
+			expect(
+				screen.getByRole("button", { name: /hide ai version/i }),
+			).toBeInTheDocument();
+
+			await fireEvent.click(toggleButton);
+
+			expect(
+				screen.getByRole("button", { name: /view ai version/i }),
+			).toBeInTheDocument();
+		});
+
+		it("shows no type badge for normalized documents with null documentOrigin", () => {
+			render(DocumentsList, {
+				props: {
+					documents: [
+						{
+							id: "doc-norm",
+							name: "Normalized report.md",
+							type: "normalized_document",
+							displayArtifactId: "doc-norm",
+							promptArtifactId: "doc-norm",
+							familyArtifactIds: ["doc-norm"],
+							mimeType: "text/markdown",
+							sizeBytes: 1024,
+							createdAt: Date.now(),
+							normalizedAvailable: true,
+							documentOrigin: undefined,
+						},
+					],
+				},
+			});
+
+			// The row shouldn't appear at all since normalized_document are filtered
+			expect(screen.queryByText("Normalized report.md")).toBeNull();
+		});
+	});
+
 	describe("Combined Interactions", () => {
 		it("maintains pagination change behavior", async () => {
 			const onPaginationLimitChange = vi.fn();

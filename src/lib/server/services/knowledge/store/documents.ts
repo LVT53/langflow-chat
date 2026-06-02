@@ -256,21 +256,6 @@ export async function listLogicalDocuments(
 		);
 	}
 
-	for (const normalized of normalizedArtifacts) {
-		if (sourceByNormalizedId.has(normalized.id)) continue;
-		documents.push(
-			mapLogicalDocumentItem({
-				displayArtifact: normalized,
-				promptArtifactId: normalized.id,
-				familyArtifactIds: [normalized.id],
-				normalizedAvailable: true,
-				summary: normalized.summary,
-				updatedAt: normalized.updatedAt,
-				documentOrigin: getArtifactDocumentOrigin(normalized.type) ?? undefined,
-			}),
-		);
-	}
-
 	if (includeGeneratedOutputs) {
 		for (const note of skillNoteArtifacts) {
 			documents.push(

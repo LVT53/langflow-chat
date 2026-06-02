@@ -1,46 +1,53 @@
 <script lang="ts">
-	import { onMount } from "svelte";
-	import { t } from "$lib/i18n";
-	import type { LinkedContextSource } from "$lib/types";
+import { onMount } from "svelte";
+import { t } from "$lib/i18n";
+import type { LinkedContextSource } from "$lib/types";
 
-	let {
-		sources,
-		onClose,
-		onRemove,
-		onClear,
-		onAddDocument,
-	}: {
-		sources: LinkedContextSource[];
-		onClose: () => void;
-		onRemove: (displayArtifactId: string) => void;
-		onClear: () => void;
-		onAddDocument: () => void;
-	} = $props();
+let {
+	sources,
+	onClose,
+	onRemove,
+	onClear,
+	onAddDocument,
+}: {
+	sources: LinkedContextSource[];
+	onClose: () => void;
+	onRemove: (displayArtifactId: string) => void;
+	onClear: () => void;
+	onAddDocument: () => void;
+} = $props();
 
-	let panel = $state<HTMLElement | null>(null);
+let panel = $state<HTMLElement | null>(null);
 
-	function sourceTypeLabel(source: LinkedContextSource): string {
-		return source.documentOrigin === "generated"
-			? $t("linkedSources.type.generated")
-			: $t("linkedSources.type.uploaded");
+function sourceTypeLabel(source: LinkedContextSource): string {
+	if (!source.documentOrigin) {
+		return $t("linkedSources.type.uploaded");
 	}
+	return source.documentOrigin === "generated"
+		? $t("linkedSources.type.generated")
+		: $t("linkedSources.type.uploaded");
+}
 
-	function handlePointerDown(event: PointerEvent) {
-		if (!panel) return;
-		const target = event.target;
-		if (target instanceof Node && panel.contains(target)) return;
+const visibleSources = $derived(
+	sources.filter((source) => source.documentOrigin != null),
+);
+
+function handlePointerDown(event: PointerEvent) {
+	if (!panel) return;
+	const target = event.target;
+	if (target instanceof Node && panel.contains(target)) return;
+	onClose();
+}
+
+function handleKeydown(event: KeyboardEvent) {
+	if (event.key === "Escape") {
 		onClose();
 	}
+}
 
-	function handleKeydown(event: KeyboardEvent) {
-		if (event.key === "Escape") {
-			onClose();
-		}
-	}
-
-	onMount(() => {
-		setTimeout(() => panel?.focus(), 0);
-	});
+onMount(() => {
+	setTimeout(() => panel?.focus(), 0);
+});
 </script>
 
 <svelte:document onpointerdown={handlePointerDown} onkeydown={handleKeydown} />
@@ -55,7 +62,7 @@
 	<header class="source-manager__header">
 		<div>
 			<h2>{$t("sourceManager.title")}</h2>
-			<p>{$t("sourceManager.description", { count: sources.length })}</p>
+			<p>{$t("sourceManager.description", { count: visibleSources.length })}</p>
 		</div>
 		<button
 			type="button"
@@ -67,9 +74,9 @@
 		</button>
 	</header>
 
-	{#if sources.length > 0}
+	{#if visibleSources.length > 0}
 		<ul class="source-manager__list" aria-label={$t("sourceManager.list")}>
-			{#each sources as source (source.displayArtifactId)}
+			{#each visibleSources as source (source.displayArtifactId)}
 				<li class="source-manager__row">
 					<div class="source-manager__copy">
 						<span class="source-manager__title">{source.name}</span>
@@ -97,7 +104,7 @@
 		<button
 			type="button"
 			class="source-manager__secondary"
-			disabled={sources.length === 0}
+			disabled={visibleSources.length === 0}
 			onclick={onClear}
 		>
 			{$t("sourceManager.clearAll")}

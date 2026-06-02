@@ -48,7 +48,10 @@ let filteredDocuments = $derived.by(() => {
 });
 
 function isPromptReadyDocument(document: KnowledgeDocumentItem): boolean {
-	return isPromptReadyWorkingDocument(document);
+	return (
+		document.type !== "normalized_document" &&
+		isPromptReadyWorkingDocument(document)
+	);
 }
 
 function isPromptReadySource(source: LinkedContextSource): boolean {

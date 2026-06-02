@@ -50,6 +50,9 @@ let searchQuery = $state("");
 let sortKey = $state<DocumentSortKey>("date");
 let sortDirection = $state<SortDirection>("desc");
 
+// AI-facing version expand/collapse state
+let expandedAiVersions = $state<Set<string>>(new Set());
+
 // Selection derived state
 const selectedCount = $derived(selectedIds.size);
 const isAllSelected = $derived.by(() => {
@@ -217,12 +220,15 @@ function scoreTermMatches(
 
 function getDocumentKind(
 	document: KnowledgeDocumentItem,
-): "generated" | "skill_note" | "uploaded" {
+): "generated" | "skill_note" | "uploaded" | "normalized" {
 	if (
 		document.documentOrigin === "skill_note" ||
 		document.type === "skill_note"
 	) {
 		return "skill_note";
+	}
+	if (document.type === "normalized_document") {
+		return "normalized";
 	}
 	return document.documentOrigin === "generated" ||
 		document.type === "generated_output"
@@ -328,19 +334,24 @@ const sortedDocuments = $derived.by(() => {
 	return entries.map((entry) => entry.document);
 });
 
+// Filter out normalized_document artifacts — they are bundled inside the source document row.
+const displayDocuments = $derived(
+	sortedDocuments.filter((doc) => doc.type !== "normalized_document"),
+);
+
 // Pagination
 const totalPages = $derived(
-	Math.ceil(sortedDocuments.length / paginationLimit),
+	Math.ceil(displayDocuments.length / paginationLimit),
 );
 const paginatedDocuments = $derived.by(() => {
 	const start = (currentPage - 1) * paginationLimit;
 	const end = start + paginationLimit;
-	return sortedDocuments.slice(start, end);
+	return displayDocuments.slice(start, end);
 });
 
 const showingFrom = $derived((currentPage - 1) * paginationLimit + 1);
 const showingTo = $derived(
-	Math.min(currentPage * paginationLimit, sortedDocuments.length),
+	Math.min(currentPage * paginationLimit, displayDocuments.length),
 );
 
 function toggleSort(nextSortKey: DocumentSortKey) {
@@ -351,6 +362,16 @@ function toggleSort(nextSortKey: DocumentSortKey) {
 	sortKey = nextSortKey;
 	sortDirection =
 		nextSortKey === "name" || nextSortKey === "type" ? "asc" : "desc";
+}
+
+function toggleAiVersion(documentId: string) {
+	const next = new Set(expandedAiVersions);
+	if (next.has(documentId)) {
+		next.delete(documentId);
+	} else {
+		next.add(documentId);
+	}
+	expandedAiVersions = next;
 }
 
 function getAriaSort(
@@ -730,6 +751,12 @@ function SlidesIcon() {
 					: $t('knowledge.noDocumentsAvailable')}
 				</p>
 			</div>
+		{:else if displayDocuments.length === 0}
+			<div class="empty-state">
+			<p class="empty-title">
+				{$t('knowledge.noDocumentsAvailable')}
+				</p>
+			</div>
 		{:else}
 			<div class="table-container">
 				<table class="documents-table">
@@ -806,6 +833,27 @@ function SlidesIcon() {
 								</td>
 								<td class="col-name">
 									<div class="document-name">
+										{#if document.normalizedAvailable && document.promptArtifactId}
+											<button
+												type="button"
+												class="ai-version-toggle"
+												aria-label={expandedAiVersions.has(document.id)
+													? $t('knowledge.hideAiVersion')
+													: $t('knowledge.viewAiVersion')}
+												onclick={(e) => {
+													e.stopPropagation();
+													toggleAiVersion(document.id);
+												}}
+											>
+												<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+													{#if expandedAiVersions.has(document.id)}
+														<polyline points="6 9 12 15 18 9"></polyline>
+													{:else}
+														<polyline points="9 18 15 12 9 6"></polyline>
+													{/if}
+												</svg>
+											</button>
+										{/if}
 										{document.name}
 									{#if document.isOriginal}
 										<span class="original-badge">{$t('knowledge.original')}</span>
@@ -822,6 +870,8 @@ function SlidesIcon() {
 									<span class="type-badge type-skill-note">{$t('knowledge.skillNote')}</span>
 								{:else if document.documentOrigin === 'generated' || document.type === 'generated_output'}
 									<span class="type-badge type-generated">{$t('knowledge.generated')}</span>
+								{:else if document.normalizedAvailable && document.promptArtifactId}
+									<span class="type-badge type-ai-version">{$t('knowledge.aiFacingVersion')}</span>
 								{:else}
 									<span class="type-badge type-uploaded">{$t('knowledge.uploaded')}</span>
 								{/if}
@@ -862,6 +912,18 @@ function SlidesIcon() {
 									</div>
 								</td>
 							</tr>
+							{#if document.normalizedAvailable && document.promptArtifactId && expandedAiVersions.has(document.id)}
+								<tr class="ai-version-row">
+									<td class="col-checkbox"></td>
+									<td class="col-icon"></td>
+									<td colspan="5" class="ai-version-cell">
+										<div class="ai-version-panel">
+											<span class="ai-version-label">{$t('knowledge.aiFacingVersion')}</span>
+											<span class="ai-version-meta">{document.promptArtifactId}</span>
+										</div>
+									</td>
+								</tr>
+							{/if}
 						{/each}
 					</tbody>
 				</table>
@@ -901,10 +963,10 @@ function SlidesIcon() {
 				</div>
 			{/if}
 
-			{#if sortedDocuments.length > paginationLimit}
+			{#if displayDocuments.length > paginationLimit}
 				<nav class="pagination" aria-label="Pagination">
 					<div class="pagination-info">
-						<span>{$t('knowledge.showing', { from: showingFrom, to: showingTo, total: sortedDocuments.length })}</span>
+						<span>{$t('knowledge.showing', { from: showingFrom, to: showingTo, total: displayDocuments.length })}</span>
 						<select
 							class="page-size-select"
 							aria-label={$t('knowledge.itemsPerPage')}
@@ -1328,6 +1390,72 @@ function SlidesIcon() {
 		background: color-mix(in srgb, var(--success) 15%, transparent);
 		color: var(--success);
 		border: 1px solid color-mix(in srgb, var(--success) 30%, transparent);
+	}
+
+	.type-ai-version {
+		background: color-mix(in srgb, var(--accent) 10%, transparent);
+		color: var(--accent);
+		border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+	}
+
+	/* AI-facing version toggle */
+	.ai-version-toggle {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 18px;
+		height: 18px;
+		padding: 0;
+		border: 1px solid var(--border-default);
+		border-radius: 4px;
+		background: var(--surface-page);
+		color: var(--icon-muted);
+		cursor: pointer;
+		flex-shrink: 0;
+		transition:
+			background-color var(--duration-standard) var(--ease-out),
+			border-color var(--duration-standard) var(--ease-out),
+			color var(--duration-standard) var(--ease-out);
+	}
+
+	.ai-version-toggle:hover {
+		border-color: var(--accent);
+		color: var(--accent);
+		background: color-mix(in srgb, var(--accent) 8%, var(--surface-page) 92%);
+	}
+
+	.ai-version-toggle:focus-visible {
+		outline: 2px solid var(--focus-ring);
+		outline-offset: 1px;
+	}
+
+	.ai-version-row {
+		background: color-mix(in srgb, var(--surface-page) 94%, var(--accent) 6%);
+	}
+
+	.ai-version-cell {
+		padding: var(--space-sm) var(--space-lg) var(--space-md) var(--space-lg);
+	}
+
+	.ai-version-panel {
+		display: flex;
+		align-items: center;
+		gap: var(--space-md);
+		font-size: 0.75rem;
+		color: var(--text-muted);
+	}
+
+	.ai-version-label {
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--accent);
+	}
+
+	.ai-version-meta {
+		font-family: var(--font-mono, monospace);
+		font-size: 0.6875rem;
+		opacity: 0.7;
 	}
 
 	.col-size {

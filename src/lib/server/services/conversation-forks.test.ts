@@ -1048,10 +1048,7 @@ describe("conversation forks", () => {
 		});
 		const { artifacts, links } = readArtifactRows();
 
-		expect(forkSourceArtifactIds.sort()).toEqual([
-			"normalized-doc-visible",
-			"source-doc-visible",
-		]);
+		expect(forkSourceArtifactIds.sort()).toEqual(["source-doc-visible"]);
 		expect(workingSet.map((artifact) => artifact.id)).toEqual(
 			expect.arrayContaining(["normalized-doc-visible", "source-doc-visible"]),
 		);

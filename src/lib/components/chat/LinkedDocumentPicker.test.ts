@@ -225,4 +225,31 @@ describe("LinkedDocumentPicker", () => {
 		await fireEvent.keyDown(window, { key: "Tab", shiftKey: true });
 		expect(applyButton).toHaveFocus();
 	});
+
+	it("filters out normalized_document type items from selectable list", () => {
+		const normalizedDoc: KnowledgeDocumentItem = {
+			id: "norm-id",
+			type: "normalized_document",
+			displayArtifactId: "norm-id",
+			promptArtifactId: "norm-id",
+			familyArtifactIds: ["norm-id"],
+			name: "Uploaded file.md",
+			mimeType: "text/markdown",
+			sizeBytes: 100,
+			createdAt: 1,
+			updatedAt: 2,
+			conversationId: null,
+			summary: null,
+			normalizedAvailable: true,
+		};
+
+		render(LinkedDocumentPicker, {
+			documents: [makeDocument(), normalizedDoc],
+			selectedSources: [],
+			onApply: vi.fn(),
+			onCancel: vi.fn(),
+		});
+
+		expect(screen.queryByText("Uploaded file.md")).toBeNull();
+	});
 });

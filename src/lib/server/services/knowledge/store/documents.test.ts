@@ -478,6 +478,82 @@ describe("knowledge documents store", () => {
 		});
 	});
 
+	it("skips orphaned normalized_document artifacts — they never appear standalone", async () => {
+		mockRows.push(
+			{
+				id: "source-standalone",
+				userId: "user-1",
+				type: "source_document",
+				retrievalClass: "durable",
+				name: "report.pdf",
+				mimeType: "application/pdf",
+				sizeBytes: 1024,
+				conversationId: null,
+				summary: "User-uploaded report",
+				metadataJson: null,
+				createdAt: new Date("2026-04-01T10:00:00Z"),
+				updatedAt: new Date("2026-04-01T10:00:00Z"),
+			},
+			{
+				id: "normalized-orphan",
+				userId: "user-1",
+				type: "normalized_document",
+				retrievalClass: "durable",
+				name: "report.txt",
+				mimeType: "text/plain",
+				sizeBytes: 512,
+				conversationId: null,
+				summary: "System-generated markdown extraction",
+				metadataJson: JSON.stringify({ sourceArtifactId: "source-standalone" }),
+				createdAt: new Date("2026-04-01T10:01:00Z"),
+				updatedAt: new Date("2026-04-01T10:01:00Z"),
+			},
+		);
+
+		mockDerivedRows.length = 0;
+
+		let selectCall = 0;
+		mockSelect.mockImplementation(() => {
+			selectCall += 1;
+			if (selectCall === 1) {
+				return {
+					from: vi.fn(() => ({
+						where: vi.fn(async () => []),
+					})),
+				};
+			}
+
+			if (selectCall === 2) {
+				return {
+					from: vi.fn(() => ({
+						where: vi.fn(() => ({
+							orderBy: vi.fn(async () => mockRows),
+						})),
+					})),
+				};
+			}
+
+			return {
+				from: vi.fn(() => ({
+					where: vi.fn(async () => mockDerivedRows),
+				})),
+			};
+		});
+
+		const { listLogicalDocuments } = await import("./documents");
+		const documents = await listLogicalDocuments("user-1");
+
+		expect(documents).toHaveLength(1);
+		expect(documents[0]?.id).toBe("source-standalone");
+		expect(documents[0]?.type).toBe("source_document");
+		expect(documents[0]?.normalizedAvailable).toBe(false);
+
+		const normalizedDocs = documents.filter(
+			(d) => d.type === "normalized_document",
+		);
+		expect(normalizedDocs).toHaveLength(0);
+	});
+
 	it("prefers semantic and reranked artifact matches when lexical scores are weak", async () => {
 		mockRows.push(
 			{

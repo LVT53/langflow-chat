@@ -62,10 +62,10 @@ describe("document metadata helpers", () => {
     });
   });
 
-  it("maps generated outputs to generated origin and source documents to uploaded origin", () => {
+  it("maps generated outputs to generated origin, source documents to uploaded, normalized to null", () => {
     expect(getArtifactDocumentOrigin("generated_output")).toBe("generated");
     expect(getArtifactDocumentOrigin("source_document")).toBe("uploaded");
-    expect(getArtifactDocumentOrigin("normalized_document")).toBe("uploaded");
+    expect(getArtifactDocumentOrigin("normalized_document")).toBeNull();
     expect(getArtifactDocumentOrigin("work_capsule")).toBeNull();
   });
 
