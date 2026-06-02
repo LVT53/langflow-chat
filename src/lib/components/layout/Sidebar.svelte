@@ -441,7 +441,6 @@
 <style>
 	.sidebar-panel {
 		max-width: 100vw;
-		width: 100vw;
 		transition: none;
 	}
 
@@ -540,6 +539,7 @@
 			position: relative !important;
 			inset: auto !important;
 			flex: 0 0 auto;
+			width: 300px;
 			transform: translateX(0) !important;
 			translate: 0 !important;
 			opacity: 1 !important;
