@@ -35,6 +35,7 @@ vi.mock("$lib/server/services/chat-turn/plain-normal-chat-model-run", () => ({
 
 vi.mock("$lib/server/services/messages", () => ({
 	createMessage: vi.fn().mockResolvedValue({ id: "msg-1" }),
+	listConversationMessagesForExport: vi.fn(() => Promise.resolve([])),
 }));
 
 vi.mock("$lib/server/services/task-state", () => ({
@@ -241,7 +242,9 @@ async function resetCompletionMocks() {
 	const { touchConversation } = await import(
 		"$lib/server/services/conversations"
 	);
-	const { createMessage } = await import("$lib/server/services/messages");
+	const { createMessage, listConversationMessagesForExport } = await import(
+		"$lib/server/services/messages"
+	);
 	const {
 		persistAssistantEvidence,
 		persistAssistantTurnState,
@@ -259,6 +262,9 @@ async function resetCompletionMocks() {
 	(createMessage as ReturnType<typeof vi.fn>).mockResolvedValue({
 		id: "msg-1",
 	});
+	(
+		listConversationMessagesForExport as ReturnType<typeof vi.fn>
+	).mockResolvedValue([]);
 	(persistUserTurnAttachments as ReturnType<typeof vi.fn>).mockResolvedValue(
 		undefined,
 	);
@@ -540,6 +546,115 @@ describe("stream-orchestrator SSE contract", () => {
 				metadata: { ok: true, evidenceReady: true },
 			}),
 		]);
+	});
+
+	it("handles current conversation export directly without starting a model stream", async () => {
+		const { runStreamingNormalChatSendModel } = await import(
+			"$lib/server/services/chat-turn/streaming-normal-chat-model-run"
+		);
+		const { listConversationMessagesForExport } = await import(
+			"$lib/server/services/messages"
+		);
+		const { submitFileProductionIntake } = await import(
+			"$lib/server/services/file-production"
+		);
+		const upstreamMessage =
+			"Could you export our talk here into a neat docx file I can share?";
+		(
+			listConversationMessagesForExport as ReturnType<typeof vi.fn>
+		).mockResolvedValue([
+			{
+				role: "user",
+				content: "Is a Dyson vacuum worth it compared with a 300 euro model?",
+				createdAt: new Date("2026-06-02T10:00:00.000Z"),
+			},
+			{
+				role: "assistant",
+				content:
+					"We compared Dyson cordless models with bagged corded alternatives and noted the tradeoffs.",
+				createdAt: new Date("2026-06-02T10:01:00.000Z"),
+			},
+			{
+				role: "user",
+				content:
+					"Correction: I meant the AEG AB81U1SW 8000 ULTIMATE, not the VX82-1-5DB.",
+				createdAt: new Date("2026-06-02T10:02:00.000Z"),
+			},
+		]);
+
+		const response = runChatStreamOrchestrator({
+			user: {
+				id: "u1",
+				displayName: "User",
+				email: "u@test.com",
+			},
+			turn: createTurn({
+				normalizedMessage: upstreamMessage,
+			}),
+			upstreamMessage,
+			downstreamAbortSignal: new AbortController().signal,
+			requestStartTime: Date.now(),
+		});
+		const chunks = await readSseResponse(response);
+		const parts = parseUiStreamParts(chunks);
+		const toolPayloads = uiDataParts<Record<string, unknown>>(
+			parts,
+			"data-tool-call",
+		);
+
+		expect(runStreamingNormalChatSendModel).not.toHaveBeenCalled();
+		expect(listConversationMessagesForExport).toHaveBeenCalledWith({
+			conversationId: "test-conv",
+			limit: 120,
+		});
+		expect(submitFileProductionIntake).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userId: "u1",
+				body: expect.objectContaining({
+					conversationId: "test-conv",
+					requestTitle: "Conversation Export",
+					requestedOutputs: [{ type: "docx" }],
+					sourceMode: "document_source",
+					documentIntent: "conversation_export",
+					templateHint: "conversation-export",
+					documentSource: expect.objectContaining({
+						title: "Conversation Export",
+						subtitle: "Current chat transcript",
+						blocks: expect.arrayContaining([
+							expect.objectContaining({
+								text: expect.stringContaining("Dyson vacuum"),
+							}),
+							expect.objectContaining({
+								text: expect.stringContaining("AEG AB81U1SW 8000 ULTIMATE"),
+							}),
+						]),
+					}),
+				}),
+			}),
+		);
+		expect(toolPayloads).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					name: "produce_file",
+					status: "done",
+					metadata: expect.objectContaining({
+						ok: true,
+						recoveredDirectly: true,
+						recoverySource: "conversation_export",
+					}),
+				}),
+			]),
+		);
+		expect(parts).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					type: "text-delta",
+					delta: expect.stringContaining("DOCX conversation export request"),
+				}),
+				{ type: "finish", finishReason: "stop" },
+				"[DONE]",
+			]),
+		);
 	});
 
 	it("recovers a visible file-request answer that ended without produce_file", async () => {

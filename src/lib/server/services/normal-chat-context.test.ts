@@ -90,11 +90,10 @@ describe("prepareOutboundChatContext", () => {
 		});
 
 		expect(prompt).toContain(
-			"`requestedOutputs` is an array of output descriptors, not a JSON-encoded string.",
+			"Use one `produce_file` call per requested artifact; batch multiple output formats for the same document in `requestedOutputs`.",
 		);
-		expect(prompt).toContain('Use `requestedOutputs: [{ "type": "pdf" }]`');
 		expect(prompt).toContain(
-			"`documentSource` and `program` are direct `produce_file` input object fields.",
+			'Minimal valid `documentSource`: `{"version":1,"template":"alfyai_standard_report","title":"Title","blocks":[{"type":"paragraph","text":"Content."}]}`.',
 		);
 		expect(prompt).toContain(
 			"For raw provider follow-up retrieval, chain `search` calls first, then use the connected content retrieval tool if one is listed.",

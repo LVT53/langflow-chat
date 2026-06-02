@@ -67,11 +67,13 @@ function seedSameSecondMessagesWithUuidOrderOppositeToInsertion() {
 	sqlite.close();
 }
 
-function applyMessageSequenceMigration(sqlite: Database.Database) {
-	const migrationSql = readFileSync(
+function applyLegacyMessageMigrations(sqlite: Database.Database) {
+	const migrationSql = [
 		"./drizzle/1777140000042_message_sequence.sql",
-		"utf8",
-	);
+		"./drizzle/1777140000049_messages_import_source_import_jobs.sql",
+	]
+		.map((path) => readFileSync(path, "utf8"))
+		.join("\n--> statement-breakpoint\n");
 	for (const statement of migrationSql
 		.split("--> statement-breakpoint")
 		.map((part) => part.trim())
@@ -129,7 +131,7 @@ function seedLegacyConversationDatabase() {
 			('z-user-message', 'conv-1', 'user', 'Question first', 1777140001),
 			('a-assistant-message', 'conv-1', 'assistant', 'Answer second', 1777140001);
 	`);
-	applyMessageSequenceMigration(sqlite);
+	applyLegacyMessageMigrations(sqlite);
 	sqlite.close();
 }
 

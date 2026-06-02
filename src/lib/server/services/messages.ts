@@ -249,6 +249,42 @@ export async function listMessages(
 	});
 }
 
+export type ConversationExportMessage = {
+	role: MessageRole;
+	content: string;
+	createdAt: Date;
+};
+
+export async function listConversationMessagesForExport(params: {
+	conversationId: string;
+	limit?: number;
+}): Promise<ConversationExportMessage[]> {
+	const limit = Math.max(1, Math.min(params.limit ?? 120, 200));
+	repairConversationMessageSequences(params.conversationId);
+
+	const rows = await db
+		.select({
+			role: messages.role,
+			content: messages.content,
+			createdAt: messages.createdAt,
+		})
+		.from(messages)
+		.where(
+			and(
+				eq(messages.conversationId, params.conversationId),
+				inArray(messages.role, ["user", "assistant"]),
+			),
+		)
+		.orderBy(...messageOrderAsc())
+		.limit(limit);
+
+	return rows.map((row) => ({
+		role: row.role as MessageRole,
+		content: row.content,
+		createdAt: row.createdAt,
+	}));
+}
+
 export async function deleteMessages(ids: string[]): Promise<void> {
 	if (ids.length === 0) return;
 	db.transaction((tx) => {

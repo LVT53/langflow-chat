@@ -50,7 +50,11 @@ import {
 	listConversationFileProductionJobs,
 	submitFileProductionIntake,
 } from "$lib/server/services/file-production";
-import { createMessage } from "$lib/server/services/messages";
+import {
+	createMessage,
+	listConversationMessagesForExport,
+	type ConversationExportMessage,
+} from "$lib/server/services/messages";
 import {
 	isModelTimeoutError,
 	resolveModelTimeoutFailoverTargetModelId,
@@ -144,6 +148,13 @@ function inferRequestedFileOutputs(message: string): Array<{ type: string }> {
 	return outputs.length > 0 ? outputs : [{ type: "pdf" }];
 }
 
+const CONVERSATION_EXPORT_RE =
+	/\b(?:export|save|download|turn|make|create|generate|prepare|put)\b[\s\S]{0,120}\b(?:conversation|chat|talk|thread|discussion)\b|\b(?:conversation|chat|talk|thread|discussion|our talk here|this talk|this chat|this thread)\b[\s\S]{0,120}\b(?:docx?|word document|pdf|file|document|export|share|download)\b/i;
+
+function isConversationExportRequest(message: string): boolean {
+	return CONVERSATION_EXPORT_RE.test(message);
+}
+
 function inferRecoveredReportTitle(message: string, toolCalls: ToolCallEntry[]): string {
 	const projectCandidate = toolCalls
 		.flatMap((toolCall) => toolCall.candidates ?? [])
@@ -168,6 +179,81 @@ function truncateReportText(value: unknown, maxLength: number): string {
 	if (typeof value !== "string") return "";
 	const text = value.replace(/\s+/g, " ").trim();
 	return text.length <= maxLength ? text : `${text.slice(0, maxLength).trimEnd()}...`;
+}
+
+function formatExportTimestamp(value: Date): string {
+	if (Number.isNaN(value.getTime())) return "";
+	return value.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, " UTC");
+}
+
+function roleLabel(role: ConversationExportMessage["role"]): string {
+	return role === "assistant" ? "Assistant" : "User";
+}
+
+function buildConversationExportDocumentSource(params: {
+	message: string;
+	messages: ConversationExportMessage[];
+}) {
+	const exportedMessages = params.messages
+		.filter((message) => message.content.trim().length > 0)
+		.slice(-120);
+	const blocks: Array<Record<string, unknown>> = [
+		{
+			type: "paragraph",
+			text: "This document was generated directly from the current chat transcript. The server builds this export from persisted conversation messages so the model does not need to reconstruct a large document-source payload.",
+		},
+		{
+			type: "heading",
+			level: 2,
+			text: "Export Request",
+		},
+		{
+			type: "paragraph",
+			text: truncateReportText(params.message, 1200),
+		},
+		{
+			type: "heading",
+			level: 2,
+			text: "Transcript",
+		},
+	];
+
+	if (exportedMessages.length === 0) {
+		blocks.push({
+			type: "paragraph",
+			text: "No prior persisted chat messages were available for this export.",
+		});
+	} else {
+		for (const [index, message] of exportedMessages.entries()) {
+			const timestamp = formatExportTimestamp(message.createdAt);
+			blocks.push({
+				type: "heading",
+				level: 3,
+				text: `${index + 1}. ${roleLabel(message.role)}${timestamp ? ` - ${timestamp}` : ""}`,
+			});
+			blocks.push({
+				type: "paragraph",
+				text: truncateReportText(message.content, 5000),
+			});
+		}
+	}
+
+	if (params.messages.length > exportedMessages.length) {
+		blocks.push({
+			type: "callout",
+			tone: "info",
+			title: "Export limit",
+			text: `This export includes the latest ${exportedMessages.length} non-empty messages from the conversation.`,
+		});
+	}
+
+	return {
+		version: 1,
+		template: "alfyai_standard_report",
+		title: "Conversation Export",
+		subtitle: "Current chat transcript",
+		blocks,
+	};
 }
 
 function buildRecoveredDocumentSource(params: {
@@ -753,31 +839,61 @@ export function runChatStreamOrchestrator(
 				}
 				return true;
 			};
-			const recoverMissingFileProductionDirectly = async (): Promise<boolean> => {
+			const recoverMissingFileProductionDirectly = async (options?: {
+				source?: "conversation_export" | "recovered_context";
+			}): Promise<boolean> => {
 				const contextToolCalls = completedToolCallRecords().filter(
 					(record) => !isFileProductionToolName(record.name),
 				);
-				const requestTitle = inferRecoveredReportTitle(
+				const requestedOutputs = inferRequestedFileOutputs(upstreamMessage);
+				const shouldBuildConversationExport =
+					options?.source === "conversation_export" ||
+					isConversationExportRequest(upstreamMessage);
+				let requestTitle = inferRecoveredReportTitle(
 					upstreamMessage,
 					contextToolCalls,
 				);
-				const requestedOutputs = inferRequestedFileOutputs(upstreamMessage);
-				const documentSource = buildRecoveredDocumentSource({
+				let documentIntent = "recovered_project_report";
+				let templateHint = "standard-report";
+				let completionSubject = "report";
+				let documentSource = buildRecoveredDocumentSource({
 					message: upstreamMessage,
 					toolCalls: contextToolCalls,
 				});
+				if (shouldBuildConversationExport) {
+					const exportedMessages = await listConversationMessagesForExport({
+						conversationId,
+						limit: 120,
+					}).catch((error) => {
+						console.error("[STREAM] Conversation export message lookup failed", {
+							conversationId,
+							streamId,
+							error,
+						});
+						return [] as ConversationExportMessage[];
+					});
+					requestTitle = "Conversation Export";
+					documentIntent = "conversation_export";
+					templateHint = "conversation-export";
+					completionSubject = "conversation export";
+					documentSource = buildConversationExportDocumentSource({
+						message: upstreamMessage,
+						messages: exportedMessages,
+					});
+				}
 				const input = {
 					idempotencyKey: `stream-recovered-file:${shortStableHash({
 						conversationId,
 						streamId,
 						upstreamMessage,
 						requestedOutputs,
+						documentIntent,
 					})}`,
 					requestTitle,
 					requestedOutputs,
 					sourceMode: "document_source",
-					documentIntent: "recovered_project_report",
-					templateHint: "standard-report",
+					documentIntent,
+					templateHint,
 					documentSource,
 				};
 				const recordedInput = {
@@ -810,6 +926,7 @@ export function runChatStreamOrchestrator(
 							ok,
 							evidenceReady: ok,
 							recoveredDirectly: true,
+							recoverySource: documentIntent,
 							intakeStatus: result.status,
 							...(ok ? { jobId: result.job.id } : { error: result.error }),
 						},
@@ -829,7 +946,7 @@ export function runChatStreamOrchestrator(
 					.map((output) => output.type.toUpperCase())
 					.join(", ");
 				return emitChunkWithOutputHandling(
-					`\n\nThe ${outputLabel} report request has been started. The file card will update when generation finishes.`,
+					`\n\nThe ${outputLabel} ${completionSubject} request has been started. The file card will update when generation finishes.`,
 				);
 			};
 			const completeOrRecoverAfterUpstreamEnd = async (
@@ -1271,6 +1388,25 @@ export function runChatStreamOrchestrator(
 						personalityProfileId,
 					).catch(() => null);
 					personalityPrompt = profile?.promptText || undefined;
+				}
+
+				if (
+					isProduceFileRequest(upstreamMessage) &&
+					isConversationExportRequest(upstreamMessage)
+				) {
+					console.info("[STREAM] Handling conversation export directly", {
+						conversationId,
+						streamId,
+						modelId,
+					});
+					if (
+						await recoverMissingFileProductionDirectly({
+							source: "conversation_export",
+						})
+					) {
+						await completeSuccess();
+						return;
+					}
 				}
 
 				upstreamAttempt: for (let attempt = 1; attempt <= 2; attempt += 1) {
