@@ -23,12 +23,18 @@ import {
 	type CampaignAssetCropGeometry,
 } from "$lib/client/api/campaign-assets";
 import { get } from "svelte/store";
-import { t } from "$lib/i18n";
+import { t, type I18nKey } from "$lib/i18n";
 import {
 	DEEP_RESEARCH_MODEL_ROLES,
 	DEFAULT_DEEP_RESEARCH_MODEL_ID,
 	type DeepResearchModelRoleDefinition,
 } from "$lib/deep-research-models";
+import {
+	MODEL_CAPABILITY_KEYS,
+	type ModelCapabilityKey,
+	type ModelCapabilityState,
+	type ModelCapabilityStatus,
+} from "$lib/model-capabilities";
 import type { ModelId } from "$lib/types";
 import CampaignCropModal from "$lib/components/campaign-admin/CampaignCropModal.svelte";
 import ModelIcon from "$lib/components/ui/ModelIcon.svelte";
@@ -91,7 +97,9 @@ let systemSkillDraft = $state<
 
 $effect(() => {
 	void fetchPersonalityProfiles()
-		.then((p) => (adminPersonalities = p))
+		.then((p) => {
+			adminPersonalities = p;
+		})
 		.catch(() => {});
 });
 let providersMessage = $state("");
@@ -250,8 +258,6 @@ let showModal = $state(false);
 let modalModel = $state<
 	| (InferenceProvider & {
 			isBuiltIn?: boolean;
-			flowId?: string;
-			componentId?: string;
 	  })
 	| null
 >(null);
@@ -394,7 +400,9 @@ function openEditBuiltIn(modelName: string) {
 			(adminConfig[`${prefix}_THINKING_TYPE`] as "enabled" | "disabled" | "") ||
 			null,
 		enabled:
-			modelName === "model2" ? adminConfig.MODEL_2_ENABLED !== "false" : true,
+			modelName === "model1"
+				? adminConfig.MODEL_1_ENABLED !== "false"
+				: adminConfig.MODEL_2_ENABLED !== "false",
 		sortOrder: 0,
 		maxModelContext: adminConfig[`${prefix}_MAX_MODEL_CONTEXT`]
 			? Number(adminConfig[`${prefix}_MAX_MODEL_CONTEXT`])
@@ -411,8 +419,6 @@ function openEditBuiltIn(modelName: string) {
 		createdAt: "",
 		updatedAt: "",
 		isBuiltIn: true,
-		flowId: adminConfig[`${prefix}_FLOW_ID`] ?? "",
-		componentId: adminConfig[`${prefix}_COMPONENT_ID`] ?? "",
 	};
 	modalIsCreate = false;
 	modalError = "";
@@ -434,6 +440,19 @@ function closeModal() {
 	modalError = "";
 }
 
+function handleModalUploadIcon(targetKind: string, file: File) {
+	const target: ModelIconTarget =
+		targetKind === "model1"
+			? { kind: "built-in", modelName: "model1" }
+			: targetKind === "model2"
+				? { kind: "built-in", modelName: "model2" }
+				: { kind: "provider", provider: providers.find((p) => p.id === targetKind) as InferenceProvider };
+	const syntheticEvent = {
+		currentTarget: { files: [file] },
+	} as unknown as Event;
+	handleModelIconFile(syntheticEvent, target);
+}
+
 async function handleModalSave(data: Record<string, unknown>) {
 	modalSaving = true;
 	modalError = "";
@@ -453,10 +472,6 @@ async function handleModalSave(data: Record<string, unknown>) {
 				adminConfig[`${prefix}_API_KEY`] = data.apiKey as string;
 			if (data.modelName !== undefined)
 				adminConfig[`${prefix}_NAME`] = data.modelName as string;
-			if (data.flowId !== undefined)
-				adminConfig[`${prefix}_FLOW_ID`] = data.flowId as string;
-			if (data.componentId !== undefined)
-				adminConfig[`${prefix}_COMPONENT_ID`] = data.componentId as string;
 			if (data.maxTokens !== undefined)
 				adminConfig[`${prefix}_MAX_TOKENS`] =
 					data.maxTokens != null ? String(data.maxTokens) : "";
@@ -532,6 +547,12 @@ async function handleValidate(provider: InferenceProvider) {
 					name: provider.displayName,
 				}),
 			);
+			if (result.capabilities) {
+				const idx = providers.findIndex((p) => p.id === provider.id);
+				if (idx >= 0) {
+					providers[idx] = { ...providers[idx], capabilities: result.capabilities };
+				}
+			}
 		} else {
 			providersError = $t("admin.validationFailed", {
 				error: result.error ?? "Unknown error",
@@ -540,6 +561,84 @@ async function handleValidate(provider: InferenceProvider) {
 	} catch (error: unknown) {
 		providersError = errorMessage(error, $t("admin.failedValidateProvider"));
 	}
+}
+
+const capabilityLabelKeys: Record<ModelCapabilityKey, I18nKey> = {
+	chat: "admin.capability.chat",
+	streaming: "admin.capability.streaming",
+	tools: "admin.capability.tools",
+	structuredOutput: "admin.capability.structuredOutput",
+	reasoningControls: "admin.capability.reasoningControls",
+	usageReporting: "admin.capability.usageReporting",
+	fileMessageParts: "admin.capability.fileMessageParts",
+	imageMessageParts: "admin.capability.imageMessageParts",
+	modelsEndpoint: "admin.capability.modelsEndpoint",
+};
+
+function providerCapabilityStatuses(
+	provider: InferenceProvider,
+): ModelCapabilityStatus[] {
+	return MODEL_CAPABILITY_KEYS.map((key) => {
+		const status = provider.capabilities?.[key];
+		return (
+			status ?? {
+				key,
+				state: "unknown",
+				supported: null,
+				source: "probe",
+			}
+		);
+	});
+}
+
+function capabilityLabel(key: ModelCapabilityKey): string {
+	return $t(capabilityLabelKeys[key]);
+}
+
+function capabilityStateLabel(status: ModelCapabilityStatus): string {
+	if (status.state === "manual_override") {
+		if (status.supported === true)
+			return $t("admin.capabilityState.manualOverrideSupported");
+		if (status.supported === false)
+			return $t("admin.capabilityState.manualOverrideUnsupported");
+		return $t("admin.capabilityState.manualOverride");
+	}
+
+	const map: Record<
+		Exclude<ModelCapabilityState, "manual_override">,
+		I18nKey
+	> = {
+		detected: "admin.capabilityState.detected",
+		not_detected: "admin.capabilityState.notDetected",
+		unknown: "admin.capabilityState.unknown",
+	};
+	return $t(map[status.state]);
+}
+
+function capabilityChipClass(state: ModelCapabilityState): string {
+	const base =
+		"inline-flex max-w-full items-center gap-1.5 rounded-sm border px-1.5 py-0.5 text-[11px] leading-none";
+	const stateClass: Record<ModelCapabilityState, string> = {
+		detected: "border-success/35 bg-success/10 text-success",
+		not_detected: "border-danger/30 bg-danger/10 text-danger",
+		unknown: "border-border bg-surface-overlay text-text-muted",
+		manual_override: "border-accent/35 bg-accent/10 text-accent",
+	};
+	return `${base} ${stateClass[state]}`;
+}
+
+function capabilityDotClass(state: ModelCapabilityState): string {
+	const stateClass: Record<ModelCapabilityState, string> = {
+		detected: "bg-success",
+		not_detected: "bg-danger",
+		unknown: "bg-text-muted",
+		manual_override: "bg-accent",
+	};
+	return `h-1.5 w-1.5 shrink-0 rounded-full ${stateClass[state]}`;
+}
+
+function capabilityStatusLabel(status: ModelCapabilityStatus): string {
+	return `${capabilityLabel(status.key)}: ${capabilityStateLabel(status)}`;
 }
 
 function modelNameDisplay(name: string): string {
@@ -622,16 +721,13 @@ function configLabelKey(key: string): string {
 		MODEL_1_DISPLAY_NAME: "admin.model1DisplayName",
 		MODEL_1_ICON_ASSET_ID: "admin.model1IconAssetId",
 		MODEL_1_SYSTEM_PROMPT: "admin.model1SystemPrompt",
-		MODEL_1_FLOW_ID: "admin.model1FlowId",
-		MODEL_1_COMPONENT_ID: "admin.model1ComponentId",
 		MODEL_2_BASEURL: "admin.model2BaseUrl",
 		MODEL_2_API_KEY: "admin.model2ApiKey",
 		MODEL_2_NAME: "admin.model2Name",
 		MODEL_2_DISPLAY_NAME: "admin.model2DisplayName",
 		MODEL_2_ICON_ASSET_ID: "admin.model2IconAssetId",
 		MODEL_2_SYSTEM_PROMPT: "admin.model2SystemPrompt",
-		MODEL_2_FLOW_ID: "admin.model2FlowId",
-		MODEL_2_COMPONENT_ID: "admin.model2ComponentId",
+		MODEL_1_ENABLED: "admin.model1Enabled",
 		MODEL_2_ENABLED: "admin.model2Enabled",
 		COMPOSER_COMMAND_REGISTRY_ENABLED:
 			"admin.composerCommandRegistryEnabled",
@@ -744,16 +840,12 @@ function placeholderFor(key: string): string {
 						<ModelIcon iconUrl={builtInIconUrl('model1')} displayName={adminConfig.MODEL_1_DISPLAY_NAME || $t('admin.model1')} size={32} />
 						<div class="flex min-w-0 flex-col">
 							<span class="truncate text-sm font-medium text-text-primary">{adminConfig.MODEL_1_DISPLAY_NAME || $t('admin.model1')}</span>
-							<span class="truncate text-xs text-text-muted">{$t('admin.langflow')} &bull; {adminConfig.MODEL_1_NAME || 'model-1'}</span>
+							<span class="truncate text-xs text-text-muted">{$t('admin.openAiCompatible')} &bull; {adminConfig.MODEL_1_NAME || 'model-1'}</span>
 						</div>
 					</div>
 					<div class="flex flex-wrap items-center justify-end gap-2">
 						<span class="inline-block h-2 w-2 rounded-full bg-success"></span>
 						<span class="text-xs text-text-muted">{$t('admin.builtIn')}</span>
-						<label class="btn-small cursor-pointer">
-							{iconUploading === 'model1' ? $t('admin.modelIconUploading') : $t('admin.uploadModelIcon')}
-							<input class="sr-only" type="file" accept="image/*,.svg" disabled={iconUploading !== null} onchange={(event) => handleModelIconFile(event, { kind: 'built-in', modelName: 'model1' })} />
-						</label>
 						<button class="btn-small" onclick={() => openEditBuiltIn('model1')}>{$t('common.edit')}</button>
 					</div>
 				</div>
@@ -764,16 +856,12 @@ function placeholderFor(key: string): string {
 						<ModelIcon iconUrl={builtInIconUrl('model2')} displayName={adminConfig.MODEL_2_DISPLAY_NAME || $t('admin.model2')} size={32} />
 						<div class="flex min-w-0 flex-col">
 							<span class="truncate text-sm font-medium text-text-primary">{adminConfig.MODEL_2_DISPLAY_NAME || $t('admin.model2')}</span>
-							<span class="truncate text-xs text-text-muted">{$t('admin.langflow')} &bull; {adminConfig.MODEL_2_NAME || 'model-2'}</span>
+							<span class="truncate text-xs text-text-muted">{$t('admin.openAiCompatible')} &bull; {adminConfig.MODEL_2_NAME || 'model-2'}</span>
 						</div>
 					</div>
 					<div class="flex flex-wrap items-center justify-end gap-2">
 						<span class={`inline-block h-2 w-2 rounded-full ${adminConfig.MODEL_2_ENABLED !== 'false' ? 'bg-success' : 'bg-text-muted'}`}></span>
 						<span class="text-xs text-text-muted">{$t('admin.builtIn')}</span>
-						<label class="btn-small cursor-pointer">
-							{iconUploading === 'model2' ? $t('admin.modelIconUploading') : $t('admin.uploadModelIcon')}
-							<input class="sr-only" type="file" accept="image/*,.svg" disabled={iconUploading !== null} onchange={(event) => handleModelIconFile(event, { kind: 'built-in', modelName: 'model2' })} />
-						</label>
 						<button class="btn-small" onclick={() => openEditBuiltIn('model2')}>{$t('common.edit')}</button>
 					</div>
 				</div>
@@ -799,23 +887,39 @@ function placeholderFor(key: string): string {
 										{/if}
 									</span>
 								{/if}
+								<div
+									class="mt-1 flex max-w-full flex-wrap gap-1"
+									aria-label={$t('admin.modelCapabilities')}
+								>
+									{#each providerCapabilityStatuses(provider) as capability (capability.key)}
+										<span
+											class={capabilityChipClass(capability.state)}
+											aria-label={capabilityStatusLabel(capability)}
+											title={capability.detail
+												? `${capabilityStatusLabel(capability)} - ${capability.detail}`
+												: capabilityStatusLabel(capability)}
+										>
+											<span
+												class={capabilityDotClass(capability.state)}
+												aria-hidden="true"
+											></span>
+											<span class="truncate">{capabilityLabel(capability.key)}</span>
+											<span class="shrink-0 font-medium">
+												{capabilityStateLabel(capability)}
+											</span>
+										</span>
+									{/each}
+								</div>
 							</div>
 						</div>
 						<div class="flex flex-wrap items-center justify-end gap-2">
 							<span class={`inline-block h-2 w-2 rounded-full ${provider.enabled ? 'bg-success' : 'bg-text-muted'}`}></span>
-							<label class="btn-small cursor-pointer">
-								{iconUploading === uploadKeyForProvider(provider) ? $t('admin.modelIconUploading') : $t('admin.uploadModelIcon')}
-								<input class="sr-only" type="file" accept="image/*,.svg" disabled={iconUploading !== null} onchange={(event) => handleModelIconFile(event, { kind: 'provider', provider })} />
-							</label>
 							<button class="btn-small" onclick={() => handleValidate(provider)}>{$t('common.test')}</button>
 							<button class="btn-small" onclick={() => openEditProvider(provider)}>{$t('common.edit')}</button>
 							<button class="btn-small text-danger" onclick={() => handleDelete(provider)}>{$t('common.delete')}</button>
 						</div>
 					</div>
 				{/each}
-				<p class="text-xs text-text-muted">
-					{$t('admin.thirdPartyDescription')}
-				</p>
 				<div class="border-t border-border pt-3">
 					<label class="settings-label" for="DEFAULT_NEW_USER_MODEL">{$t('admin.defaultNewUserModel')}</label>
 					<select
@@ -842,29 +946,6 @@ function placeholderFor(key: string): string {
 		<button class="btn-secondary w-full" onclick={openAddProvider}>
 			{$t('admin.addProvider')}
 		</button>
-	</div>
-</section>
-
-<!-- Model 2 enable/disable toggle (separate from edit modal since it affects visibility) -->
-<section class="settings-card mb-4">
-	<h2 class="settings-section-title">{$t('admin.model2Visibility')}</h2>
-	<div class="flex items-center justify-between">
-		<div>
-			<label class="settings-label mb-0" for="MODEL_2_ENABLED">{$t('admin.model2Enabled')}</label>
-			<p class="text-xs text-text-tertiary">{$t('admin.model2VisibilityDescription')}</p>
-		</div>
-		<label class="relative inline-flex cursor-pointer items-center">
-			<input
-				id="MODEL_2_ENABLED"
-				type="checkbox"
-				class="peer sr-only"
-				checked={adminConfig.MODEL_2_ENABLED !== 'false'}
-				onchange={(event) => {
-					adminConfig.MODEL_2_ENABLED = event.currentTarget.checked ? 'true' : 'false';
-				}}
-			/>
-			<div class="peer h-6 w-11 rounded-full bg-surface-secondary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent peer-checked:after:translate-x-full"></div>
-		</label>
 	</div>
 </section>
 
@@ -1163,18 +1244,31 @@ function placeholderFor(key: string): string {
 <section class="settings-card mb-4">
 	<h2 class="settings-section-title">{$t('admin.titleGenerator')}</h2>
 	<div class="flex flex-col gap-3">
-		{#each ['TITLE_GEN_URL', 'TITLE_GEN_MODEL'] as key}
-			<div>
-				<label class="settings-label" for={key}>{$t(configLabelKey(key))}</label>
-				<input
-					id={key}
-					type="text"
-					class="settings-input"
-					bind:value={adminConfig[key]}
-					placeholder={placeholderFor(key)}
-				/>
-			</div>
-		{/each}
+		<div>
+			<label class="settings-label" for="TITLE_GEN_URL">{$t(configLabelKey('TITLE_GEN_URL'))}</label>
+			<input
+				id="TITLE_GEN_URL"
+				type="text"
+				class="settings-input"
+				bind:value={adminConfig['TITLE_GEN_URL']}
+				placeholder={placeholderFor('TITLE_GEN_URL')}
+			/>
+		</div>
+		<div>
+			<label class="settings-label" for="TITLE_GEN_MODEL">{$t(configLabelKey('TITLE_GEN_MODEL'))}</label>
+			<select
+				id="TITLE_GEN_MODEL"
+				class="settings-input"
+				value={adminConfig['TITLE_GEN_MODEL'] || ''}
+				onchange={(event) => {
+					adminConfig['TITLE_GEN_MODEL'] = event.currentTarget.value;
+				}}
+			>
+				{#each deepResearchModelOptions() as model}
+					<option value={model.id}>{model.displayName}</option>
+				{/each}
+			</select>
+		</div>
 		{#each [
 			'TITLE_GEN_SYSTEM_PROMPT_EN',
 			'TITLE_GEN_SYSTEM_PROMPT_HU',
@@ -1203,13 +1297,27 @@ function placeholderFor(key: string): string {
 <section class="settings-card mb-4">
 	<h2 class="settings-section-title">{$t('admin.contextSummarizer')}</h2>
 	<div class="flex flex-col gap-3">
-		{#each ['CONTEXT_SUMMARIZER_URL', 'CONTEXT_SUMMARIZER_MODEL'] as key}
-			<div>
-				<label class="settings-label" for={key}>{$t(configLabelKey(key))}</label>
-				<input id={key} type="text" class="settings-input" bind:value={adminConfig[key]} placeholder={placeholderFor(key)} />
-				<p class="mt-1 text-xs text-text-muted">{key === 'CONTEXT_SUMMARIZER_URL' ? $t('admin.summarizerUrlDescription') : $t('admin.summarizerModelDescription')}</p>
-			</div>
-		{/each}
+		<div>
+			<label class="settings-label" for="CONTEXT_SUMMARIZER_URL">{$t(configLabelKey('CONTEXT_SUMMARIZER_URL'))}</label>
+			<input id="CONTEXT_SUMMARIZER_URL" type="text" class="settings-input" bind:value={adminConfig['CONTEXT_SUMMARIZER_URL']} placeholder={placeholderFor('CONTEXT_SUMMARIZER_URL')} />
+			<p class="mt-1 text-xs text-text-muted">{$t('admin.summarizerUrlDescription')}</p>
+		</div>
+		<div>
+			<label class="settings-label" for="CONTEXT_SUMMARIZER_MODEL">{$t(configLabelKey('CONTEXT_SUMMARIZER_MODEL'))}</label>
+			<select
+				id="CONTEXT_SUMMARIZER_MODEL"
+				class="settings-input"
+				value={adminConfig['CONTEXT_SUMMARIZER_MODEL'] || ''}
+				onchange={(event) => {
+					adminConfig['CONTEXT_SUMMARIZER_MODEL'] = event.currentTarget.value;
+				}}
+			>
+				{#each deepResearchModelOptions() as model}
+					<option value={model.id}>{model.displayName}</option>
+				{/each}
+			</select>
+			<p class="mt-1 text-xs text-text-muted">{$t('admin.summarizerModelDescription')}</p>
+		</div>
 	</div>
 </section>
 
@@ -1493,37 +1601,22 @@ function placeholderFor(key: string): string {
 		{adminConfig}
 		onSave={handleModalSave}
 		onClose={closeModal}
+		onUploadIcon={handleModalUploadIcon}
 	/>
 {/if}
 
-<section class="settings-card mb-4">
-	<h2 class="settings-section-title">Personality Profiles</h2>
-	<div class="text-sm text-text-muted mb-3">Pre-made tone and style profiles that users can select in chat.</div>
-	<div class="flex flex-col gap-2">
-		{#each adminPersonalities ?? [] as profile}
-			<div class="flex items-center justify-between py-2 border-b border-border last:border-0">
-				<div>
-					<div class="text-sm font-medium text-text-primary">{profile.name}</div>
-					<div class="text-xs text-text-muted">{profile.description}</div>
-				</div>
-				<span class="text-xs text-text-muted">
-					{profile.isBuiltIn ? 'Built-in' : 'Custom'}
-				</span>
-			</div>
-		{/each}
-	</div>
-</section>
-
-<!-- Save button -->
-{#if adminMessage}
-	<p class="mb-3 text-sm text-success">{adminMessage}</p>
-{/if}
-{#if adminError}
-	<p class="mb-3 text-sm text-danger">{adminError}</p>
-{/if}
-<button class="btn-primary mb-8 w-full" onclick={onSaveAdminConfig} disabled={adminSaving}>
-	{adminSaving ? $t('common.saving') : $t('admin.saveConfiguration')}
-</button>
+<!-- Sticky Save button -->
+<div class="sticky bottom-0 z-10 border-t border-border bg-surface-page py-4">
+	{#if adminMessage}
+		<p class="mb-3 text-sm text-success">{adminMessage}</p>
+	{/if}
+	{#if adminError}
+		<p class="mb-3 text-sm text-danger">{adminError}</p>
+	{/if}
+	<button class="btn-primary w-full" onclick={onSaveAdminConfig} disabled={adminSaving}>
+		{adminSaving ? $t('common.saving') : $t('admin.saveConfiguration')}
+	</button>
+</div>
 
 {#if modelIconCropJob}
 	<CampaignCropModal

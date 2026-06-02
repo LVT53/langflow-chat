@@ -478,6 +478,7 @@
 		font-weight: 600;
 		color: var(--text-primary);
 		text-align: center;
+		cursor: pointer;
 		transition:
 			background-color var(--duration-standard) var(--ease-out),
 			border-color var(--duration-standard) var(--ease-out),

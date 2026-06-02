@@ -9,8 +9,6 @@ const tVal = get(t);
 
 type ModelFormModalModel = InferenceProvider & {
 	isBuiltIn?: boolean;
-	flowId?: string;
-	componentId?: string;
 	rateLimitFallbackEnabled?: boolean | null;
 	rateLimitFallbackBaseUrl?: string | null;
 	rateLimitFallbackApiKey?: string | null;
@@ -32,6 +30,7 @@ let {
 	adminConfig = {},
 	saving = false,
 	error = "",
+	onUploadIcon,
 }: {
 	model?: ModelFormModalModel | null;
 	isCreate?: boolean;
@@ -40,7 +39,17 @@ let {
 	adminConfig?: Record<string, string>;
 	saving?: boolean;
 	error?: string;
+	onUploadIcon?: (targetKind: "model1" | "model2" | string, file: File) => void;
 } = $props();
+
+function handleIconFileChange(event: Event) {
+	const input = event.currentTarget as HTMLInputElement;
+	const file = input.files?.[0] ?? null;
+	input.value = "";
+	if (!file) return;
+	const targetKind = model?.name ?? "provider";
+	onUploadIcon?.(targetKind, file);
+}
 
 let formDisplayName = $state(untrack(() => model?.displayName ?? ""));
 let formBaseUrl = $state(
@@ -55,8 +64,6 @@ let formThinkingType = $state<"" | "enabled" | "disabled">(
 	untrack(() => model?.thinkingType ?? ""),
 );
 let formEnabled = $state(untrack(() => model?.enabled ?? true));
-let formFlowId = $state(untrack(() => model?.flowId ?? ""));
-let formComponentId = $state(untrack(() => model?.componentId ?? ""));
 let formMaxTokens = $state(
 	untrack(() => (model?.maxTokens ? String(model.maxTokens) : "")),
 );
@@ -130,8 +137,6 @@ function handleSave() {
 		data.displayName = formDisplayName;
 		data.baseUrl = formBaseUrl;
 		data.modelName = formModelName;
-		data.flowId = formFlowId;
-		data.componentId = formComponentId;
 		data.model1 =
 			model?.name === "model1" || model?.name === "model2"
 				? model.name
@@ -216,6 +221,13 @@ function handleSave() {
 					<label class="settings-label" for="form-display-name">{$t('admin.displayName')}</label>
 					<input id="form-display-name" type="text" class="settings-input" bind:value={formDisplayName} placeholder={$t('admin.displayNamePlaceholder')} />
 				</div>
+				{#if onUploadIcon}
+					<div>
+						<label class="settings-label" for="form-icon-upload">{$t('admin.uploadModelIcon')}</label>
+						<input id="form-icon-upload" type="file" class="settings-input" accept="image/*,.svg" onchange={handleIconFileChange} />
+						<p class="mt-1 text-xs text-text-muted">{$t('admin.uploadModelIconDescription')}</p>
+					</div>
+				{/if}
 				<div>
 					<label class="settings-label" for="form-base-url">{$t('admin.baseUrl')}</label>
 					<input id="form-base-url" type="url" class="settings-input" bind:value={formBaseUrl} placeholder={$t('admin.baseUrlPlaceholder')} />
@@ -238,17 +250,6 @@ function handleSave() {
 					<input id="form-max-tokens" type="number" class="settings-input" bind:value={formMaxTokens} placeholder={$t('admin.maxTokensPlaceholder')} min="1" />
 					<p class="mt-1 text-xs text-text-muted">{$t('admin.maxTokensDescription')}</p>
 				</div>
-				{#if isBuiltIn}
-					<div>
-						<label class="settings-label" for="form-flow-id">{$t('admin.flowId')}</label>
-						<input id="form-flow-id" type="text" class="settings-input" bind:value={formFlowId} placeholder={$t('admin.flowIdPlaceholder')} />
-					</div>
-					<div>
-						<label class="settings-label" for="form-component-id">{$t('admin.componentId')}</label>
-						<input id="form-component-id" type="text" class="settings-input" bind:value={formComponentId} placeholder={$t('admin.componentIdPlaceholder')} />
-						<p class="mt-1 text-xs text-text-muted">{$t('admin.componentIdDescription')}</p>
-					</div>
-				{/if}
 				<div>
 					<label class="settings-label" for="form-reasoning-effort">{$t('admin.reasoningEffort')}</label>
 					<select id="form-reasoning-effort" class="settings-input" bind:value={formReasoningEffort}>
