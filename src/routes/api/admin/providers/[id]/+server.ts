@@ -167,7 +167,7 @@ export const PUT: RequestHandler = async (event) => {
         ? body.apiKey
         : undefined;
 
-    if (validationBaseUrl || validationApiKey) {
+    if (validationBaseUrl || validationApiKey || input.modelName !== undefined) {
       const apiKey = validationApiKey ?? decryptApiKey(existing.apiKeyEncrypted, existing.apiKeyIv);
       const connectionTest = await validateProviderConnection(
         validationBaseUrl ?? existing.baseUrl,
@@ -177,6 +177,7 @@ export const PUT: RequestHandler = async (event) => {
       if (!connectionTest.valid) {
         return json({ error: connectionTest.error }, { status: 400 });
       }
+      input.capabilities = connectionTest.capabilities ?? null;
     }
 
     const fallbackEndpointChanged =
@@ -184,14 +185,22 @@ export const PUT: RequestHandler = async (event) => {
       input.rateLimitFallbackModelName !== undefined ||
       fallbackApiKeyChanged;
     if (fallbackEnabled && fallbackEndpointChanged) {
+      if (!fallbackBaseUrl) {
+        return json({ error: 'Rate-limit fallback base URL is required' }, { status: 400 });
+      }
       const fallbackApiKey = fallbackApiKeyChanged
-        ? input.rateLimitFallbackApiKey!
-        : decryptApiKey(
-            existing.rateLimitFallbackApiKeyEncrypted!,
-            existing.rateLimitFallbackApiKeyIv!
-          );
+        ? input.rateLimitFallbackApiKey
+        : existing.rateLimitFallbackApiKeyEncrypted && existing.rateLimitFallbackApiKeyIv
+          ? decryptApiKey(
+              existing.rateLimitFallbackApiKeyEncrypted,
+              existing.rateLimitFallbackApiKeyIv
+            )
+          : null;
+      if (!fallbackApiKey) {
+        return json({ error: 'Rate-limit fallback API key is required' }, { status: 400 });
+      }
       const fallbackConnectionTest = await validateProviderConnection(
-        fallbackBaseUrl!,
+        fallbackBaseUrl,
         fallbackApiKey,
         { modelName: fallbackModelName }
       );

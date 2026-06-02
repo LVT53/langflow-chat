@@ -1,7 +1,8 @@
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { requireAdmin } from '$lib/server/auth/hooks';
-import { getProviderWithSecrets, validateProviderConnection } from '$lib/server/services/inference-providers';
+import { clearProvidersCache, refreshConfig } from '$lib/server/config-store';
+import { getProviderWithSecrets, updateProvider, validateProviderConnection } from '$lib/server/services/inference-providers';
 
 export const POST: RequestHandler = async (event) => {
   try {
@@ -26,6 +27,11 @@ export const POST: RequestHandler = async (event) => {
     const result = await validateProviderConnection(provider.baseUrl, apiKey, {
       modelName: provider.modelName,
     });
+    if (result.capabilities) {
+      await updateProvider(id, { capabilities: result.capabilities });
+      clearProvidersCache();
+      await refreshConfig();
+    }
     return json(result);
   } catch (error) {
     console.error('[ADMIN] Failed to validate provider:', error);

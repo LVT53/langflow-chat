@@ -8,6 +8,11 @@ import {
 import { eq } from "drizzle-orm";
 import {
 	createModelCapabilitySet,
+	MODEL_CAPABILITY_KEYS,
+	type ModelCapabilityKey,
+	type ModelCapabilitySource,
+	type ModelCapabilityState,
+	type ModelCapabilityStatus,
 	type ModelCapabilitySet,
 } from "$lib/model-capabilities";
 import {
@@ -83,6 +88,7 @@ export interface CreateProviderInput {
 	rateLimitFallbackApiKey?: string | null;
 	rateLimitFallbackModelName?: string | null;
 	rateLimitFallbackTimeoutMs?: number | null;
+	capabilities?: ModelCapabilitySet | null;
 }
 
 export interface UpdateProviderInput {
@@ -105,6 +111,7 @@ export interface UpdateProviderInput {
 	rateLimitFallbackApiKey?: string | null;
 	rateLimitFallbackModelName?: string | null;
 	rateLimitFallbackTimeoutMs?: number | null;
+	capabilities?: ModelCapabilitySet | null;
 }
 
 export type ProviderLimitInput = {
@@ -144,6 +151,12 @@ export interface ProviderCapabilityProbeResult {
 	error?: string;
 	modelFound: boolean | null;
 	capabilities: ModelCapabilitySet;
+}
+
+export interface ProviderConnectionValidationResult {
+	valid: boolean;
+	error?: string;
+	capabilities?: ModelCapabilitySet;
 }
 
 export function parseProviderLimitOverrides(input: ProviderLimitInput):
@@ -461,7 +474,7 @@ export async function createProvider(
 ): Promise<InferenceProvider> {
 	const { encrypted, iv } = encryptApiKey(input.apiKey);
 	const fallbackApiKey =
-		input.rateLimitFallbackApiKey && input.rateLimitFallbackApiKey.trim()
+		input.rateLimitFallbackApiKey?.trim()
 			? encryptApiKey(input.rateLimitFallbackApiKey)
 			: null;
 	const now = new Date();
@@ -494,6 +507,7 @@ export async function createProvider(
 			rateLimitFallbackTimeoutMs:
 				input.rateLimitFallbackTimeoutMs ??
 				DEFAULT_RATE_LIMIT_FALLBACK_TIMEOUT_MS,
+			capabilitiesJson: serializeModelCapabilities(input.capabilities),
 			createdAt: now,
 			updatedAt: now,
 		})
@@ -622,7 +636,7 @@ export async function updateProvider(
 		updates.rateLimitFallbackBaseUrl = input.rateLimitFallbackBaseUrl;
 	}
 	if (input.rateLimitFallbackApiKey !== undefined) {
-		if (input.rateLimitFallbackApiKey && input.rateLimitFallbackApiKey.trim()) {
+		if (input.rateLimitFallbackApiKey?.trim()) {
 			const { encrypted, iv } = encryptApiKey(input.rateLimitFallbackApiKey);
 			updates.rateLimitFallbackApiKeyEncrypted = encrypted;
 			updates.rateLimitFallbackApiKeyIv = iv;
@@ -638,6 +652,9 @@ export async function updateProvider(
 		updates.rateLimitFallbackTimeoutMs =
 			input.rateLimitFallbackTimeoutMs ??
 			DEFAULT_RATE_LIMIT_FALLBACK_TIMEOUT_MS;
+	}
+	if (input.capabilities !== undefined) {
+		updates.capabilitiesJson = serializeModelCapabilities(input.capabilities);
 	}
 
 	const [updated] = await db
@@ -661,7 +678,7 @@ export async function validateProviderConnection(
 	baseUrl: string,
 	apiKey: string,
 	options: { modelName?: string | null } = {},
-): Promise<{ valid: boolean; error?: string }> {
+): Promise<ProviderConnectionValidationResult> {
 	try {
 		const url = new URL(baseUrl);
 		if (!url.protocol.startsWith("http")) {
@@ -681,7 +698,10 @@ export async function validateProviderConnection(
 				};
 			}
 
-			return { valid: true };
+			return {
+				valid: true,
+				capabilities: knownFirePassKimiCapabilities(),
+			};
 		}
 
 		const probe = await probeProviderModelCapabilities(
@@ -689,7 +709,9 @@ export async function validateProviderConnection(
 			apiKey,
 			options,
 		);
-		return probe.valid ? { valid: true } : { valid: false, error: probe.error };
+		return probe.valid
+			? { valid: true, capabilities: probe.capabilities }
+			: { valid: false, error: probe.error, capabilities: probe.capabilities };
 	} catch (error) {
 		if (error instanceof Error) {
 			if (error.name === "TimeoutError") {
@@ -817,6 +839,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function mapRowToProvider(
 	row: typeof inferenceProviders.$inferSelect,
 ): InferenceProvider {
+	const storedCapabilities = parseStoredModelCapabilities(row.capabilitiesJson);
 	return {
 		id: row.id,
 		name: row.name,
@@ -838,7 +861,9 @@ function mapRowToProvider(
 		rateLimitFallbackModelName: row.rateLimitFallbackModelName ?? null,
 		rateLimitFallbackTimeoutMs:
 			row.rateLimitFallbackTimeoutMs ?? DEFAULT_RATE_LIMIT_FALLBACK_TIMEOUT_MS,
-		capabilities: createModelCapabilitySet(),
+		capabilities: hasCapabilityEvidence(storedCapabilities)
+			? storedCapabilities
+			: knownProviderCapabilities(row) ?? storedCapabilities,
 		createdAt: row.createdAt,
 		updatedAt: row.updatedAt,
 	};
@@ -855,4 +880,130 @@ function mapRowToProviderWithSecrets(
 			row.rateLimitFallbackApiKeyEncrypted ?? null,
 		rateLimitFallbackApiKeyIv: row.rateLimitFallbackApiKeyIv ?? null,
 	};
+}
+
+function serializeModelCapabilities(
+	capabilities: ModelCapabilitySet | null | undefined,
+): string {
+	return JSON.stringify(capabilities ?? createModelCapabilitySet());
+}
+
+function parseStoredModelCapabilities(value: string | null): ModelCapabilitySet {
+	if (!value) return createModelCapabilitySet();
+	try {
+		const parsed: unknown = JSON.parse(value);
+		if (!isRecord(parsed)) return createModelCapabilitySet();
+
+		return createModelCapabilitySet(
+			Object.fromEntries(
+				MODEL_CAPABILITY_KEYS.map((key) => [
+					key,
+					sanitizeStoredCapability(key, parsed[key]),
+				]),
+			),
+		);
+	} catch {
+		return createModelCapabilitySet();
+	}
+}
+
+function sanitizeStoredCapability(
+	key: ModelCapabilityKey,
+	value: unknown,
+): Partial<ModelCapabilityStatus> {
+	if (!isRecord(value)) return {};
+	const state = isModelCapabilityState(value.state) ? value.state : undefined;
+	const source = isModelCapabilitySource(value.source)
+		? value.source
+		: undefined;
+	const supported =
+		typeof value.supported === "boolean" || value.supported === null
+			? value.supported
+			: undefined;
+	const detail = typeof value.detail === "string" ? value.detail : undefined;
+	const checkedAt =
+		typeof value.checkedAt === "string" ? value.checkedAt : undefined;
+
+	return {
+		key,
+		...(state ? { state } : {}),
+		...(source ? { source } : {}),
+		...(supported !== undefined ? { supported } : {}),
+		...(detail ? { detail } : {}),
+		...(checkedAt ? { checkedAt } : {}),
+	};
+}
+
+function isModelCapabilityState(
+	value: unknown,
+): value is ModelCapabilityState {
+	return (
+		value === "detected" ||
+		value === "not_detected" ||
+		value === "unknown" ||
+		value === "manual_override"
+	);
+}
+
+function isModelCapabilitySource(
+	value: unknown,
+): value is ModelCapabilitySource {
+	return (
+		value === "models_endpoint" ||
+		value === "probe" ||
+		value === "manual_override"
+	);
+}
+
+function hasCapabilityEvidence(capabilities: ModelCapabilitySet): boolean {
+	return MODEL_CAPABILITY_KEYS.some(
+		(key) => capabilities[key].state !== "unknown",
+	);
+}
+
+function knownProviderCapabilities(
+	row: Pick<typeof inferenceProviders.$inferSelect, "baseUrl" | "modelName">,
+): ModelCapabilitySet | null {
+	try {
+		const url = new URL(row.baseUrl);
+		if (
+			isFireworksHost(url) &&
+			row.modelName.trim().toLowerCase() === FIRE_PASS_MODEL_NAME
+		) {
+			return knownFirePassKimiCapabilities();
+		}
+		return null;
+	} catch {
+		return null;
+	}
+}
+
+function knownFirePassKimiCapabilities(): ModelCapabilitySet {
+	return createModelCapabilitySet({
+		chat: {
+			state: "detected",
+			source: "probe",
+			detail: "Fire Pass Kimi chat completion compatibility is supported for this scoped model.",
+		},
+		streaming: {
+			state: "detected",
+			source: "probe",
+			detail: "Fire Pass Kimi streaming compatibility is supported for this scoped model.",
+		},
+		tools: {
+			state: "detected",
+			source: "probe",
+			detail: "Fire Pass Kimi tool-call compatibility is supported for this scoped model.",
+		},
+		structuredOutput: {
+			state: "detected",
+			source: "probe",
+			detail: "Fire Pass Kimi structured JSON compatibility is supported for this scoped model.",
+		},
+		modelsEndpoint: {
+			state: "not_detected",
+			source: "models_endpoint",
+			detail: "Fire Pass keys are scoped to the configured Kimi router and do not require /models discovery.",
+		},
+	});
 }

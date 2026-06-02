@@ -1581,6 +1581,7 @@ export const inferenceProviders = sqliteTable("inference_providers", {
 	rateLimitFallbackTimeoutMs: integer("rate_limit_fallback_timeout_ms")
 		.notNull()
 		.default(10000),
+	capabilitiesJson: text("capabilities_json").notNull().default("{}"),
 	createdAt: integer("created_at", { mode: "timestamp" })
 		.notNull()
 		.default(sql`(unixepoch())`),

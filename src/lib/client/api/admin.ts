@@ -124,6 +124,7 @@ interface ProviderResponse {
 interface ValidateResponse {
 	valid: boolean;
 	error?: string;
+	capabilities?: ModelCapabilitySet | null;
 }
 
 export async function fetchProviders(): Promise<InferenceProvider[]> {

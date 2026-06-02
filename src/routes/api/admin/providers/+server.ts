@@ -116,11 +116,15 @@ export const POST: RequestHandler = async (event) => {
     if (!connectionTest.valid) {
       return json({ error: connectionTest.error }, { status: 400 });
     }
+    input.capabilities = connectionTest.capabilities ?? null;
 
     if (input.rateLimitFallbackEnabled) {
+      if (!input.rateLimitFallbackBaseUrl || !input.rateLimitFallbackApiKey) {
+        return json({ error: 'Rate-limit fallback configuration is incomplete' }, { status: 400 });
+      }
       const fallbackConnectionTest = await validateProviderConnection(
-        input.rateLimitFallbackBaseUrl!,
-        input.rateLimitFallbackApiKey!,
+        input.rateLimitFallbackBaseUrl,
+        input.rateLimitFallbackApiKey,
         { modelName: input.rateLimitFallbackModelName }
       );
       if (!fallbackConnectionTest.valid) {

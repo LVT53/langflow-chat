@@ -165,7 +165,16 @@ describe("probeProviderModelCapabilities", () => {
 			{ modelName: "configured-provider-model" },
 		);
 
-		expect(validation).toEqual({ valid: true });
+		expect(validation).toMatchObject({
+			valid: true,
+			capabilities: {
+				modelsEndpoint: {
+					state: "detected",
+					supported: true,
+					detail: expect.stringContaining("not present"),
+				},
+			},
+		});
 		expect(probe).toMatchObject({
 			valid: true,
 			modelFound: false,
@@ -308,7 +317,16 @@ describe("validateProviderConnection", () => {
 			{ modelName: "accounts/fireworks/routers/kimi-k2p6-turbo" },
 		);
 
-		expect(result).toEqual({ valid: true });
+		expect(result).toMatchObject({
+			valid: true,
+			capabilities: {
+				chat: { state: "detected", supported: true },
+				streaming: { state: "detected", supported: true },
+				tools: { state: "detected", supported: true },
+				structuredOutput: { state: "detected", supported: true },
+				modelsEndpoint: { state: "not_detected", supported: false },
+			},
+		});
 		expect(fetchSpy).not.toHaveBeenCalled();
 	});
 
