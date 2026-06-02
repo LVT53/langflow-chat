@@ -60,12 +60,61 @@ import {
 	getContextDebugState,
 	getConversationTaskState,
 } from "$lib/server/services/task-state";
-import type { ModelId } from "$lib/types";
+import type { ModelId, ToolCallEntry } from "$lib/types";
 import { estimateTokenCount } from "$lib/utils/tokens";
 import { isFileProductionToolName } from "$lib/utils/tool-calls";
 
 function getStreamTimeoutMs(): number {
 	return Math.max(60_000, getConfig().requestTimeoutMs);
+}
+
+function truncateFallbackToolText(value: unknown, maxLength: number): string {
+	let text = "";
+	try {
+		text = typeof value === "string" ? value : JSON.stringify(value ?? null);
+	} catch {
+		text = "[unserializable tool payload]";
+	}
+	if (!text) return "";
+	return text.length <= maxLength ? text : `${text.slice(0, maxLength)}...`;
+}
+
+function buildCompletedToolCallFallbackContext(
+	toolCalls: ToolCallEntry[],
+): string | null {
+	const completed = toolCalls
+		.filter(
+			(toolCall) =>
+				toolCall.status === "done" && !isFileProductionToolName(toolCall.name),
+		)
+		.slice(0, 8);
+	if (completed.length === 0) return null;
+
+	return completed
+		.map((toolCall, index) => {
+			const candidates = (toolCall.candidates ?? []).slice(0, 4);
+			const candidateLines = candidates.map((candidate, candidateIndex) => {
+				const title = truncateFallbackToolText(candidate.title, 160);
+				const snippet = truncateFallbackToolText(candidate.snippet, 360);
+				return [
+					`  ${candidateIndex + 1}. ${title || candidate.id}`,
+					snippet ? ` - ${snippet}` : "",
+				].join("");
+			});
+			return [
+				`Tool ${index + 1}: ${toolCall.name}`,
+				`Input: ${truncateFallbackToolText(toolCall.input, 500)}`,
+				toolCall.outputSummary
+					? `Summary: ${truncateFallbackToolText(toolCall.outputSummary, 700)}`
+					: null,
+				candidateLines.length > 0
+					? ["Candidates:", ...candidateLines].join("\n")
+					: null,
+			]
+				.filter((line): line is string => Boolean(line))
+				.join("\n");
+		})
+		.join("\n\n");
 }
 
 function getFirstVisibleOutputTimeoutMs(
@@ -916,6 +965,9 @@ export function runChatStreamOrchestrator(
 						latestModelId = resolvedModelId;
 						latestModelDisplayName = displayName;
 					},
+					completedToolCallContext: buildCompletedToolCallFallbackContext(
+						chunkRuntime.toolCallRecords,
+					),
 				});
 				if (!recovered && !ended) {
 					failStream("backend_failure");

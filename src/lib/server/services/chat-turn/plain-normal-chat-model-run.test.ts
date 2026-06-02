@@ -599,7 +599,10 @@ describe("runPlainNormalChatSendModel", () => {
 			turnId: "normal-chat-turn-1",
 		});
 		expect(mocks.runPlainNormalChatModelRun).toHaveBeenCalledWith(
-			expect.objectContaining({ tools }),
+			expect.objectContaining({
+				tools,
+				maxToolSteps: 12,
+			}),
 		);
 		expect(result.normalChatToolCalls).toEqual(normalChatToolCalls);
 		expect(result.toolCalls).toEqual([
@@ -607,5 +610,46 @@ describe("runPlainNormalChatSendModel", () => {
 			normalChatToolCalls[0],
 		]);
 		expect(result.prefetchedToolCalls).toEqual(prefetchedToolCalls);
+	});
+
+	it("can disable tools for recovery-only plain model runs", async () => {
+		await runPlainNormalChatSendModel({
+			userId: "user-1",
+			runtimeConfig: {
+				requestTimeoutMs: 1_500,
+				model1: {
+					baseUrl: "https://openai-compatible.example/v1",
+					apiKey: "model-1-secret",
+					modelName: "gpt-4.1",
+					displayName: "Model One",
+					systemPrompt: "",
+					maxTokens: 2048,
+					reasoningEffort: "high",
+					thinkingType: null,
+				},
+				model2: {
+					baseUrl: "https://unused.example/v1",
+					apiKey: "",
+					modelName: "unused",
+					displayName: "Unused",
+					systemPrompt: "",
+					maxTokens: null,
+					reasoningEffort: null,
+					thinkingType: null,
+				},
+			} as RuntimeConfig,
+			message: "Answer from already retrieved context",
+			conversationId: "conv-1",
+			modelId: "model1",
+			disableTools: true,
+		});
+
+		expect(mocks.runPlainNormalChatModelRun).toHaveBeenCalledWith(
+			expect.objectContaining({
+				tools: undefined,
+				toolChoice: undefined,
+				maxToolSteps: 12,
+			}),
+		);
 	});
 });

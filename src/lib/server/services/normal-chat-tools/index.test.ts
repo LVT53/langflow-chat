@@ -5,7 +5,11 @@ import { searchImages } from "$lib/server/services/image-search";
 import { getMemoryContext } from "$lib/server/services/memory-context";
 import { researchWeb } from "$lib/server/services/web-research";
 import type { FileProductionJob } from "$lib/types";
-import { createNormalChatTools, shouldForceProduceFileTool } from "./index";
+import {
+	createNormalChatTools,
+	isProduceFileRequest,
+	shouldForceProduceFileTool,
+} from "./index";
 
 vi.mock("$lib/server/services/file-production", () => ({
 	submitFileProductionIntake: vi.fn(),
@@ -1092,5 +1096,13 @@ describe("shouldForceProduceFileTool", () => {
 		"Make a report based on our memory context.",
 	])("leaves tool choice automatic for context-dependent file requests: %s", (message) => {
 		expect(shouldForceProduceFileTool(message)).toBe(false);
+	});
+
+	it.each([
+		"Could you please generate a pdf report with the content from AlmaLinux Server project folder? I want it to be detailed and long.",
+		"Create a PDF report from the current project folder.",
+		"Generate a DOCX using the uploaded documents.",
+	])("still recognizes context-dependent requests with explicit file targets: %s", (message) => {
+		expect(isProduceFileRequest(message)).toBe(true);
 	});
 });

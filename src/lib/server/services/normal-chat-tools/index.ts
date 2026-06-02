@@ -166,19 +166,25 @@ const REQUEST_FOR_ME_RE = /\b(for me|please|can you|could you|would you)\b/i;
 const CONTEXT_DEPENDENT_FILE_SOURCE_RE =
 	/\b(content from|project folder|folder|workspace|knowledge|memory|context|attached|uploaded|current document|existing document|library|notes?)\b/i;
 
-export function shouldForceProduceFileTool(message: string): boolean {
+export function isProduceFileRequest(message: string): boolean {
 	const text = message.trim();
 	if (!text) return false;
 	if (FILE_PRODUCTION_NEGATION_RE.test(text)) return false;
 	if (!FILE_PRODUCTION_ACTION_RE.test(text)) return false;
 	if (!FILE_PRODUCTION_TARGET_RE.test(text)) return false;
-	if (CONTEXT_DEPENDENT_FILE_SOURCE_RE.test(text)) return false;
 	if (
 		INFORMATIONAL_FILE_QUESTION_RE.test(text) &&
 		!REQUEST_FOR_ME_RE.test(text)
 	) {
 		return false;
 	}
+	return true;
+}
+
+export function shouldForceProduceFileTool(message: string): boolean {
+	const text = message.trim();
+	if (!isProduceFileRequest(text)) return false;
+	if (CONTEXT_DEPENDENT_FILE_SOURCE_RE.test(text)) return false;
 	return true;
 }
 

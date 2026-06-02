@@ -1,5 +1,6 @@
 import type { RuntimeConfig } from "$lib/server/config-store";
 import type { ProviderUsageSnapshot } from "$lib/server/services/analytics";
+import { isProduceFileRequest } from "$lib/server/services/normal-chat-tools";
 import type {
 	HonchoContextInfo,
 	HonchoContextSnapshot,
@@ -47,6 +48,7 @@ export interface NonStreamFallbackDeps {
 		thinkingMode?: ThinkingMode;
 		forceWebSearch?: boolean;
 		signal?: AbortSignal;
+		disableTools?: boolean;
 	}) => Promise<NonStreamFallbackResponse>;
 	sendParams: NonStreamFallbackSendParams;
 	user: { id: string; displayName: string | null; email: string | null };
@@ -71,6 +73,7 @@ export interface NonStreamFallbackDeps {
 	onHonchoSnapshot: (snap: HonchoContextSnapshot | null) => void;
 	onProviderUsage: (usage: ProviderUsageSnapshot | null) => void;
 	onResolvedModel?: (modelId: ModelId, displayName: string) => void;
+	completedToolCallContext?: string | null;
 }
 
 const EMPTY_VISIBLE_OUTPUT_RECOVERY_APPENDIX =
@@ -111,13 +114,28 @@ export async function runNonStreamFallback(
 			onProviderUsage,
 			onResolvedModel,
 		} = deps;
+		const completedToolCallContext = deps.completedToolCallContext?.trim();
+		const shouldAllowForcedFileTool =
+			Boolean(completedToolCallContext) &&
+			isProduceFileRequest(sendParams.upstreamMessage);
 
 		for (let attempt = 1; attempt <= 2; attempt += 1) {
+			const contextualAppendix = completedToolCallContext
+				? appendSystemPromptAppendix(
+						systemPromptAppendix,
+						[
+							shouldAllowForcedFileTool
+								? "The previous streaming attempt completed these tool calls before ending without a final answer. Use this compact tool context to create the requested file now; do not call more context/search tools."
+								: "The previous streaming attempt completed these tool calls before ending without a final answer. Use this compact tool context to answer now; do not call more tools unless the context is unusable.",
+							completedToolCallContext,
+						].join("\n\n"),
+					)
+				: systemPromptAppendix;
 			const attemptSystemPromptAppendix =
 				attempt === 1
-					? systemPromptAppendix
+					? contextualAppendix
 					: appendSystemPromptAppendix(
-							systemPromptAppendix,
+							contextualAppendix,
 							EMPTY_VISIBLE_OUTPUT_RECOVERY_APPENDIX,
 						);
 			const fallbackResponse = await runPlainNormalChatSendModel({
@@ -135,6 +153,9 @@ export async function runNonStreamFallback(
 				thinkingMode: sendParams.thinkingMode,
 				forceWebSearch: sendParams.forceWebSearch,
 				signal,
+				disableTools:
+					(Boolean(completedToolCallContext) && !shouldAllowForcedFileTool) ||
+					attempt > 1,
 			});
 
 			const contextStatus = fallbackResponse.contextStatus;

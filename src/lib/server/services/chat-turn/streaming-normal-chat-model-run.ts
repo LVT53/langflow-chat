@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { RuntimeConfig } from "$lib/server/config-store";
 import type { ModelConfig } from "$lib/server/env";
 import type { LegacyContextTraceSectionInput } from "$lib/server/services/chat-turn/context-trace";
+import { NORMAL_CHAT_MAX_TOOL_STEPS } from "$lib/server/services/chat-turn/tool-step-budget";
 import {
 	type AuthenticatedPromptUser,
 	type PromptContextLimits,
@@ -121,6 +122,7 @@ export async function runStreamingNormalChatSendModel(
 		maxOutputTokens: prepared.outputTokenBudget?.effectiveMaxTokens,
 		tools: normalChatTools.tools,
 		toolChoice,
+		maxToolSteps: NORMAL_CHAT_MAX_TOOL_STEPS,
 		messages: [
 			{
 				role: "user",

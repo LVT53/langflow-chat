@@ -3,6 +3,7 @@ import type { RuntimeConfig } from "$lib/server/config-store";
 import type { ModelConfig } from "$lib/server/env";
 import type { ProviderUsageSnapshot } from "$lib/server/services/analytics";
 import type { LegacyContextTraceSectionInput } from "$lib/server/services/chat-turn/context-trace";
+import { NORMAL_CHAT_MAX_TOOL_STEPS } from "$lib/server/services/chat-turn/tool-step-budget";
 import {
 	type AuthenticatedPromptUser,
 	type PromptContextLimits,
@@ -45,6 +46,7 @@ export type PlainNormalChatSendModelParams = {
 	forceWebSearch?: boolean;
 	createTurnId?: () => string;
 	signal?: AbortSignal;
+	disableTools?: boolean;
 };
 
 export type PlainNormalChatSendModelResult = {
@@ -103,6 +105,7 @@ export async function runPlainNormalChatSendModel(
 	const toolChoice = shouldForceProduceFileTool(params.message)
 		? ({ type: "tool", toolName: "produce_file" } as const)
 		: undefined;
+	const tools = params.disableTools ? undefined : normalChatTools.tools;
 	const result = await runPlainNormalChatModelRun({
 		provider,
 		system: prepared.systemPrompt,
@@ -115,8 +118,9 @@ export async function runPlainNormalChatSendModel(
 			params.signal,
 		),
 		maxOutputTokens: prepared.outputTokenBudget?.effectiveMaxTokens,
-		tools: normalChatTools.tools,
-		toolChoice,
+		tools,
+		toolChoice: tools ? toolChoice : undefined,
+		maxToolSteps: NORMAL_CHAT_MAX_TOOL_STEPS,
 		messages: [
 			{
 				role: "user",

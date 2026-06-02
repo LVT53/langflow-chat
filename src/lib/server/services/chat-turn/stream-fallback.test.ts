@@ -264,10 +264,60 @@ describe("runNonStreamFallback", () => {
 				systemPromptAppendix: expect.stringContaining(
 					"Existing appendix\n\nThe previous attempt produced no visible final answer",
 				),
+				disableTools: true,
 			}),
 		);
 		expect(mockEmitText).toHaveBeenCalledWith("fallback response");
 		expect(mockCompleteSuccess).toHaveBeenCalled();
+	});
+
+	it("uses completed tool context and disables tools when recovering after tool-only stream output", async () => {
+		const result = await callFallback({
+			systemPromptAppendix: "Existing appendix",
+			completedToolCallContext:
+				"Tool 1: memory_context\nInput: {\"mode\":\"project\",\"query\":\"AlmaLinux Server\"}\nSummary: Project memory found: AlmaLinux Server",
+		});
+
+		expect(result).toBe(true);
+		expect(mockRunPlainNormalChatSendModel).toHaveBeenCalledWith(
+			expect.objectContaining({
+				disableTools: true,
+				systemPromptAppendix: expect.stringContaining(
+					"The previous streaming attempt completed these tool calls",
+				),
+			}),
+		);
+		expect(mockRunPlainNormalChatSendModel).toHaveBeenCalledWith(
+			expect.objectContaining({
+				systemPromptAppendix: expect.stringContaining(
+					"Project memory found: AlmaLinux Server",
+				),
+			}),
+		);
+	});
+
+	it("keeps the forced file tool available when recovering a file request with completed context", async () => {
+		const result = await callFallback({
+			sendParams: {
+				...defaultSendParams,
+				upstreamMessage:
+					"Generate a detailed PDF report from the AlmaLinux Server project folder.",
+			},
+			completedToolCallContext:
+				"Tool 1: memory_context\nSummary: Project memory found: AlmaLinux Server",
+		});
+
+		expect(result).toBe(true);
+		expect(mockRunPlainNormalChatSendModel).toHaveBeenCalledWith(
+			expect.objectContaining({
+				disableTools: false,
+				message:
+					"Generate a detailed PDF report from the AlmaLinux Server project folder.",
+				systemPromptAppendix: expect.stringContaining(
+					"Use this compact tool context to create the requested file now",
+				),
+			}),
+		);
 	});
 
 	it("retries once when fallback text normalizes to no visible output", async () => {
