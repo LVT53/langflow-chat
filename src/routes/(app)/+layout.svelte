@@ -470,8 +470,7 @@
 {/if}
 
 {#if ImportChatGPTModalComponent}
-	<svelte:component
-		this={ImportChatGPTModalComponent}
+	<ImportChatGPTModalComponent
 		bind:show={showChatGPTImportModal}
 		onClose={() => (showChatGPTImportModal = false)}
 		projects={data.projects ?? []}

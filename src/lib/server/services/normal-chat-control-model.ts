@@ -71,8 +71,8 @@ function buildProviderOptions(params: {
 		? { strictJsonSchema: params.jsonSchema.strict ?? true }
 		: {};
 	const providerOptions = {
-		...(normalChatOptions.reasoning_effort
-			? { reasoningEffort: normalChatOptions.reasoning_effort }
+		...(normalChatOptions.reasoningEffort
+			? { reasoningEffort: normalChatOptions.reasoningEffort }
 			: {}),
 		...schemaOptions,
 	};
