@@ -39,7 +39,6 @@ import {
 	isFileProductionToolName,
 	toolCallInputKey,
 } from "$lib/utils/tool-calls";
-import type { StreamToolCallDetails as ImportedToolDetails } from "./tool-call-markers";
 
 const JSON_HEADERS = { "Content-Type": "application/json" };
 const SSE_HEADERS = {
@@ -112,6 +111,14 @@ type NativeToolCallAccumulator = {
 	input?: Record<string, unknown>;
 	runningEmitted: boolean;
 	doneEmitted: boolean;
+};
+
+type StreamToolCallDetails = {
+	callId?: string;
+	outputSummary?: string | null;
+	sourceType?: EvidenceSourceType | null;
+	candidates?: ToolEvidenceCandidate[];
+	metadata?: Record<string, string | number | boolean | null>;
 };
 
 export function createStreamJsonErrorResponse(
@@ -479,7 +486,7 @@ export function createServerChunkRuntime({
 		input: Record<string, unknown>,
 		status: "running" | "done",
 		outputSummary?: string | null,
-		details?: ImportedToolDetails,
+		details?: StreamToolCallDetails,
 	) => void;
 	thinkingBatchMin?: number;
 	skillControlEnabled?: boolean;
@@ -661,7 +668,7 @@ export function createServerChunkRuntime({
 		name: string,
 		input: Record<string, unknown>,
 		status: "running" | "done",
-		details?: ImportedToolDetails,
+		details?: StreamToolCallDetails,
 	) => {
 		const shouldStoreThinkingSegment = !isFileProductionToolName(name);
 		const rawCallId = details?.callId;

@@ -7,7 +7,6 @@ import {
 	stripLeakedToolDiagnostics,
 } from "$lib/services/stream-protocol";
 import { parseSkillControlEnvelopeFromAssistantText } from "./skill-control-envelope";
-import { processToolCallMarkers } from "./tool-call-markers";
 
 /**
  * Canonical text normalization for assistant output.
@@ -46,7 +45,6 @@ export function normalizeAssistantOutputWithSkillControl(
 	});
 
 	let result = visibleText;
-	result = processToolCallMarkers(result, () => {});
 	result = stripLeakedToolDiagnostics(result);
 
 	if (options.skillControlEnabled === false) {

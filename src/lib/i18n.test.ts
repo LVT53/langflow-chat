@@ -25,67 +25,60 @@ const auditedPrefixes = [
 	"sidebar.unpinFromSidebar",
 ] as const;
 
-function collectDictionaryKeys(): Record<"en" | "hu", string[]> {
-	const sourcePath = resolve(
-		dirname(new URL(import.meta.url).pathname),
-		"i18n.ts",
-	);
-	const sourceFile = ts.createSourceFile(
-		sourcePath,
-		readFileSync(sourcePath, "utf8"),
-		ts.ScriptTarget.Latest,
-		true,
-		ts.ScriptKind.TS,
-	);
+const I18N_MODULES = ["chat", "common", "knowledge", "settings", "skills"] as const;
 
-	let dictionary: ts.ObjectLiteralExpression | null = null;
-	for (const node of sourceFile.statements) {
-		if (!ts.isVariableStatement(node)) continue;
-		for (const declaration of node.declarationList.declarations) {
-			if (
-				ts.isIdentifier(declaration.name) &&
-				declaration.name.text === "dictionary" &&
-				declaration.initializer
-			) {
-				const initializer = ts.isAsExpression(declaration.initializer)
-					? declaration.initializer.expression
-					: declaration.initializer;
-				if (ts.isObjectLiteralExpression(initializer)) {
-					dictionary = initializer;
+function collectDictionaryKeys(): Record<"en" | "hu", string[]> {
+	const keys: Record<"en" | "hu", string[]> = { en: [], hu: [] };
+	const dir = dirname(new URL(import.meta.url).pathname);
+
+	for (const mod of I18N_MODULES) {
+		const filePath = resolve(dir, "i18n", `${mod}.ts`);
+		const source = readFileSync(filePath, "utf8");
+		const sourceFile = ts.createSourceFile(
+			filePath,
+			source,
+			ts.ScriptTarget.Latest,
+			true,
+			ts.ScriptKind.TS,
+		);
+
+		let dictObj: ts.ObjectLiteralExpression | null = null;
+		for (const node of sourceFile.statements) {
+			if (!ts.isVariableStatement(node)) continue;
+			for (const decl of node.declarationList.declarations) {
+				if (ts.isIdentifier(decl.name) && decl.name.text.endsWith("Dict") && decl.initializer) {
+					const init = ts.isAsExpression(decl.initializer) ? decl.initializer.expression : decl.initializer;
+					if (ts.isObjectLiteralExpression(init)) {
+						dictObj = init;
+					}
+				}
+			}
+		}
+		if (!dictObj) continue;
+
+		for (const lang of ["en", "hu"] as const) {
+			const prop = dictObj.properties.find(
+				(p): p is ts.PropertyAssignment =>
+					ts.isPropertyAssignment(p) &&
+					ts.isIdentifier(p.name) &&
+					p.name.text === lang,
+			);
+			if (!prop || !ts.isObjectLiteralExpression(prop.initializer)) continue;
+
+			for (const p of prop.initializer.properties) {
+				if (!ts.isPropertyAssignment(p)) continue;
+				let key: string | null = null;
+				if (ts.isStringLiteral(p.name)) key = p.name.text;
+				else if (ts.isIdentifier(p.name)) key = p.name.text;
+				if (key && auditedPrefixes.some((prefix) => key!.startsWith(prefix))) {
+					keys[lang].push(key);
 				}
 			}
 		}
 	}
 
-	if (!dictionary) {
-		throw new Error("Could not find i18n dictionary object");
-	}
-
-	const keys = { en: [] as string[], hu: [] as string[] };
-	for (const language of ["en", "hu"] as const) {
-		const property = dictionary.properties.find(
-			(prop): prop is ts.PropertyAssignment =>
-				ts.isPropertyAssignment(prop) &&
-				ts.isIdentifier(prop.name) &&
-				prop.name.text === language,
-		);
-		if (!property || !ts.isObjectLiteralExpression(property.initializer)) {
-			throw new Error(`Could not find ${language} i18n dictionary`);
-		}
-
-		keys[language] = property.initializer.properties
-			.map((prop) => {
-				if (!ts.isPropertyAssignment(prop)) return null;
-				if (ts.isStringLiteral(prop.name) || ts.isIdentifier(prop.name)) {
-					return prop.name.text;
-				}
-				return null;
-			})
-			.filter((key): key is string => Boolean(key))
-			.filter((key) => auditedPrefixes.some((prefix) => key.startsWith(prefix)))
-			.sort();
-	}
-
+	keys.en.sort();
+	keys.hu.sort();
 	return keys;
 }
 

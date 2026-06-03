@@ -1,23 +1,27 @@
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import {
 	generateText,
-	InvalidToolInputError,
 	jsonSchema,
 	type ModelMessage,
 	NoObjectGeneratedError,
-	NoSuchToolError,
 	Output,
 } from "ai";
 import type { ModelId, ThinkingMode } from "$lib/types";
 import { getConfig } from "../config-store";
 import { getSystemPrompt } from "../prompts";
-import { repairMalformedToolCallJson } from "$lib/server/utils/tool-json-repair";
+
 import { buildOutboundSystemPrompt } from "./normal-chat-context";
 import {
 	buildNormalChatModelRunProviderOptions,
 	type NormalChatModelRunProvider,
 	resolveNormalChatModelRunProvider,
 } from "./normal-chat-model";
+import {
+	CONTROL_MODEL_DEFAULT_MAX_TOKENS,
+	CONTROL_MODEL_MAX_TOKEN_CAP,
+	CONTROL_MODEL_TEMPERATURE,
+	DEFAULT_MODEL_MAX_RETRIES,
+} from "./normal-chat-model-config";
 import { normalizeOpenAICompatibleBaseUrl } from "./openai-compatible-url";
 
 export type JsonControlResponseSchema = {
@@ -56,19 +60,6 @@ function createControlModelProvider(params: {
 		supportsStructuredOutputs: true,
 		fetch: params.fetch,
 	});
-}
-
-function toolCallRepairFunction({
-	error,
-	toolCall,
-}: {
-	error: InvalidToolInputError | NoSuchToolError;
-	toolCall: { toolCallId: string; toolName: string; input: string };
-}): { toolCallId: string; toolName: string; input: string } | null {
-	if (NoSuchToolError.isInstance(error)) return null;
-	const repaired = repairMalformedToolCallJson(toolCall.input);
-	if (!repaired) return null;
-	return { ...toolCall, input: repaired };
 }
 
 function buildProviderOptions(params: {
@@ -185,16 +176,15 @@ export async function sendJsonControlMessage(
 			system: systemPrompt,
 			messages,
 			output: buildOutput(options),
-			temperature: options.temperature ?? 0.1,
+			temperature: options.temperature ?? CONTROL_MODEL_TEMPERATURE,
 			maxOutputTokens:
 				options.maxTokens ??
 				(provider.maxOutputTokens != null
-					? Math.min(provider.maxOutputTokens, 4096)
-					: 2048),
-			maxRetries: 0,
+					? Math.min(provider.maxOutputTokens, CONTROL_MODEL_MAX_TOKEN_CAP)
+					: CONTROL_MODEL_DEFAULT_MAX_TOKENS),
+			maxRetries: DEFAULT_MODEL_MAX_RETRIES,
 			abortSignal: options.signal,
 			timeout: config.requestTimeoutMs,
-			experimental_repairToolCall: toolCallRepairFunction,
 			providerOptions: buildProviderOptions({
 				provider,
 				thinkingMode: options.thinkingMode,

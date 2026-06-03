@@ -34,6 +34,7 @@ import { listEnabledProviderModels } from "../provider-models";
 import { repairMalformedToolCallJson } from "$lib/server/utils/tool-json-repair";
 import { normalizeOpenAICompatibleBaseUrl } from "../openai-compatible-url";
 import { createOpenAICompatibleStreamNormalizingFetch } from "./openai-compatible-stream-normalizer";
+import { DEFAULT_MODEL_MAX_RETRIES } from "../normal-chat-model-config";
 import {
 	buildNormalChatModelRunCompatibilityProviderOptions,
 	transformNormalChatModelRunRequestBody,
@@ -591,7 +592,7 @@ export async function runPlainNormalChatModelRun(
 		toolChoice: params.toolChoice,
 		stopWhen,
 		maxOutputTokens: params.maxOutputTokens ?? params.provider.maxOutputTokens,
-		maxRetries: params.maxRetries ?? 0,
+		maxRetries: params.maxRetries ?? DEFAULT_MODEL_MAX_RETRIES,
 		abortSignal: params.abortSignal,
 		headers: params.headers,
 		providerOptions: params.providerOptions,
@@ -669,7 +670,7 @@ async function* streamStreamingNormalChatModelRun(
 		toolChoice: params.toolChoice,
 		stopWhen: toolStopWhen,
 		maxOutputTokens: params.maxOutputTokens ?? params.provider.maxOutputTokens,
-		maxRetries: params.maxRetries ?? 0,
+		maxRetries: params.maxRetries ?? DEFAULT_MODEL_MAX_RETRIES,
 		abortSignal: params.abortSignal,
 		headers: params.headers,
 		providerOptions: params.providerOptions,

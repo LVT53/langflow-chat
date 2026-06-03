@@ -58,13 +58,6 @@ describe("normalizeAssistantOutput", () => {
 		expect(result).toBe("");
 	});
 
-	it("strips tool-call markers from text", () => {
-		const result = normalizeAssistantOutput(
-			'Before text\u0002TOOL_START\u001f{"name":"search"}\u0003during search\u0002TOOL_END\u001f{"name":"search","outputSummary":"done"}\u0003After text',
-		);
-		expect(result).toBe("Before textduring searchAfter text");
-	});
-
 	it("strips untagged Qwen planning preambles from text", () => {
 		const result = normalizeAssistantOutput(
 			"responseThe user wants me to write 500 words about the USA. This is a straightforward content request. I will write an informative piece.\n\n" +
@@ -135,23 +128,6 @@ describe("normalizeAssistantOutput", () => {
 		expect(result).toBe("I see the root filesystem is 66% used.");
 	});
 
-	it("strips leaked document-source repair output around file-production completion", () => {
-		const toolCompletion = JSON.stringify({
-			name: "produce_file",
-			outputSummary: "Accepted file-production request.",
-		});
-		const result = normalizeAssistantOutput(
-			[
-				"Let me fix the JSON formatting for the document source.",
-				'{"type":"paragraph","text":"Actionable takeaways..."}, {"type":"list","items":["Prioritize the migration","Measure operational risk"]}',
-				`\u0002TOOL_END\u001f${toolCompletion}\u0003`,
-				"Your PDF is being generated now.",
-			].join("\n"),
-		);
-
-		expect(result).toBe("Your PDF is being generated now.");
-	});
-
 	it("preserves document-source JSON examples when no repair leak is active", () => {
 		const result = normalizeAssistantOutput(
 			[
@@ -177,15 +153,6 @@ describe("normalizeAssistantOutput", () => {
 		);
 
 		expect(result).toBe("Your PDF is being generated now.");
-	});
-
-	it("strips thinking and tool markers combined", () => {
-		const result = normalizeAssistantOutput(
-			"<thinking>reason</thinking>" +
-				'\u0002TOOL_START\u001f{"name":"calc"}\u0003' +
-				"hello",
-		);
-		expect(result).toBe("hello");
 	});
 
 	it("strips complete Skill Control Envelope blocks from visible assistant output", () => {
