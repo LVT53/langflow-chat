@@ -141,9 +141,7 @@ export function createNormalChatTools(ctx: CreateNormalChatToolsContext) {
 				const safeInput = sanitizeResearchWebInput(input);
 				try {
 					const result = await withTimeout(
-						researchWeb(safeInput, {
-							config: { ...getConfig(), webResearchSearxngLanguage: ctx.language ?? getConfig().webResearchSearxngLanguage },
-						}),
+						researchWeb(safeInput),
 						TOOL_TIMEOUTS_MS.research_web,
 						"research_web",
 					);
