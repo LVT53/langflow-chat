@@ -34,6 +34,7 @@ let {
 	onSave?: (data: Record<string, unknown>) => void | Promise<void>;
 	onClose?: () => void;
 	onTest?: (data: Record<string, unknown>) => void | Promise<void>;
+	onIconFile?: (event: Event) => void;
 } = $props();
 
 let formName = $state(untrack(() => (isCreate ? "" : (provider?.name ?? ""))));
@@ -204,14 +205,24 @@ function handleTest() {
 				</div>
 
 				<div>
-					<label class="settings-label" for="provider-form-icon">{$t('admin.iconAssetId')}</label>
-					<input
-						id="provider-form-icon"
-						type="text"
-						class="settings-input"
-						bind:value={formIconAssetId}
-						placeholder=""
-					/>
+					<label class="settings-label">{$t('admin.modelIcon')}</label>
+					<div class="flex items-center gap-3">
+						{#if formIconAssetId}
+							<img
+								src={`/api/campaign-assets/${encodeURIComponent(formIconAssetId)}/content`}
+								alt=""
+								class="h-10 w-10 rounded object-cover"
+							/>
+						{/if}
+						{#if onIconFile}
+							<input
+								type="file"
+								accept="image/*"
+								class="settings-input"
+								onchange={onIconFile}
+							/>
+						{/if}
+					</div>
 				</div>
 
 				<div class="flex items-center gap-2">

@@ -121,7 +121,8 @@ let providersMessageTimer: ReturnType<typeof setTimeout> | undefined;
 let systemSkillsMessageTimer: ReturnType<typeof setTimeout> | undefined;
 
 type ModelIconTarget =
-	| { kind: "built-in"; modelName: "model1" | "model2" };
+	| { kind: "built-in"; modelName: "model1" | "model2" }
+	| { kind: "provider"; providerId: string };
 
 type ModelIconCropJob = {
 	key: string;
@@ -184,6 +185,9 @@ async function applyModelIconAsset(target: ModelIconTarget, assetId: string) {
 				: "MODEL_2_ICON_ASSET_ID";
 		adminConfig[configKey] = assetId;
 		await updateAdminConfig({ [configKey]: assetId });
+	} else if (target.kind === "provider") {
+		await updateProviderEntry(target.providerId, { iconAssetId: assetId });
+		await loadProviderConfigs();
 	}
 }
 
@@ -193,7 +197,7 @@ async function handleModelIconFile(event: Event, target: ModelIconTarget) {
 	input.value = "";
 	if (!file) return;
 
-	const key = target.modelName;
+	const key = target.kind === "built-in" ? target.modelName : `provider:${target.providerId}`;
 	iconUploading = key;
 	providerConfigsError = "";
 	providerConfigsMessage = "";
@@ -1342,6 +1346,7 @@ function placeholderFor(key: string): string {
 		testMessage={providerFormTestMessage}
 		onSave={handleProviderFormSave}
 		onClose={closeProviderForm}
+		onIconFile={providerFormProvider ? (e: Event) => handleModelIconFile(e, { kind: "provider", providerId: providerFormProvider!.id }) : undefined}
 	/>
 {/if}
 
