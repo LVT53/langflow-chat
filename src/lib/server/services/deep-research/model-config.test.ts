@@ -2,11 +2,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RuntimeConfig } from "$lib/server/config-store";
 
 let runtimeConfig: RuntimeConfig;
-const getProviderById = vi.fn();
+const getProviderWithSecrets = vi.fn();
+const listEnabledProviderModels = vi.fn();
 
 vi.mock("$lib/server/config-store", () => ({
 	getConfig: () => runtimeConfig,
-	getProviderById: (id: string) => getProviderById(id),
+}));
+
+vi.mock("$lib/server/services/providers", () => ({
+	getProviderWithSecrets: (id: string) => getProviderWithSecrets(id),
+}));
+
+vi.mock("$lib/server/services/provider-models", () => ({
+	listEnabledProviderModels: (providerId?: string) =>
+		listEnabledProviderModels(providerId),
 }));
 
 import {
@@ -64,7 +73,8 @@ function baseConfig(): RuntimeConfig {
 describe("Deep Research model configuration", () => {
 	beforeEach(() => {
 		runtimeConfig = baseConfig();
-		getProviderById.mockReset();
+		getProviderWithSecrets.mockReset();
+		listEnabledProviderModels.mockReset();
 	});
 
 	it("exposes every model-call role in the current Deep Research workflow", () => {
@@ -81,18 +91,19 @@ describe("Deep Research model configuration", () => {
 
 	it("resolves provider roles through the existing model list and infers provider limits", async () => {
 		runtimeConfig.deepResearchModels.source_review = "provider:openrouter";
-		getProviderById.mockResolvedValue({
-			id: "openrouter",
+		getProviderWithSecrets.mockResolvedValue({
+			name: "anthropic/claude-sonnet-4",
 			displayName: "OpenRouter Research",
 			baseUrl: "https://openrouter.ai/api/v1",
-			modelName: "anthropic/claude-sonnet-4",
 			enabled: true,
-			maxModelContext: 180_000,
-			compactionUiThreshold: 144_000,
-			targetConstructedContext: 108_000,
-			maxMessageLength: 30_000,
-			maxTokens: 12_000,
 		});
+		listEnabledProviderModels.mockResolvedValue([
+			{
+				maxModelContext: 180_000,
+				compactionUiThreshold: 144_000,
+				targetConstructedContext: 108_000,
+			},
+		]);
 
 		const resolved = await resolveDeepResearchModel("source_review");
 
@@ -107,26 +118,27 @@ describe("Deep Research model configuration", () => {
 				maxModelContext: 180_000,
 				compactionUiThreshold: 144_000,
 				targetConstructedContext: 108_000,
-				maxMessageLength: 30_000,
-				maxTokens: 12_000,
+				maxMessageLength: 10_000,
+				maxTokens: null,
 			},
 		});
 	});
 
 	it("derives optional provider target and threshold limits from configured max model context", async () => {
 		runtimeConfig.deepResearchModels.research_task = "provider:deep-provider";
-		getProviderById.mockResolvedValue({
-			id: "deep-provider",
+		getProviderWithSecrets.mockResolvedValue({
+			name: "deep-provider/large-context",
 			displayName: "Deep Provider",
 			baseUrl: "https://api.deep-provider.example/v1",
-			modelName: "deep-provider/large-context",
 			enabled: true,
-			maxModelContext: 1_000_000,
-			compactionUiThreshold: null,
-			targetConstructedContext: null,
-			maxMessageLength: null,
-			maxTokens: 16_000,
 		});
+		listEnabledProviderModels.mockResolvedValue([
+			{
+				maxModelContext: 1_000_000,
+				compactionUiThreshold: null,
+				targetConstructedContext: null,
+			},
+		]);
 
 		await expect(
 			resolveDeepResearchModel("research_task"),
@@ -137,32 +149,33 @@ describe("Deep Research model configuration", () => {
 				compactionUiThreshold: 800_000,
 				targetConstructedContext: 900_000,
 				maxMessageLength: 10_000,
-				maxTokens: 16_000,
+				maxTokens: null,
 			},
 		});
 	});
 
-	it("derives optional provider target and threshold limits from an inferred model context window", async () => {
+	it("falls back to the unknown-provider safety default when no model context is configured", async () => {
 		runtimeConfig.deepResearchModels.synthesis = "provider:gpt";
-		getProviderById.mockResolvedValue({
-			id: "gpt",
+		getProviderWithSecrets.mockResolvedValue({
+			name: "openai/gpt-4.1",
 			displayName: "GPT Provider",
 			baseUrl: "https://api.gpt-provider.example/v1",
-			modelName: "openai/gpt-4.1",
 			enabled: true,
-			maxModelContext: null,
-			compactionUiThreshold: null,
-			targetConstructedContext: null,
-			maxMessageLength: null,
-			maxTokens: null,
 		});
+		listEnabledProviderModels.mockResolvedValue([
+			{
+				maxModelContext: null,
+				compactionUiThreshold: null,
+				targetConstructedContext: null,
+			},
+		]);
 
 		await expect(resolveDeepResearchModel("synthesis")).resolves.toMatchObject({
 			modelId: "provider:gpt",
 			limits: {
-				maxModelContext: 1_047_576,
-				compactionUiThreshold: 838_060,
-				targetConstructedContext: 942_818,
+				maxModelContext: 150_000,
+				compactionUiThreshold: 120_000,
+				targetConstructedContext: 135_000,
 				maxMessageLength: 10_000,
 				maxTokens: null,
 			},
@@ -171,18 +184,19 @@ describe("Deep Research model configuration", () => {
 
 	it("uses the provider safety fallback for unknown provider context capacity", async () => {
 		runtimeConfig.deepResearchModels.citation_audit = "provider:unknown";
-		getProviderById.mockResolvedValue({
-			id: "unknown",
+		getProviderWithSecrets.mockResolvedValue({
+			name: "vendor/custom-model",
 			displayName: "Unknown Provider",
 			baseUrl: "https://api.unknown-provider.example/v1",
-			modelName: "vendor/custom-model",
 			enabled: true,
-			maxModelContext: null,
-			compactionUiThreshold: null,
-			targetConstructedContext: null,
-			maxMessageLength: null,
-			maxTokens: null,
 		});
+		listEnabledProviderModels.mockResolvedValue([
+			{
+				maxModelContext: null,
+				compactionUiThreshold: null,
+				targetConstructedContext: null,
+			},
+		]);
 
 		await expect(
 			resolveDeepResearchModel("citation_audit"),
@@ -200,8 +214,8 @@ describe("Deep Research model configuration", () => {
 
 	it("falls back to Model 1 when a configured role points at a disabled provider or disabled Model 2", async () => {
 		runtimeConfig.deepResearchModels.synthesis = "provider:disabled";
-		getProviderById.mockResolvedValueOnce({
-			id: "disabled",
+		getProviderWithSecrets.mockResolvedValueOnce({
+			name: "disabled",
 			displayName: "Disabled",
 			enabled: false,
 		});

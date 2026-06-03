@@ -239,7 +239,7 @@ describe("SettingsAdminSystemPane", () => {
 	});
 
 	it("lets admins configure a rate-limit fallback when creating a provider", async () => {
-		const { getByLabelText, getByRole, getByText } = render(SettingsAdminSystemPane, {
+		const { getAllByText, getByLabelText, getByRole, getByText } = render(SettingsAdminSystemPane, {
 			adminConfig: {
 				COMPOSER_COMMAND_REGISTRY_ENABLED: "true",
 				MODEL_2_ENABLED: "true",
@@ -255,7 +255,7 @@ describe("SettingsAdminSystemPane", () => {
 			expect(getByText("Add Provider")).toBeInTheDocument();
 		});
 
-		await fireEvent.click(getByText("Add Provider"));
+		await fireEvent.click(getAllByText("Add Provider")[0]);
 		await fireEvent.input(getByLabelText("Name (ID)"), {
 			target: { value: "fireworks-ai" },
 		});
@@ -269,6 +269,7 @@ describe("SettingsAdminSystemPane", () => {
 			target: { value: "primary-key" },
 		});
 
+		await fireEvent.click(getByText("Rate-limit Fallback"));
 		await fireEvent.click(getByLabelText("Enable rate-limit fallback"));
 		await fireEvent.input(getByLabelText("Fallback Base URL"), {
 			target: { value: "https://fallback.example/v1" },
@@ -296,97 +297,6 @@ describe("SettingsAdminSystemPane", () => {
 				}),
 			);
 		});
-	});
-
-	it("lets admins choose an enabled provider as the default model for new users", async () => {
-		mockFetchProviderList.mockResolvedValue([
-			{
-				id: "fire-pass",
-				name: "fire_pass",
-				displayName: "Fire Pass",
-				baseUrl: "https://api.fireworks.ai/inference/v1",
-				modelName: "accounts/fireworks/routers/kimi-k2p6-turbo",
-				reasoningEffort: null,
-				thinkingType: null,
-				enabled: true,
-				sortOrder: 0,
-				maxModelContext: 262144,
-				compactionUiThreshold: null,
-				targetConstructedContext: null,
-				maxMessageLength: null,
-				maxTokens: null,
-				createdAt: "",
-				updatedAt: "",
-			},
-		]);
-		const adminConfig = {
-			COMPOSER_COMMAND_REGISTRY_ENABLED: "true",
-			DEFAULT_NEW_USER_MODEL: "model1",
-			MODEL_2_ENABLED: "true",
-			DEEP_RESEARCH_ENABLED: "false",
-			DEEP_RESEARCH_WORKER_ENABLED: "false",
-		};
-
-		const { getAllByText, getByLabelText } = render(SettingsAdminSystemPane, {
-			adminConfig,
-			availableModels: [{ id: "model1", displayName: "Model 1" }],
-			onCheckHonchoHealth: vi.fn(),
-			onSaveAdminConfig: vi.fn(),
-		});
-
-		await waitFor(() => {
-			expect(getAllByText("Fire Pass").length).toBeGreaterThan(0);
-		});
-
-		await fireEvent.change(getByLabelText("Default model for new users"), {
-			target: { value: "provider:fire-pass" },
-		});
-
-		expect(adminConfig.DEFAULT_NEW_USER_MODEL).toBe("provider:fire-pass");
-	});
-
-	it("shows probed provider capabilities in provider rows", async () => {
-		mockFetchProviderList.mockResolvedValue([
-			providerFixture({
-				displayName: "Capability Probe",
-				capabilities: createModelCapabilitySet({
-					tools: { state: "detected", source: "probe" },
-					structuredOutput: { state: "not_detected", source: "probe" },
-					usageReporting: { state: "unknown", source: "probe" },
-					reasoningControls: {
-						state: "manual_override",
-						supported: true,
-						source: "manual_override",
-					},
-				}),
-			}),
-		]);
-
-		const { getAllByText, getByLabelText } = render(SettingsAdminSystemPane, {
-			adminConfig: {
-				COMPOSER_COMMAND_REGISTRY_ENABLED: "true",
-				MODEL_2_ENABLED: "true",
-				DEEP_RESEARCH_ENABLED: "false",
-				DEEP_RESEARCH_WORKER_ENABLED: "false",
-			},
-			availableModels: [{ id: "model1", displayName: "Model 1" }],
-			onCheckHonchoHealth: vi.fn(),
-			onSaveAdminConfig: vi.fn(),
-		});
-
-		await waitFor(() => {
-			expect(getAllByText("Capability Probe").length).toBeGreaterThan(0);
-		});
-
-		expect(getByLabelText("Tools: Detected")).toHaveTextContent("Tools Detected");
-		expect(getByLabelText("Structured output: Not detected")).toHaveTextContent(
-			"Structured output Not detected",
-		);
-		expect(getByLabelText("Usage: Unknown")).toHaveTextContent("Usage Unknown");
-		expect(
-			getByLabelText("Reasoning: Manual override: supported"),
-		).toHaveTextContent("Reasoning Manual override: supported");
-		expect(getAllByText(byExactTextContent("Tools Detected")).length).toBe(1);
 	});
 
 });

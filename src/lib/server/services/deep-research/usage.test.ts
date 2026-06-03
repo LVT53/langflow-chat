@@ -175,6 +175,14 @@ describe("research usage persistence", () => {
 
 	it("calculates record cost from provider model prices and aggregates per job and model", async () => {
 		const { db } = await import("$lib/server/db");
+		await db.insert(schema.providers).values({
+			id: "openrouter",
+			name: "openrouter",
+			displayName: "OpenRouter",
+			baseUrl: "https://openrouter.ai/api/v1",
+			apiKeyEncrypted: "encrypted",
+			apiKeyIv: "iv",
+		});
 		await db.insert(schema.providerModels).values({
 			id: "model-openrouter-claude",
 			providerId: "openrouter",

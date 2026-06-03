@@ -2,9 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RuntimeConfig } from "$lib/server/config-store";
 
 const mocks = vi.hoisted(() => ({
-	getProviderById: vi.fn(),
 	getProviderWithSecrets: vi.fn(),
 	decryptApiKey: vi.fn(),
+	listEnabledProviderModels: vi.fn(),
 	buildResearchUsageRecord: vi.fn(),
 	getResearchUsageForeignKeyDiagnostics: vi.fn(),
 	saveResearchUsageRecord: vi.fn(),
@@ -15,13 +15,17 @@ let runtimeConfig: RuntimeConfig;
 
 vi.mock("$lib/server/config-store", () => ({
 	getConfig: () => runtimeConfig,
-	getProviderById: (id: string) => mocks.getProviderById(id),
 }));
 
-vi.mock("$lib/server/services/inference-providers", () => ({
+vi.mock("$lib/server/services/providers", () => ({
 	getProviderWithSecrets: (id: string) => mocks.getProviderWithSecrets(id),
 	decryptApiKey: (encrypted: string, iv: string) =>
 		mocks.decryptApiKey(encrypted, iv),
+}));
+
+vi.mock("$lib/server/services/provider-models", () => ({
+	listEnabledProviderModels: (providerId?: string) =>
+		mocks.listEnabledProviderModels(providerId),
 }));
 
 vi.mock("./usage", () => ({
@@ -80,40 +84,43 @@ function baseConfig(): RuntimeConfig {
 function providerConfig() {
 	return {
 		id: "openrouter",
+		name: "anthropic/claude-sonnet-4",
 		displayName: "OpenRouter Research",
 		baseUrl: "https://openrouter.ai/api/v1",
-		modelName: "anthropic/claude-sonnet-4",
 		enabled: true,
+		rateLimitFallbackEnabled: true,
+		rateLimitFallbackBaseUrl: "https://api.moonshot.ai/v1",
+		rateLimitFallbackModelName: "kimi-k2.6",
+		rateLimitFallbackTimeoutMs: 12_000,
+	};
+}
+
+function providerModelConfig() {
+	return {
 		maxModelContext: 180_000,
 		compactionUiThreshold: 144_000,
 		targetConstructedContext: 108_000,
-		maxMessageLength: 30_000,
-		maxTokens: 12_000,
-		rateLimitFallbackEnabled: true,
-		rateLimitFallbackBaseUrl: "https://api.moonshot.ai/v1",
-		rateLimitFallbackApiKeyEncrypted: "encrypted-fallback",
-		rateLimitFallbackApiKeyIv: "fallback-iv",
-		rateLimitFallbackModelName: "kimi-k2.6",
-		rateLimitFallbackTimeoutMs: 12_000,
 	};
 }
 
 describe("Deep Research model runner", () => {
 	beforeEach(() => {
 		runtimeConfig = baseConfig();
-		mocks.getProviderById.mockReset();
 		mocks.getProviderWithSecrets.mockReset();
 		mocks.decryptApiKey.mockReset();
+		mocks.listEnabledProviderModels.mockReset();
 		mocks.buildResearchUsageRecord.mockReset();
 		mocks.getResearchUsageForeignKeyDiagnostics.mockReset();
 		mocks.saveResearchUsageRecord.mockReset();
 		mocks.warn.mockReset();
-		mocks.getProviderById.mockResolvedValue(providerConfig());
 		mocks.getProviderWithSecrets.mockResolvedValue({
 			...providerConfig(),
 			apiKeyEncrypted: "encrypted-key",
 			apiKeyIv: "iv",
+			rateLimitFallbackApiKeyEncrypted: "encrypted-fallback",
+			rateLimitFallbackApiKeyIv: "fallback-iv",
 		});
+		mocks.listEnabledProviderModels.mockResolvedValue([providerModelConfig()]);
 		mocks.decryptApiKey.mockReturnValue("provider-secret");
 		mocks.buildResearchUsageRecord.mockImplementation((input) => ({
 			id: "usage-record",
@@ -350,6 +357,8 @@ describe("Deep Research model runner", () => {
 			rateLimitFallbackEnabled: false,
 			apiKeyEncrypted: "encrypted-key",
 			apiKeyIv: "iv",
+			rateLimitFallbackApiKeyEncrypted: null,
+			rateLimitFallbackApiKeyIv: null,
 		});
 		const fetchImpl = vi.fn(async (url: URL | RequestInfo) => {
 			const requestUrl = String(url);
@@ -425,6 +434,8 @@ describe("Deep Research model runner", () => {
 			rateLimitFallbackEnabled: false,
 			apiKeyEncrypted: "encrypted-key",
 			apiKeyIv: "iv",
+			rateLimitFallbackApiKeyEncrypted: null,
+			rateLimitFallbackApiKeyIv: null,
 		});
 		const fetchImpl = vi.fn(async () => {
 			return new Response(JSON.stringify({ error: "provider unavailable" }), {
