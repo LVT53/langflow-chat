@@ -57,20 +57,20 @@ let formThinkingType = $state(untrack(() => model?.thinkingType ?? ""));
 let formCapabilitiesJson = $state(
 	untrack(() => model?.capabilitiesJson ?? "{}"),
 );
-let formInputUsdMicrosPer1m = $state(
-	untrack(() => numToString(model?.inputUsdMicrosPer1m ?? 0)),
+let formInputUsdPer1m = $state(
+	untrack(() => microsToDollars(model?.inputUsdMicrosPer1m)),
 );
-let formCachedInputUsdMicrosPer1m = $state(
-	untrack(() => numToString(model?.cachedInputUsdMicrosPer1m ?? 0)),
+let formCachedInputUsdPer1m = $state(
+	untrack(() => microsToDollars(model?.cachedInputUsdMicrosPer1m)),
 );
-let formCacheHitUsdMicrosPer1m = $state(
-	untrack(() => numToString(model?.cacheHitUsdMicrosPer1m ?? 0)),
+let formCacheHitUsdPer1m = $state(
+	untrack(() => microsToDollars(model?.cacheHitUsdMicrosPer1m)),
 );
-let formCacheMissUsdMicrosPer1m = $state(
-	untrack(() => numToString(model?.cacheMissUsdMicrosPer1m ?? 0)),
+let formCacheMissUsdPer1m = $state(
+	untrack(() => microsToDollars(model?.cacheMissUsdMicrosPer1m)),
 );
-let formOutputUsdMicrosPer1m = $state(
-	untrack(() => numToString(model?.outputUsdMicrosPer1m ?? 0)),
+let formOutputUsdPer1m = $state(
+	untrack(() => microsToDollars(model?.outputUsdMicrosPer1m)),
 );
 let formEnabled = $state(untrack(() => model?.enabled ?? true));
 let localError = $state("");
@@ -90,6 +90,17 @@ function stringToNum(value: string | number | null | undefined): number | null {
 	const num = Number(trimmed);
 	if (Number.isNaN(num)) return null;
 	return num;
+}
+
+function microsToDollars(micros: number | null | undefined): string {
+	if (micros == null) return "";
+	return (micros / 1_000_000).toString();
+}
+
+function dollarsToMicros(dollars: string | number | null | undefined): number {
+	const num = stringToNum(dollars);
+	if (num == null) return 0;
+	return Math.round(num * 1_000_000);
 }
 
 function handleSave() {
@@ -118,11 +129,11 @@ function handleSave() {
 		reasoningEffort: formReasoningEffort || null,
 		thinkingType: formThinkingType || null,
 		capabilitiesJson: formCapabilitiesJson || null,
-		inputUsdMicrosPer1m: stringToNum(formInputUsdMicrosPer1m) ?? 0,
-		cachedInputUsdMicrosPer1m: stringToNum(formCachedInputUsdMicrosPer1m) ?? 0,
-		cacheHitUsdMicrosPer1m: stringToNum(formCacheHitUsdMicrosPer1m) ?? 0,
-		cacheMissUsdMicrosPer1m: stringToNum(formCacheMissUsdMicrosPer1m) ?? 0,
-		outputUsdMicrosPer1m: stringToNum(formOutputUsdMicrosPer1m) ?? 0,
+		inputUsdMicrosPer1m: dollarsToMicros(formInputUsdPer1m),
+		cachedInputUsdMicrosPer1m: dollarsToMicros(formCachedInputUsdPer1m),
+		cacheHitUsdMicrosPer1m: dollarsToMicros(formCacheHitUsdPer1m),
+		cacheMissUsdMicrosPer1m: dollarsToMicros(formCacheMissUsdPer1m),
+		outputUsdMicrosPer1m: dollarsToMicros(formOutputUsdPer1m),
 		enabled: formEnabled,
 	};
 
@@ -291,7 +302,7 @@ function handleSave() {
 
 				<div class="mt-2 border-t border-border pt-3">
 					<h3 class="text-sm font-medium text-text-primary">{$t('admin.pricing')}</h3>
-					<p class="text-xs text-text-muted">{$t('admin.pricingMicroDollars')}</p>
+					<p class="text-xs text-text-muted">{$t('admin.pricingPer1m')}</p>
 					<div class="mt-3 grid gap-3 md:grid-cols-2">
 						<div>
 							<label class="settings-label" for="model-form-input-price">{$t('admin.inputPrice')}</label>
@@ -299,9 +310,10 @@ function handleSave() {
 								id="model-form-input-price"
 								type="number"
 								class="settings-input"
-								bind:value={formInputUsdMicrosPer1m}
+								bind:value={formInputUsdPer1m}
 								placeholder="0"
 								min="0"
+								step="0.000001"
 							/>
 						</div>
 						<div>
@@ -310,9 +322,10 @@ function handleSave() {
 								id="model-form-cached-input"
 								type="number"
 								class="settings-input"
-								bind:value={formCachedInputUsdMicrosPer1m}
+								bind:value={formCachedInputUsdPer1m}
 								placeholder="0"
 								min="0"
+								step="0.000001"
 							/>
 						</div>
 						<div>
@@ -321,9 +334,10 @@ function handleSave() {
 								id="model-form-cache-hit"
 								type="number"
 								class="settings-input"
-								bind:value={formCacheHitUsdMicrosPer1m}
+								bind:value={formCacheHitUsdPer1m}
 								placeholder="0"
 								min="0"
+								step="0.000001"
 							/>
 						</div>
 						<div>
@@ -332,9 +346,10 @@ function handleSave() {
 								id="model-form-cache-miss"
 								type="number"
 								class="settings-input"
-								bind:value={formCacheMissUsdMicrosPer1m}
+								bind:value={formCacheMissUsdPer1m}
 								placeholder="0"
 								min="0"
+								step="0.000001"
 							/>
 						</div>
 						<div>
@@ -343,9 +358,10 @@ function handleSave() {
 								id="model-form-output-price"
 								type="number"
 								class="settings-input"
-								bind:value={formOutputUsdMicrosPer1m}
+								bind:value={formOutputUsdPer1m}
 								placeholder="0"
 								min="0"
+								step="0.000001"
 							/>
 						</div>
 					</div>
