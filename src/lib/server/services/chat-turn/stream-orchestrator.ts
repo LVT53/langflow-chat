@@ -601,7 +601,8 @@ export function runChatStreamOrchestrator(
 			const hasPersistableStreamOutput = () =>
 				Boolean(
 					chunkRuntime.fullResponse.trim() ||
-						hasSuccessfulFileProductionToolCall(),
+						hasSuccessfulFileProductionToolCall() ||
+						hasCompletedNonFileToolCall(),
 				);
 			const flushBufferedStreamOutput = () => {
 				flushPendingThinking();
@@ -620,61 +621,66 @@ export function runChatStreamOrchestrator(
 				if (!flushBufferedStreamOutput()) {
 					return;
 				}
-				if (hasPersistableStreamOutput()) {
+				if (
+					hasVisibleAssistantAnswerOutput() ||
+					hasSuccessfulFileProductionToolCall()
+				) {
 					await completeSuccess();
 					return;
 				}
-				if (
-					!attemptedNonStreamFallback &&
-					!wasActiveChatStreamStopRequested(streamId) &&
-					fallbackToNonStreaming
-				) {
-					console.warn(
-						"[STREAM] Upstream stream ended before final assistant answer",
-						{
-							conversationId,
-							streamId,
-							modelId,
-							reason,
-							thinkingLength: chunkRuntime.thinkingContent.length,
-							toolCallCount: chunkRuntime.toolCallRecords.length,
-							completedToolCallCount: completedToolCallRecords().length,
-							hasCompletedNonFileToolCall: hasCompletedNonFileToolCall(),
-						},
-					);
-					console.warn(
-						"[DEBUG-diagnose-stream] completeOrRecoverAfterUpstreamEnd details",
-						{
-							conversationId,
-							streamId,
-							reason,
-							hasPersistableStreamOutput: hasPersistableStreamOutput(),
-							hasVisibleAssistantAnswerOutput:
-								hasVisibleAssistantAnswerOutput(),
-							hasSuccessfulFileProductionToolCall:
-								hasSuccessfulFileProductionToolCall(),
-							fullResponsePreview: chunkRuntime.fullResponse
-								.slice(0, 200)
-								.trim(),
-							thinkingPreview: chunkRuntime.thinkingContent
-								.slice(0, 200)
-								.trim(),
-							toolCallNames: chunkRuntime.toolCallRecords.map((r) => ({
-								name: r.name,
-								status: r.status,
-							})),
-							attemptedNonStreamFallback,
-							wasStopRequested: wasActiveChatStreamStopRequested(
+				if (hasCompletedNonFileToolCall()) {
+					if (
+						!attemptedNonStreamFallback &&
+						!wasActiveChatStreamStopRequested(streamId) &&
+						fallbackToNonStreaming
+					) {
+						console.warn(
+							"[STREAM] Upstream stream ended before final assistant answer",
+							{
+								conversationId,
 								streamId,
-							),
-						},
-					);
-					await fallbackToNonStreaming(
-						"stream_read_failure",
-						latestUpstreamAttempt,
-						new Error("Upstream stream ended before final assistant answer"),
-					);
-					return;
+								modelId,
+								reason,
+								thinkingLength: chunkRuntime.thinkingContent.length,
+								toolCallCount: chunkRuntime.toolCallRecords.length,
+								completedToolCallCount: completedToolCallRecords().length,
+								hasCompletedNonFileToolCall: hasCompletedNonFileToolCall(),
+							},
+						);
+						console.warn(
+							"[DEBUG-diagnose-stream] completeOrRecoverAfterUpstreamEnd details",
+							{
+								conversationId,
+								streamId,
+								reason,
+								hasPersistableStreamOutput: hasPersistableStreamOutput(),
+								hasVisibleAssistantAnswerOutput:
+									hasVisibleAssistantAnswerOutput(),
+								hasSuccessfulFileProductionToolCall:
+									hasSuccessfulFileProductionToolCall(),
+								fullResponsePreview: chunkRuntime.fullResponse
+									.slice(0, 200)
+									.trim(),
+								thinkingPreview: chunkRuntime.thinkingContent
+									.slice(0, 200)
+									.trim(),
+								toolCallNames: chunkRuntime.toolCallRecords.map((r) => ({
+									name: r.name,
+									status: r.status,
+								})),
+								attemptedNonStreamFallback,
+								wasStopRequested: wasActiveChatStreamStopRequested(
+									streamId,
+								),
+							},
+						);
+						await fallbackToNonStreaming(
+							"stream_read_failure",
+							latestUpstreamAttempt,
+							new Error("Upstream stream ended before final assistant answer"),
+						);
+						return;
+					}
 				}
 				failStream("backend_failure");
 			};
