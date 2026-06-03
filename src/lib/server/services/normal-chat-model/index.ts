@@ -72,7 +72,7 @@ function stagnantProgress(): StopCondition<ToolSet> {
 		if (allToolNames.size === 1 && withToolResults.length >= 5) {
 			const recentToolCalls = recent.flatMap((s) => s.toolCalls ?? []);
 			const uniqueArgs = new Set(
-				recentToolCalls.map((tc) => JSON.stringify(tc.args ?? {})),
+				recentToolCalls.map((tc) => JSON.stringify(tc.input ?? {})),
 			);
 			if (uniqueArgs.size === 1) {
 				return true;
