@@ -14,6 +14,7 @@ export interface StreamMetadata {
 	assistantMessageId?: string;
 	modelId?: import("$lib/types").ModelId;
 	modelDisplayName?: string;
+	providerDisplayName?: string;
 	contextStatus?: import("$lib/types").ConversationContextStatus;
 	contextSources?: import("$lib/types").ContextSourcesState | null;
 	activeWorkingSet?: import("$lib/types").ArtifactSummary[];
@@ -104,6 +105,9 @@ function buildStreamMetadata(data: unknown): StreamMetadata | undefined {
 		modelId: parsed.modelId as StreamMetadata["modelId"] | undefined,
 		modelDisplayName: parsed.modelDisplayName as
 			| StreamMetadata["modelDisplayName"]
+			| undefined,
+		providerDisplayName: parsed.providerDisplayName as
+			| StreamMetadata["providerDisplayName"]
 			| undefined,
 		contextStatus: parsed.contextStatus as
 			| StreamMetadata["contextStatus"]

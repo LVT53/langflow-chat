@@ -465,6 +465,12 @@
 						<div class="info-tooltip">
 							<div class="tooltip-content">
 								{#if message.modelDisplayName}
+									{#if message.providerDisplayName}
+										<div class="tooltip-row">
+											<span class="tooltip-label">Provider</span>
+											<span class="tooltip-value">{message.providerDisplayName}</span>
+										</div>
+									{/if}
 									<div class="tooltip-row">
 										<span class="tooltip-label">Model</span>
 										<span class="tooltip-value tooltip-model-value">

@@ -104,6 +104,7 @@ export async function parseChatTurnRequest(
 
 	let modelId: ModelId | undefined;
 	let modelDisplayName: string;
+	let providerDisplayName: string | undefined;
 	let resolvedMaxMessageLength: number | null = null;
 
 	const modelStr = typeof model === "string" ? model.trim() : "";
@@ -138,7 +139,7 @@ export async function parseChatTurnRequest(
 				};
 			}
 			modelId = modelStr as ModelId;
-			// Resolve model displayName from provider models table
+			providerDisplayName = provider.displayName;
 			if (providerId.includes(":")) {
 				const modelUuid = providerId.split(":")[1];
 				const models = await listEnabledProviderModels(actualProviderId).catch(() => []);
@@ -194,6 +195,7 @@ export async function parseChatTurnRequest(
 					: undefined,
 			modelId,
 			modelDisplayName,
+			providerDisplayName,
 			attachmentIds: safeAttachmentIds,
 			linkedSources: safeLinkedSources,
 			pendingSkill: selectedDeepResearchDepth ? null : safePendingSkill,

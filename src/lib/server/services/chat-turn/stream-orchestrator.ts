@@ -237,6 +237,7 @@ export function runChatStreamOrchestrator(
 	const streamId = turn.streamId;
 	const modelId = turn.modelId;
 	const modelDisplayName = turn.modelDisplayName;
+	const providerDisplayName = turn.providerDisplayName;
 	const skipPersistUserMessage = turn.skipPersistUserMessage;
 	const safeAttachmentIds = turn.attachmentIds;
 	const activeDocumentArtifactId = turn.activeDocumentArtifactId;
@@ -733,6 +734,7 @@ export function runChatStreamOrchestrator(
 					streamId,
 					modelId: latestModelId,
 					modelDisplayName: latestModelDisplayName,
+					providerDisplayName,
 					userId: user.id,
 					normalizedMessage,
 					upstreamMessage,

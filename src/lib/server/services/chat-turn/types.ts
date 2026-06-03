@@ -30,6 +30,7 @@ export type ParsedChatTurnRequest = {
 	streamId?: string;
 	modelId: ModelId | undefined;
 	modelDisplayName: string;
+	providerDisplayName?: string;
 	attachmentIds: string[];
 	linkedSources: LinkedContextSource[];
 	pendingSkill: PendingSkillSelection | null;

@@ -197,14 +197,12 @@ function isProviderExpanded(
 			<span class="model-selector__text">Loading...</span>
 		{:else if activeProvider()}
 			{@const active = activeProvider()}
-			{@const tooltip = `${active.provider.displayName}
-${active.model.displayName}`}
 			<ModelIcon
 				iconUrl={active.model.iconUrl ?? active.provider.iconUrl ?? null}
 				displayName={active.model.displayName}
 				size={22}
 			/>
-			<span class="model-selector__text" title={tooltip}>{active.model.displayName}</span>
+			<span class="model-selector__text">{active.model.displayName}</span>
 		{:else}
 			<span class="model-selector__text">Select model</span>
 		{/if}
@@ -359,9 +357,7 @@ ${active.model.displayName}`}
 		overflow: hidden;
 		text-overflow: ellipsis;
 		max-width: 120px;
-		min-width: 0;
 	}
-
 	.model-selector__chevron {
 		flex-shrink: 0;
 		transition: transform 200ms ease-out;
@@ -589,4 +585,5 @@ ${active.model.displayName}`}
 			max-width: 100px;
 		}
 	}
+
 </style>
