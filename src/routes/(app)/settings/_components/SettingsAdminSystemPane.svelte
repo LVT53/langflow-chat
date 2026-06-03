@@ -1383,7 +1383,8 @@ function placeholderFor(key: string): string {
 </div>
 
 {#if modelIconCropJob}
-	<CampaignCropModal
+	<div class="fixed inset-0 z-[110]">
+		<CampaignCropModal
 		imageSrc={modelIconCropJob.imageSrc}
 		ratio={1}
 		title={$t('admin.modelIconCropTitle')}
@@ -1394,6 +1395,7 @@ function placeholderFor(key: string): string {
 		onSave={saveModelIconCrop}
 		onCancel={cancelModelIconCrop}
 	/>
+	</div>
 {/if}
 
 <style>
