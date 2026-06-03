@@ -8,8 +8,8 @@ import {
 	type RuntimeConfig,
 } from "$lib/server/config-store";
 import { getProviderWithSecrets } from "$lib/server/services/providers";
+import { listEnabledProviderModels } from "$lib/server/services/provider-models";
 import { deriveModelContextBudget } from "$lib/server/services/chat-turn/context-budget";
-import { inferModelContextWindow } from "$lib/server/services/model-context";
 import type { ModelId } from "$lib/types";
 
 export type { DeepResearchModelRole, DeepResearchModelSelections };
@@ -43,8 +43,14 @@ export async function resolveDeepResearchModel(
 		const providerId = configuredModelId.slice("provider:".length);
 		const provider = await getProviderWithSecrets(providerId).catch(() => null);
 		if (provider?.enabled) {
+			const models = await listEnabledProviderModels(providerId).catch(() => []);
+			const primaryModel = models[0];
 			const providerBudget = deriveModelContextBudget({
-				maxModelContext: UNKNOWN_PROVIDER_MAX_MODEL_CONTEXT_FALLBACK,
+				maxModelContext:
+					primaryModel?.maxModelContext ??
+					UNKNOWN_PROVIDER_MAX_MODEL_CONTEXT_FALLBACK,
+				compactionUiThreshold: primaryModel?.compactionUiThreshold ?? undefined,
+				targetConstructedContext: primaryModel?.targetConstructedContext ?? undefined,
 			});
 			return {
 				role,

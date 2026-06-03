@@ -189,15 +189,20 @@ async function getModelSnapshot(modelId: string, fallbackDisplayName?: string | 
 
 	const providerId = modelId.startsWith("provider:") ? modelId.slice("provider:".length) : modelId;
 	try {
-		const { getProviderWithSecrets } = await import('./providers');
+		const [{ getProviderWithSecrets }, { listEnabledProviderModels }] = await Promise.all([
+			import('./providers'),
+			import('./provider-models'),
+		]);
 		const provider = await getProviderWithSecrets(providerId).catch(() => null);
 		if (provider) {
+			const models = await listEnabledProviderModels(providerId).catch(() => []);
+			const primaryModel = models[0];
 			return {
 				modelDisplayName: fallbackDisplayName ?? provider.displayName ?? modelId,
 				providerId,
 				providerDisplayName: provider.displayName ?? fallbackDisplayName ?? null,
 				providerBaseUrl: provider.baseUrl ?? null,
-				providerModelName: provider.name ?? null,
+				providerModelName: primaryModel?.name ?? null,
 			};
 		}
 	} catch {
@@ -217,17 +222,40 @@ export async function findPriceRule(params: {
 	providerId: string | null;
 	providerModelName: string | null;
 }) {
-	const rows = await db
+	const enabledRows = await db
 		.select()
-		.from(providerModels);
+		.from(providerModels)
+		.where(eq(providerModels.enabled, 1));
 
 	const normalizedModelName = params.providerModelName?.trim().toLowerCase() ?? '';
 	const normalizedModelId = params.modelId.trim().toLowerCase();
 	const normalizedProviderId = params.providerId?.trim().toLowerCase() ?? '';
 
+	if (!normalizedModelName) return null;
+
+	// Tier 1: modelId match for built-in models ("model1" / "model2")
+	if (normalizedModelId === 'model1' || normalizedModelId === 'model2') {
+		const match = enabledRows.find(
+			(rule) => rule.name.toLowerCase() === normalizedModelName,
+		);
+		if (match) return match;
+	}
+
+	// Tier 2: providerId + modelName match
+	if (normalizedProviderId) {
+		const match = enabledRows.find(
+			(rule) =>
+				rule.providerId.toLowerCase() === normalizedProviderId &&
+				rule.name.toLowerCase() === normalizedModelName,
+		);
+		if (match) return match;
+	}
+
+	// Tier 3: modelName-only match (fallback)
 	return (
-		rows.find((rule) => rule.name?.toLowerCase() === normalizedModelName) ??
-		null
+		enabledRows.find(
+			(rule) => rule.name.toLowerCase() === normalizedModelName,
+		) ?? null
 	);
 }
 
