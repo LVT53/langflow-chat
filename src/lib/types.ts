@@ -1024,6 +1024,7 @@ export interface ChatMessage {
 	modelId?: ModelId;
 	modelDisplayName?: string;
 	providerDisplayName?: string;
+	providerIconUrl?: string;
 	// Total generation duration in milliseconds (assistant messages only)
 	generationDurationMs?: number;
 	// Estimated cost in USD for this response (from usage_events, assistant messages only)

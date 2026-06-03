@@ -735,6 +735,7 @@ export function runChatStreamOrchestrator(
 					modelId: latestModelId,
 					modelDisplayName: latestModelDisplayName,
 					providerDisplayName,
+					providerIconUrl: providerRun?.iconUrl ?? null,
 					userId: user.id,
 					normalizedMessage,
 					upstreamMessage,

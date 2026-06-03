@@ -15,6 +15,7 @@ export interface StreamMetadata {
 	modelId?: import("$lib/types").ModelId;
 	modelDisplayName?: string;
 	providerDisplayName?: string;
+	providerIconUrl?: string;
 	contextStatus?: import("$lib/types").ConversationContextStatus;
 	contextSources?: import("$lib/types").ContextSourcesState | null;
 	activeWorkingSet?: import("$lib/types").ArtifactSummary[];
@@ -108,6 +109,9 @@ function buildStreamMetadata(data: unknown): StreamMetadata | undefined {
 			| undefined,
 		providerDisplayName: parsed.providerDisplayName as
 			| StreamMetadata["providerDisplayName"]
+			| undefined,
+		providerIconUrl: parsed.providerIconUrl as
+			| StreamMetadata["providerIconUrl"]
 			| undefined,
 		contextStatus: parsed.contextStatus as
 			| StreamMetadata["contextStatus"]

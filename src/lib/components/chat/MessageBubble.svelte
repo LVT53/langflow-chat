@@ -468,7 +468,10 @@
 									{#if message.providerDisplayName}
 										<div class="tooltip-row">
 											<span class="tooltip-label">Provider</span>
-											<span class="tooltip-value">{message.providerDisplayName}</span>
+											<span class="tooltip-value tooltip-model-value">
+												<ModelIcon iconUrl={message.providerIconUrl ?? null} displayName={message.providerDisplayName} size={18} />
+												<span>{message.providerDisplayName}</span>
+											</span>
 										</div>
 									{/if}
 									<div class="tooltip-row">

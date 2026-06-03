@@ -125,6 +125,7 @@ export type NormalChatModelRunProvider = {
 	reasoningEffort?: NormalChatReasoningEffort;
 	thinkingType?: NormalChatThinkingType;
 	capabilities?: ModelCapabilitySet;
+	iconUrl?: string | null;
 };
 
 type BuiltinNormalChatModelConfig = Pick<
@@ -326,7 +327,10 @@ function buildProviderModelRunConfig(
 		return {
 			id: providerWithSecrets.id,
 			name: providerWithSecrets.name,
-			displayName: providerWithSecrets.displayName,
+			displayName: model.displayName ?? providerWithSecrets.displayName,
+			iconUrl: (providerWithSecrets as Record<string, unknown>).iconAssetId
+				? `/api/campaign-assets/${encodeURIComponent(String((providerWithSecrets as Record<string, unknown>).iconAssetId))}/content`
+				: null,
 			baseUrl: normalizeOpenAICompatibleBaseUrl(providerWithSecrets.baseUrl),
 			modelName: model.name,
 			apiKey: decryptApiKey(

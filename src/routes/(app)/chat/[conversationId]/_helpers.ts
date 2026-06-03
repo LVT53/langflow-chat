@@ -542,6 +542,8 @@ export function finalizeStreamingMessageList(
 					params.metadata?.modelDisplayName ?? message.modelDisplayName,
 				providerDisplayName:
 					params.metadata?.providerDisplayName ?? message.providerDisplayName,
+				providerIconUrl:
+					params.metadata?.providerIconUrl ?? message.providerIconUrl,
 				thinkingTokenCount: params.metadata?.thinkingTokenCount,
 				responseTokenCount: params.metadata?.responseTokenCount,
 				totalTokenCount: params.metadata?.totalTokenCount,

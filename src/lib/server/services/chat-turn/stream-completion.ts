@@ -105,6 +105,7 @@ export interface CompleteStreamTurnParams {
 			model: string;
 	modelDisplayName: string | null;
 	providerDisplayName?: string | null;
+	providerIconUrl?: string | null;
 			promptTokens: number;
 			completionTokens: number;
 			reasoningTokens: number;
@@ -410,6 +411,7 @@ export async function completeStreamTurn(
 				modelId,
 				modelDisplayName,
 				providerDisplayName: params.providerDisplayName,
+				providerIconUrl: params.providerIconUrl,
 				contextStatus: latestContextStatus,
 				contextSources,
 				activeWorkingSet,
@@ -445,6 +447,7 @@ export async function completeStreamTurn(
 				evidenceStatus: "pending",
 				modelDisplayName,
 				providerDisplayName: params.providerDisplayName,
+				providerIconUrl: params.providerIconUrl,
 				...(wasStopped ? { wasStopped: true } : {}),
 				...skillControl.metadata,
 			},
