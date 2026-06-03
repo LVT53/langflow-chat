@@ -17,6 +17,7 @@ let {
 	onToggleEnabled,
 	onDiscover,
 	onManageModels,
+	onReorder,
 }: {
 	providers: Provider[];
 	loading?: boolean;
@@ -31,15 +32,26 @@ let {
 	) => void | Promise<void>;
 	onDiscover: (provider: Provider) => void | Promise<void>;
 	onManageModels?: (providerId: string) => void;
+	onReorder?: (providerId: string, direction: "up" | "down") => void | Promise<void>;
 } = $props();
 
 let deletingId = $state<string | null>(null);
-let togglingId = $state<string | null>(null);
-let discoveringId = $state<string | null>(null);
+	let togglingId = $state<string | null>(null);
+	let discoveringId = $state<string | null>(null);
+	let movingId = $state<string | null>(null);
 
-function truncateUrl(url: string, max = 48): string {
-	return url.length > max ? `${url.slice(0, max)}…` : url;
-}
+	function truncateUrl(url: string, max = 48): string {
+		return url.length > max ? `${url.slice(0, max)}…` : url;
+	}
+
+	async function handleMove(provider: Provider, direction: "up" | "down") {
+		movingId = provider.id;
+		try {
+			await onReorder?.(provider.id, direction);
+		} finally {
+			movingId = null;
+		}
+	}
 
 async function handleToggle(provider: Provider) {
 	togglingId = provider.id;
@@ -135,6 +147,24 @@ async function handleDelete(provider: Provider) {
 								onclick={() => onManageModels(provider.id)}
 							>
 								{$t('admin.manageModels')}
+							</button>
+						{/if}
+						{#if onReorder}
+							<button
+								class="btn-small whitespace-nowrap"
+								disabled={movingId === provider.id || providers.indexOf(provider) === 0}
+								onclick={() => handleMove(provider, "up")}
+								title="Move up"
+							>
+								<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clip-rule="evenodd"/></svg>
+							</button>
+							<button
+								class="btn-small whitespace-nowrap"
+								disabled={movingId === provider.id || providers.indexOf(provider) === providers.length - 1}
+								onclick={() => handleMove(provider, "down")}
+								title="Move down"
+							>
+								<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
 							</button>
 						{/if}
 						<button class="btn-small whitespace-nowrap" onclick={() => onEdit(provider)} title="Edit">

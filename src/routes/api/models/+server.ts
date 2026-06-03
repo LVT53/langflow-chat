@@ -26,19 +26,24 @@ export const GET: RequestHandler = async () => {
 		models: Array<{ id: string; displayName: string; iconUrl: string | null }>;
 	}> = [];
 
+	const seededProviderNames = new Set(newProviders.map((p) => p.name));
+
 	if (builtInModels.length > 0) {
-		providers.push({
-			id: "built-in",
-			name: "built-in",
-			displayName: "AlfyAI",
-			iconAssetId: null,
-			iconUrl: null,
-			models: builtInModels.map((m) => ({
-				id: m.id,
-				displayName: m.displayName,
-				iconUrl: m.iconUrl ?? null,
-			})),
-		});
+		const filteredBuiltIn = builtInModels.filter((m) => !seededProviderNames.has(m.id));
+		if (filteredBuiltIn.length > 0) {
+			providers.push({
+				id: "built-in",
+				name: "built-in",
+				displayName: "AlfyAI",
+				iconAssetId: null,
+				iconUrl: null,
+				models: filteredBuiltIn.map((m) => ({
+					id: m.id,
+					displayName: m.displayName,
+					iconUrl: m.iconUrl ?? null,
+				})),
+			});
+		}
 	}
 
 	for (const provider of newProviders) {

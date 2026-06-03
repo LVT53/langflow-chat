@@ -397,6 +397,29 @@ function handleManageModels(providerId: string) {
 	modelListKey += 1;
 }
 
+async function handleReorderProvider(providerId: string, direction: "up" | "down") {
+	const idx = providerConfigs.findIndex((p) => p.id === providerId);
+	if (idx < 0) return;
+	const targetIdx = direction === "up" ? idx - 1 : idx + 1;
+	if (targetIdx < 0 || targetIdx >= providerConfigs.length) return;
+
+	const a = providerConfigs[idx];
+	const b = providerConfigs[targetIdx];
+
+	providerConfigs = providerConfigs.map((p, i) => {
+		if (i === idx) return { ...b, sortOrder: idx };
+		if (i === targetIdx) return { ...a, sortOrder: targetIdx };
+		return p;
+	});
+
+	await Promise.all([
+		updateProviderEntry(a.id, { sortOrder: targetIdx }),
+		updateProviderEntry(b.id, { sortOrder: idx }),
+	]).catch((err) => {
+		providerConfigsError = errorMessage(err, "Failed to reorder");
+	});
+}
+
 function closeModelList() {
 	showModelList = false;
 	modelListProviderId = "";
@@ -714,6 +737,7 @@ function placeholderFor(key: string): string {
 		onToggleEnabled={handleToggleProviderConfig}
 		onDiscover={handleDiscoverProviderConfig}
 		onManageModels={handleManageModels}
+		onReorder={handleReorderProvider}
 	/>
 </section>
 
