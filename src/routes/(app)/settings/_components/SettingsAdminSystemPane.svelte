@@ -190,6 +190,10 @@ async function applyModelIconAsset(target: ModelIconTarget, assetId: string) {
 	} else if (target.kind === "provider") {
 		await updateProviderEntry(target.providerId, { iconAssetId: assetId });
 		await loadProviderConfigs();
+		if (providerFormProvider?.id === target.providerId) {
+			const updated = providerConfigs.find((p) => p.id === target.providerId);
+			if (updated) providerFormProvider = { ...updated };
+		}
 	} else if (target.kind === "model") {
 		await updateModelProvider(target.providerId, target.modelId, { iconAssetId: assetId });
 	}
