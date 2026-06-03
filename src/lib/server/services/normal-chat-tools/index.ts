@@ -778,7 +778,9 @@ export function createNormalChatTools(ctx: CreateNormalChatToolsContext) {
 					const modelPayload = {
 						success: false as const,
 						error:
-							error instanceof Error ? error.message : "Web research failed",
+							error instanceof Error
+								? error.message
+								: i18n.research_web.errorPrefix,
 					};
 					recorder.record({
 						callId: options.toolCallId,
@@ -799,8 +801,7 @@ export function createNormalChatTools(ctx: CreateNormalChatToolsContext) {
 			},
 		}),
 		memory_context: tool({
-			description:
-				"Retrieve bounded durable memory, named project-folder context, project continuity, persona memory, or account history for this conversation.",
+			description: i18n.memory_context.description,
 			inputSchema: memoryContextInputSchema,
 			execute: async (
 				input: MemoryContextInput,
@@ -808,11 +809,15 @@ export function createNormalChatTools(ctx: CreateNormalChatToolsContext) {
 			) => {
 				const safeInput = sanitizeMemoryContextInput(input);
 				try {
-					const result = await getMemoryContext({
-						userId: ctx.userId,
-						conversationId: ctx.conversationId,
-						...safeInput,
-					});
+					const result = await withTimeout(
+						getMemoryContext({
+							userId: ctx.userId,
+							conversationId: ctx.conversationId,
+							...safeInput,
+						}),
+						TOOL_TIMEOUTS_MS.memory_context,
+						"memory_context",
+					);
 					const candidates = compactMemoryContextCandidates(
 						result,
 						memoryContextCandidateLimit(input, result),
@@ -838,7 +843,7 @@ export function createNormalChatTools(ctx: CreateNormalChatToolsContext) {
 						error:
 							error instanceof Error
 								? error.message
-								: "Memory context lookup failed",
+								: i18n.memory_context.errorPrefix,
 					};
 					recorder.record({
 						callId: options.toolCallId,
@@ -859,7 +864,7 @@ export function createNormalChatTools(ctx: CreateNormalChatToolsContext) {
 			},
 		}),
 		image_search: tool({
-			description: "Search the web for image results for the current request.",
+			description: i18n.image_search.description,
 			inputSchema: imageSearchInputSchema,
 			execute: async (
 				input: ImageSearchInput,
@@ -867,7 +872,11 @@ export function createNormalChatTools(ctx: CreateNormalChatToolsContext) {
 			) => {
 				const safeInput = sanitizeImageSearchInput(input);
 				try {
-					const results = await searchImages(safeInput.query);
+					const results = await withTimeout(
+						searchImages(safeInput.query),
+						TOOL_TIMEOUTS_MS.image_search,
+						"image_search",
+					);
 					const compactResults = compactImageSearchResults(results);
 					const candidates = createImageSearchCandidates(compactResults);
 					const modelPayload = {
@@ -896,7 +905,7 @@ export function createNormalChatTools(ctx: CreateNormalChatToolsContext) {
 					const modelPayload = {
 						success: false as const,
 						error:
-							error instanceof Error ? error.message : "Image search failed",
+							error instanceof Error ? error.message : i18n.image_search.errorPrefix,
 					};
 					recorder.record({
 						callId: options.toolCallId,
@@ -917,8 +926,7 @@ export function createNormalChatTools(ctx: CreateNormalChatToolsContext) {
 			},
 		}),
 		produce_file: tool({
-			description:
-				"Queue generation of downloadable files for the current conversation.",
+			description: i18n.produce_file.description,
 			inputSchema: produceFileInputSchema,
 			execute: async (
 				input: ProduceFileInput,
@@ -997,10 +1005,14 @@ export function createNormalChatTools(ctx: CreateNormalChatToolsContext) {
 				}
 
 				try {
-					const result = await submitFileProductionIntake({
-						userId: ctx.userId,
-						body: intakeBody,
-					});
+					const result = await withTimeout(
+						submitFileProductionIntake({
+							userId: ctx.userId,
+							body: intakeBody,
+						}),
+						TOOL_TIMEOUTS_MS.produce_file,
+						"produce_file",
+					);
 					if (result.ok) {
 						sameTurnProduceFileResults.set(sameTurnDedupeKey, result);
 					}
@@ -1018,7 +1030,7 @@ export function createNormalChatTools(ctx: CreateNormalChatToolsContext) {
 					const modelPayload = {
 						ok: false as const,
 						status: 500,
-						error: "File production intake failed",
+						error: i18n.produce_file.errorPrefix,
 					};
 					recorder.record({
 						callId: options.toolCallId,

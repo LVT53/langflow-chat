@@ -19,6 +19,7 @@ import {
 import {
 	createNormalChatTools,
 } from "$lib/server/services/normal-chat-tools";
+import { detectLanguage } from "$lib/server/services/language";
 import type {
 	ContextDebugState,
 	ConversationContextStatus,
@@ -106,6 +107,7 @@ export async function runPlainNormalChatSendModel(
 		userId: params.userId,
 		conversationId: params.conversationId,
 		turnId: params.createTurnId?.() ?? randomUUID(),
+		language: detectLanguage(params.message),
 	});
 	const toolChoice = params.forceProduceFileTool
 		? ({ type: "tool", toolName: "produce_file" } as const)

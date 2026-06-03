@@ -1,6 +1,7 @@
 // src/lib/server/services/title-generator.ts
 import { getConfig } from "../config-store";
 import { normalizeAssistantOutput } from "./chat-turn/normalizer";
+import { detectLanguage } from "./language";
 
 // Common misspellings dictionary for post-processing correction
 const COMMON_MISSPELLINGS: Record<string, string> = {
@@ -43,12 +44,6 @@ const COMMON_MISSPELLINGS: Record<string, string> = {
 	wich: "which",
 };
 
-// Hungarian-specific characters and common words for language detection
-const HUNGARIAN_CHARS = /[áéíóöőúüűÁÉÍÓÖŐÚÜŰ]/;
-// Strong indicators - words that are distinctly Hungarian (not common English words)
-const STRONG_HUNGARIAN_WORDS =
-	/\b(és|hogy|nem|van|meg|ez|egy|kell|azt|volt)\b/i;
-
 // Code-related keywords and patterns
 const CODE_PATTERNS = [
 	/```[\s\S]*?```/, // Code blocks
@@ -66,15 +61,18 @@ const CODE_PATTERNS = [
 const THINKING_LEAK_RE =
 	/^(Here's (a thinking|my) process|Let me (think about|work through|break (this|it) down)|I('ll| will) (approach|break (this|it) down)|First,? let me (think|analyze|break down)|Okay,? let me (think|analyze|work through)|Let's think about|I need to (think|determine)|The user (is asking|asks|asked)|This (looks like|seems like|is a)|Hmm,? let me|Alright,? let me)/i;
 
-function detectLanguage(text: string): "en" | "hu" {
-	if (HUNGARIAN_CHARS.test(text)) {
-		return "hu";
-	}
-	const strongMatches = text.match(STRONG_HUNGARIAN_WORDS);
-	if (strongMatches && strongMatches.length >= 2) {
-		return "hu";
-	}
-	return "en";
+function detectTitleLanguage(text: string): "en" | "hu" {
+	return detectLanguage(text);
+}
+
+const TITLE_HUNGARIAN_CHARS = /[áéíóöőúüűÁÉÍÓÖŐÚÜŰ]/;
+const TITLE_STRONG_HUNGARIAN_WORDS =
+	/\b(és|hogy|nem|van|meg|ez|egy|kell|azt|volt)\b/i;
+
+function isTitleHungarian(text: string): boolean {
+	if (TITLE_HUNGARIAN_CHARS.test(text)) return true;
+	const matches = text.match(TITLE_STRONG_HUNGARIAN_WORDS);
+	return (matches?.length ?? 0) >= 2;
 }
 
 const EXPLICIT_ENGLISH_HINT_RE =
@@ -90,7 +88,7 @@ function resolveTitleLanguage(
 	if (userPreference === "hu") return "hu";
 	if (EXPLICIT_ENGLISH_HINT_RE.test(userMessage)) return "en";
 	if (EXPLICIT_HUNGARIAN_HINT_RE.test(userMessage)) return "hu";
-	return detectLanguage(userMessage);
+	return detectTitleLanguage(userMessage);
 }
 
 /**
@@ -475,11 +473,11 @@ export async function generateTitle(
 		console.info("[TITLE_GENERATE] Fallback: empty cleanedTitle");
 		return fallbackTitle(userMessage);
 	}
-	const detectedLang = detectLanguage(cleanedTitle);
-	if (detectedLang !== language) {
+	const titleIsHungarian = isTitleHungarian(cleanedTitle);
+	if (titleIsHungarian !== (language === "hu")) {
 		console.info("[TITLE_GENERATE] Fallback: language mismatch", {
 			expected: language,
-			detected: detectedLang,
+			titleIsHungarian,
 			cleanedTitle,
 		});
 		return fallbackTitle(userMessage);
