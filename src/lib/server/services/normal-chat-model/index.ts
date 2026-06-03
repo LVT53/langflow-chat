@@ -544,16 +544,35 @@ async function* streamStreamingNormalChatModelRun(
 
 	let responseModelName = params.provider.modelName;
 
+	let eventCounts: Record<string, number> = {
+		"text-delta": 0,
+		"reasoning-delta": 0,
+		"tool-call": 0,
+		"tool-result": 0,
+		"tool-error": 0,
+		"finish-step": 0,
+		finish: 0,
+		usage: 0,
+		error: 0,
+		other: 0,
+	};
+	let lastEventType = "";
 	try {
 		for await (const part of result.fullStream) {
 			switch (part.type) {
 				case "text-delta":
+					eventCounts["text-delta"]++;
+					lastEventType = part.type;
 					yield { type: "text_delta", text: part.text };
 					break;
 				case "reasoning-delta":
+					eventCounts["reasoning-delta"]++;
+					lastEventType = part.type;
 					yield { type: "reasoning_delta", text: part.text };
 					break;
 				case "tool-call":
+					eventCounts["tool-call"]++;
+					lastEventType = part.type;
 					yield {
 						type: "tool_call",
 						callId: part.toolCallId,
@@ -562,6 +581,8 @@ async function* streamStreamingNormalChatModelRun(
 					};
 					break;
 				case "tool-result":
+					eventCounts["tool-result"]++;
+					lastEventType = part.type;
 					yield {
 						type: "tool_result",
 						callId: part.toolCallId,
@@ -570,6 +591,8 @@ async function* streamStreamingNormalChatModelRun(
 					};
 					break;
 				case "tool-error":
+					eventCounts["tool-error"]++;
+					lastEventType = part.type;
 					yield {
 						type: "tool_error",
 						callId: part.toolCallId,
@@ -578,13 +601,37 @@ async function* streamStreamingNormalChatModelRun(
 					};
 					break;
 				case "finish-step":
+					eventCounts["finish-step"]++;
+					lastEventType = part.type;
 					responseModelName = part.response.modelId;
 					break;
 				case "finish":
+					eventCounts["finish"]++;
+					lastEventType = part.type;
 					yield {
 						type: "usage",
 						usage: mapUsage(part.totalUsage),
 					};
+					eventCounts["usage"]++;
+					console.warn(
+						"[DEBUG-diagnose-stream] normal-chat-model finish event",
+						{
+							providerId: params.provider.id,
+							modelName: params.provider.modelName,
+							finishReason: part.finishReason,
+							rawFinishReason: part.rawFinishReason,
+							responseModelName,
+							totalUsage: part.totalUsage
+								? {
+										inputTokens: part.totalUsage.inputTokens,
+										outputTokens: part.totalUsage.outputTokens,
+										totalTokens: part.totalUsage.totalTokens,
+									}
+								: null,
+							lastEventType,
+							eventCounts,
+						},
+					);
 					yield {
 						type: "finish",
 						finishReason: part.finishReason,
@@ -593,11 +640,35 @@ async function* streamStreamingNormalChatModelRun(
 					};
 					break;
 				case "error":
+					eventCounts["error"]++;
+					lastEventType = part.type;
+					console.warn(
+						"[DEBUG-diagnose-stream] normal-chat-model error event",
+						{
+							providerId: params.provider.id,
+							errorMessage: errorMessage(part.error),
+							eventCounts,
+						},
+					);
 					yield { type: "error", error: errorMessage(part.error) };
+					break;
+				default:
+					eventCounts["other"]++;
+					lastEventType = part.type;
 					break;
 			}
 		}
 	} catch (error) {
+		console.warn(
+			"[DEBUG-diagnose-stream] normal-chat-model stream catch",
+			{
+				providerId: params.provider.id,
+				errorName: error instanceof Error ? error.name : undefined,
+				errorMessage: error instanceof Error ? error.message : String(error),
+				eventCounts,
+				lastEventType,
+			},
+		);
 		yield { type: "error", error: errorMessage(error) };
 	}
 }

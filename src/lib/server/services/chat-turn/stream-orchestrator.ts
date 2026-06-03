@@ -639,6 +639,33 @@ export function runChatStreamOrchestrator(
 							hasCompletedNonFileToolCall: hasCompletedNonFileToolCall(),
 						},
 					);
+					console.warn(
+						"[DEBUG-diagnose-stream] completeOrRecoverAfterUpstreamEnd details",
+						{
+							conversationId,
+							streamId,
+							reason,
+							hasPersistableStreamOutput: hasPersistableStreamOutput(),
+							hasVisibleAssistantAnswerOutput:
+								hasVisibleAssistantAnswerOutput(),
+							hasSuccessfulFileProductionToolCall:
+								hasSuccessfulFileProductionToolCall(),
+							fullResponsePreview: chunkRuntime.fullResponse
+								.slice(0, 200)
+								.trim(),
+							thinkingPreview: chunkRuntime.thinkingContent
+								.slice(0, 200)
+								.trim(),
+							toolCallNames: chunkRuntime.toolCallRecords.map((r) => ({
+								name: r.name,
+								status: r.status,
+							})),
+							attemptedNonStreamFallback,
+							wasStopRequested: wasActiveChatStreamStopRequested(
+								streamId,
+							),
+						},
+					);
 					await fallbackToNonStreaming(
 						"stream_read_failure",
 						latestUpstreamAttempt,
@@ -1167,6 +1194,19 @@ export function runChatStreamOrchestrator(
 								case "finish":
 									latestModelDisplayName =
 										upstreamEvent.model.displayName ?? latestModelDisplayName;
+									console.warn(
+										"[DEBUG-diagnose-stream] Vercel AI SDK finish event received",
+										{
+											conversationId,
+											streamId,
+											modelId,
+											finishReason: upstreamEvent.finishReason,
+											rawFinishReason: upstreamEvent.rawFinishReason,
+											fullResponseLength: chunkRuntime.fullResponse.length,
+											thinkingLength: chunkRuntime.thinkingContent.length,
+											toolCallCount: chunkRuntime.toolCallRecords.length,
+										},
+									);
 									await completeOrRecoverAfterUpstreamEnd("end_event");
 									return;
 								case "error": {

@@ -171,7 +171,29 @@ function normalizeServerSentEvent(
 		state,
 		createSyntheticId,
 	);
-	if (normalized === OMIT_SERVER_SENT_EVENT) return "";
+	if (normalized === OMIT_SERVER_SENT_EVENT) {
+		// Debug: log omitted SSE events
+		if (isRecord(parsed) && Array.isArray(parsed.choices)) {
+			const droppedChoiceCount = parsed.choices.length;
+			console.warn(
+				"[DEBUG-diagnose-stream] stream-normalizer omitted SSE event",
+				{
+					droppedChoiceCount,
+					finishReason: parsed.choices.find(
+						(c) => isRecord(c) && typeof c.finish_reason === "string",
+					)?.finish_reason,
+					hasContent: parsed.choices.some(
+						(c) =>
+							isRecord(c) &&
+							isRecord(c.delta) &&
+							typeof c.delta.content === "string" &&
+							c.delta.content.length > 0,
+					),
+				},
+			);
+		}
+		return "";
+	}
 	const parameterlessArgumentEvents = formatSyntheticServerSentEvents(
 		createParameterlessToolCallArgumentChunks(
 			normalized === parsed ? parsed : normalized,
