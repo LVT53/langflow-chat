@@ -495,3 +495,30 @@ export async function deleteProviderModel(
 		"Failed to delete provider model",
 	);
 }
+
+interface BatchModelsResponse {
+	models: ProviderModel[];
+}
+
+export async function batchCreateProviderModels(
+	providerId: string,
+	entries: DiscoveredModel[],
+): Promise<ProviderModel[]> {
+	const response = await requestJson<BatchModelsResponse>(
+		`/api/admin/providers/${encodeURIComponent(providerId)}/models/batch`,
+		{
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				models: entries.map((e) => ({
+					name: e.id,
+					contextLength: e.contextLength,
+					supportsChat: e.supportsChat,
+					supportsTools: e.supportsTools,
+				})),
+			}),
+		},
+		"Failed to create provider models",
+	);
+	return response.models;
+}

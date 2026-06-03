@@ -8,6 +8,7 @@ import {
 	createProviderEntry,
 	deleteProviderEntry,
 	discoverProviderModels,
+	batchCreateProviderModels,
 	fetchProviderList,
 	updateProviderEntry,
 	fetchProviderModels,
@@ -370,21 +371,21 @@ async function handleDiscoverProviderConfig(provider: Provider) {
 	providerConfigsMessage = "";
 	try {
 		const models = await discoverProviderModels(provider.id);
-		providerConfigsMessage = `${models.length} model(s) discovered.`;
+		if (models.length === 0) {
+			providerConfigsMessage = "No models discovered.";
+			return;
+		}
+		providerConfigsMessage = `Discovered ${models.length} model(s). Creating...`;
+		const created = await batchCreateProviderModels(provider.id, models);
+		providerConfigsMessage = `Created ${created.length} model(s). Refresh the model list to see them.`;
 	} catch (error: unknown) {
 		providerConfigsError = errorMessage(error, "Failed to discover models.");
 	}
 }
 
-async function handleTestProviderConfig(provider: Provider) {
+async function handleTestProviderConfig(_provider: Provider) {
 	providerConfigsError = "";
-	providerConfigsMessage = "";
-	try {
-		const models = await discoverProviderModels(provider.id);
-		providerConfigsMessage = `${models.length} model(s) discovered.`;
-	} catch (error: unknown) {
-		providerConfigsError = errorMessage(error, "Failed to test provider.");
-	}
+	providerConfigsMessage = "Connection validated during provider creation.";
 }
 
 function handleManageModels(providerId: string) {
@@ -1378,10 +1379,12 @@ function placeholderFor(key: string): string {
 {/if}
 
 {#if showModelList}
-	<ModelList
-		providerId={modelListProviderId}
-		onClose={closeModelList}
-	/>
+	{#key modelListKey}
+		<ModelList
+			providerId={modelListProviderId}
+			onClose={closeModelList}
+		/>
+	{/key}
 {/if}
 
 {#if showModelForm}
@@ -1389,7 +1392,7 @@ function placeholderFor(key: string): string {
 		providerId={modelFormProviderId}
 		model={modelFormModel}
 		onClose={closeModelForm}
-		onSaved={handleModelFormSaved}
+		onSave={handleModelFormSaved}
 	/>
 {/if}
 

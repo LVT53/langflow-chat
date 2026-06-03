@@ -28,7 +28,7 @@ let {
 	onClose?: () => void;
 } = $props();
 
-const isCreate = model === null;
+let isCreate = $derived(model === null);
 
 let formName = $state(untrack(() => (isCreate ? "" : (model?.name ?? ""))));
 let formDisplayName = $state(untrack(() => model?.displayName ?? ""));
