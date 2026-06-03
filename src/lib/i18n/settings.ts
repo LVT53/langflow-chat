@@ -322,6 +322,7 @@ const settingsDict = {
 		"admin.model2VisibilityDescription":
 			"Hide model 2 from the app and force fallbacks to model 1",
 		"admin.modelCapabilities": "Capabilities",
+		"admin.modelIcon": "Model Icon",
 		"admin.modelIconCropTitle": "Crop model icon",
 		"admin.modelIconProviderMissing":
 			"Could not find the provider for this icon upload. Close the form and try again.",
@@ -930,6 +931,7 @@ const settingsDict = {
 		"admin.model2VisibilityDescription":
 			"A 2. modell elrejtése az alkalmazásból, visszaváltással az 1. modellre",
 		"admin.modelCapabilities": "Képességek",
+		"admin.modelIcon": "Modellikon",
 		"admin.modelIconCropTitle": "Modellikon kivágása",
 		"admin.modelIconProviderMissing":
 			"Nem található a szolgáltató ehhez az ikonfeltöltéshez. Zárd be az űrlapot, majd próbáld újra.",
