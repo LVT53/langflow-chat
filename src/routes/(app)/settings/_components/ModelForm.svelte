@@ -26,6 +26,7 @@ let {
 	error?: string;
 	onSave?: (data: ProviderModelUpdate) => void | Promise<void>;
 	onClose?: () => void;
+	onIconFile?: (event: Event) => void;
 } = $props();
 
 let isCreate = $derived(model === null);
@@ -163,14 +164,25 @@ function handleSave() {
 				</div>
 
 				<div>
-					<label class="settings-label" for="model-form-icon">{$t('admin.iconAssetId')}</label>
-					<input
-						id="model-form-icon"
-						type="text"
-						class="settings-input"
-						bind:value={formIconAssetId}
-						placeholder=""
-					/>
+					<label class="settings-label" for="model-form-icon">{$t('admin.modelIcon')}</label>
+					<div class="flex items-center gap-3">
+						{#if formIconAssetId}
+							<img
+								src={`/api/campaign-assets/${encodeURIComponent(formIconAssetId)}/content`}
+								alt=""
+								class="h-10 w-10 rounded object-cover"
+							/>
+						{/if}
+						{#if onIconFile}
+							<input
+								id="model-form-icon"
+								type="file"
+								accept="image/*"
+								class="settings-input"
+								onchange={onIconFile}
+							/>
+						{/if}
+					</div>
 				</div>
 
 				<div class="mt-2 border-t border-border pt-3">

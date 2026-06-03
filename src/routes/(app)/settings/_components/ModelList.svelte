@@ -16,9 +16,11 @@ const tVal = get(t);
 let {
 	providerId,
 	onClose,
+	onIconFile,
 }: {
 	providerId: string;
 	onClose?: () => void;
+	onIconFile?: (event: Event, modelId: string) => void;
 } = $props();
 
 let models = $state<ProviderModel[]>([]);
@@ -201,5 +203,6 @@ $effect(() => {
 		error={formError}
 		onSave={handleSave}
 		onClose={closeForm}
+		onIconFile={onIconFile ? (e: Event) => { if (formModel?.id) onIconFile(e, formModel.id); } : undefined}
 	/>
 {/if}

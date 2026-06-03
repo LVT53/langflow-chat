@@ -11,6 +11,7 @@ import {
 	batchCreateProviderModels,
 	fetchProviderList,
 	updateProviderEntry,
+	updateProviderModel as updateModelProvider,
 	type AdminSystemSkill,
 	type AdminSystemSkillDraft,
 	type PersonalityProfileSummary,
@@ -122,7 +123,8 @@ let systemSkillsMessageTimer: ReturnType<typeof setTimeout> | undefined;
 
 type ModelIconTarget =
 	| { kind: "built-in"; modelName: "model1" | "model2" }
-	| { kind: "provider"; providerId: string };
+	| { kind: "provider"; providerId: string }
+	| { kind: "model"; modelId: string; providerId: string };
 
 type ModelIconCropJob = {
 	key: string;
@@ -188,6 +190,8 @@ async function applyModelIconAsset(target: ModelIconTarget, assetId: string) {
 	} else if (target.kind === "provider") {
 		await updateProviderEntry(target.providerId, { iconAssetId: assetId });
 		await loadProviderConfigs();
+	} else if (target.kind === "model") {
+		await updateModelProvider(target.providerId, target.modelId, { iconAssetId: assetId });
 	}
 }
 
@@ -197,7 +201,7 @@ async function handleModelIconFile(event: Event, target: ModelIconTarget) {
 	input.value = "";
 	if (!file) return;
 
-	const key = target.kind === "built-in" ? target.modelName : `provider:${target.providerId}`;
+	const key = target.kind === "built-in" ? target.modelName : target.kind === "provider" ? `provider:${target.providerId}` : `model:${target.modelId}`;
 	iconUploading = key;
 	providerConfigsError = "";
 	providerConfigsMessage = "";
@@ -395,6 +399,10 @@ function handleManageModels(providerId: string) {
 function closeModelList() {
 	showModelList = false;
 	modelListProviderId = "";
+}
+
+function handleModelModelIconFile(event: Event, modelId: string) {
+	handleModelIconFile(event, { kind: "model", modelId, providerId: modelListProviderId });
 }
 
 async function loadSystemSkills() {
@@ -1363,6 +1371,7 @@ function placeholderFor(key: string): string {
 				<ModelList
 					providerId={modelListProviderId}
 					onClose={closeModelList}
+					onIconFile={handleModelModelIconFile}
 				/>
 			{/key}
 		</div>
