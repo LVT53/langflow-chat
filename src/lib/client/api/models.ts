@@ -3,6 +3,7 @@ import { requestJson } from "./http";
 export interface ProviderModel {
 	id: string;
 	displayName: string;
+	iconUrl: string | null;
 }
 
 export interface ModelProvider {

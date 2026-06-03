@@ -233,113 +233,78 @@ function isProviderExpanded(
 			<div class="model-selector__list">
 				{#each providers as provider (provider.id)}
 					{@const expanded = isProviderExpanded(provider.id, provider.models.length)}
-					{@const hasSingleModel = provider.models.length === 1}
 					<div class="model-selector__provider">
-						{#if hasSingleModel}
-							{@const model = provider.models[0]}
-							<button
-								type="button"
-								role="option"
-								aria-selected={$selectedModel === model.id}
-								class="model-selector__provider-header model-selector__provider-header--selectable"
-								class:model-selector__provider-header--selected={$selectedModel === model.id}
-								class:model-selector__provider-header--focused={focusedModelId === model.id}
-								onclick={() => handleSelect(model.id as ModelId)}
-								data-model-id={model.id}
-								data-testid="model-option-{model.id}"
+						<button
+							type="button"
+							class="model-selector__provider-header"
+							aria-expanded={expanded}
+							onclick={() => toggleProvider(provider.id)}
+						>
+							<ModelIcon
+								iconUrl={provider.iconUrl ?? null}
+								displayName={provider.displayName}
+								size={20}
+							/>
+							<span class="model-selector__provider-name">{provider.displayName}</span>
+							<span class="model-selector__provider-count">{provider.models.length}</span>
+							<svg
+								class="model-selector__expand-icon"
+								class:model-selector__expand-icon--open={expanded}
+								xmlns="http://www.w3.org/2000/svg"
+								width="14"
+								height="14"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								stroke-width="2"
+								stroke-linecap="round"
+								stroke-linejoin="round"
 							>
-								<ModelIcon
-									iconUrl={provider.iconUrl ?? null}
-									displayName={provider.displayName}
-									size={20}
-								/>
-								<span class="model-selector__provider-name">{provider.displayName}</span>
-								<span class="model-selector__model-name">{model.displayName}</span>
-								{#if $selectedModel === model.id}
-									<svg
-										class="model-selector__check"
-										xmlns="http://www.w3.org/2000/svg"
-										width="14"
-										height="14"
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="3"
-										stroke-linecap="round"
-										stroke-linejoin="round"
-									>
-										<polyline points="20 6 9 17 4 12" />
-									</svg>
-								{/if}
-							</button>
-						{:else}
-							<button
-								type="button"
-								class="model-selector__provider-header"
-								aria-expanded={expanded}
-								onclick={() => toggleProvider(provider.id)}
-							>
-								<ModelIcon
-									iconUrl={provider.iconUrl ?? null}
-									displayName={provider.displayName}
-									size={20}
-								/>
-								<span class="model-selector__provider-name">{provider.displayName}</span>
-								<span class="model-selector__provider-count">{provider.models.length}</span>
-								<svg
-									class="model-selector__expand-icon"
-									class:model-selector__expand-icon--open={expanded}
-									xmlns="http://www.w3.org/2000/svg"
-									width="14"
-									height="14"
-									viewBox="0 0 24 24"
-									fill="none"
-									stroke="currentColor"
-									stroke-width="2"
-									stroke-linecap="round"
-									stroke-linejoin="round"
-								>
-									<polyline points="6 9 12 15 18 9" />
-								</svg>
-							</button>
+								<polyline points="6 9 12 15 18 9" />
+							</svg>
+						</button>
 
-							{#if expanded}
-								<ul class="model-selector__models">
-									{#each provider.models as model (model.id)}
-										<li>
-											<button
-												type="button"
-												role="option"
-												aria-selected={$selectedModel === model.id}
-												class="model-selector__option"
-												class:model-selector__option--selected={$selectedModel === model.id}
-												class:model-selector__option--focused={focusedModelId === model.id}
-												onclick={() => handleSelect(model.id as ModelId)}
-												data-model-id={model.id}
-												data-testid="model-option-{model.id}"
-											>
-												<span class="model-selector__option-text">{model.displayName}</span>
-												{#if $selectedModel === model.id}
-													<svg
-														class="model-selector__check"
-														xmlns="http://www.w3.org/2000/svg"
-														width="14"
-														height="14"
-														viewBox="0 0 24 24"
-														fill="none"
-														stroke="currentColor"
-														stroke-width="3"
-														stroke-linecap="round"
-														stroke-linejoin="round"
-													>
-														<polyline points="20 6 9 17 4 12" />
-													</svg>
-												{/if}
-											</button>
-										</li>
-									{/each}
-								</ul>
-							{/if}
+						{#if expanded}
+							<ul class="model-selector__models">
+								{#each provider.models as model (model.id)}
+									<li>
+										<button
+											type="button"
+											role="option"
+											aria-selected={$selectedModel === model.id}
+											class="model-selector__option"
+											class:model-selector__option--selected={$selectedModel === model.id}
+											class:model-selector__option--focused={focusedModelId === model.id}
+											onclick={() => handleSelect(model.id as ModelId)}
+											data-model-id={model.id}
+											data-testid="model-option-{model.id}"
+										>
+											<ModelIcon
+												iconUrl={model.iconUrl ?? null}
+												displayName={model.displayName}
+												size={18}
+											/>
+											<span class="model-selector__option-text">{model.displayName}</span>
+											{#if $selectedModel === model.id}
+												<svg
+													class="model-selector__check"
+													xmlns="http://www.w3.org/2000/svg"
+													width="14"
+													height="14"
+													viewBox="0 0 24 24"
+													fill="none"
+													stroke="currentColor"
+													stroke-width="3"
+													stroke-linecap="round"
+													stroke-linejoin="round"
+												>
+													<polyline points="20 6 9 17 4 12" />
+												</svg>
+											{/if}
+										</button>
+									</li>
+								{/each}
+							</ul>
 						{/if}
 					</div>
 				{/each}

@@ -219,6 +219,6 @@ $effect(() => {
 		error={formError}
 		onSave={handleSave}
 		onClose={closeForm}
-		onIconFile={onIconFile ? (e: Event) => { if (formModel?.id) onIconFile(e, formModel.id); } : undefined}
+		onIconFile={onIconFile && formModel?.id ? (e: Event) => onIconFile(e, formModel.id) : undefined}
 	/>
 {/if}

@@ -23,7 +23,7 @@ export const GET: RequestHandler = async () => {
 		displayName: string;
 		iconAssetId: string | null;
 		iconUrl: string | null;
-		models: Array<{ id: string; displayName: string }>;
+		models: Array<{ id: string; displayName: string; iconUrl: string | null }>;
 	}> = [];
 
 	if (builtInModels.length > 0) {
@@ -36,6 +36,7 @@ export const GET: RequestHandler = async () => {
 			models: builtInModels.map((m) => ({
 				id: m.id,
 				displayName: m.displayName,
+				iconUrl: m.iconUrl ?? null,
 			})),
 		});
 	}
@@ -54,6 +55,7 @@ export const GET: RequestHandler = async () => {
 				models: enabledModels.map((m) => ({
 					id: `provider:${provider.id}:${m.id}`,
 					displayName: m.displayName,
+					iconUrl: modelIconUrl(m.iconAssetId),
 				})),
 			});
 		}
