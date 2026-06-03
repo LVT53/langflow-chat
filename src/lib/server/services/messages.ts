@@ -43,6 +43,7 @@ type PersistedMessageMetadata = SkillControlMessageMetadata & {
 	honchoSnapshot?: HonchoContextSnapshot | null;
 	modelDisplayName?: string | null;
 	providerDisplayName?: string | null;
+	providerIconUrl?: string | null;
 	webCitationAudit?: WebCitationAudit | null;
 	wasStopped?: boolean;
 	forkCopy?: ChatMessage["forkCopy"];
@@ -130,6 +131,7 @@ function mapRowToChatMessage(
 		modelDisplayName:
 			metadata?.modelDisplayName ?? getModelDisplayName(modelId),
 		providerDisplayName: metadata?.providerDisplayName ?? undefined,
+		providerIconUrl: metadata?.providerIconUrl ?? undefined,
 		generationDurationMs: generationTimeMs ?? undefined,
 		costUsd: costUsdMicros != null ? costUsdMicros / 1_000_000 : undefined,
 		evidenceSummary,

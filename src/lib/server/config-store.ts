@@ -1254,8 +1254,8 @@ export async function getAvailableModelsWithProviders(): Promise<
 						id: `provider:${provider.id}:${model.id}` as ModelId,
 						displayName: `${provider.displayName} - ${model.displayName}`,
 						isThirdParty: true,
-						iconAssetId: provider.iconAssetId,
-						iconUrl: modelIconUrl(provider.iconAssetId),
+						iconAssetId: model.iconAssetId,
+						iconUrl: modelIconUrl(model.iconAssetId),
 					});
 				}
 			}
