@@ -299,7 +299,10 @@ function openEditProviderConfig(provider: Provider) {
 	showProviderForm = true;
 }
 
-function closeProviderForm() {
+function handleProviderIconFile(event: Event) {
+	if (!providerFormProvider) return;
+	handleModelIconFile(event, { kind: "provider", providerId: providerFormProvider.id });
+}
 	showProviderForm = false;
 	providerFormProvider = null;
 	providerFormError = "";
@@ -1346,7 +1349,7 @@ function placeholderFor(key: string): string {
 		testMessage={providerFormTestMessage}
 		onSave={handleProviderFormSave}
 		onClose={closeProviderForm}
-		onIconFile={providerFormProvider ? (e: Event) => handleModelIconFile(e, { kind: "provider", providerId: providerFormProvider!.id }) : undefined}
+		onIconFile={handleProviderIconFile}
 	/>
 {/if}
 
