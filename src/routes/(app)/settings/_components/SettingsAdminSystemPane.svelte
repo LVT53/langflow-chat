@@ -134,6 +134,7 @@ type ModelIconCropJob = {
 };
 
 let modelIconCropJob = $state<ModelIconCropJob | null>(null);
+let modelIconAssetSaved = $state<{ modelId: string; assetId: string } | null>(null);
 
 function showProvidersMessage(text: string) {
 	clearTimeout(providersMessageTimer);
@@ -196,6 +197,7 @@ async function applyModelIconAsset(target: ModelIconTarget, assetId: string) {
 		}
 	} else if (target.kind === "model") {
 		await updateModelProvider(target.providerId, target.modelId, { iconAssetId: assetId });
+		modelIconAssetSaved = { modelId: target.modelId, assetId };
 	}
 }
 
@@ -258,7 +260,6 @@ async function saveModelIconCrop(payload: {
 			crop: payload.crop,
 		});
 		await applyModelIconAsset(activeCrop.target, asset.id);
-		if (activeCrop.target.kind === "model") modelListKey += 1;
 		showProvidersMessage($t("admin.modelIconUpdated"));
 		URL.revokeObjectURL(activeCrop.imageSrc);
 		modelIconCropJob = null;
@@ -403,7 +404,6 @@ function closeModelList() {
 
 function handleModelModelIconFile(event: Event, modelId: string) {
 	handleModelIconFile(event, { kind: "model", modelId, providerId: modelListProviderId });
-	modelListKey += 1;
 }
 
 async function loadSystemSkills() {
@@ -1372,6 +1372,7 @@ function placeholderFor(key: string): string {
 					providerId={modelListProviderId}
 					onClose={closeModelList}
 					onIconFile={handleModelModelIconFile}
+					modelIconAssetSaved={modelIconAssetSaved}
 				/>
 			{/key}
 		</div>

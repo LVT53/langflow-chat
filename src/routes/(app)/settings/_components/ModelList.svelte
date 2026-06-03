@@ -17,10 +17,12 @@ let {
 	providerId,
 	onClose,
 	onIconFile,
+	modelIconAssetSaved = null,
 }: {
 	providerId: string;
 	onClose?: () => void;
 	onIconFile?: (event: Event, modelId: string) => void;
+	modelIconAssetSaved?: { modelId: string; assetId: string } | null;
 } = $props();
 
 let models = $state<ProviderModel[]>([]);
@@ -125,6 +127,12 @@ function formatPricing(input: number, output: number): string {
 $effect(() => {
 	void loadModels();
 });
+
+$effect(() => {
+	if (modelIconAssetSaved && formModel && formModel.id === modelIconAssetSaved.modelId) {
+		formModel = { ...formModel, iconAssetId: modelIconAssetSaved.assetId };
+	}
+});
 </script>
 
 <div class="flex flex-col gap-3">
@@ -159,6 +167,9 @@ $effect(() => {
 							class:bg-success={model.enabled}
 							class:bg-text-muted={!model.enabled}
 						></span>
+						{#if model.iconAssetId}
+							<img src={`/api/campaign-assets/${encodeURIComponent(model.iconAssetId)}/content`} alt="" class="h-6 w-6 rounded object-cover shrink-0" />
+						{/if}
 						<div class="flex min-w-0 flex-col">
 							<span class="truncate text-sm font-medium text-text-primary">
 								{model.displayName || model.name}

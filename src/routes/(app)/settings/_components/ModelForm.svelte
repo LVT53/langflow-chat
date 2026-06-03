@@ -35,6 +35,9 @@ let isCreate = $derived(model === null);
 let formName = $state(untrack(() => (isCreate ? "" : (model?.name ?? ""))));
 let formDisplayName = $state(untrack(() => model?.displayName ?? ""));
 let formIconAssetId = $state(untrack(() => model?.iconAssetId ?? null));
+$effect(() => {
+	formIconAssetId = model?.iconAssetId ?? null;
+});
 let formMaxModelContext = $state(
 	untrack(() => numToString(model?.maxModelContext)),
 );
