@@ -980,6 +980,15 @@ export function createServerChunkRuntime({
 			}
 		}
 
+		// Prevent indefinite buffering when models don't use clear thinking/visible boundaries
+		if (
+			leadingOutputState === "thinking" &&
+			leadingOutputBuffer.length > 2000
+		) {
+			leadingOutputState = "done";
+			return emitInlineToken(stripLeadingResponseMarker(leadingOutputBuffer));
+		}
+
 		const split = splitLeadingThinkingPreamble(leadingOutputBuffer);
 		if (!split) {
 			return true;
@@ -997,7 +1006,7 @@ export function createServerChunkRuntime({
 	};
 
 	const flushInlineThinkingBuffer = () => {
-		if (!flushLeadingOutputBuffer()) {
+		if (!flushLeadingOutputBuffer(false)) {
 			return false;
 		}
 		const flushedInline = flushInlineThinkingState(inlineThinkingState, {
@@ -1018,7 +1027,7 @@ export function createServerChunkRuntime({
 		return emitOutputToken(chunk);
 	};
 
-	const flushOutputBuffer = (): boolean => flushLeadingOutputBuffer();
+	const flushOutputBuffer = (): boolean => flushLeadingOutputBuffer(false);
 
 	return {
 		emitChunkWithOutputHandling,
