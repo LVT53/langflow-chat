@@ -970,8 +970,13 @@ export function isModelEnabled(
 	modelId: ModelId,
 	config: RuntimeConfig = runtimeConfig,
 ): boolean {
-	if (modelId === "model1") return true;
-	return config.model2Enabled !== false;
+	if (modelId === "model1") {
+		return !!(config.model1.baseUrl && config.model1.modelName);
+	}
+	return (
+		config.model2Enabled !== false &&
+		!!(config.model2.baseUrl && config.model2.modelName)
+	);
 }
 
 export function normalizeModelSelection(
@@ -1005,16 +1010,22 @@ export function getAvailableModels(
 		displayName: string;
 		iconAssetId: string | null;
 		iconUrl: string | null;
-	}> = [
-		{
+	}> = [];
+
+	if (config.model1.baseUrl && config.model1.modelName) {
+		models.push({
 			id: "model1",
 			displayName: config.model1.displayName,
 			iconAssetId: config.model1IconAssetId,
 			iconUrl: modelIconUrl(config.model1IconAssetId),
-		},
-	];
+		});
+	}
 
-	if (config.model2Enabled !== false) {
+	if (
+		config.model2Enabled !== false &&
+		config.model2.baseUrl &&
+		config.model2.modelName
+	) {
 		models.push({
 			id: "model2",
 			displayName: config.model2.displayName,

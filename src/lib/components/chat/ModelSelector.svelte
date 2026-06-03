@@ -28,7 +28,6 @@ let internalOpen = $state(false);
 let isLoading = $state(true);
 let error = $state<string | null>(null);
 let dropdownRef = $state<HTMLDivElement | undefined>(undefined);
-let searchQuery = $state("");
 let expandedProviders = $state<Set<string>>(new Set());
 let focusedModelId = $state<string | null>(null);
 let isMobile = $state(false);
@@ -40,7 +39,6 @@ function setOpen(nextOpen: boolean) {
 	}
 	onOpenChange?.(nextOpen);
 	if (!nextOpen) {
-		searchQuery = "";
 		focusedModelId = null;
 	}
 }
@@ -70,19 +68,7 @@ onMount(async () => {
 		}
 	} catch (err) {
 		error = err instanceof Error ? err.message : "Failed to load models";
-		providers = [
-			{
-				id: "built-in",
-				name: "built-in",
-				displayName: "AlfyAI",
-				iconAssetId: null,
-				iconUrl: null,
-				models: [
-					{ id: "model1", displayName: "Model 1" },
-					{ id: "model2", displayName: "Model 2" },
-				],
-			},
-		];
+		providers = [];
 	} finally {
 		isLoading = false;
 	}
@@ -98,25 +84,6 @@ onMount(async () => {
 		document.removeEventListener("click", handleClickOutside);
 		window.removeEventListener("resize", checkMobile);
 	};
-});
-
-const filteredProviders = $derived(() => {
-	const query = searchQuery.trim().toLowerCase();
-	if (!query) return providers;
-
-	return providers
-		.map((provider) => {
-			const providerMatches = provider.displayName
-				.toLowerCase()
-				.includes(query);
-			const filteredModels = provider.models.filter(
-				(model) =>
-					providerMatches || model.displayName.toLowerCase().includes(query),
-			);
-			if (filteredModels.length === 0) return null;
-			return { ...provider, models: filteredModels };
-		})
-		.filter(Boolean) as ModelProvider[];
 });
 
 const activeProvider = $derived(() => {
@@ -138,22 +105,6 @@ function toggleProvider(providerId: string) {
 	expandedProviders = next;
 }
 
-function expandAllMatching() {
-	const query = searchQuery.trim().toLowerCase();
-	if (!query) return;
-	const matching = new Set<string>();
-	for (const provider of filteredProviders()) {
-		matching.add(provider.id);
-	}
-	expandedProviders = matching;
-}
-
-$effect(() => {
-	if (searchQuery) {
-		expandAllMatching();
-	}
-});
-
 function handleSelect(modelId: ModelId) {
 	setSelectedModel(modelId);
 	setOpen(false);
@@ -172,10 +123,9 @@ function handleKeydown(event: KeyboardEvent) {
 
 	if (!isOpen) return;
 
-	const visibleProviders = filteredProviders();
 	const allVisibleModels: { providerId: string; model: ProviderModel }[] = [];
-	for (const provider of visibleProviders) {
-		if (expandedProviders.has(provider.id) || searchQuery.trim()) {
+	for (const provider of providers) {
+		if (expandedProviders.has(provider.id)) {
 			for (const model of provider.models) {
 				allVisibleModels.push({ providerId: provider.id, model });
 			}
@@ -220,7 +170,6 @@ function isProviderExpanded(
 	providerId: string,
 	providerModelsCount: number,
 ): boolean {
-	if (searchQuery.trim()) return true;
 	if (expandedProviders.has(providerId)) return true;
 	// Auto-expand if this provider contains the selected model
 	const currentModelId = $selectedModel;
@@ -282,33 +231,8 @@ function isProviderExpanded(
 			role="listbox"
 			aria-label={$t('modelSelector.availableModels')}
 		>
-			<div class="model-selector__search">
-				<svg
-					xmlns="http://www.w3.org/2000/svg"
-					width="14"
-					height="14"
-					viewBox="0 0 24 24"
-					fill="none"
-					stroke="currentColor"
-					stroke-width="2"
-					stroke-linecap="round"
-					stroke-linejoin="round"
-					class="model-selector__search-icon"
-				>
-					<circle cx="11" cy="11" r="8" />
-					<line x1="21" y1="21" x2="16.65" y2="16.65" />
-				</svg>
-				<input
-					type="text"
-					class="model-selector__search-input"
-					placeholder="Search models..."
-					bind:value={searchQuery}
-					aria-label="Search models"
-				/>
-			</div>
-
 			<div class="model-selector__list">
-				{#each filteredProviders() as provider (provider.id)}
+				{#each providers as provider (provider.id)}
 					{@const expanded = isProviderExpanded(provider.id, provider.models.length)}
 					{@const hasSingleModel = provider.models.length === 1}
 					<div class="model-selector__provider">
@@ -515,35 +439,6 @@ function isProviderExpanded(
 		animation: sheetSlideUp 200ms ease-out;
 	}
 
-	.model-selector__search {
-		display: flex;
-		align-items: center;
-		gap: var(--space-sm, 8px);
-		padding: var(--space-sm, 8px) var(--space-md, 12px);
-		border-bottom: 1px solid var(--border, rgba(0, 0, 0, 0.08));
-		flex-shrink: 0;
-	}
-
-	.model-selector__search-icon {
-		color: var(--text-secondary, #6b6b6b);
-		flex-shrink: 0;
-	}
-
-	.model-selector__search-input {
-		flex: 1;
-		border: none;
-		background: transparent;
-		font-family: 'Nimbus Sans L', sans-serif;
-		font-size: 14px;
-		color: var(--text-primary, #1a1a1a);
-		outline: none;
-		min-width: 0;
-	}
-
-	.model-selector__search-input::placeholder {
-		color: var(--text-secondary, #6b6b6b);
-	}
-
 	.model-selector__list {
 		overflow-y: auto;
 		padding: var(--space-xs, 4px);
@@ -709,18 +604,6 @@ function isProviderExpanded(
 	:global(.dark) .model-selector__dropdown {
 		background: var(--bg-primary, #1a1a1a);
 		border-color: var(--border, rgba(255, 255, 255, 0.08));
-	}
-
-	:global(.dark) .model-selector__search {
-		border-color: var(--border, rgba(255, 255, 255, 0.08));
-	}
-
-	:global(.dark) .model-selector__search-input {
-		color: var(--text-primary, #ececec);
-	}
-
-	:global(.dark) .model-selector__search-input::placeholder {
-		color: var(--text-secondary, #888888);
 	}
 
 	:global(.dark) .model-selector__provider-header {
