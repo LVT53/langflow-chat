@@ -371,9 +371,9 @@ function isProviderExpanded(
 
 	.model-selector__dropdown {
 		position: absolute;
-		bottom: 100%;
-		left: 0;
-		margin-bottom: var(--space-xs, 4px);
+		top: 0;
+		left: 100%;
+		margin-left: var(--space-xs, 4px);
 		background: var(--bg-primary, #ffffff);
 		border: 1px solid var(--border, rgba(0, 0, 0, 0.08));
 		border-radius: var(--radius-md, 8px);
@@ -515,11 +515,11 @@ function isProviderExpanded(
 	@keyframes dropdownFadeIn {
 		from {
 			opacity: 0;
-			transform: translateY(4px);
+			transform: translateX(-4px);
 		}
 		to {
 			opacity: 1;
-			transform: translateY(0);
+			transform: translateX(0);
 		}
 	}
 
