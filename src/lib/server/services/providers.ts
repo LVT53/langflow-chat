@@ -318,6 +318,7 @@ export async function deleteProvider(id: string): Promise<boolean> {
 }
 
 const FIRE_PASS_KEY_PREFIX = "fpk_";
+const FIRE_PASS_MODEL_NAME = "accounts/fireworks/routers/kimi-k2p6-turbo";
 
 export async function validateProviderConnection(
 	baseUrl: string,
@@ -414,7 +415,7 @@ export async function modelDiscovery(
 			apiKey.trim().startsWith(FIRE_PASS_KEY_PREFIX) &&
 			isFireworksHost(url.hostname)
 		) {
-			return [];
+			return [FIRE_PASS_MODEL_NAME];
 		}
 
 		if (isDeepseekHost(url.hostname)) {
