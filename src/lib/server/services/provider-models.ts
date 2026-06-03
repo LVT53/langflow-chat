@@ -10,6 +10,7 @@ export interface ProviderModel {
 	providerId: string;
 	name: string;
 	displayName: string;
+	iconAssetId: string | null;
 	maxModelContext: number | null;
 	compactionUiThreshold: number | null;
 	targetConstructedContext: number | null;
@@ -33,6 +34,7 @@ export interface CreateProviderModelInput {
 	providerId: string;
 	name: string;
 	displayName?: string;
+	iconAssetId?: string | null;
 	maxModelContext?: number | null;
 	compactionUiThreshold?: number | null;
 	targetConstructedContext?: number | null;
@@ -52,6 +54,7 @@ export interface CreateProviderModelInput {
 
 export interface UpdateProviderModelInput {
 	displayName?: string;
+	iconAssetId?: string | null;
 	maxModelContext?: number | null;
 	compactionUiThreshold?: number | null;
 	targetConstructedContext?: number | null;
@@ -75,6 +78,7 @@ function mapRowToModel(row: ProviderModelRow): ProviderModel {
 		providerId: row.providerId,
 		name: row.name,
 		displayName: row.displayName,
+		iconAssetId: row.iconAssetId ?? null,
 		maxModelContext: row.maxModelContext ?? null,
 		compactionUiThreshold: row.compactionUiThreshold ?? null,
 		targetConstructedContext: row.targetConstructedContext ?? null,
@@ -120,6 +124,7 @@ export async function createProviderModel(
 			providerId: input.providerId,
 			name: input.name,
 			displayName,
+			iconAssetId: input.iconAssetId ?? null,
 			maxModelContext: input.maxModelContext ?? null,
 			compactionUiThreshold: input.compactionUiThreshold ?? null,
 			targetConstructedContext: input.targetConstructedContext ?? null,
@@ -216,6 +221,7 @@ export async function updateProviderModel(
 	};
 
 	if (input.displayName !== undefined) updates.displayName = input.displayName;
+	if (input.iconAssetId !== undefined) updates.iconAssetId = input.iconAssetId;
 	if (input.maxModelContext !== undefined) updates.maxModelContext = input.maxModelContext;
 	if (input.compactionUiThreshold !== undefined) updates.compactionUiThreshold = input.compactionUiThreshold;
 	if (input.targetConstructedContext !== undefined) updates.targetConstructedContext = input.targetConstructedContext;

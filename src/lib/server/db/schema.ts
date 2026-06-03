@@ -1585,6 +1585,10 @@ export const providerModels = sqliteTable(
 			.references(() => providers.id, { onDelete: "cascade" }),
 		name: text("name").notNull(),
 		displayName: text("display_name").notNull(),
+		iconAssetId: text("icon_asset_id").references(
+			(): AnySQLiteColumn => campaignAssets.id,
+			{ onDelete: "set null" },
+		),
 		maxModelContext: integer("max_model_context"),
 		compactionUiThreshold: integer("compaction_ui_threshold"),
 		targetConstructedContext: integer("target_constructed_context"),

@@ -32,6 +32,7 @@ let isCreate = $derived(model === null);
 
 let formName = $state(untrack(() => (isCreate ? "" : (model?.name ?? ""))));
 let formDisplayName = $state(untrack(() => model?.displayName ?? ""));
+let formIconAssetId = $state(untrack(() => model?.iconAssetId ?? null));
 let formMaxModelContext = $state(
 	untrack(() => numToString(model?.maxModelContext)),
 );
@@ -96,11 +97,14 @@ function handleSave() {
 		return;
 	}
 
-	const data: ProviderModelUpdate = {
+	const maxContext = stringToNum(formMaxModelContext);
+
+	const data: ProviderModelUpdate & { name?: string } = {
 		displayName: formDisplayName.trim(),
-		maxModelContext: stringToNum(formMaxModelContext),
-		compactionUiThreshold: stringToNum(formCompactionUiThreshold),
-		targetConstructedContext: stringToNum(formTargetConstructedContext),
+		iconAssetId: formIconAssetId || null,
+		maxModelContext: maxContext,
+		compactionUiThreshold: stringToNum(formCompactionUiThreshold) ?? (maxContext != null ? Math.floor(maxContext * 0.8) : null),
+		targetConstructedContext: stringToNum(formTargetConstructedContext) ?? (maxContext != null ? Math.floor(maxContext * 0.9) : null),
 		maxMessageLength: stringToNum(formMaxMessageLength),
 		maxTokens: stringToNum(formMaxTokens),
 		reasoningEffort: formReasoningEffort || null,
@@ -115,7 +119,7 @@ function handleSave() {
 	};
 
 	if (isCreate) {
-		(data as Record<string, unknown>).name = formName.trim();
+		data.name = formName.trim();
 	}
 
 	onSave?.(data);
@@ -155,6 +159,17 @@ function handleSave() {
 						class="settings-input"
 						bind:value={formDisplayName}
 						placeholder={$t('admin.displayNamePlaceholder')}
+					/>
+				</div>
+
+				<div>
+					<label class="settings-label" for="model-form-icon">{$t('admin.iconAssetId')}</label>
+					<input
+						id="model-form-icon"
+						type="text"
+						class="settings-input"
+						bind:value={formIconAssetId}
+						placeholder=""
 					/>
 				</div>
 
