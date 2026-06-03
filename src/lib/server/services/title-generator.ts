@@ -80,6 +80,7 @@ async function generateTitleWithAiSdk(
 			temperature: TITLE_GEN_TEMPERATURE,
 			maxOutputTokens: TITLE_GEN_MAX_TOKENS,
 			maxRetries: DEFAULT_MODEL_MAX_RETRIES,
+			allowSystemInMessages: true,
 		});
 		return normalizeAssistantOutput(result.text);
 	};

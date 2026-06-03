@@ -211,6 +211,7 @@ export async function requestContextSummarizer(params: {
 			maxOutputTokens: params.maxTokens,
 			temperature: params.temperature ?? 0.1,
 			maxRetries: 0,
+			allowSystemInMessages: true,
 		});
 		return result.text.trim() || null;
 	} catch (error) {
