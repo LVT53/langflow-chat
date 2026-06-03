@@ -340,17 +340,34 @@ export async function validateProviderConnection(
 			signal: AbortSignal.timeout(10000),
 		});
 
-		if (!response.ok) {
-			if (response.status === 401 || response.status === 403) {
+		if (response.ok) return { valid: true };
+
+		if (response.status === 401 || response.status === 403) {
+			const chatUrl = buildOpenAICompatibleUrl(baseUrl, "/v1/chat/completions");
+			const chatResponse = await fetch(chatUrl, {
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${apiKey}`,
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					model: ".",
+					messages: [{ role: "user", content: "ping" }],
+					max_tokens: 1,
+				}),
+				signal: AbortSignal.timeout(10000),
+			});
+
+			if (chatResponse.ok) return { valid: true };
+			if (chatResponse.status === 401 || chatResponse.status === 403) {
 				return { valid: false, error: "Invalid API key" };
 			}
-			return {
-				valid: false,
-				error: `Server returned ${response.status}`,
-			};
 		}
 
-		return { valid: true };
+		return {
+			valid: false,
+			error: `Server returned ${response.status}`,
+		};
 	} catch (error) {
 		if (error instanceof Error) {
 			if (error.name === "TimeoutError") {
