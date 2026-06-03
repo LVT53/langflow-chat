@@ -28,6 +28,13 @@ export const PUT: RequestHandler = async (event) => {
 			input.displayName = body.displayName.trim();
 		}
 
+		if (body.iconAssetId !== undefined) {
+			if (body.iconAssetId !== null && typeof body.iconAssetId !== 'string') {
+				return json({ error: 'iconAssetId must be a string or null' }, { status: 400 });
+			}
+			input.iconAssetId = body.iconAssetId;
+		}
+
 		if (body.maxModelContext !== undefined) {
 			if (body.maxModelContext === null) {
 				input.maxModelContext = null;
