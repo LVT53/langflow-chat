@@ -1378,6 +1378,7 @@ function placeholderFor(key: string): string {
 		onSave={handleProviderFormSave}
 		onClose={closeProviderForm}
 		onIconFile={handleProviderIconFile}
+		allProviders={providerConfigs}
 	/>
 {/if}
 

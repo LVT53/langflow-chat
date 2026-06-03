@@ -2,7 +2,8 @@
 import { untrack } from "svelte";
 import { get } from "svelte/store";
 import { t } from "$lib/i18n";
-import type { Provider } from "$lib/client/api/admin";
+import type { Provider, ProviderModel } from "$lib/client/api/admin";
+import { fetchProviderModels } from "$lib/client/api/admin";
 
 const tVal = get(t);
 
@@ -24,6 +25,7 @@ let {
 	onClose,
 	onTest,
 	onIconFile,
+	allProviders = [],
 }: {
 	provider?: Provider | null;
 	isCreate?: boolean;
@@ -36,6 +38,7 @@ let {
 	onClose?: () => void;
 	onTest?: (data: Record<string, unknown>) => void | Promise<void>;
 	onIconFile?: (event: Event) => void;
+	allProviders?: Provider[];
 } = $props();
 
 let formName = $state(untrack(() => (isCreate ? "" : (provider?.name ?? ""))));
@@ -66,6 +69,7 @@ let formRateLimitFallbackTimeoutMs = $state(
 			: "",
 	),
 );
+let fallbackProviderModels = $state<ProviderModel[]>([]);
 let showApiKey = $state(false);
 let showFallbackApiKey = $state(false);
 let showFallbackSection = $state(false);
@@ -94,7 +98,6 @@ function handleSave() {
 	if (formRateLimitFallbackEnabled) {
 		if (
 			!formRateLimitFallbackBaseUrl ||
-			(isCreate && !formRateLimitFallbackApiKey) ||
 			!formRateLimitFallbackModelName ||
 			!formRateLimitFallbackTimeoutMs
 		) {
@@ -128,8 +131,8 @@ function handleSave() {
 		if (formApiKey) data.apiKey = formApiKey;
 	}
 
-	if (formRateLimitFallbackEnabled && formRateLimitFallbackApiKey) {
-		data.rateLimitFallbackApiKey = formRateLimitFallbackApiKey;
+	if (formRateLimitFallbackEnabled) {
+		if (formRateLimitFallbackApiKey) data.rateLimitFallbackApiKey = formRateLimitFallbackApiKey;
 	}
 
 	onSave?.(data);
@@ -263,52 +266,68 @@ function handleTest() {
 
 							{#if formRateLimitFallbackEnabled}
 								<div>
-									<label class="settings-label" for="provider-form-fallback-base-url">
-										{$t('admin.rateLimitFallbackBaseUrl')}
+									<label class="settings-label" for="provider-form-fallback-provider">
+										{$t('admin.rateLimitFallbackProvider')}
 									</label>
-									<input
-										id="provider-form-fallback-base-url"
-										type="url"
+									<select
+										id="provider-form-fallback-provider"
 										class="settings-input"
 										bind:value={formRateLimitFallbackBaseUrl}
-										placeholder={$t('admin.baseUrlPlaceholder')}
-									/>
+										onchange={(e) => {
+											const selectedId = e.currentTarget.value;
+											const picked = allProviders.find(p => p.baseUrl === selectedId);
+											if (picked) {
+												formRateLimitFallbackBaseUrl = picked.baseUrl;
+												formRateLimitFallbackApiKey = "";
+												formRateLimitFallbackModelName = "";
+												fallbackProviderModels = [];
+												fetchProviderModels(picked.id).then(models => {
+													fallbackProviderModels = models;
+												}).catch(() => {});
+											}
+										}}
+									>
+										<option value="">{$t('admin.selectProvider')}</option>
+										{#each allProviders.filter(p => !provider || p.id !== provider.id) as p}
+											<option value={p.baseUrl}>{p.displayName}</option>
+										{/each}
+									</select>
+									<p class="mt-1 text-xs text-text-muted">{$t('admin.rateLimitFallbackProviderDesc')}</p>
 								</div>
 
-								<div>
-									<label class="settings-label" for="provider-form-fallback-api-key">
-										{$t('admin.rateLimitFallbackApiKey')}
-									</label>
-									<div class="flex items-center gap-2">
-										<input
-											id="provider-form-fallback-api-key"
-											type={showFallbackApiKey ? 'text' : 'password'}
-											class="settings-input flex-1"
-											bind:value={formRateLimitFallbackApiKey}
-											placeholder={provider && !isCreate ? $t('admin.unchanged') : $t('admin.apiKeyPlaceholder')}
-										/>
-										<button
-											type="button"
-											class="btn-secondary"
-											onclick={() => (showFallbackApiKey = !showFallbackApiKey)}
+								{#if fallbackProviderModels.length > 0}
+									<div>
+										<label class="settings-label" for="provider-form-fallback-model">
+											{$t('admin.rateLimitFallbackModelName')}
+										</label>
+										<select
+											id="provider-form-fallback-model"
+											class="settings-input"
+											value={formRateLimitFallbackModelName}
+											onchange={(e) => {
+												formRateLimitFallbackModelName = e.currentTarget.value;
+											}}
 										>
-											{showFallbackApiKey ? $t('admin.hide') : $t('admin.show')}
-										</button>
+											<option value="">{$t('admin.selectModel')}</option>
+											{#each fallbackProviderModels as m}
+												<option value={m.name}>{m.displayName || m.name}</option>
+											{/each}
+										</select>
 									</div>
-								</div>
-
-								<div>
-									<label class="settings-label" for="provider-form-fallback-model-name">
-										{$t('admin.rateLimitFallbackModelName')}
-									</label>
-									<input
-										id="provider-form-fallback-model-name"
-										type="text"
-										class="settings-input"
-										bind:value={formRateLimitFallbackModelName}
-										placeholder={$t('admin.modelNamePlaceholderProvider')}
-									/>
-								</div>
+								{:else if formRateLimitFallbackBaseUrl}
+									<div>
+										<label class="settings-label" for="provider-form-fallback-model-name">
+											{$t('admin.rateLimitFallbackModelName')}
+										</label>
+										<input
+											id="provider-form-fallback-model-name"
+											type="text"
+											class="settings-input"
+											bind:value={formRateLimitFallbackModelName}
+											placeholder={$t('admin.modelNamePlaceholderProvider')}
+										/>
+									</div>
+								{/if}
 
 								<div>
 									<label class="settings-label" for="provider-form-fallback-timeout">

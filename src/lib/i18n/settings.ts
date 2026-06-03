@@ -381,7 +381,12 @@ const settingsDict = {
 			"Retry provider rate-limit responses through a separate OpenAI-compatible endpoint.",
 		"admin.rateLimitFallbackEnabled": "Enable rate-limit fallback",
 		"admin.rateLimitFallbackModelName": "Fallback Model Name",
+		"admin.rateLimitFallbackProvider": "Fallback Provider",
+		"admin.rateLimitFallbackProviderDesc":
+			"Select an existing provider to use as fallback when rate-limited.",
 		"admin.rateLimitFallbackTimeoutMs": "Fallback Timeout (ms)",
+		"admin.selectModel": "Select a model...",
+		"admin.selectProvider": "Select a provider...",
 		"admin.rateSizeLimits": "Rate & Size Limits",
 		"admin.reasoningEffort": "Reasoning Effort",
 		"admin.reasoningTokens": "Reasoning tokens",
@@ -996,7 +1001,12 @@ const settingsDict = {
 		"admin.rateLimitFallbackEnabled":
 			"Sebességkorlátos tartalék út engedélyezése",
 		"admin.rateLimitFallbackModelName": "Tartalék modell neve",
+		"admin.rateLimitFallbackProvider": "Tartalék szolgáltató",
+		"admin.rateLimitFallbackProviderDesc":
+			"Válasszon ki egy meglévő szolgáltatót, amelyet tartalékként használ sebességkorlát esetén.",
 		"admin.rateLimitFallbackTimeoutMs": "Tartalék időkorlát (ms)",
+		"admin.selectModel": "Válasszon modellt...",
+		"admin.selectProvider": "Válasszon szolgáltatót...",
 		"admin.rateSizeLimits": "Sebesség- és méretkorlátok",
 		"admin.reasoningEffort": "Gondolkodási erőfeszítés",
 		"admin.reasoningTokens": "Gondolkodási tokenek",

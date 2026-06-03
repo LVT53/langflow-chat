@@ -198,7 +198,7 @@ function isProviderExpanded(
 		{:else if activeProvider()}
 			{@const active = activeProvider()}
 			<ModelIcon
-				iconUrl={active.model.iconUrl ?? null}
+				iconUrl={active.model.iconUrl ?? active.provider.iconUrl ?? null}
 				displayName={active.model.displayName}
 				size={22}
 			/>
