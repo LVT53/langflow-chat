@@ -303,6 +303,7 @@ function handleProviderIconFile(event: Event) {
 	if (!providerFormProvider) return;
 	handleModelIconFile(event, { kind: "provider", providerId: providerFormProvider.id });
 }
+function closeProviderForm() {
 	showProviderForm = false;
 	providerFormProvider = null;
 	providerFormError = "";
