@@ -7,6 +7,11 @@ import {
 	resolveNormalChatModelRunProvider,
 	type NormalChatModelRunRuntimeConfig,
 } from "$lib/server/services/normal-chat-model";
+import {
+	SUMMARIZER_MAX_RETRIES,
+	SUMMARIZER_MAX_TOKENS,
+	SUMMARIZER_TEMPERATURE,
+} from "$lib/server/services/normal-chat-model-config";
 import { normalizeOpenAICompatibleBaseUrl } from "$lib/server/services/openai-compatible-url";
 
 const CHARS_PER_TOKEN = 4;
@@ -134,9 +139,9 @@ async function summarizeDirect(
 				content: `These are messages from a conversation titled "${title}":\n\n${formatted}`,
 			},
 		],
-		temperature: 0.2,
-		maxOutputTokens: 2048,
-		maxRetries: 1,
+		temperature: SUMMARIZER_TEMPERATURE,
+		maxOutputTokens: SUMMARIZER_MAX_TOKENS,
+		maxRetries: SUMMARIZER_MAX_RETRIES,
 	});
 
 	return result.text.trim();
@@ -164,9 +169,9 @@ async function summarizeWithChunking(
 					content: `These are messages from a conversation titled "${title}"${chunkLabel}:\n\n${formatted}`,
 				},
 			],
-			temperature: 0.2,
-			maxOutputTokens: 2048,
-			maxRetries: 1,
+			temperature: SUMMARIZER_TEMPERATURE,
+			maxOutputTokens: SUMMARIZER_MAX_TOKENS,
+			maxRetries: SUMMARIZER_MAX_RETRIES,
 		});
 
 		chunkSummaries.push(result.text.trim());
@@ -205,9 +210,9 @@ async function combineChunkSummaries(
 				content: `Combine these summaries of the conversation "${title}" into one cohesive summary:\n\n${combined}`,
 			},
 		],
-		temperature: 0.2,
-		maxOutputTokens: 2048,
-		maxRetries: 1,
+		temperature: SUMMARIZER_TEMPERATURE,
+		maxOutputTokens: SUMMARIZER_MAX_TOKENS,
+		maxRetries: SUMMARIZER_MAX_RETRIES,
 	});
 
 	return result.text.trim();
