@@ -667,4 +667,47 @@ describe("createServerChunkRuntime", () => {
 			}),
 		]);
 	});
+
+	it("emits buffered thinking as visible output after 2000 chars when no clear boundary is sent", () => {
+		const chunks: string[] = [];
+		const runtime = createServerChunkRuntime({
+			enqueueChunk(chunk) {
+				chunks.push(chunk);
+				return true;
+			},
+			thinkingBatchMin: 1,
+		});
+
+		const preamble = "The user is asking me to write about cats. ";
+		runtime.emitChunkWithOutputHandling(preamble);
+		const longThinking = "a".repeat(2001);
+		runtime.emitChunkWithOutputHandling(longThinking);
+
+		expect(tokenTexts(chunks).join("")).toBe(`${preamble}${longThinking}`);
+		expect(thinkingTexts(chunks).join("")).toBe("");
+	});
+
+	it("does not double-emit buffered text after the 2000-char safety threshold triggers", () => {
+		const chunks: string[] = [];
+		const runtime = createServerChunkRuntime({
+			enqueueChunk(chunk) {
+				chunks.push(chunk);
+				return true;
+			},
+			thinkingBatchMin: 1,
+		});
+
+		const preamble = "The user is asking me to write about cats. ";
+		runtime.emitChunkWithOutputHandling(preamble);
+		const longThinking = "a".repeat(2001);
+		runtime.emitChunkWithOutputHandling(longThinking);
+		runtime.emitChunkWithOutputHandling("visible answer");
+		runtime.flushOutputBuffer();
+
+		const visibleText = tokenTexts(chunks).join("");
+		expect(visibleText).toBe(`${preamble}${longThinking}visible answer`);
+		expect(visibleText.indexOf(longThinking)).toBe(
+			visibleText.lastIndexOf(longThinking),
+		);
+	});
 });

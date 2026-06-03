@@ -986,7 +986,9 @@ export function createServerChunkRuntime({
 			leadingOutputBuffer.length > 2000
 		) {
 			leadingOutputState = "done";
-			return emitInlineToken(stripLeadingResponseMarker(leadingOutputBuffer));
+			const buffered = leadingOutputBuffer;
+			leadingOutputBuffer = "";
+			return emitInlineToken(stripLeadingResponseMarker(buffered));
 		}
 
 		const split = splitLeadingThinkingPreamble(leadingOutputBuffer);
