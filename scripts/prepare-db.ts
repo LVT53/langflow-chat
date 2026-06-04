@@ -8,6 +8,12 @@ if (!process.env.DATABASE_PATH) {
 	process.env.DATABASE_PATH = "./data/chat.db";
 }
 
+import {
+	createCipheriv,
+	pbkdf2Sync,
+	randomBytes,
+	randomUUID,
+} from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -162,6 +168,31 @@ const INFERENCE_PROVIDER_MIGRATION_TAGS = [
 	"1777140000002_inference_provider_context_limits",
 	"1777140000004_inference_provider_max_tokens",
 ] as const;
+
+function deriveProviderEncryptionKey(secret: string): Buffer {
+	return pbkdf2Sync(secret, "alfyai-providers", 100000, 32, "sha256");
+}
+
+function encryptSeededProviderApiKey(plaintext: string): {
+	encrypted: string;
+	iv: string;
+} {
+	const sessionSecret =
+		process.env.SESSION_SECRET || "mock-session-secret-for-dev-testing-only";
+	const key = deriveProviderEncryptionKey(sessionSecret);
+	const iv = randomBytes(16);
+	const cipher = createCipheriv("aes-256-gcm", key, iv);
+	const encrypted = Buffer.concat([
+		cipher.update(plaintext, "utf8"),
+		cipher.final(),
+	]);
+	const authTag = cipher.getAuthTag();
+
+	return {
+		encrypted: Buffer.concat([encrypted, authTag]).toString("base64"),
+		iv: iv.toString("base64"),
+	};
+}
 
 function openDatabase(path: string): void {
 	databasePath = path;
@@ -657,7 +688,10 @@ function seedDefaultProvidersIfNeeded(): void {
 		process.env.MODEL_1_DISPLAY_NAME || "Model 1";
 
 	if (model1BaseUrl && model1Name) {
-		const id = crypto.randomUUID();
+		const id = randomUUID();
+		const apiKey = encryptSeededProviderApiKey(
+			process.env.MODEL_1_API_KEY || "",
+		);
 		sqlite
 			.prepare(
 				`INSERT INTO providers (id, name, display_name, base_url, api_key_encrypted, api_key_iv, sort_order, enabled, created_at, updated_at)
@@ -668,15 +702,15 @@ function seedDefaultProvidersIfNeeded(): void {
 				"model1",
 				model1DisplayName,
 				model1BaseUrl,
-				process.env.MODEL_1_API_KEY || "",
-				"",
+				apiKey.encrypted,
+				apiKey.iv,
 			);
 		sqlite
 			.prepare(
 				`INSERT INTO provider_models (id, provider_id, name, display_name, enabled, sort_order, created_at, updated_at)
 				 VALUES (?, ?, ?, ?, 1, 0, unixepoch(), unixepoch())`,
 			)
-			.run(crypto.randomUUID(), id, model1Name, model1DisplayName);
+			.run(randomUUID(), id, model1Name, model1DisplayName);
 	}
 
 	const model2Enabled = process.env.MODEL_2_ENABLED !== "false";
@@ -686,7 +720,10 @@ function seedDefaultProvidersIfNeeded(): void {
 		process.env.MODEL_2_DISPLAY_NAME || "Model 2";
 
 	if (model2Enabled && model2BaseUrl && model2Name) {
-		const id = crypto.randomUUID();
+		const id = randomUUID();
+		const apiKey = encryptSeededProviderApiKey(
+			process.env.MODEL_2_API_KEY || "",
+		);
 		sqlite
 			.prepare(
 				`INSERT INTO providers (id, name, display_name, base_url, api_key_encrypted, api_key_iv, sort_order, enabled, created_at, updated_at)
@@ -697,15 +734,15 @@ function seedDefaultProvidersIfNeeded(): void {
 				"model2",
 				model2DisplayName,
 				model2BaseUrl,
-				process.env.MODEL_2_API_KEY || "",
-				"",
+				apiKey.encrypted,
+				apiKey.iv,
 			);
 		sqlite
 			.prepare(
 				`INSERT INTO provider_models (id, provider_id, name, display_name, enabled, sort_order, created_at, updated_at)
 				 VALUES (?, ?, ?, ?, 1, 0, unixepoch(), unixepoch())`,
 			)
-			.run(crypto.randomUUID(), id, model2Name, model2DisplayName);
+			.run(randomUUID(), id, model2Name, model2DisplayName);
 	}
 
 	console.log("[prepare-db] Seeded default providers from env configuration.");

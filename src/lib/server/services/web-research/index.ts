@@ -1,3 +1,4 @@
+import { isIP } from "node:net";
 import { getConfig, type RuntimeConfig } from "$lib/server/config-store";
 import {
 	type RankedTeiItem,
@@ -304,6 +305,11 @@ const QUERY_STOP_WORDS = new Set([
 	"which",
 	"with",
 ]);
+const BLOCKED_DIRECT_HOSTNAMES = new Set([
+	"localhost",
+	"localhost.localdomain",
+	"metadata.google.internal",
+]);
 
 function toWebResearchConfig(
 	config: RuntimeConfig | WebResearchConfig,
@@ -325,11 +331,77 @@ function normalizeWhitespace(value: string): string {
 	return value.replace(/\s+/g, " ").trim();
 }
 
+function normalizeUrlHostname(hostname: string): string {
+	return hostname.trim().toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
+}
+
+function isBlockedIpv4Address(hostname: string): boolean {
+	const parts = hostname.split(".").map((part) => Number(part));
+	if (
+		parts.length !== 4 ||
+		parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)
+	) {
+		return false;
+	}
+
+	const [a, b] = parts;
+	return (
+		a === 0 ||
+		a === 10 ||
+		a === 127 ||
+		(a === 100 && b >= 64 && b <= 127) ||
+		(a === 169 && b === 254) ||
+		(a === 172 && b >= 16 && b <= 31) ||
+		(a === 192 && b === 168) ||
+		(a === 198 && (b === 18 || b === 19)) ||
+		a >= 224
+	);
+}
+
+function isBlockedIpv6Address(hostname: string): boolean {
+	const normalized = normalizeUrlHostname(hostname);
+	if (normalized === "::" || normalized === "::1") return true;
+	if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true;
+	if (/^fe[89ab]/i.test(normalized)) return true;
+
+	const mappedIpv4 = normalized.match(/^(?:::ffff:)?(\d+\.\d+\.\d+\.\d+)$/);
+	return mappedIpv4 ? isBlockedIpv4Address(mappedIpv4[1]) : false;
+}
+
+function isBlockedResearchHostname(hostname: string): boolean {
+	const normalized = normalizeUrlHostname(hostname);
+	if (!normalized) return true;
+	if (
+		BLOCKED_DIRECT_HOSTNAMES.has(normalized) ||
+		normalized.endsWith(".localhost") ||
+		normalized.endsWith(".local")
+	) {
+		return true;
+	}
+
+	const ipVersion = isIP(normalized);
+	if (ipVersion === 4) return isBlockedIpv4Address(normalized);
+	if (ipVersion === 6) return isBlockedIpv6Address(normalized);
+
+	return false;
+}
+
+function isFetchableResearchUrl(value: string): boolean {
+	try {
+		const url = new URL(value);
+		if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+		return !isBlockedResearchHostname(url.hostname);
+	} catch {
+		return false;
+	}
+}
+
 function extractDirectUrls(value: string): string[] {
 	const urls = new Map<string, string>();
 	for (const match of value.matchAll(HTTP_URL_RE)) {
 		const rawUrl = match[0]?.replace(TRAILING_URL_PUNCTUATION_RE, "");
 		if (!rawUrl) continue;
+		if (!isFetchableResearchUrl(rawUrl)) continue;
 		const canonicalUrl = canonicalizeUrl(rawUrl);
 		urls.set(canonicalUrl, rawUrl);
 	}
@@ -1235,6 +1307,9 @@ async function fetchPageContent(params: {
 	highlights: string[];
 } | null> {
 	try {
+		if (!isFetchableResearchUrl(params.source.url)) {
+			return null;
+		}
 		const response = await params.fetch(params.source.url, {
 			method: "GET",
 			headers: {

@@ -477,6 +477,29 @@ describe("researchWeb with SearXNG", () => {
 		);
 	});
 
+	it("blocks user-provided local network URLs before server-side fetch", async () => {
+		const fetchMock = vi.fn(async () =>
+			htmlResponse("<html><body>internal admin page</body></html>"),
+		);
+
+		const result = await researchWeb(
+			{
+				query: "Inspect http://127.0.0.1:8000/admin",
+				maxSources: 1,
+			},
+			{
+				config: { ...webConfig, searxngBaseUrl: "" },
+				fetch: fetchMock,
+				now: new Date("2026-05-02T12:00:00.000Z"),
+			},
+		);
+
+		expect(fetchMock).not.toHaveBeenCalled();
+		expect(result.diagnostics.directUrlCount).toBe(0);
+		expect(result.diagnostics.openedPageCount).toBe(0);
+		expect(result.sources).toHaveLength(0);
+	});
+
 	it("falls back to SearXNG snippets when selected pages cannot be opened", async () => {
 		const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
 			const url = input.toString();

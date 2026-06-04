@@ -1,5 +1,5 @@
 import {
-	normalizeModelSelection,
+	normalizeModelSelectionWithProviders,
 	type RuntimeConfig,
 } from "$lib/server/config-store";
 import type { ModelId } from "$lib/types";
@@ -18,7 +18,7 @@ export async function resolveUserModelPreference(
 	storedMode: string | null | undefined,
 	config: RuntimeConfig,
 ): Promise<ResolvedUserModelPreference> {
-	const defaultModel = normalizeModelSelection(
+	const defaultModel = await normalizeModelSelectionWithProviders(
 		config.defaultNewUserModel,
 		config,
 	);
@@ -33,7 +33,7 @@ export async function resolveUserModelPreference(
 	const explicitModel =
 		storedPreference == null
 			? null
-			: normalizeModelSelection(storedPreference, config);
+			: await normalizeModelSelectionWithProviders(storedPreference, config);
 	const isLegacyMode = storedMode !== "explicit";
 	const preference = isLegacyMode && explicitModel === defaultModel ? null : explicitModel;
 
@@ -48,7 +48,7 @@ export async function modelPreferenceStorageForSystemDefault(
 	config: RuntimeConfig,
 ): Promise<{ preferredModel: ModelId; modelPreferenceMode: UserModelPreferenceMode }> {
 	return {
-		preferredModel: normalizeModelSelection(config.defaultNewUserModel, config),
+		preferredModel: await normalizeModelSelectionWithProviders(config.defaultNewUserModel, config),
 		modelPreferenceMode: "system",
 	};
 }
@@ -58,7 +58,7 @@ export async function modelPreferenceStorageForExplicitChoice(
 	config: RuntimeConfig,
 ): Promise<{ preferredModel: ModelId; modelPreferenceMode: UserModelPreferenceMode }> {
 	return {
-		preferredModel: normalizeModelSelection(model, config),
+		preferredModel: await normalizeModelSelectionWithProviders(model, config),
 		modelPreferenceMode: "explicit",
 	};
 }

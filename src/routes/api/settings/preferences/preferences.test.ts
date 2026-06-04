@@ -35,6 +35,7 @@ vi.mock("$lib/server/config-store", () => ({
 		model2Enabled: true,
 	})),
 	normalizeModelSelection: vi.fn((model: string) => model),
+	normalizeModelSelectionWithProviders: vi.fn(async (model: string) => model),
 }));
 
 vi.mock("drizzle-orm", () => ({

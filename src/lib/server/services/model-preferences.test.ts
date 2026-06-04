@@ -1,8 +1,27 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("$lib/server/services/inference-providers", () => ({
-	getProviderById: vi.fn(async () => null),
-	listProviders: vi.fn(async () => []),
+vi.mock("$lib/server/services/providers", () => ({
+	getProviderByName: vi.fn(async (name: string) =>
+		name === "openrouter"
+			? { id: "provider-1", enabled: true }
+			: null,
+	),
+	getProviderWithSecrets: vi.fn(async (id: string) =>
+		id === "provider-1"
+			? { id: "provider-1", name: "openrouter", enabled: true }
+			: null,
+	),
+}));
+
+vi.mock("$lib/server/services/provider-models", () => ({
+	listEnabledProviderModels: vi.fn(async (providerId: string) =>
+		providerId === "provider-1"
+			? [
+					{ id: "model-a", name: "vendor/model-a", enabled: true },
+					{ id: "model-b", name: "vendor/model-b", enabled: true },
+				]
+			: [],
+	),
 }));
 
 import { resolveUserModelPreference } from "./model-preferences";
@@ -45,6 +64,33 @@ describe("model preference inheritance", () => {
 			preference: "model2",
 			effectiveModel: "model2",
 			systemDefaultModel: "model2",
+		});
+	});
+
+	it("preserves explicit provider model choices", async () => {
+		await expect(
+			resolveUserModelPreference(
+				"provider:provider-1:model-b",
+				"explicit",
+				config,
+			),
+		).resolves.toEqual({
+			preference: "provider:provider-1:model-b",
+			effectiveModel: "provider:provider-1:model-b",
+			systemDefaultModel: "model2",
+		});
+	});
+
+	it("maps provider-level defaults to the first enabled provider model", async () => {
+		await expect(
+			resolveUserModelPreference("model1", "system", {
+				...config,
+				defaultNewUserModel: "provider:provider-1",
+			} as RuntimeConfig),
+		).resolves.toEqual({
+			preference: null,
+			effectiveModel: "provider:provider-1:model-a",
+			systemDefaultModel: "provider:provider-1:model-a",
 		});
 	});
 });
