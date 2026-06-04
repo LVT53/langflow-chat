@@ -1,3 +1,4 @@
+import { createDecipheriv, pbkdf2Sync } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -77,6 +78,21 @@ function listColumns(sqlite: Database.Database, tableName: string): string[] {
 		.prepare(`PRAGMA table_info(${JSON.stringify(tableName)})`)
 		.all()
 		.map((row) => String((row as { name: unknown }).name));
+}
+
+function decryptSeededProviderApiKey(
+	encrypted: string,
+	iv: string,
+	secret: string,
+): string {
+	const key = pbkdf2Sync(secret, 'alfyai-providers', 100000, 32, 'sha256');
+	const ivBuffer = Buffer.from(iv, 'base64');
+	const encryptedBuffer = Buffer.from(encrypted, 'base64');
+	const authTag = encryptedBuffer.slice(-16);
+	const ciphertext = encryptedBuffer.slice(0, -16);
+	const decipher = createDecipheriv('aes-256-gcm', key, ivBuffer);
+	decipher.setAuthTag(authTag);
+	return decipher.update(ciphertext).toString('utf8') + decipher.final('utf8');
 }
 
 describe('prepare-db script', () => {
@@ -224,6 +240,61 @@ describe('prepare-db script', () => {
 			expect(rows.map((row) => row.key)).toEqual(['MODEL_1_NAME']);
 		} finally {
 			sqlite.close();
+		}
+	});
+
+	it('seeds default provider API keys using the provider encryption format', () => {
+		tempDir = mkdtempSync(join(tmpdir(), 'alfyai-prepare-db-'));
+		const dbPath = join(tempDir, 'chat.db');
+		const previousSessionSecret = process.env.SESSION_SECRET;
+		const previousModel1ApiKey = process.env.MODEL_1_API_KEY;
+		const previousModel2Enabled = process.env.MODEL_2_ENABLED;
+		process.env.SESSION_SECRET = 'prepare-db-test-secret';
+		process.env.MODEL_1_API_KEY = 'sk-seeded-provider';
+		process.env.MODEL_2_ENABLED = 'false';
+
+		try {
+			prepareDatabase(dbPath);
+
+			const sqlite = new Database(dbPath, { readonly: true });
+			try {
+				const row = sqlite
+					.prepare(
+						"SELECT api_key_encrypted, api_key_iv FROM providers WHERE name = 'model1'",
+					)
+					.get() as
+					| { api_key_encrypted: string; api_key_iv: string }
+					| undefined;
+
+				expect(row).toBeTruthy();
+				expect(row?.api_key_encrypted).not.toBe('sk-seeded-provider');
+				expect(row?.api_key_iv).toBeTruthy();
+				expect(
+					decryptSeededProviderApiKey(
+						row!.api_key_encrypted,
+						row!.api_key_iv,
+						'prepare-db-test-secret',
+					),
+				).toBe('sk-seeded-provider');
+			} finally {
+				sqlite.close();
+			}
+		} finally {
+			if (previousSessionSecret === undefined) {
+				delete process.env.SESSION_SECRET;
+			} else {
+				process.env.SESSION_SECRET = previousSessionSecret;
+			}
+			if (previousModel1ApiKey === undefined) {
+				delete process.env.MODEL_1_API_KEY;
+			} else {
+				process.env.MODEL_1_API_KEY = previousModel1ApiKey;
+			}
+			if (previousModel2Enabled === undefined) {
+				delete process.env.MODEL_2_ENABLED;
+			} else {
+				process.env.MODEL_2_ENABLED = previousModel2Enabled;
+			}
 		}
 	});
 });

@@ -1,6 +1,9 @@
 import { json } from "@sveltejs/kit";
 import { requireAuth } from "$lib/server/auth/hooks";
-import { importConversations } from "$lib/server/services/chatgpt-import";
+import {
+	ChatGptImportProjectAccessError,
+	importConversations,
+} from "$lib/server/services/chatgpt-import";
 import type { RequestHandler } from "./$types";
 
 export const POST: RequestHandler = async (event) => {
@@ -47,6 +50,9 @@ export const POST: RequestHandler = async (event) => {
 		});
 		return json(result);
 	} catch (err) {
+		if (err instanceof ChatGptImportProjectAccessError) {
+			return json({ error: err.message }, { status: 400 });
+		}
 		console.error("[CHATGPT_IMPORT] Import failed:", err);
 		return json(
 			{

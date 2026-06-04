@@ -989,6 +989,51 @@ export function normalizeModelSelection(
 	return "model1";
 }
 
+export async function normalizeModelSelectionWithProviders(
+	modelId: string | null | undefined,
+	config: RuntimeConfig = runtimeConfig,
+): Promise<ModelId> {
+	if (!modelId?.startsWith("provider:")) {
+		return normalizeModelSelection(modelId, config);
+	}
+
+	const raw = modelId.slice("provider:".length);
+	const [providerToken, modelToken] = raw.split(":");
+	if (!providerToken) return normalizeModelSelection(null, config);
+
+	try {
+		const [{ getProviderByName, getProviderWithSecrets }, { listEnabledProviderModels }] =
+			await Promise.all([
+				import("$lib/server/services/providers"),
+				import("$lib/server/services/provider-models"),
+			]);
+		let provider = await getProviderWithSecrets(providerToken).catch(() => null);
+		if (!provider) {
+			const providerByName = await getProviderByName(providerToken).catch(
+				() => null,
+			);
+			if (providerByName) {
+				provider = await getProviderWithSecrets(providerByName.id).catch(
+					() => null,
+				);
+			}
+		}
+
+		if (!provider?.enabled) return normalizeModelSelection(null, config);
+
+		const models = await listEnabledProviderModels(provider.id).catch(() => []);
+		const selectedModel = modelToken
+			? models.find((model) => model.id === modelToken)
+			: models[0];
+
+		if (!selectedModel) return normalizeModelSelection(null, config);
+
+		return `provider:${provider.id}:${selectedModel.id}` as ModelId;
+	} catch {
+		return normalizeModelSelection(null, config);
+	}
+}
+
 export function modelIconUrl(
 	iconAssetId: string | null | undefined,
 ): string | null {

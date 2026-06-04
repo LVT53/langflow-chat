@@ -232,6 +232,23 @@ describe("importConversations", () => {
 		expect(conv?.projectId).toBe("proj-1");
 	});
 
+	it("rejects projectId values not owned by the importing user", async () => {
+		seedUser();
+		seedUser("other-user", "other@example.com");
+		seedProject("other-user", "proj-other", "Other User Project");
+
+		const { parseConversationsJson } = await import("./parser");
+		const { ChatGptImportProjectAccessError, importConversations } =
+			await import("./index");
+
+		await expect(
+			importConversations("test-user", Buffer.from("fake-zip"), {
+				projectId: "proj-other",
+			}),
+		).rejects.toBeInstanceOf(ChatGptImportProjectAccessError);
+		expect(parseConversationsJson).not.toHaveBeenCalled();
+	});
+
 	it("preserves original ChatGPT timestamps on messages", async () => {
 		seedUser();
 		const parsed = makeParsedConversation({

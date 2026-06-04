@@ -32,6 +32,7 @@ vi.mock("$lib/server/config-store", () => ({
 		model2Enabled: true,
 	})),
 	normalizeModelSelection: vi.fn((model: string) => model),
+	normalizeModelSelectionWithProviders: vi.fn(async (model: string) => model),
 	getAvailableModelsWithProviders: vi.fn(() =>
 		Promise.resolve([{ id: "model1", displayName: "Model 1" }]),
 	),

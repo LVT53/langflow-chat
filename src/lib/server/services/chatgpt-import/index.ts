@@ -1,7 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "$lib/server/db";
-import { conversationForks, importJobs, messages } from "$lib/server/db/schema";
+import {
+	conversationForks,
+	importJobs,
+	messages,
+	projects,
+} from "$lib/server/db/schema";
 import { createConversation } from "$lib/server/services/conversations";
 import {
 	parseConversationsJson,
@@ -21,13 +26,45 @@ export interface ImportResult {
 	errors: { conversationTitle?: string; reason: string }[];
 }
 
+export class ChatGptImportProjectAccessError extends Error {
+	constructor(projectId: string) {
+		super(`Project "${projectId}" is not available for this user`);
+		this.name = "ChatGptImportProjectAccessError";
+	}
+}
+
+async function validateImportProjectId(
+	userId: string,
+	projectId: string | null | undefined,
+): Promise<string | null> {
+	const normalizedProjectId = projectId?.trim() || null;
+	if (!normalizedProjectId) return null;
+
+	const [project] = await db
+		.select({ id: projects.id })
+		.from(projects)
+		.where(
+			and(
+				eq(projects.id, normalizedProjectId),
+				eq(projects.userId, userId),
+			),
+		)
+		.limit(1);
+
+	if (!project) {
+		throw new ChatGptImportProjectAccessError(normalizedProjectId);
+	}
+
+	return normalizedProjectId;
+}
+
 async function importConversationBranches(
 	userId: string,
 	primaryConversationId: string,
 	primaryTitle: string,
 	primaryMessages: { role: string; content: string }[],
 	branches: BranchInfo[],
-	options: ImportOptions,
+	projectId: string | null,
 ): Promise<void> {
 	for (let branchIndex = 0; branchIndex < branches.length; branchIndex++) {
 		const branch = branches[branchIndex];
@@ -47,7 +84,7 @@ async function importConversationBranches(
 
 		const forkTitle = `${primaryTitle || "Imported Conversation"} (imported fork ${branchIndex + 1})`;
 		const forkConversation = await createConversation(userId, forkTitle, {
-			projectId: options.projectId ?? null,
+			projectId,
 		});
 
 		const forkMessageRows = branch.messages.map((msg, seq) => ({
@@ -89,6 +126,7 @@ export async function importConversations(
 	zipBuffer: Buffer,
 	options: ImportOptions = {},
 ): Promise<ImportResult> {
+	const projectId = await validateImportProjectId(userId, options.projectId);
 	const jobId = randomUUID();
 	const conversationIds: string[] = [];
 	const errors: { conversationTitle?: string; reason: string }[] = [];
@@ -161,7 +199,7 @@ export async function importConversations(
 				userId,
 				conv.title || "Imported Conversation",
 				{
-					projectId: options.projectId ?? null,
+					projectId,
 				},
 			);
 
@@ -188,7 +226,7 @@ export async function importConversations(
 						conv.title,
 						conv.messages,
 						branches,
-						options,
+						projectId,
 					);
 				}
 
