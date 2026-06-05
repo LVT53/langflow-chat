@@ -195,6 +195,17 @@ export function processInlineThinkingChunk(
 		}
 
 		const openMatch = findFirstTagMatch(state.buffer, THINKING_OPEN_TAGS);
+		const closeMatch = findFirstTagMatch(state.buffer, THINKING_CLOSE_TAGS);
+		if (closeMatch && (!openMatch || closeMatch.index < openMatch.index)) {
+			const visibleChunk = state.buffer.slice(0, closeMatch.index);
+			if (!emitChunk(emitters.onVisible, visibleChunk)) {
+				return false;
+			}
+			state.buffer = state.buffer.slice(
+				closeMatch.index + closeMatch.tag.length,
+			);
+			continue;
+		}
 		if (openMatch) {
 			const visibleChunk = state.buffer.slice(0, openMatch.index);
 			if (!emitChunk(emitters.onVisible, visibleChunk)) {
@@ -205,11 +216,11 @@ export function processInlineThinkingChunk(
 			continue;
 		}
 
-		const partialOpenLength = getPartialTagPrefixLengthForAny(
-			state.buffer,
-			THINKING_OPEN_TAGS,
+		const partialDelimiterLength = Math.max(
+			getPartialTagPrefixLengthForAny(state.buffer, THINKING_OPEN_TAGS),
+			getPartialTagPrefixLengthForAny(state.buffer, THINKING_CLOSE_TAGS),
 		);
-		const flushLength = state.buffer.length - partialOpenLength;
+		const flushLength = state.buffer.length - partialDelimiterLength;
 		if (flushLength > 0) {
 			const visibleChunk = state.buffer.slice(0, flushLength);
 			if (!emitChunk(emitters.onVisible, visibleChunk)) {
