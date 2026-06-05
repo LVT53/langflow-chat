@@ -155,7 +155,11 @@ export interface CompleteStreamTurnParams {
 	enqueueChunk: (chunk: string) => boolean;
 	closeDownstream: () => void;
 	clearStreamBuffer: (streamId: string) => void;
-	getStreamBuffer: (streamId: string) => { userMessage?: string } | null;
+	getStreamBuffer: (params: {
+		streamId: string;
+		userId: string;
+		conversationId: string;
+	}) => { userMessage?: string } | null;
 	syncGeneratedFilesToMemory: (params: {
 		userId: string;
 		conversationId: string;
@@ -289,7 +293,11 @@ export async function completeStreamTurn(
 
 	let userMessageToPersist = normalizedMessage;
 	if (isReconnect && streamId) {
-		const buffer = getStreamBuffer(streamId);
+		const buffer = getStreamBuffer({
+			streamId,
+			userId,
+			conversationId,
+		});
 		if (buffer?.userMessage) {
 			userMessageToPersist = buffer.userMessage;
 		}

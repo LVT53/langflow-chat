@@ -15,6 +15,12 @@ import {
 	stripLeadingResponseMarker,
 	stripLeakedToolDiagnostics,
 } from "$lib/services/stream-protocol";
+import {
+	decodeAiSdkUiStreamPayloads,
+	encodeAiSdkUiStreamDoneFrame,
+	encodeAiSdkUiStreamPart,
+	type UiMessageStreamPart,
+} from "$lib/services/ai-sdk-ui-stream-contract";
 import type {
 	EvidenceSourceType,
 	ToolCallEntry,
@@ -30,6 +36,8 @@ export {
 	THINKING_BLOCK_RE,
 	THINKING_TAG_RE,
 } from "./thinking-normalizer";
+
+export type { UiMessageStreamPart } from "$lib/services/ai-sdk-ui-stream-contract";
 
 // ---------------------------------------------------------------------------
 // Internal helpers (moved to sub-modules, retained here for local use)
@@ -55,30 +63,6 @@ const SSE_HEARTBEAT_COMMENT = ": keep-alive\n\n";
 const UI_STREAM_TEXT_PART_ID = "answer";
 const UI_STREAM_REASONING_PART_ID = "reasoning";
 export type StreamPhaseTimings = Record<string, number>;
-
-export type UiMessageStreamPart =
-	| { type: "text-start"; id: string }
-	| { type: "text-delta"; id: string; delta: string }
-	| { type: "text-end"; id: string }
-	| { type: "reasoning-start"; id: string }
-	| { type: "reasoning-delta"; id: string; delta: string }
-	| { type: "reasoning-end"; id: string }
-	| {
-			type: `data-${string}`;
-			data: unknown;
-			id?: string;
-			transient?: boolean;
-	  }
-	| {
-			type: "finish";
-			finishReason?:
-				| "stop"
-				| "error"
-				| "length"
-				| "content-filter"
-				| "tool-calls"
-				| "other";
-	  };
 
 export type ServerStreamSegment =
 	| { type: "text"; content: string }
@@ -163,64 +147,17 @@ export function encodeUiMessageStreamPart(part: UiMessageStreamPart): string {
 	// We own this small encoder instead of wrapping createUIMessageStreamResponse so
 	// passive browser disconnects can close only this downstream response while the
 	// upstream model run continues, persists, and broadcasts exact replay frames.
-	return `data: ${JSON.stringify(part)}\n\n`;
+	return encodeAiSdkUiStreamPart(part);
 }
 
 export function createUiMessageStreamDoneFrame(): string {
-	return "data: [DONE]\n\n";
+	return encodeAiSdkUiStreamDoneFrame();
 }
 
 export function decodeUiMessageStreamParts(
 	chunk: string,
 ): Array<UiMessageStreamPart | "[DONE]"> {
-	const parts: Array<UiMessageStreamPart | "[DONE]"> = [];
-	const blocks = chunk
-		.replace(/\r\n/g, "\n")
-		.replace(/\r/g, "\n")
-		.split(/\n\n+/)
-		.filter((block) => block.length > 0);
-
-	for (const block of blocks) {
-		const dataLines: string[] = [];
-		let namedEventSeen = false;
-
-		for (const line of block.split("\n")) {
-			if (!line || line.startsWith(":")) continue;
-			const separatorIndex = line.indexOf(":");
-			const field =
-				separatorIndex === -1 ? line : line.slice(0, separatorIndex);
-			if (field === "event") {
-				namedEventSeen = true;
-				continue;
-			}
-			if (field !== "data") continue;
-
-			let value = separatorIndex === -1 ? "" : line.slice(separatorIndex + 1);
-			if (value.startsWith(" ")) {
-				value = value.slice(1);
-			}
-			dataLines.push(value);
-		}
-
-		if (namedEventSeen || dataLines.length === 0) continue;
-
-		const data = dataLines.join("\n").trim();
-		if (data === "[DONE]") {
-			parts.push("[DONE]");
-			continue;
-		}
-		try {
-			const parsed = JSON.parse(data);
-			if (
-				parsed &&
-				typeof parsed === "object" &&
-				typeof parsed.type === "string"
-			) {
-				parts.push(parsed as UiMessageStreamPart);
-			}
-		} catch {}
-	}
-	return parts;
+	return decodeAiSdkUiStreamPayloads(chunk);
 }
 
 export function streamTextStartEvent(): string {

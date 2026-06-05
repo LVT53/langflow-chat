@@ -1,4 +1,9 @@
 import {
+	type AiSdkUiStreamFrame,
+	consumeAiSdkUiStreamFrames,
+	extractAiSdkUiStreamMetadataData,
+} from "./ai-sdk-ui-stream-contract";
+import {
 	createInlineThinkingState,
 	flushInlineThinkingState,
 	processInlineThinkingChunk,
@@ -141,86 +146,6 @@ function buildStreamMetadata(data: unknown): StreamMetadata | undefined {
 		: undefined;
 }
 
-function findNextSseBlockDelimiter(
-	value: string,
-): { index: number; length: number } | null {
-	const delimiters = ["\r\n\r\n", "\n\n", "\r\r"] as const;
-	let next: { index: number; length: number } | null = null;
-
-	for (const delimiter of delimiters) {
-		const index = value.indexOf(delimiter);
-		if (index === -1) {
-			continue;
-		}
-		if (!next || index < next.index) {
-			next = { index, length: delimiter.length };
-		}
-	}
-
-	return next;
-}
-
-type AiSdkUiStreamFrame =
-	| { kind: "done"; rawData: string }
-	| { kind: "part"; part: Record<string, unknown>; rawData: string };
-
-function decodeAiSdkUiStreamFrameBlock(
-	block: string,
-): AiSdkUiStreamFrame | null {
-	const dataLines: string[] = [];
-	let namedEventSeen = false;
-
-	for (const rawLine of block.split("\n")) {
-		const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
-		if (!line || line.startsWith(":")) {
-			continue;
-		}
-
-		const separatorIndex = line.indexOf(":");
-		const field = separatorIndex === -1 ? line : line.slice(0, separatorIndex);
-		if (field === "event") {
-			namedEventSeen = true;
-			continue;
-		}
-		if (field !== "data") {
-			continue;
-		}
-
-		let value = separatorIndex === -1 ? "" : line.slice(separatorIndex + 1);
-		if (value.startsWith(" ")) {
-			value = value.slice(1);
-		}
-		dataLines.push(value);
-	}
-
-	if (namedEventSeen) {
-		return null;
-	}
-
-	if (dataLines.length === 0) {
-		return null;
-	}
-
-	const rawData = dataLines.join("\n").trim();
-	if (rawData === "[DONE]") {
-		return { kind: "done", rawData };
-	}
-
-	try {
-		const parsed = JSON.parse(rawData);
-		if (
-			!parsed ||
-			typeof parsed !== "object" ||
-			typeof parsed.type !== "string"
-		) {
-			return null;
-		}
-		return { kind: "part", part: parsed as Record<string, unknown>, rawData };
-	} catch {
-		return null;
-	}
-}
-
 export async function checkForOrphanedStream(
 	conversationId: string,
 ): Promise<string | null> {
@@ -246,10 +171,11 @@ export interface StreamBufferInfo {
 
 export async function getStreamBufferInfo(
 	streamId: string,
+	conversationId: string,
 ): Promise<StreamBufferInfo | null> {
 	try {
 		const res = await fetch(
-			`/api/chat/stream/buffer?streamId=${encodeURIComponent(streamId)}`,
+			`/api/chat/stream/buffer?streamId=${encodeURIComponent(streamId)}&conversationId=${encodeURIComponent(conversationId)}`,
 		);
 		if (!res.ok) return null;
 		return await res.json();
@@ -585,7 +511,9 @@ export function streamChat(
 					}
 
 					case "data-stream-metadata":
-						latestMetadata = buildStreamMetadata(part.data);
+						latestMetadata = buildStreamMetadata(
+							extractAiSdkUiStreamMetadataData(part),
+						);
 						return false;
 
 					case "data-tool-call": {
@@ -643,32 +571,20 @@ export function streamChat(
 				}
 			};
 
-			const processEventBlock = (block: string): boolean => {
-				const uiFrame = decodeAiSdkUiStreamFrameBlock(block);
-				if (uiFrame && processAiSdkUiFrame(uiFrame)) {
-					return true;
-				}
-				return false;
-			};
-
 			const drainBuffer = (isFinalChunk = false): boolean => {
-				let delimiter = findNextSseBlockDelimiter(buffer);
-				while (delimiter) {
-					const block = buffer.slice(0, delimiter.index);
-					buffer = buffer.slice(delimiter.index + delimiter.length);
-					if (processEventBlock(block)) {
+				const result = consumeAiSdkUiStreamFrames(buffer);
+				buffer = result.remaining;
+
+				for (const frame of result.frames) {
+					if (processAiSdkUiFrame(frame)) {
 						return true;
 					}
-					delimiter = findNextSseBlockDelimiter(buffer);
 				}
 
-				if (!isFinalChunk || !buffer) {
-					return false;
+				if (isFinalChunk) {
+					buffer = "";
 				}
-
-				const trailingBlock = buffer;
-				buffer = "";
-				return processEventBlock(trailingBlock);
+				return false;
 			};
 
 			try {

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { ToolExecutionOptions } from "ai";
 
 import type { ToolCallEntry } from "$lib/types";
 
@@ -109,19 +110,126 @@ export async function withTimeout<T>(
 	promise: Promise<T>,
 	timeoutMs: number,
 	toolName: string,
+	abortSignal?: AbortSignal,
 ): Promise<T> {
-	if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return promise;
+	if (abortSignal?.aborted) {
+		throw toolAbortError(toolName, abortSignal.reason);
+	}
+
+	if ((!Number.isFinite(timeoutMs) || timeoutMs <= 0) && !abortSignal) {
+		return promise;
+	}
 
 	let timer: ReturnType<typeof setTimeout> | undefined;
-	const timeout = new Promise<never>((_, reject) => {
-		timer = setTimeout(() => {
-			reject(new Error(`${toolName} timed out after ${timeoutMs}ms`));
-		}, timeoutMs);
+	let removeAbortListener: (() => void) | undefined;
+	const timeoutOrAbort = new Promise<never>((_, reject) => {
+		if (Number.isFinite(timeoutMs) && timeoutMs > 0) {
+			timer = setTimeout(() => {
+				reject(new Error(`${toolName} timed out after ${timeoutMs}ms`));
+			}, timeoutMs);
+			timer.unref?.();
+		}
+		if (abortSignal) {
+			const onAbort = () => {
+				reject(toolAbortError(toolName, abortSignal.reason));
+			};
+			abortSignal.addEventListener("abort", onAbort, { once: true });
+			removeAbortListener = () =>
+				abortSignal.removeEventListener("abort", onAbort);
+		}
 	});
 
 	try {
-		return await Promise.race([promise, timeout]);
+		return await Promise.race([promise, timeoutOrAbort]);
 	} finally {
 		if (timer) clearTimeout(timer);
+		removeAbortListener?.();
+	}
+}
+
+function toolAbortError(toolName: string, reason: unknown): Error {
+	if (reason instanceof Error) {
+		return new Error(`${toolName} aborted: ${reason.message}`);
+	}
+	if (typeof reason === "string" && reason.trim()) {
+		return new Error(`${toolName} aborted: ${reason.trim()}`);
+	}
+	return new Error(`${toolName} aborted`);
+}
+
+function toolTimeoutError(toolName: string, timeoutMs: number): Error {
+	return new Error(`${toolName} timed out after ${timeoutMs}ms`);
+}
+
+export function modelSafeToolError(error: unknown, fallback: string): string {
+	const message =
+		error instanceof Error
+			? error.message
+			: typeof error === "string"
+				? error
+				: fallback;
+	const trimmed = message.trim();
+	return truncateText(trimmed || fallback, 500);
+}
+
+export async function executeToolWithEnvelope<TModelPayload>(params: {
+	toolName: string;
+	timeoutMs: number;
+	options: Pick<ToolExecutionOptions, "toolCallId" | "abortSignal">;
+	recorder: ToolCallRecorder;
+	run: (abortSignal: AbortSignal) => Promise<{
+		modelPayload: TModelPayload;
+		entry: ToolCallEntry;
+	}>;
+	onError: (error: unknown) => {
+		modelPayload: TModelPayload;
+		entry: ToolCallEntry;
+	};
+}): Promise<TModelPayload> {
+	try {
+		if (params.options.abortSignal?.aborted) {
+			throw toolAbortError(params.toolName, params.options.abortSignal.reason);
+		}
+		const timeoutController = new AbortController();
+		const runSignal = params.options.abortSignal
+			? AbortSignal.any([params.options.abortSignal, timeoutController.signal])
+			: timeoutController.signal;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		let removeAbortListener: (() => void) | undefined;
+		const timeoutOrAbort = new Promise<never>((_, reject) => {
+			if (Number.isFinite(params.timeoutMs) && params.timeoutMs > 0) {
+				timer = setTimeout(() => {
+					const error = toolTimeoutError(params.toolName, params.timeoutMs);
+					timeoutController.abort(error);
+					reject(error);
+				}, params.timeoutMs);
+				timer.unref?.();
+			}
+			if (params.options.abortSignal) {
+				const onAbort = () => {
+					reject(
+						toolAbortError(params.toolName, params.options.abortSignal?.reason),
+					);
+				};
+				params.options.abortSignal.addEventListener("abort", onAbort, {
+					once: true,
+				});
+				removeAbortListener = () =>
+					params.options.abortSignal?.removeEventListener("abort", onAbort);
+			}
+		});
+		const result = await Promise.race([
+			params.run(runSignal),
+			timeoutOrAbort,
+		]).finally(() => {
+			if (timer) clearTimeout(timer);
+			removeAbortListener?.();
+		});
+		params.recorder.record(result.entry);
+		return result.modelPayload;
+	} catch (error) {
+		const failure = params.onError(error);
+		params.recorder.record(failure.entry);
+		return failure.modelPayload;
 	}
 }

@@ -106,25 +106,28 @@ describe("createNormalChatTools", () => {
 			},
 		);
 
-		expect(submitFileProductionIntakeMock).toHaveBeenCalledWith({
-			userId: "user-1",
-			body: {
-				conversationId: "conversation-1",
-				idempotencyKey: expect.stringMatching(
-					/^turn-1:produce_file:quarterly-csv:[a-f0-9]{12}$/,
-				),
-				requestTitle: "Quarterly CSV",
-				requestedOutputs: [{ type: "csv" }],
-				sourceMode: "program",
-				documentIntent: "data export",
-				program: {
-					language: "python",
-					sourceCode:
-						"from pathlib import Path\nPath('/output/report.csv').write_text('a,b')",
-					filename: "report.csv",
-				},
-			},
-		});
+		expect(submitFileProductionIntakeMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userId: "user-1",
+				signal: expect.any(AbortSignal),
+				body: expect.objectContaining({
+					conversationId: "conversation-1",
+					idempotencyKey: expect.stringMatching(
+						/^turn-1:produce_file:quarterly-csv:[a-f0-9]{12}$/,
+					),
+					requestTitle: "Quarterly CSV",
+					requestedOutputs: [{ type: "csv" }],
+					sourceMode: "program",
+					documentIntent: "data export",
+					program: {
+						language: "python",
+						sourceCode:
+							"from pathlib import Path\nPath('/output/report.csv').write_text('a,b')",
+						filename: "report.csv",
+					},
+				}),
+			}),
+		);
 		const body = submitFileProductionIntakeMock.mock.calls[0]?.[0]?.body;
 		expect(String(body?.idempotencyKey).length).toBeLessThanOrEqual(160);
 	});
@@ -743,6 +746,7 @@ describe("createNormalChatTools", () => {
 				maxSources: 4,
 				quoteRequired: true,
 			},
+			{ signal: expect.any(AbortSignal) },
 		);
 		expect(result).toMatchObject({
 			success: true,
@@ -1127,6 +1131,84 @@ describe("createNormalChatTools", () => {
 					ok: false,
 					evidenceReady: false,
 					error: "image search unavailable",
+				},
+			}),
+		]);
+	});
+
+	it("records timed out tool executions through the shared envelope", async () => {
+		vi.useFakeTimers();
+		try {
+			researchWebMock.mockReturnValueOnce(new Promise(() => undefined));
+			const { tools, getToolCalls } = createNormalChatTools({
+				userId: "user-1",
+				conversationId: "conversation-1",
+				turnId: "turn-1",
+			});
+
+			const resultPromise = tools.research_web.execute(
+				{ query: "slow current docs" },
+				{ toolCallId: "call-research-timeout", messages: [] },
+			);
+
+			await vi.advanceTimersByTimeAsync(60_000);
+
+			await expect(resultPromise).resolves.toEqual({
+				success: false,
+				error: "research_web timed out after 60000ms",
+			});
+			expect(getToolCalls()).toEqual([
+				expect.objectContaining({
+					callId: "call-research-timeout",
+					name: "research_web",
+					sourceType: "web",
+					candidates: [],
+					metadata: {
+						ok: false,
+						evidenceReady: false,
+						error: "research_web timed out after 60000ms",
+					},
+				}),
+			]);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("records aborted tool executions without calling the downstream service", async () => {
+		const abortController = new AbortController();
+		abortController.abort(new Error("user cancelled"));
+		const { tools, getToolCalls } = createNormalChatTools({
+			userId: "user-1",
+			conversationId: "conversation-1",
+			turnId: "turn-1",
+		});
+
+		await expect(
+			tools.research_web.execute(
+				{ query: "cancelled current docs" },
+				{
+					toolCallId: "call-research-aborted",
+					messages: [],
+					abortSignal: abortController.signal,
+				},
+			),
+		).resolves.toEqual({
+			success: false,
+			error: "research_web aborted: user cancelled",
+		});
+
+		expect(researchWebMock).not.toHaveBeenCalled();
+		expect(getToolCalls()).toEqual([
+			expect.objectContaining({
+				callId: "call-research-aborted",
+				name: "research_web",
+				sourceType: "web",
+				candidates: [],
+				metadata: {
+					ok: false,
+					evidenceReady: false,
+					error: "research_web aborted: user cancelled",
 				},
 			}),
 		]);

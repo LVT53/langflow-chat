@@ -1,19 +1,16 @@
 import type {
 	ToolCallEntry,
-	ToolEvidenceCandidate,
 	WebCitationAudit,
 	WebCitationAuditCitation,
 	WebCitationAuditStatus,
 	WebCitationMatchType,
 } from "$lib/types";
-
-type RetrievedWebSource = {
-	id: string;
-	title: string;
-	url: string;
-	canonicalUrl: string;
-	host: string;
-};
+import {
+	canonicalizeGroundedWebUrl,
+	extractAssistantWebCitationUrls,
+	extractGroundedWebCitationSources,
+	type GroundedWebCitationSource,
+} from "./web-grounding";
 
 export type WebCitationQualityGateResult = {
 	response: string;
@@ -21,80 +18,11 @@ export type WebCitationQualityGateResult = {
 	appendedNotice: string | null;
 };
 
-const MARKDOWN_LINK_RE = /\[[^\]]+\]\((https?:\/\/[^)\s]+)(?:\s+"[^"]*")?\)/gi;
-const BARE_URL_RE = /https?:\/\/[^\s<>)\]]+/gi;
-const TRAILING_PUNCTUATION_RE = /[.,;:!?]+$/;
-
-function canonicalizeUrl(
-	value: string,
-): { canonicalUrl: string; host: string } | null {
-	try {
-		const url = new URL(value.trim().replace(TRAILING_PUNCTUATION_RE, ""));
-		if (url.protocol !== "http:" && url.protocol !== "https:") return null;
-		url.hash = "";
-		for (const key of [...url.searchParams.keys()]) {
-			if (/^(utm_|fbclid$|gclid$|mc_cid$|mc_eid$)/i.test(key)) {
-				url.searchParams.delete(key);
-			}
-		}
-		url.hostname = url.hostname.toLowerCase().replace(/^www\./, "");
-		url.pathname = url.pathname.replace(/\/+$/, "") || "/";
-		return { canonicalUrl: url.toString(), host: url.hostname };
-	} catch {
-		return null;
-	}
-}
-
-function extractAssistantUrls(assistantResponse: string): string[] {
-	const urls = new Set<string>();
-	for (const match of assistantResponse.matchAll(MARKDOWN_LINK_RE)) {
-		if (match[1]) urls.add(match[1]);
-	}
-	for (const match of assistantResponse.matchAll(BARE_URL_RE)) {
-		const value = match[0];
-		if (value) urls.add(value);
-	}
-	return [...urls];
-}
-
-function isResearchWebTool(tool: ToolCallEntry): boolean {
-	return tool.status === "done" && tool.name === "research_web";
-}
-
-function candidateToRetrievedSource(
-	candidate: ToolEvidenceCandidate,
-): RetrievedWebSource | null {
-	if (candidate.sourceType !== "web" || !candidate.url) return null;
-	const canonical = canonicalizeUrl(candidate.url);
-	if (!canonical) return null;
-	return {
-		id: candidate.id,
-		title: candidate.title,
-		url: candidate.url,
-		canonicalUrl: canonical.canonicalUrl,
-		host: canonical.host,
-	};
-}
-
-function extractResearchWebSources(
-	toolCalls: ToolCallEntry[],
-): RetrievedWebSource[] {
-	const sources = toolCalls
-		.filter(isResearchWebTool)
-		.flatMap((tool) => tool.candidates ?? [])
-		.map(candidateToRetrievedSource)
-		.filter((source): source is RetrievedWebSource => Boolean(source));
-
-	return Array.from(
-		new Map(sources.map((source) => [source.canonicalUrl, source])).values(),
-	);
-}
-
 function matchCitation(
 	url: string,
-	sources: RetrievedWebSource[],
+	sources: GroundedWebCitationSource[],
 ): WebCitationAuditCitation | null {
-	const canonical = canonicalizeUrl(url);
+	const canonical = canonicalizeGroundedWebUrl(url);
 	if (!canonical) return null;
 
 	const exact = sources.find(
@@ -139,7 +67,7 @@ function auditStatus(params: {
 }
 
 function buildAuditFromParts(params: {
-	sources: RetrievedWebSource[];
+	sources: GroundedWebCitationSource[];
 	citationUrls: string[];
 	noticeAppended?: boolean;
 }): WebCitationAudit | null {
@@ -179,14 +107,14 @@ export function buildWebCitationAudit(params: {
 }): WebCitationAudit | null {
 	const toolCalls = params.toolCalls ?? [];
 	return buildAuditFromParts({
-		sources: extractResearchWebSources(toolCalls),
-		citationUrls: extractAssistantUrls(params.assistantResponse),
+		sources: extractGroundedWebCitationSources(toolCalls),
+		citationUrls: extractAssistantWebCitationUrls(params.assistantResponse),
 	});
 }
 
 function buildQualityNotice(params: {
 	audit: WebCitationAudit;
-	sources: RetrievedWebSource[];
+	sources: GroundedWebCitationSource[];
 }): string | null {
 	if (params.sources.length === 0) return null;
 	if (
@@ -214,8 +142,8 @@ export function applyWebCitationQualityGate(params: {
 	maxSources?: number;
 }): WebCitationQualityGateResult {
 	const toolCalls = params.toolCalls ?? [];
-	const sources = extractResearchWebSources(toolCalls);
-	const citationUrls = extractAssistantUrls(params.assistantResponse);
+	const sources = extractGroundedWebCitationSources(toolCalls);
+	const citationUrls = extractAssistantWebCitationUrls(params.assistantResponse);
 	const audit = buildAuditFromParts({ sources, citationUrls });
 	const unchanged = {
 		response: params.assistantResponse,

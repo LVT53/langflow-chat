@@ -14,11 +14,11 @@ import { GET } from "./+server";
 const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
 type StatusGetEvent = Parameters<typeof GET>[0];
 
-function makeEvent(search = ""): StatusGetEvent {
+function makeEvent(search = "", userId = "user-1"): StatusGetEvent {
 	return {
 		locals: {
 			user: {
-				id: "user-1",
+				id: userId,
 				email: "test@example.com",
 			},
 		},
@@ -74,6 +74,26 @@ describe("GET /api/chat/stream/status", () => {
 			});
 		} finally {
 			unregisterActiveChatStream("stream-status-1", controller);
+		}
+	});
+
+	it("does not report another user's active stream for the same conversation id", async () => {
+		const controller = new AbortController();
+		registerActiveChatStream({
+			streamId: "stream-status-other-user",
+			userId: "user-2",
+			controller,
+			conversationId: "conv-status-shared",
+		});
+
+		try {
+			const response = await GET(makeEvent("?conversationId=conv-status-shared"));
+			const payload = await response.json();
+
+			expect(response.status).toBe(200);
+			expect(payload).toEqual({ hasOrphanedStream: false });
+		} finally {
+			unregisterActiveChatStream("stream-status-other-user", controller);
 		}
 	});
 });

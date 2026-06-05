@@ -15,11 +15,11 @@ import { GET } from "./+server";
 const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
 type BufferGetEvent = Parameters<typeof GET>[0];
 
-function makeEvent(search = ""): BufferGetEvent {
+function makeEvent(search = "", userId = "user-1"): BufferGetEvent {
 	return {
 		locals: {
 			user: {
-				id: "user-1",
+				id: userId,
 				email: "test@example.com",
 			},
 		},
@@ -35,6 +35,7 @@ describe("GET /api/chat/stream/buffer", () => {
 		vi.clearAllMocks();
 		mockRequireAuth.mockReturnValue(undefined);
 		clearStreamBuffer("stream-buffer-existing");
+		clearStreamBuffer("stream-buffer-other-user");
 	});
 
 	it("returns 400 when streamId is missing", async () => {
@@ -47,15 +48,30 @@ describe("GET /api/chat/stream/buffer", () => {
 	});
 
 	it("reports a missing buffer without exposing counts", async () => {
-		const response = await GET(makeEvent("?streamId=stream-buffer-missing"));
+		const response = await GET(
+			makeEvent("?streamId=stream-buffer-missing&conversationId=conv-missing"),
+		);
 		const payload = await response.json();
 
 		expect(response.status).toBe(200);
 		expect(payload).toEqual({ exists: false });
 	});
 
+	it("returns 400 when conversationId is missing", async () => {
+		const response = await GET(makeEvent("?streamId=stream-buffer-missing"));
+		const payload = await response.json();
+
+		expect(response.status).toBe(400);
+		expect(payload.error).toMatch(/conversationId/i);
+	});
+
 	it("reports replay counts for an existing stream buffer", async () => {
-		getOrCreateStreamBuffer("stream-buffer-existing", "original question");
+		getOrCreateStreamBuffer({
+			streamId: "stream-buffer-existing",
+			userId: "user-1",
+			conversationId: "conv-buffer-existing",
+			userMessage: "original question",
+		});
 		appendToStreamBuffer("stream-buffer-existing", "token", { text: "Hello" });
 		appendToStreamBuffer("stream-buffer-existing", "token", { text: " world" });
 		appendToStreamBuffer("stream-buffer-existing", "thinking", {
@@ -68,7 +84,11 @@ describe("GET /api/chat/stream/buffer", () => {
 		});
 
 		try {
-			const response = await GET(makeEvent("?streamId=stream-buffer-existing"));
+			const response = await GET(
+				makeEvent(
+					"?streamId=stream-buffer-existing&conversationId=conv-buffer-existing",
+				),
+			);
 			const payload = await response.json();
 
 			expect(response.status).toBe(200);
@@ -81,6 +101,32 @@ describe("GET /api/chat/stream/buffer", () => {
 			});
 		} finally {
 			clearStreamBuffer("stream-buffer-existing");
+		}
+	});
+
+	it("does not report another user's stream buffer by stream id", async () => {
+		getOrCreateStreamBuffer({
+			streamId: "stream-buffer-other-user",
+			userId: "user-2",
+			conversationId: "conv-buffer-other-user",
+			userMessage: "private question",
+		});
+		appendToStreamBuffer("stream-buffer-other-user", "token", {
+			text: "private answer",
+		});
+
+		try {
+			const response = await GET(
+				makeEvent(
+					"?streamId=stream-buffer-other-user&conversationId=conv-buffer-other-user",
+				),
+			);
+			const payload = await response.json();
+
+			expect(response.status).toBe(200);
+			expect(payload).toEqual({ exists: false });
+		} finally {
+			clearStreamBuffer("stream-buffer-other-user");
 		}
 	});
 });

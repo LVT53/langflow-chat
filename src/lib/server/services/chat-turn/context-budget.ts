@@ -1,3 +1,12 @@
+import {
+	DEFAULT_COMPACTION_UI_THRESHOLD_RATIO,
+	DEFAULT_MAX_MODEL_CONTEXT_TOKENS,
+	DEFAULT_TARGET_CONSTRUCTED_CONTEXT_RATIO,
+	MIN_MODEL_CONTEXT_TOKENS,
+	normalizeModelContextLimit,
+	normalizeModelContextTokens,
+} from "$lib/model-context-defaults";
+
 export type ModelContextBudgetInput = {
 	maxModelContext: number | null | undefined;
 	targetConstructedContext?: number | null;
@@ -98,10 +107,6 @@ export type BaselineMemoryProfileBudget = {
 	totalBudget: number;
 };
 
-const MIN_MODEL_CONTEXT_TOKENS = 1_000;
-const DEFAULT_MAX_MODEL_CONTEXT_TOKENS = 262_144;
-const TARGET_CONTEXT_RATIO = 0.9;
-const COMPACTION_THRESHOLD_RATIO = 0.8;
 const RESERVED_CONTEXT_RATIO = 0.1;
 const CORE_CONTEXT_RATIO = 0.5;
 const SUPPORT_CONTEXT_RATIO = 0.35;
@@ -137,7 +142,9 @@ export function deriveModelContextBudget(
 		input.targetConstructedContext >= 1
 			? normalizeOptionalLimit(
 					input.targetConstructedContext,
-					Math.floor(maxModelContext * TARGET_CONTEXT_RATIO),
+					Math.floor(
+						maxModelContext * DEFAULT_TARGET_CONSTRUCTED_CONTEXT_RATIO,
+					),
 					maxModelContext,
 				)
 			: null;
@@ -165,12 +172,12 @@ export function deriveModelContextBudget(
 	const usableModelContext = Math.max(1, maxModelContext - outputReserve);
 	const targetConstructedContext = normalizeOptionalLimit(
 		explicitTargetConstructedContext,
-		Math.floor(usableModelContext * TARGET_CONTEXT_RATIO),
+		Math.floor(usableModelContext * DEFAULT_TARGET_CONSTRUCTED_CONTEXT_RATIO),
 		usableModelContext,
 	);
 	const compactionUiThreshold = normalizeOptionalLimit(
 		input.compactionUiThreshold,
-		Math.floor(usableModelContext * COMPACTION_THRESHOLD_RATIO),
+		Math.floor(usableModelContext * DEFAULT_COMPACTION_UI_THRESHOLD_RATIO),
 		usableModelContext,
 	);
 	const reservedBudget = Math.floor(
@@ -396,10 +403,11 @@ function normalizePositiveInteger(
 	value: number | null | undefined,
 	fallback: number,
 ): number {
-	if (typeof value === "number" && Number.isFinite(value) && value >= 1) {
-		return Math.max(MIN_MODEL_CONTEXT_TOKENS, Math.floor(value));
-	}
-	return Math.max(MIN_MODEL_CONTEXT_TOKENS, Math.floor(fallback));
+	return normalizeModelContextTokens(
+		value,
+		fallback,
+		MIN_MODEL_CONTEXT_TOKENS,
+	);
 }
 
 function normalizeOptionalLimit(
@@ -407,9 +415,5 @@ function normalizeOptionalLimit(
 	derivedValue: number,
 	maxModelContext: number,
 ): number {
-	const normalized =
-		typeof value === "number" && Number.isFinite(value) && value >= 1
-			? Math.floor(value)
-			: derivedValue;
-	return Math.max(1, Math.min(normalized, maxModelContext));
+	return normalizeModelContextLimit(value, derivedValue, maxModelContext);
 }

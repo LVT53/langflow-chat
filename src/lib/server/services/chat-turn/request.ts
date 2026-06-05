@@ -3,12 +3,12 @@ import {
 	normalizeModelSelection,
 	type RuntimeConfig,
 } from "$lib/server/config-store";
+import { createAttachmentTraceId } from "$lib/server/services/attachment-trace";
+import { listEnabledProviderModels } from "$lib/server/services/provider-models";
 import {
 	getProviderByName,
 	getProviderWithSecrets,
 } from "$lib/server/services/providers";
-import { listEnabledProviderModels } from "$lib/server/services/provider-models";
-import { createAttachmentTraceId } from "$lib/server/services/attachment-trace";
 import type {
 	DeepResearchDepth,
 	LinkedContextSource,
@@ -31,6 +31,7 @@ type RequestBody = {
 	userMessage?: unknown;
 	conversationId?: unknown;
 	streamId?: unknown;
+	reconnectToStreamId?: unknown;
 	model?: unknown;
 	skipPersistUserMessage?: unknown;
 	attachmentIds?: unknown;
@@ -61,6 +62,7 @@ export async function parseChatTurnRequest(
 		userMessage,
 		conversationId,
 		streamId,
+		reconnectToStreamId,
 		model,
 		skipPersistUserMessage,
 		attachmentIds,
@@ -74,9 +76,18 @@ export async function parseChatTurnRequest(
 		forceWebSearch,
 	} = body;
 
-	// Allow empty message when reconnecting to an existing stream (streamId provided)
-	const isReconnect =
-		typeof streamId === "string" && streamId.trim().length > 0;
+	const safeStreamId =
+		typeof streamId === "string" && streamId.trim().length > 0
+			? streamId.trim()
+			: undefined;
+	const safeReconnectToStreamId =
+		typeof reconnectToStreamId === "string" &&
+		reconnectToStreamId.trim().length > 0
+			? reconnectToStreamId.trim()
+			: undefined;
+
+	// Allow empty message only when explicitly reconnecting to an existing stream.
+	const isReconnect = Boolean(safeReconnectToStreamId);
 
 	const rawMessage =
 		isReconnect && typeof userMessage === "string" ? userMessage : message;
@@ -128,7 +139,9 @@ export async function parseChatTurnRequest(
 			const actualProviderId = providerId.includes(":")
 				? providerId.split(":")[0]
 				: providerId;
-			const provider = await getProviderWithSecrets(actualProviderId).catch(() => null);
+			const provider = await getProviderWithSecrets(actualProviderId).catch(
+				() => null,
+			);
 			if (!provider || !provider.enabled) {
 				return {
 					ok: false,
@@ -142,7 +155,9 @@ export async function parseChatTurnRequest(
 			providerDisplayName = provider.displayName;
 			if (providerId.includes(":")) {
 				const modelUuid = providerId.split(":")[1];
-				const models = await listEnabledProviderModels(actualProviderId).catch(() => []);
+				const models = await listEnabledProviderModels(actualProviderId).catch(
+					() => [],
+				);
 				const found = models.find((m) => m.id === modelUuid);
 				modelDisplayName = found?.displayName || provider.displayName;
 				if (found) resolvedMaxMessageLength = found.maxMessageLength ?? null;
@@ -189,10 +204,8 @@ export async function parseChatTurnRequest(
 		value: {
 			conversationId,
 			normalizedMessage,
-			streamId:
-				typeof streamId === "string" && streamId.trim().length > 0
-					? streamId.trim()
-					: undefined,
+			streamId: safeReconnectToStreamId ?? safeStreamId,
+			reconnectToStreamId: safeReconnectToStreamId,
 			modelId,
 			modelDisplayName,
 			providerDisplayName,

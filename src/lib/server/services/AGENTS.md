@@ -8,7 +8,7 @@ Parent: [AGENTS.md](../../../AGENTS.md) lists every service file and its role. T
 |------|------|-------|-----------|
 | 1 | `task-state.ts` | ~1,558 | Facade + task routing, evidence selection, checkpointing, steering |
 | 2 | `honcho.ts` | ~1,517 | Honcho client lifecycle, session bootstrap, context construction |
-| 3 | `stream-orchestrator.ts` | ~558 | Full chat-turn streaming pipeline, upstream retry, downstream AI SDK UI stream framing |
+| 3 | `stream-orchestrator.ts` | ~558 | Full chat-turn streaming pipeline, neutral model-run event adaptation, downstream AI SDK UI stream framing |
 | 4 | `chat-turn/stream.ts` | ~247 | Stream framing and cleanup helpers |
 | 5 | `knowledge/store/attachments.ts` | ~520 | Upload auto-rename, readiness checks, artifact linking |
 | 6 | `task-state/continuity.ts` | ~989 | Project memory, focus continuity, task-project linking |
@@ -91,7 +91,7 @@ preflightChatTurn()           ← conversation exists? attachments ready?
    ▼         ▼
 send route  stream-orchestrator.ts ← diverge here; orchestrates full pipeline
    │      │
-   │    runStreamingNormalChatSendModel() ← neutral Normal Chat stream events
+   │    runStreamingNormalChatSendModel() ← neutral Normal Chat stream events after model-run provider-attempt policy
    │    normalizeVisibleAssistantText()
    │    createServerChunkRuntime() → tokens, thinking, structured tool-call events, output cleanup
    │      │
@@ -143,6 +143,14 @@ Authenticated account-level personalization fields such as display name and emai
 **Selection-debug note**: document and memory observability should stay summary-level. `knowledge/context.ts` now emits `[CONTEXT] Working document selection` with the winning Working Document Selection signals and selected artifact ids, while `memory.ts` emits `[KNOWLEDGE_MEMORY] Selected overview source` after calling `knowledge/memory-overview.ts` for the Knowledge Memory overview source/status result. Extend those summaries instead of reintroducing noisy per-candidate logs.
 
 **Direct file-production tool note**: normal chat exposes `produce_file` through the app-owned AI SDK tool boundary. The agent must see the actual `produce_file` action as the tool, with `conversationId` supplied by the runtime and only `produce_file` contract fields model-facing.
+
+**Tool execution envelope note**: app-backed Normal Chat tools in `normal-chat-tools/` should use the shared envelope in `normal-chat-tools/shared.ts` for timeout, abort, model-safe failure text, and recorder behavior. Keep each tool adapter focused on input validation, domain execution, output compaction, and evidence metadata.
+
+**Web-grounding note**: `web-grounding.ts` is the Normal Chat authority for compact `research_web` source/evidence payloads, grounded web candidates, grounded metadata, URL canonicalization, and citation-audit source extraction. Keep freshness/search instructions in `normal-chat-context.ts`, but route retrieved web source/evidence shaping and final citation audit handoff through Web Grounding.
+
+**Provider-model runtime defaults note**: `provider-model-runtime-defaults.ts` owns provider-model runtime and persistence defaults for context windows, target constructed context, compaction thresholds, max output tokens, reasoning effort, and thinking mode. Env parsing, `config-store.ts`, `provider-models.ts`, context budgeting, prompt-limit resolution, and Normal Chat Model Run should consume that projection instead of duplicating context ratio math.
+
+**Normal Chat stability snapshot note**: `normal-chat-stability-snapshot.ts` owns aggregate, content-free Normal Chat stability diagnostics: active stream capacity, provider/model readiness, tool timeout/readiness, web-grounding configuration, context-limit validity, and maintenance metric summaries. Admin route adapters may expose it after `requireAdmin`, but must not return prompts, messages, search queries, raw source text, API keys, or user ids.
 
 **Persona-memory note**: persona memory is delegated to Honcho in the current codebase. Do not reintroduce a local `persona-memory.ts` cluster pipeline, route-local persona caches, or a second temporal-memory subsystem.
 

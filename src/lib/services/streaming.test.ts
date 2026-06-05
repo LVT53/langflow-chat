@@ -46,9 +46,7 @@ function errorEvent(payload: {
 }
 
 function uiFrame(payload: Record<string, unknown> | "[DONE]"): string {
-	return `data: ${
-		typeof payload === "string" ? payload : JSON.stringify(payload)
-	}\n\n`;
+	return encodeAiSdkUiFixtureFrame(payload);
 }
 
 function buildFetchResponse(sseChunks: string[], status = 200): Response {
@@ -514,6 +512,23 @@ describe("streamChat", () => {
 		expect(cb.onToken).toHaveBeenCalledOnce();
 		expect(cb.onToken).toHaveBeenCalledWith("Hello from split frame");
 		expect(cb.onEnd).toHaveBeenCalledWith("Hello from split frame", undefined);
+	});
+
+	it("does not render a trailing AI SDK UI frame that closes before the SSE block delimiter", async () => {
+		const mockFetch = vi.mocked(fetch);
+		mockFetch.mockResolvedValue(
+			buildFetchResponse([tokenEvent("partial without delimiter").trimEnd()]),
+		);
+
+		const cb = makeCallbacks();
+		const done = waitForStream(cb);
+		streamChat("test message", "conv-1", cb as unknown as StreamCallbacks);
+		await done;
+
+		expect(cb.onToken).not.toHaveBeenCalled();
+		expect(cb.onThinking).not.toHaveBeenCalled();
+		expect(cb.onEnd).toHaveBeenCalledWith("");
+		expect(cb.onError).not.toHaveBeenCalled();
 	});
 
 	it("includes forceWebSearch in the stream request body for the current turn", async () => {

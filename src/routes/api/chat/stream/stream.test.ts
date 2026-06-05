@@ -86,6 +86,10 @@ vi.mock("$lib/server/services/linked-context-sources", () => ({
 	isLinkedContextSourceError: vi.fn(() => false),
 }));
 
+vi.mock("$lib/server/services/memory-maintenance", () => ({
+	runUserMemoryMaintenance: vi.fn(async () => undefined),
+}));
+
 vi.mock("$lib/server/services/skills/user-skills", () => ({
 	getAvailableSkillDefinition: vi.fn(async () => ({
 		id: "skill-1",

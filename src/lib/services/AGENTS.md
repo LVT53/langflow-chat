@@ -5,6 +5,7 @@ Client/server shared utilities and protocol definitions. These span both environ
 ## Structure
 
 ```
+ai-sdk-ui-stream-contract.ts - Shared AI SDK UI stream frame contract (encoding, complete-block decoding, terminal detection, metadata extraction)
 streaming.ts         - Browser AI SDK UI stream transport (text/reasoning/tool/data handling, abort/stop)
 stream-protocol.ts   - Shared stream text normalization (thinking tags, provider content extraction, leading output/tool diagnostic cleanup)
 markdown.ts          - Markdown rendering with Shiki highlighting (lazy init)
@@ -15,6 +16,7 @@ table-layout.ts      - Markdown table rendering
 
 | Task | File |
 |------|------|
+| AI SDK UI stream frame grammar | `ai-sdk-ui-stream-contract.ts` |
 | Browser AI SDK UI stream transport | `streaming.ts` |
 | Stream tag parsing | `stream-protocol.ts` |
 | Markdown with highlighting | `markdown.ts` |
@@ -28,6 +30,7 @@ table-layout.ts      - Markdown table rendering
 | Provider payload text/content fields | Extract assistant text from OpenAI-compatible choices, plain provider text, content parts, and content blocks |
 | Leading `response` markers and leaked web-research diagnostics | Strip provider/tool artifacts from visible assistant output |
 | `data-tool-call` UI stream parts | Browser-facing structured tool-call updates emitted by `chat-turn/stream.ts`; do not introduce textual `<tool_calls>` as a new protocol |
+| AI SDK UI stream frames | `ai-sdk-ui-stream-contract.ts` owns `data: ...` frame encoding/decoding, `[DONE]`, terminal detection, and metadata extraction |
 | `[CONTEXT]`, `[MEMORY]`, `[KNOWLEDGE]` | Log prefixes only, not stream payload syntax |
 
 ## Conventions
@@ -35,10 +38,12 @@ table-layout.ts      - Markdown table rendering
 - **Lazy init for Shiki**: `markdown.ts` init is async; always check `initHighlighter()` before rendering
 - **Stream abort vs stop**: `streaming.ts` distinguishes user-requested stop from passive navigation/unmount detach
 - **No duplicate parsing**: `stream-protocol.ts` owns tag parsing; do not replicate inline thinking extraction elsewhere
+- **AI SDK UI stream frame contract**: `ai-sdk-ui-stream-contract.ts` owns complete SSE block consumption and terminal detection for server helpers, browser transport, reconnect, and tests
 - **Type-safe stream metadata**: Use `StreamMetadata` type for terminal `data-stream-metadata` payloads
 
 ## Anti-Patterns
 
 - **Don't inline thinking parsing** in routes or chat components — use `stream-protocol.ts` helpers
+- **Don't duplicate AI SDK UI stream frame parsers** in browser or server adapters — use `ai-sdk-ui-stream-contract.ts`
 - **Don't collapse stop and detach** into one generic abort — they have different server semantics
 - **Don't eager-import heavy deps** like Shiki — lazy-load through the markdown pipeline

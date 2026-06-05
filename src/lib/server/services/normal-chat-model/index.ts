@@ -3,7 +3,7 @@ import {
 	type FinishReason,
 	generateText,
 	hasToolCall,
-	InvalidToolInputError,
+	type InvalidToolInputError,
 	type LanguageModelUsage,
 	type ModelMessage,
 	NoSuchToolError,
@@ -21,22 +21,29 @@ import {
 	type ModelCapabilityKey,
 	type ModelCapabilitySet,
 } from "$lib/model-capabilities";
+import type { RuntimeConfig } from "$lib/server/config-store";
 import type { ModelConfig } from "$lib/server/env";
-import type { ThinkingMode } from "$lib/types";
+import { repairMalformedToolCallJson } from "$lib/server/utils/tool-json-repair";
+import type { ModelId, ThinkingMode } from "$lib/types";
 import type { ProviderUsageSnapshot } from "../analytics";
+import { DEFAULT_MODEL_MAX_RETRIES } from "../normal-chat-model-config";
+import { normalizeOpenAICompatibleBaseUrl } from "../openai-compatible-url";
+import { resolveProviderModelRuntimeDefaults } from "../provider-model-runtime-defaults";
+import { listEnabledProviderModels } from "../provider-models";
 import {
-	getProviderByName,
 	decryptApiKey,
+	getProviderByName,
 	getProviderWithSecrets,
 } from "../providers";
-import { listEnabledProviderModels } from "../provider-models";
-import { repairMalformedToolCallJson } from "$lib/server/utils/tool-json-repair";
-import { normalizeOpenAICompatibleBaseUrl } from "../openai-compatible-url";
-import { DEFAULT_MODEL_MAX_RETRIES } from "../normal-chat-model-config";
 import {
-	buildNormalChatModelRunCompatibilityProviderOptions,
-} from "./provider-compatibility";
+	isModelRateLimitError,
+	isModelTimeoutError,
+	resolveModelStreamFirstOutputTimeoutMs,
+	resolveModelTimeoutFailoverTargetModelId,
+	resolveProviderRateLimitFallback,
+} from "./failover";
 import { createOpenAICompatibleProviderForNormalChatModelRun } from "./openai-compatible-provider";
+import { buildNormalChatModelRunCompatibilityProviderOptions } from "./provider-compatibility";
 
 export {
 	createOpenAICompatibleProviderForNormalChatModelRun,
@@ -159,11 +166,13 @@ type NormalChatThinkingType = NonNullable<ModelConfig["thinkingType"]>;
 
 export type NormalChatModelRunProvider = {
 	id: string;
+	modelId?: ModelId;
 	name: string;
 	displayName: string;
 	baseUrl: string;
 	modelName: string;
 	apiKey: string;
+	requestTimeoutMs?: number;
 	maxOutputTokens?: number;
 	maxModelContext?: number;
 	compactionUiThreshold?: number;
@@ -182,6 +191,7 @@ type BuiltinNormalChatModelConfig = Pick<
 	| "displayName"
 	| "maxTokens"
 	| "reasoningEffort"
+	| "thinkingType"
 >;
 
 type NormalChatModelRunRuntimeConfig = {
@@ -191,10 +201,15 @@ type NormalChatModelRunRuntimeConfig = {
 
 export type NormalChatModelRunBaseParams = {
 	provider: NormalChatModelRunProvider;
+	modelId?: ModelId;
+	runtimeConfig?: RuntimeConfig;
 	messages: ModelMessage[];
 	system?: string;
 	headers?: Record<string, string | undefined>;
 	providerOptions?: Record<string, Record<string, unknown>>;
+	resolveProviderOptions?: (
+		provider: NormalChatModelRunProvider,
+	) => Record<string, Record<string, unknown>> | undefined;
 	abortSignal?: AbortSignal;
 	fetch?: typeof fetch;
 	maxRetries?: number;
@@ -213,6 +228,7 @@ export type StreamingNormalChatModelRunParams = NormalChatModelRunBaseParams & {
 	toolChoice?: ToolChoice<ToolSet>;
 	maxToolSteps?: number;
 	stopWhen?: StopCondition<ToolSet>;
+	firstOutputTimeoutMs?: number | null;
 };
 
 export type PlainNormalChatModelRunResult = {
@@ -224,6 +240,7 @@ export type PlainNormalChatModelRunResult = {
 		totalTokens: number | undefined;
 	};
 	model: {
+		modelId: string;
 		providerId: string;
 		providerName: string;
 		displayName: string;
@@ -239,6 +256,7 @@ export type NormalChatModelRunUsage = {
 };
 
 export type NormalChatModelRunModelMetadata = {
+	modelId: string;
 	providerId: string;
 	providerName: string;
 	displayName: string;
@@ -319,8 +337,6 @@ async function resolveBuiltinFromNewProvidersTable(
 		// Handle composite ID format: provider:<provider-uuid>:<model-uuid>
 		let provider: Awaited<ReturnType<typeof getProviderWithSecrets>> | null =
 			null;
-		let modelNameFilter: string | null = null;
-
 		if (name.startsWith("provider:") && name.split(":").length >= 3) {
 			const parts = name.split(":");
 			const providerId = parts[1];
@@ -330,7 +346,11 @@ async function resolveBuiltinFromNewProvidersTable(
 				const models = await listEnabledProviderModels(provider.id);
 				const model = models.find((m) => m.id === modelId);
 				if (!model) return null;
-				return buildProviderModelRunConfig(provider, model);
+				return buildProviderModelRunConfig(
+					provider,
+					model,
+					providerModelRunId(provider.id, model),
+				);
 			}
 			return null;
 		}
@@ -346,28 +366,35 @@ async function resolveBuiltinFromNewProvidersTable(
 		const providerWithSecrets = await getProviderWithSecrets(provider.id);
 		if (!providerWithSecrets) return null;
 
-		return buildProviderModelRunConfig(providerWithSecrets, model);
+		return buildProviderModelRunConfig(
+			providerWithSecrets,
+			model,
+			providerModelRunId(providerWithSecrets.id, model),
+		);
 	} catch {
 		return null;
 	}
 }
 
+function providerModelRunId(
+	providerId: string,
+	model: Awaited<ReturnType<typeof listEnabledProviderModels>>[number],
+): ModelId {
+	return model.id
+		? (`provider:${providerId}:${model.id}` as ModelId)
+		: (`provider:${providerId}` as ModelId);
+}
+
 function buildProviderModelRunConfig(
 	providerWithSecrets: Awaited<ReturnType<typeof getProviderWithSecrets>>,
 	model: Awaited<ReturnType<typeof listEnabledProviderModels>>[number],
+	modelId?: ModelId,
 ): NormalChatModelRunProvider {
-	const hasExplicitTarget = typeof model.targetConstructedContext === "number";
-	const hasExplicitCompaction = typeof model.compactionUiThreshold === "number";
-	const hasMaxModelContext = typeof model.maxModelContext === "number";
-	const derivedTargetConstructedContext = hasMaxModelContext
-		? Math.floor(model.maxModelContext * 0.9)
-		: undefined;
-	const derivedCompactionUiThreshold = hasMaxModelContext
-		? Math.floor(model.maxModelContext * 0.8)
-		: undefined;
+	const runtimeDefaults = resolveProviderModelRuntimeDefaults(model);
 
 	return {
 		id: providerWithSecrets.id,
+		...(modelId ? { modelId } : {}),
 		name: providerWithSecrets.name,
 		displayName: model.displayName ?? providerWithSecrets.displayName,
 		iconUrl: (providerWithSecrets as Record<string, unknown>).iconAssetId
@@ -379,32 +406,8 @@ function buildProviderModelRunConfig(
 			providerWithSecrets.apiKeyEncrypted,
 			providerWithSecrets.apiKeyIv,
 		),
-		maxOutputTokens:
-			typeof model.maxTokens === "number" ? model.maxTokens : undefined,
-		reasoningEffort:
-			model.reasoningEffort === "low" ||
-			model.reasoningEffort === "medium" ||
-			model.reasoningEffort === "high" ||
-			model.reasoningEffort === "max" ||
-			model.reasoningEffort === "xhigh"
-				? model.reasoningEffort
-				: undefined,
-		thinkingType:
-			model.thinkingType === "enabled" || model.thinkingType === "disabled"
-				? model.thinkingType
-				: undefined,
-		...(hasMaxModelContext ? { maxModelContext: model.maxModelContext } : {}),
-		...(hasExplicitCompaction
-			? { compactionUiThreshold: model.compactionUiThreshold }
-			: derivedCompactionUiThreshold !== undefined
-				? { compactionUiThreshold: derivedCompactionUiThreshold }
-				: {}),
-		...(hasExplicitTarget
-			? { targetConstructedContext: model.targetConstructedContext }
-			: derivedTargetConstructedContext !== undefined
-				? { targetConstructedContext: derivedTargetConstructedContext }
-				: {}),
-		...(function () {
+		...runtimeDefaults,
+		...(() => {
 			const caps = parseProviderModelCapabilities(model.capabilitiesJson);
 			return caps ? { capabilities: caps } : {};
 		})(),
@@ -443,6 +446,7 @@ function builtinModelRunProvider(
 	}
 	return {
 		id: modelId,
+		modelId,
 		name: modelId,
 		displayName: modelConfig.displayName,
 		baseUrl: normalizeOpenAICompatibleBaseUrl(modelConfig.baseUrl),
@@ -452,8 +456,12 @@ function builtinModelRunProvider(
 			typeof modelConfig.maxTokens === "number"
 				? modelConfig.maxTokens
 				: undefined,
-		reasoningEffort: modelConfig.reasoningEffort ?? undefined,
-		thinkingType: modelConfig.thinkingType ?? undefined,
+		...(modelConfig.reasoningEffort
+			? { reasoningEffort: modelConfig.reasoningEffort }
+			: {}),
+		...(modelConfig.thinkingType
+			? { thinkingType: modelConfig.thinkingType }
+			: {}),
 	};
 }
 
@@ -565,8 +573,10 @@ export function mapNormalChatModelRunUsageToProviderSnapshot(
 function modelMetadata(
 	provider: NormalChatModelRunProvider,
 	responseModelName: string,
+	modelId = provider.modelId ?? provider.id,
 ): NormalChatModelRunModelMetadata {
 	return {
+		modelId,
 		providerId: provider.id,
 		providerName: provider.name,
 		displayName: provider.displayName,
@@ -590,6 +600,54 @@ function serializedErrorText(error: unknown): string {
 		if (error.data) parts.push(JSON.stringify(error.data));
 	}
 	return parts.join("\n").toLowerCase();
+}
+
+function combineAbortSignals(
+	...signals: Array<AbortSignal | undefined>
+): AbortSignal | undefined {
+	const activeSignals = signals.filter((signal): signal is AbortSignal =>
+		Boolean(signal),
+	);
+	if (activeSignals.length === 0) return undefined;
+	if (activeSignals.length === 1) return activeSignals[0];
+	return AbortSignal.any(activeSignals);
+}
+
+function createProviderAttemptAbortSignal(params: {
+	abortSignal?: AbortSignal;
+	provider: NormalChatModelRunProvider;
+}): AbortSignal | undefined {
+	const timeoutSignal =
+		typeof params.provider.requestTimeoutMs === "number" &&
+		Number.isFinite(params.provider.requestTimeoutMs) &&
+		params.provider.requestTimeoutMs > 0
+			? AbortSignal.timeout(params.provider.requestTimeoutMs)
+			: undefined;
+	return combineAbortSignals(params.abortSignal, timeoutSignal);
+}
+
+function createFirstOutputTimeoutError(): Error {
+	return new Error("Timed out waiting for first visible upstream output");
+}
+
+function createModelAttemptTimeoutError(): Error {
+	return new Error(
+		"Provider request timed out before configured failover threshold",
+	);
+}
+
+function resolveFirstOutputTimeoutMs(
+	params: StreamingNormalChatModelRunParams,
+	currentModelId: string,
+): number | null {
+	if (params.firstOutputTimeoutMs !== undefined) {
+		return params.firstOutputTimeoutMs;
+	}
+	if (!params.runtimeConfig) return null;
+	return resolveModelStreamFirstOutputTimeoutMs(
+		currentModelId as ModelId,
+		params.runtimeConfig,
+	);
 }
 
 function requestContainsToolResult(error: unknown): boolean {
@@ -626,6 +684,108 @@ function isUnsupportedToolsRequestError(error: unknown): boolean {
 export async function runPlainNormalChatModelRun(
 	params: PlainNormalChatModelRunParams,
 ): Promise<PlainNormalChatModelRunResult> {
+	let currentProvider = params.provider;
+	let currentModelId =
+		params.modelId ?? params.provider.modelId ?? params.provider.id;
+	const attemptedModelIds = new Set<string>([currentModelId]);
+	let attemptedRateLimitFallback = false;
+
+	for (;;) {
+		const failoverTarget = params.runtimeConfig
+			? await resolveModelTimeoutFailoverTargetModelId(
+					currentModelId as ModelId,
+					params.runtimeConfig,
+				)
+			: null;
+		const attemptTimeoutController =
+			failoverTarget && !attemptedModelIds.has(failoverTarget)
+				? new AbortController()
+				: null;
+		let attemptTimedOut = false;
+		const attemptTimeoutId = attemptTimeoutController
+			? setTimeout(
+					() => {
+						attemptTimedOut = true;
+						attemptTimeoutController.abort(createModelAttemptTimeoutError());
+					},
+					Math.min(
+						params.runtimeConfig!.requestTimeoutMs,
+						Math.max(1000, params.runtimeConfig!.modelTimeoutFailoverTimeoutMs),
+					),
+				)
+			: null;
+		attemptTimeoutId?.unref?.();
+		const attemptParams = {
+			...params,
+			provider: currentProvider,
+			modelId: currentModelId as ModelId,
+			abortSignal: combineAbortSignals(
+				params.abortSignal,
+				attemptTimeoutController?.signal,
+			),
+			providerOptions: resolveProviderOptionsForAttempt(
+				params,
+				currentProvider,
+			),
+		};
+
+		try {
+			return await runPlainNormalChatModelRunAttempt(attemptParams);
+		} catch (error) {
+			const retryableError = attemptTimedOut
+				? createModelAttemptTimeoutError()
+				: error;
+			if (params.abortSignal?.aborted && !attemptTimedOut) {
+				throw error;
+			}
+
+			if (isModelTimeoutError(retryableError) && params.runtimeConfig) {
+				if (failoverTarget && !attemptedModelIds.has(failoverTarget)) {
+					currentProvider = await resolveNormalChatModelRunProvider(
+						failoverTarget,
+						params.runtimeConfig,
+					);
+					currentModelId = failoverTarget;
+					attemptedModelIds.add(failoverTarget);
+					continue;
+				}
+			}
+
+			if (isModelRateLimitError(error) && !attemptedRateLimitFallback) {
+				const fallbackProvider = await resolveProviderRateLimitFallback(
+					currentProvider.id,
+				);
+				if (fallbackProvider) {
+					currentProvider = fallbackProvider;
+					currentModelId = fallbackProvider.modelId ?? fallbackProvider.id;
+					attemptedModelIds.add(currentModelId);
+					attemptedRateLimitFallback = true;
+					continue;
+				}
+			}
+
+			throw error;
+		} finally {
+			if (attemptTimeoutId) clearTimeout(attemptTimeoutId);
+		}
+	}
+}
+
+function resolveProviderOptionsForAttempt(
+	params: Pick<
+		NormalChatModelRunBaseParams,
+		"provider" | "providerOptions" | "resolveProviderOptions"
+	>,
+	provider: NormalChatModelRunProvider,
+): Record<string, Record<string, unknown>> | undefined {
+	const resolved = params.resolveProviderOptions?.(provider);
+	if (resolved !== undefined) return resolved;
+	return provider === params.provider ? params.providerOptions : undefined;
+}
+
+async function runPlainNormalChatModelRunAttempt(
+	params: PlainNormalChatModelRunParams,
+): Promise<PlainNormalChatModelRunResult> {
 	assertNormalChatModelRunCapabilities({
 		provider: params.provider,
 		streaming: false,
@@ -650,7 +810,7 @@ export async function runPlainNormalChatModelRun(
 		stopWhen,
 		maxOutputTokens: params.maxOutputTokens ?? params.provider.maxOutputTokens,
 		maxRetries: params.maxRetries ?? DEFAULT_MODEL_MAX_RETRIES,
-		abortSignal: params.abortSignal,
+		abortSignal: createProviderAttemptAbortSignal(params),
 		headers: params.headers,
 		providerOptions: params.providerOptions,
 		experimental_repairToolCall: toolCallRepairFunction,
@@ -691,7 +851,11 @@ export async function runPlainNormalChatModelRun(
 		text: result.text || extractDoneToolSummary(result) || "",
 		finishReason: result.finishReason,
 		usage: mapUsage(result.usage),
-		model: modelMetadata(params.provider, result.response.modelId),
+		model: modelMetadata(
+			params.provider,
+			result.response.modelId,
+			params.modelId ?? params.provider.modelId ?? params.provider.id,
+		),
 	};
 }
 
@@ -704,10 +868,214 @@ export function runStreamingNormalChatModelRun(
 		tools: params.tools,
 	});
 
-	return streamStreamingNormalChatModelRun(params);
+	return streamStreamingNormalChatModelRunWithFailover(params);
 }
 
-async function* streamStreamingNormalChatModelRun(
+function hasEmittedRetryBoundaryEvent(
+	event: StreamingNormalChatModelRunEvent,
+): boolean {
+	return (
+		event.type === "text_delta" ||
+		event.type === "reasoning_delta" ||
+		event.type === "tool_call" ||
+		event.type === "tool_result" ||
+		event.type === "tool_error"
+	);
+}
+
+async function* streamStreamingNormalChatModelRunWithFailover(
+	params: StreamingNormalChatModelRunParams,
+): AsyncIterable<StreamingNormalChatModelRunEvent> {
+	let currentProvider = params.provider;
+	let currentModelId =
+		params.modelId ?? params.provider.modelId ?? params.provider.id;
+	const attemptedModelIds = new Set<string>([currentModelId]);
+	let attemptedRateLimitFallback = false;
+
+	attemptLoop: for (;;) {
+		const firstOutputTimeoutMs = resolveFirstOutputTimeoutMs(
+			params,
+			currentModelId,
+		);
+		const attemptAbortController =
+			firstOutputTimeoutMs && firstOutputTimeoutMs > 0
+				? new AbortController()
+				: null;
+		let firstOutputTimedOut = false;
+		const firstOutputTimeoutId = attemptAbortController
+			? setTimeout(() => {
+					firstOutputTimedOut = true;
+					attemptAbortController.abort(createFirstOutputTimeoutError());
+				}, firstOutputTimeoutMs!)
+			: null;
+		firstOutputTimeoutId?.unref?.();
+		const clearFirstOutputTimeout = () => {
+			if (!firstOutputTimeoutId) return;
+			clearTimeout(firstOutputTimeoutId);
+		};
+		const attemptParams = {
+			...params,
+			provider: currentProvider,
+			modelId: currentModelId as ModelId,
+			abortSignal: combineAbortSignals(
+				params.abortSignal,
+				attemptAbortController?.signal,
+			),
+			providerOptions: resolveProviderOptionsForAttempt(
+				params,
+				currentProvider,
+			),
+		};
+		let hasEmittedRetryBoundary = false;
+
+		try {
+			assertNormalChatModelRunCapabilities({
+				provider: currentProvider,
+				streaming: true,
+				tools: params.tools,
+			});
+
+			for await (const event of streamStreamingNormalChatModelRunAttempt(
+				attemptParams,
+			)) {
+				if (event.type === "error") {
+					if (params.abortSignal?.aborted || hasEmittedRetryBoundary) {
+						yield event;
+						return;
+					}
+
+					const upstreamError = firstOutputTimedOut
+						? createFirstOutputTimeoutError()
+						: new Error(event.error);
+					const retry = await resolveModelRunRetryProvider({
+						error: upstreamError,
+						currentProvider,
+						currentModelId,
+						runtimeConfig: params.runtimeConfig,
+						attemptedModelIds,
+						attemptedRateLimitFallback,
+					});
+					if (retry) {
+						currentProvider = retry.provider;
+						currentModelId = retry.modelId;
+						attemptedRateLimitFallback = retry.attemptedRateLimitFallback;
+						continue attemptLoop;
+					}
+
+					yield event;
+					return;
+				}
+
+				if (hasEmittedRetryBoundaryEvent(event)) {
+					hasEmittedRetryBoundary = true;
+					clearFirstOutputTimeout();
+				}
+				yield event;
+			}
+			if (firstOutputTimedOut) {
+				const upstreamError = createFirstOutputTimeoutError();
+				const retry = await resolveModelRunRetryProvider({
+					error: upstreamError,
+					currentProvider,
+					currentModelId,
+					runtimeConfig: params.runtimeConfig,
+					attemptedModelIds,
+					attemptedRateLimitFallback,
+				});
+				if (retry) {
+					currentProvider = retry.provider;
+					currentModelId = retry.modelId;
+					attemptedRateLimitFallback = retry.attemptedRateLimitFallback;
+					continue;
+				}
+				yield { type: "error", error: upstreamError.message };
+			}
+			return;
+		} catch (error) {
+			const terminalError = firstOutputTimedOut
+				? createFirstOutputTimeoutError()
+				: error;
+			if (params.abortSignal?.aborted || hasEmittedRetryBoundary) {
+				yield { type: "error", error: errorMessage(terminalError) };
+				return;
+			}
+
+			const retry = await resolveModelRunRetryProvider({
+				error: terminalError,
+				currentProvider,
+				currentModelId,
+				runtimeConfig: params.runtimeConfig,
+				attemptedModelIds,
+				attemptedRateLimitFallback,
+			});
+			if (retry) {
+				currentProvider = retry.provider;
+				currentModelId = retry.modelId;
+				attemptedRateLimitFallback = retry.attemptedRateLimitFallback;
+				continue;
+			}
+
+			yield { type: "error", error: errorMessage(terminalError) };
+			return;
+		} finally {
+			clearFirstOutputTimeout();
+		}
+	}
+}
+
+async function resolveModelRunRetryProvider(params: {
+	error: unknown;
+	currentProvider: NormalChatModelRunProvider;
+	currentModelId: string;
+	runtimeConfig?: RuntimeConfig;
+	attemptedModelIds: Set<string>;
+	attemptedRateLimitFallback: boolean;
+}): Promise<{
+	provider: NormalChatModelRunProvider;
+	modelId: string;
+	attemptedRateLimitFallback: boolean;
+} | null> {
+	if (isModelTimeoutError(params.error) && params.runtimeConfig) {
+		const failoverTarget = await resolveModelTimeoutFailoverTargetModelId(
+			params.currentModelId as ModelId,
+			params.runtimeConfig,
+		);
+		if (failoverTarget && !params.attemptedModelIds.has(failoverTarget)) {
+			const provider = await resolveNormalChatModelRunProvider(
+				failoverTarget,
+				params.runtimeConfig,
+			);
+			params.attemptedModelIds.add(failoverTarget);
+			return {
+				provider,
+				modelId: failoverTarget,
+				attemptedRateLimitFallback: params.attemptedRateLimitFallback,
+			};
+		}
+	}
+
+	if (
+		isModelRateLimitError(params.error) &&
+		!params.attemptedRateLimitFallback
+	) {
+		const fallbackProvider = await resolveProviderRateLimitFallback(
+			params.currentProvider.id,
+		);
+		if (fallbackProvider) {
+			const fallbackModelId = fallbackProvider.modelId ?? fallbackProvider.id;
+			params.attemptedModelIds.add(fallbackModelId);
+			return {
+				provider: fallbackProvider,
+				modelId: fallbackModelId,
+				attemptedRateLimitFallback: true,
+			};
+		}
+	}
+
+	return null;
+}
+
+async function* streamStreamingNormalChatModelRunAttempt(
 	params: StreamingNormalChatModelRunParams,
 ): AsyncIterable<StreamingNormalChatModelRunEvent> {
 	const provider = createNormalChatOpenAICompatibleProvider({
@@ -731,7 +1099,7 @@ async function* streamStreamingNormalChatModelRun(
 		stopWhen: toolStopWhen,
 		maxOutputTokens: params.maxOutputTokens ?? params.provider.maxOutputTokens,
 		maxRetries: params.maxRetries ?? DEFAULT_MODEL_MAX_RETRIES,
-		abortSignal: params.abortSignal,
+		abortSignal: createProviderAttemptAbortSignal(params),
 		headers: params.headers,
 		providerOptions: params.providerOptions,
 		experimental_repairToolCall: toolCallRepairFunction,
@@ -867,7 +1235,11 @@ async function* streamStreamingNormalChatModelRun(
 						type: "finish",
 						finishReason: part.finishReason,
 						rawFinishReason: part.rawFinishReason,
-						model: modelMetadata(params.provider, responseModelName),
+						model: modelMetadata(
+							params.provider,
+							responseModelName,
+							params.modelId ?? params.provider.modelId ?? params.provider.id,
+						),
 					};
 					break;
 				case "error":

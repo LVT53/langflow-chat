@@ -17,7 +17,8 @@ normal-chat-context.ts → context-selection.ts (constructed prompt context)
 stream-orchestrator.ts → active-streams.ts (lifecycle/buffer)
 stream-orchestrator.ts → stream-completion.ts (terminal event + persistence)
 stream-orchestrator.ts → stream-reconnect.ts (buffer replay + live subscription)
-stream-orchestrator.ts → stream.ts (SSE framing/runtime helpers)
+stream-orchestrator.ts → stream.ts (AI SDK UI stream runtime helpers)
+stream.ts / stream-reconnect.ts / browser transport → $lib/services/ai-sdk-ui-stream-contract.ts
 failures → retry-cleanup.ts
 ```
 
@@ -29,8 +30,9 @@ failures → retry-cleanup.ts
 | Validate conversation, check attachment readiness | `preflight.ts` |
 | Build constructed prompt context for Normal Chat | `context-selection.ts` |
 | Assistant output normalization | `normalizer.ts` |
-| Stream attempt orchestration, upstream retry/failover, active-stream registration | `stream-orchestrator.ts` |
-| AI SDK UI stream framing/runtime helpers, thinking cleanup | `stream.ts`, `thinking-normalizer.ts` |
+| Stream lifecycle orchestration, neutral model-run event adaptation, active-stream registration | `stream-orchestrator.ts` |
+| AI SDK UI stream runtime helpers, thinking cleanup | `stream.ts`, `thinking-normalizer.ts` |
+| AI SDK UI stream frame grammar, terminal detection, metadata extraction | `src/lib/services/ai-sdk-ui-stream-contract.ts` |
 | Stream terminal persistence and `data-stream-metadata` / `finish` payloads | `stream-completion.ts` |
 | Reconnect replay and live stream subscription | `stream-reconnect.ts` |
 | Post-turn persistence fan-out (messages, honcho, task-state, knowledge) | `finalize.ts` |
@@ -41,10 +43,12 @@ failures → retry-cleanup.ts
 ## CONVENTIONS
 
 - `context-selection.ts` owns constructed prompt-context assembly for Normal Chat, including memory/session/task/document candidate selection and budgeting. Keep prompt-context ranking here, not in routes or Honcho.
-- `stream-orchestrator.ts` owns the live streaming attempt: active-stream registration, upstream stream invocation, timeout/failover decisions, phase timing, heartbeat/prelude scheduling, and delegation to completion/reconnect helpers.
-- `stream.ts` and its submodules own AI SDK UI stream framing/runtime helpers, neutral event cleanup, thinking tags, and structured tool-call markers. Keep framing and parsing helpers there, not in routes.
+- Context-window target and compaction defaults come from `src/lib/model-context-defaults.ts`, while provider-specific prompt-limit projection comes from `provider-model-runtime-defaults.ts`. Do not duplicate provider context ratio math in chat-turn helpers.
+- `stream-orchestrator.ts` owns the live streaming lifecycle: active-stream registration, upstream model-run invocation, neutral event adaptation, model-preserving non-stream transport recovery, phase timing, heartbeat/prelude scheduling, and delegation to completion/reconnect helpers. Provider-attempt policy, timeout failover, and rate-limit fallback belong in `normal-chat-model/`.
+- `stream.ts` and its submodules own AI SDK UI stream runtime helpers, neutral event cleanup, thinking tags, and structured tool-call markers. Shared AI SDK UI stream frame encoding/complete-block decoding, terminal detection, and metadata extraction belong in `src/lib/services/ai-sdk-ui-stream-contract.ts`, not in routes or browser-local parsers.
 - `stream-completion.ts` owns terminal stream completion: final persistence through `finalize.ts`, generated-file assignment, context-source hydration, and the `data-stream-metadata` / `finish` payload shape.
 - `stream-reconnect.ts` owns reconnect replay from `active-streams.ts` buffers and live subscription until terminal AI SDK UI stream completion (`finish` / `[DONE]`) or failed stream closure.
+- `active-streams.ts` owns active stream and replay-buffer ownership. Status, buffer, stop, reconnect, stream completion, and context-compression callers must pass authenticated `userId` plus conversation context when reading active stream or replay-buffer state.
 - `finalize.ts` is the single fan-out point after any turn (stream or non-stream). Add new post-turn side effects there, not in route files.
 - `normalizer.ts` normalizes assistant text through the same stream-protocol helpers so `/send`, `/stream`, retry, and title generation return the same visible content shape.
 - `retry-cleanup.ts` runs idempotent cleanup for evidence links, checkpoints, work capsules, generated outputs, and the assistant message itself on failure.
@@ -52,9 +56,10 @@ failures → retry-cleanup.ts
 
 ## ANTI-PATTERNS
 
-- Do not duplicate AI SDK UI stream framing, tool-call handling, or thinking extraction between `stream-orchestrator.ts` / `stream.ts` helpers and route files.
+- Do not duplicate AI SDK UI stream framing, terminal detection, tool-call handling, or thinking extraction between `stream-orchestrator.ts`, `stream.ts`, browser transport, reconnect, and route files.
 - Do not put terminal stream payload changes in the route or orchestrator without updating `stream-completion.ts` and its focused tests.
 - Do not rebuild prompt-context selection in Honcho, routes, or tests; call `context-selection.ts` through the Normal Chat context boundary and keep its budget/trace contract coherent.
 - Do not add post-turn persistence directly in `/api/chat/send` or `/api/chat/stream`; route through `finalize.ts`.
 - Do not collapse user-requested stop and passive disconnect into one generic abort. Use `active-streams.ts` for explicit stops; let navigation/unmount detach locally without marking the turn stopped.
+- Do not read active stream or replay-buffer state by `streamId` or `conversationId` alone; owner context is part of the registry contract.
 - Do not inline new persistence side effects inside `stream.ts` closures that only one endpoint can see.

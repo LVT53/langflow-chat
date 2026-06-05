@@ -36,10 +36,9 @@ export const POST: RequestHandler = async (event) => {
 	}
 	recordPhase("route_parse");
 
-	// Check if this is a reconnect attempt (streamId provided in request)
 	const isReconnect =
-		typeof parsedRequest.value.streamId === "string" &&
-		parsedRequest.value.streamId.length > 0;
+		typeof parsedRequest.value.reconnectToStreamId === "string" &&
+		parsedRequest.value.reconnectToStreamId.length > 0;
 
 	// For reconnects, skip capacity check - the orphan stream will be replaced
 	// when we register the new stream (registerActiveChatStream handles this)

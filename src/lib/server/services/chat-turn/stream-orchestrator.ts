@@ -48,15 +48,8 @@ import {
 	assignFileProductionJobsToAssistantMessage,
 	listConversationFileProductionJobs,
 } from "$lib/server/services/file-production";
-import {
-	createMessage,
-} from "$lib/server/services/messages";
-import {
-	isModelRateLimitError,
-	isModelTimeoutError,
-	resolveModelTimeoutFailoverTargetModelId,
-	resolveProviderRateLimitFallback,
-} from "$lib/server/services/normal-chat-failover";
+import { createMessage } from "$lib/server/services/messages";
+import { isModelTimeoutError } from "$lib/server/services/normal-chat-failover";
 import { mapNormalChatModelRunUsageToProviderSnapshot } from "$lib/server/services/normal-chat-model";
 
 import { getPersonalityProfile } from "$lib/server/services/personality-profiles";
@@ -120,28 +113,6 @@ function buildCompletedToolCallFallbackContext(
 				.join("\n");
 		})
 		.join("\n\n");
-}
-
-
-
-function getFirstVisibleOutputTimeoutMs(
-	modelId?: string | null,
-): number | null {
-	const config = getConfig();
-	const sourceModelId = modelId ?? "model1";
-	const failoverTargetModelId = config.modelTimeoutFailoverTargetModel;
-	if (
-		config.modelTimeoutFailoverEnabled &&
-		failoverTargetModelId &&
-		failoverTargetModelId !== sourceModelId
-	) {
-		return Math.min(
-			config.requestTimeoutMs,
-			Math.max(1000, config.modelTimeoutFailoverTimeoutMs),
-		);
-	}
-
-	return null;
 }
 
 function getUpstreamIdleTimeoutMs(): number {
@@ -309,10 +280,12 @@ export function runChatStreamOrchestrator(
 
 			const doReconnect = (targetStreamId: string) => {
 				runReconnect(targetStreamId, {
+					userId: user.id,
+					conversationId,
 					enqueueChunk,
 					closeDownstream,
 					downstreamAbortSignal: downstreamSignal,
-					getStreamBuffer: (id) => getStreamBuffer(id) ?? undefined,
+					getStreamBuffer: (params) => getStreamBuffer(params) ?? undefined,
 					subscribeToStream,
 					unsubscribeFromStream,
 					createSsePreludeComment,
@@ -350,7 +323,10 @@ export function runChatStreamOrchestrator(
 			if (streamId) {
 				let existingStreamId: string | null;
 				try {
-					existingStreamId = getOrphanedStream(conversationId);
+					existingStreamId = getOrphanedStream({
+						userId: user.id,
+						conversationId,
+					});
 				} catch (err) {
 					console.error("[CHAT_STREAM] getOrphanedStream threw", {
 						conversationId,
@@ -366,8 +342,16 @@ export function runChatStreamOrchestrator(
 					setTimeout(() => doReconnect(streamId), 0);
 					return;
 				} else if (existingStreamId) {
-					const clientStreamActive = isStreamActive(streamId);
-					const orphanStreamActive = isStreamActive(existingStreamId);
+					const clientStreamActive = isStreamActive({
+						streamId,
+						userId: user.id,
+						conversationId,
+					});
+					const orphanStreamActive = isStreamActive({
+						streamId: existingStreamId,
+						userId: user.id,
+						conversationId,
+					});
 
 					if (clientStreamActive) {
 						console.info(
@@ -398,16 +382,72 @@ export function runChatStreamOrchestrator(
 					}
 				}
 
-				registerActiveChatStream({
+				const registered = registerActiveChatStream({
 					streamId,
 					userId: user.id,
 					controller: upstreamAbortController,
 					conversationId,
 				});
+				if (!registered) {
+					let currentStreamId: string | null = null;
+					try {
+						currentStreamId = getOrphanedStream({
+							userId: user.id,
+							conversationId,
+						});
+					} catch (err) {
+						console.error(
+							"[CHAT_STREAM] getOrphanedStream threw after conflict",
+							{
+								conversationId,
+								streamId,
+								err,
+							},
+						);
+					}
+					if (
+						currentStreamId &&
+						isStreamActive({
+							streamId: currentStreamId,
+							userId: user.id,
+							conversationId,
+						})
+					) {
+						console.info(
+							"[CHAT_STREAM] Reconnect after stream registration conflict",
+							{
+								streamId,
+								activeStreamId: currentStreamId,
+								conversationId,
+							},
+						);
+						setTimeout(() => doReconnect(currentStreamId), 0);
+					} else {
+						console.warn(
+							"[CHAT_STREAM] Stream registration conflict without active owner",
+							{
+								streamId,
+								conversationId,
+							},
+						);
+						closeDownstream();
+					}
+					return;
+				}
 
-				getOrCreateStreamBuffer(streamId, normalizedMessage);
+				getOrCreateStreamBuffer({
+					streamId,
+					userId: user.id,
+					conversationId,
+					userMessage: normalizedMessage,
+				});
 				isMainStream = true;
 			}
+			const wasStopRequested = () =>
+				wasActiveChatStreamStopRequested({
+					streamId,
+					userId: user.id,
+				});
 			const chunkRuntime = createServerChunkRuntime({
 				enqueueChunk,
 				skillControlEnabled,
@@ -434,21 +474,11 @@ export function runChatStreamOrchestrator(
 					}
 				},
 			});
-			let firstVisibleOutputTimeoutId: ReturnType<typeof setTimeout> | null =
-				null;
-			const clearFirstVisibleOutputTimeout = () => {
-				if (!firstVisibleOutputTimeoutId) return;
-				clearTimeout(firstVisibleOutputTimeoutId);
-				firstVisibleOutputTimeoutId = null;
-			};
 			const emitThinking = (reasoning: string) => {
 				if (reasoning) {
 					recordElapsedPhase("first_thinking");
 				}
 				const emitted = chunkRuntime.emitThinking(reasoning);
-				if (emitted && chunkRuntime.thinkingContent.trim()) {
-					clearFirstVisibleOutputTimeout();
-				}
 				return emitted;
 			};
 			const emitToolCallEventWithDebug = (
@@ -464,9 +494,6 @@ export function runChatStreamOrchestrator(
 				},
 			) => {
 				chunkRuntime.emitToolCallEvent(name, input, status, details);
-				if (chunkRuntime.toolCallRecords.length > 0) {
-					clearFirstVisibleOutputTimeout();
-				}
 			};
 			const emitPrefetchedToolCalls = (
 				records:
@@ -527,7 +554,6 @@ export function runChatStreamOrchestrator(
 					chunkRuntime.fullResponse.trim()
 				) {
 					recordElapsedPhase("first_visible_token");
-					clearFirstVisibleOutputTimeout();
 				}
 				return emitted;
 			};
@@ -631,7 +657,7 @@ export function runChatStreamOrchestrator(
 				if (hasCompletedNonFileToolCall()) {
 					if (
 						!attemptedNonStreamFallback &&
-						!wasActiveChatStreamStopRequested(streamId) &&
+						!wasStopRequested() &&
 						fallbackToNonStreaming
 					) {
 						console.warn(
@@ -647,33 +673,29 @@ export function runChatStreamOrchestrator(
 								hasCompletedNonFileToolCall: hasCompletedNonFileToolCall(),
 							},
 						);
-						console.warn(
-							"[DEBUG-diagnose-stream] completeOrRecoverAfterUpstreamEnd details",
-							{
-								conversationId,
-								streamId,
-								reason,
-								hasPersistableStreamOutput: hasPersistableStreamOutput(),
-								hasVisibleAssistantAnswerOutput:
-									hasVisibleAssistantAnswerOutput(),
-								hasSuccessfulFileProductionToolCall:
-									hasSuccessfulFileProductionToolCall(),
-								fullResponsePreview: chunkRuntime.fullResponse
-									.slice(0, 200)
-									.trim(),
-								thinkingPreview: chunkRuntime.thinkingContent
-									.slice(0, 200)
-									.trim(),
-								toolCallNames: chunkRuntime.toolCallRecords.map((r) => ({
-									name: r.name,
-									status: r.status,
-								})),
-								attemptedNonStreamFallback,
-								wasStopRequested: wasActiveChatStreamStopRequested(
+						if (getConfig().contextDiagnosticsDebug) {
+							console.warn(
+								"[DEBUG-diagnose-stream] completeOrRecoverAfterUpstreamEnd details",
+								{
+									conversationId,
 									streamId,
-								),
-							},
-						);
+									reason,
+									hasPersistableStreamOutput: hasPersistableStreamOutput(),
+									hasVisibleAssistantAnswerOutput:
+										hasVisibleAssistantAnswerOutput(),
+									hasSuccessfulFileProductionToolCall:
+										hasSuccessfulFileProductionToolCall(),
+									fullResponseLength: chunkRuntime.fullResponse.length,
+									thinkingLength: chunkRuntime.thinkingContent.length,
+									toolCallNames: chunkRuntime.toolCallRecords.map((r) => ({
+										name: r.name,
+										status: r.status,
+									})),
+									attemptedNonStreamFallback,
+									wasStopRequested: wasStopRequested(),
+								},
+							);
+						}
 						await fallbackToNonStreaming(
 							"stream_read_failure",
 							latestUpstreamAttempt,
@@ -798,7 +820,6 @@ export function runChatStreamOrchestrator(
 				if (ended) return;
 				ended = true;
 				logPhaseTiming("error");
-				clearFirstVisibleOutputTimeout();
 				if (streamId) {
 					clearStreamBuffer(streamId);
 				}
@@ -812,8 +833,6 @@ export function runChatStreamOrchestrator(
 			}, getStreamTimeoutMs());
 			unrefTimer(timeoutId);
 			const upstreamIdleTimeoutMs = getUpstreamIdleTimeoutMs();
-			const firstVisibleOutputTimeoutMs =
-				getFirstVisibleOutputTimeoutMs(modelId);
 			let upstreamIdleTimeoutId: ReturnType<typeof setTimeout> | null = null;
 			let lastUpstreamActivityAt = Date.now();
 			let upstreamIdleTimedOutBeforeOutput = false;
@@ -847,11 +866,7 @@ export function runChatStreamOrchestrator(
 					if (!hasVisibleAssistantAnswerOutput()) {
 						upstreamIdleTimedOutBeforeOutput = true;
 						void (async () => {
-							const timeoutFailoverTarget =
-								await resolveModelTimeoutFailoverTargetModelId(
-									modelId ?? "model1",
-								);
-							if (timeoutFailoverTarget && fallbackToNonStreaming && !ended) {
+							if (fallbackToNonStreaming && !ended) {
 								await fallbackToNonStreaming(
 									"stream_read_failure",
 									attempt,
@@ -874,52 +889,12 @@ export function runChatStreamOrchestrator(
 				lastUpstreamActivityAt = Date.now();
 				scheduleUpstreamIdleTimeout(attempt);
 			};
-			const scheduleFirstVisibleOutputTimeout = () => {
-				if (!firstVisibleOutputTimeoutMs) return;
-				clearFirstVisibleOutputTimeout();
-				firstVisibleOutputTimeoutId = setTimeout(() => {
-					if (hasEmittedStreamOutput()) {
-						return;
-					}
-					console.warn("[STREAM] First visible output timeout", {
-						conversationId,
-						streamId,
-						modelId,
-						timeoutMs: firstVisibleOutputTimeoutMs,
-						responseLength: chunkRuntime.fullResponse.length,
-						thinkingLength: chunkRuntime.thinkingContent.length,
-						toolCallCount: chunkRuntime.toolCallRecords.length,
-					});
-					upstreamIdleTimedOutBeforeOutput = true;
-					void (async () => {
-						const timeoutFailoverTarget =
-							await resolveModelTimeoutFailoverTargetModelId(
-								modelId ?? "model1",
-							);
-						if (timeoutFailoverTarget && fallbackToNonStreaming && !ended) {
-							await fallbackToNonStreaming(
-								"stream_read_failure",
-								latestUpstreamAttempt,
-								new Error(
-									"Timed out waiting for first visible upstream stream output",
-								),
-							);
-							upstreamAbortController.abort();
-							return;
-						}
-						failStream("timeout");
-						upstreamAbortController.abort();
-					})();
-				}, firstVisibleOutputTimeoutMs);
-				unrefTimer(firstVisibleOutputTimeoutId);
-			};
 
 			let personalityPrompt: string | undefined;
 			let latestUpstreamAttempt = 1;
-			let currentStreamModelId = (modelId ?? undefined) as ModelId | undefined;
-			let currentOverrideProvider:
-				| import("$lib/server/services/normal-chat-model").NormalChatModelRunProvider
-				| null = null;
+			const currentStreamModelId = (modelId ?? undefined) as
+				| ModelId
+				| undefined;
 			let attemptedNonStreamFallback = false;
 			const currentSystemPromptAppendix = () => {
 				const appendices = [retryAppendix].filter((value): value is string =>
@@ -927,88 +902,13 @@ export function runChatStreamOrchestrator(
 				);
 				return appendices.length > 0 ? appendices.join("\n\n") : undefined;
 			};
-			const retryStreamOnTimeoutFailover = async (
-				attempt: number,
-				error: Error,
-			): Promise<boolean> => {
-				const timeoutFailoverTarget =
-					await resolveModelTimeoutFailoverTargetModelId(
-						currentStreamModelId ?? "model1",
-					);
-				if (
-					!timeoutFailoverTarget ||
-					timeoutFailoverTarget === currentStreamModelId ||
-					attempt >= 2
-				) {
-					return false;
-				}
-
-				console.warn(
-					"[STREAM] Retrying upstream stream on failover model after timeout",
-					{
-						conversationId,
-						attempt,
-						fromModelId: currentStreamModelId ?? "model1",
-						toModelId: timeoutFailoverTarget,
-						errorName: error.name,
-						errorMessage: error.message,
-					},
-				);
-				currentStreamModelId = timeoutFailoverTarget as ModelId;
-				latestModelId = timeoutFailoverTarget;
-				return true;
-			};
-			const tryRateLimitFallbackAndContinue = async (
-				attempt: number,
-				error: unknown,
-			): Promise<boolean> => {
-				if (attempt >= 2) return false;
-				if (!isModelRateLimitError(error)) return false;
-
-				const providerLookupId =
-					currentOverrideProvider?.id ??
-					(currentStreamModelId?.startsWith("provider:")
-						? currentStreamModelId.slice("provider:".length)
-						: (currentStreamModelId ?? "model1"));
-
-				const fallbackProvider =
-					await resolveProviderRateLimitFallback(providerLookupId);
-				if (!fallbackProvider) return false;
-
-				console.warn(
-					"[STREAM] Switching to provider rate-limit fallback for retry",
-					{
-						conversationId,
-						streamId,
-						attempt,
-						fromProviderId: providerLookupId,
-						fallbackModelName: fallbackProvider.modelName,
-						fallbackBaseUrl: fallbackProvider.baseUrl,
-					},
-				);
-
-				currentOverrideProvider = fallbackProvider;
-				latestModelId = fallbackProvider.id;
-				latestModelDisplayName = fallbackProvider.displayName;
-				return true;
-			};
 			fallbackToNonStreaming = async (
 				reason: "stream_connect_failure" | "stream_read_failure",
 				attempt: number,
 				error: unknown,
 			): Promise<null> => {
 				attemptedNonStreamFallback = true;
-				const timeoutFailoverTarget =
-					isModelTimeoutError(error) || upstreamIdleTimedOutBeforeOutput
-						? await resolveModelTimeoutFailoverTargetModelId(
-								currentStreamModelId ?? "model1",
-							)
-						: null;
-				const fallbackModelId = timeoutFailoverTarget ?? currentStreamModelId;
-				if (upstreamIdleTimedOutBeforeOutput && !timeoutFailoverTarget) {
-					failStream("timeout");
-					return null;
-				}
+				const fallbackModelId = currentStreamModelId;
 				console.warn(
 					reason === "stream_connect_failure"
 						? "[STREAM] Falling back to non-stream provider run after stream connect failure"
@@ -1017,7 +917,7 @@ export function runChatStreamOrchestrator(
 						conversationId,
 						attempt,
 						fromModelId: currentStreamModelId ?? "model1",
-						toModelId: fallbackModelId ?? "model1",
+						modelId: fallbackModelId ?? "model1",
 						errorName: error instanceof Error ? error.name : undefined,
 						errorMessage:
 							error instanceof Error ? error.message : String(error),
@@ -1091,251 +991,231 @@ export function runChatStreamOrchestrator(
 						personalityProfileId,
 					).catch(() => null);
 					personalityPrompt = profile?.promptText || undefined;
-			}
+				}
 
-			upstreamAttempt: for (let attempt = 1; attempt <= 2; attempt += 1) {
-					latestUpstreamAttempt = attempt;
-					const modelStreamRequestStartedAt = Date.now();
-					const modelRunParams = {
-						userId: user.id,
-						runtimeConfig: getConfig(),
-						message: upstreamMessage,
-						conversationId,
-						modelId: currentStreamModelId,
-						user: {
-							id: user.id,
-							displayName: user.displayName,
-							email: user.email,
-						},
-						attachmentIds: safeAttachmentIds,
-						activeDocumentArtifactId: activeDocumentArtifactId ?? undefined,
-						attachmentTraceId: attachmentTraceId ?? undefined,
-						systemPromptAppendix: currentSystemPromptAppendix(),
-						personalityPrompt,
-						thinkingMode,
-						forceWebSearch: turn.forceWebSearch,
-						signal: upstreamAbortController.signal,
-						...(currentOverrideProvider
-							? { overrideProvider: currentOverrideProvider }
-							: {}),
-					};
-					let modelRun: Awaited<
-						ReturnType<typeof runStreamingNormalChatSendModel>
-					> | null = null;
-					try {
-						modelRun = await runStreamingNormalChatSendModel(
-							modelRunParams,
-						);
-						latestProviderIconUrl = modelRun.providerIconUrl ?? null;
-					} catch (error) {
-						if (
-							wasActiveChatStreamStopRequested(streamId) ||
-							hasEmittedStreamOutput()
-						) {
-							throw error;
-						}
-
-						if (
-							await tryRateLimitFallbackAndContinue(attempt, error)
-						) {
-							continue upstreamAttempt;
-						}
-
-						if (!shouldFallbackToNonStreaming(error)) {
-							throw error;
-						}
-
-						modelRun = await fallbackToNonStreaming(
-							"stream_connect_failure",
-							attempt,
-							error,
-						);
+				const attempt = 1;
+				latestUpstreamAttempt = attempt;
+				const modelStreamRequestStartedAt = Date.now();
+				const modelRunParams = {
+					userId: user.id,
+					runtimeConfig: getConfig(),
+					message: upstreamMessage,
+					conversationId,
+					modelId: currentStreamModelId,
+					user: {
+						id: user.id,
+						displayName: user.displayName,
+						email: user.email,
+					},
+					attachmentIds: safeAttachmentIds,
+					activeDocumentArtifactId: activeDocumentArtifactId ?? undefined,
+					attachmentTraceId: attachmentTraceId ?? undefined,
+					systemPromptAppendix: currentSystemPromptAppendix(),
+					personalityPrompt,
+					thinkingMode,
+					forceWebSearch: turn.forceWebSearch,
+					signal: upstreamAbortController.signal,
+				};
+				let modelRun: Awaited<
+					ReturnType<typeof runStreamingNormalChatSendModel>
+				> | null = null;
+				try {
+					modelRun = await runStreamingNormalChatSendModel(modelRunParams);
+					latestProviderIconUrl = modelRun.providerIconUrl ?? null;
+				} catch (error) {
+					if (wasStopRequested() || hasEmittedStreamOutput()) {
+						throw error;
 					}
-					recordDurationPhase(
-						"model_stream_request",
-						modelStreamRequestStartedAt,
+
+					if (!shouldFallbackToNonStreaming(error)) {
+						throw error;
+					}
+
+					modelRun = await fallbackToNonStreaming(
+						"stream_connect_failure",
+						attempt,
+						error,
 					);
-					if (!modelRun) {
-						return;
-					}
-					latestModelId = modelRun.modelId ?? latestModelId;
-					latestModelDisplayName =
-						modelRun.modelDisplayName ?? latestModelDisplayName;
-					const prepared = modelRun.prepared ?? {};
-					emitPrefetchedToolCalls(modelRun.prefetchedToolCalls);
-					latestContextStatus = prepared.contextStatus;
-					initialContextStatus = latestContextStatus;
-					latestTaskState =
-						prepared.taskState ??
-						(await getConversationTaskState(user.id, conversationId).catch(
-							() => null,
-						));
-					latestTaskState = await attachContinuityToTaskState(
-						user.id,
-						latestTaskState ?? null,
-					).catch(() => latestTaskState ?? null);
-					initialTaskState = latestTaskState;
-					latestContextDebug =
-						prepared.contextDebug ??
-						(await getContextDebugState(user.id, conversationId).catch(
-							() => null,
-						));
-					initialContextDebug = latestContextDebug;
-					latestHonchoContext = prepared.honchoContext ?? null;
-					latestHonchoSnapshot = prepared.honchoSnapshot ?? null;
-					latestContextTraceSections = prepared.contextTraceSections;
-					initialContextTraceSections = latestContextTraceSections;
-
-					scheduleFirstVisibleOutputTimeout();
-					scheduleUpstreamIdleTimeout(attempt);
-					try {
-						for await (const upstreamEvent of modelRun.stream) {
-							recordElapsedPhase("first_upstream_event");
-							markUpstreamActivity(attempt);
-							switch (upstreamEvent.type) {
-								case "text_delta":
-									if (!emitChunkWithOutputHandling(upstreamEvent.text)) {
-										return;
-									}
-									break;
-								case "reasoning_delta":
-									if (!emitThinking(upstreamEvent.text)) {
-										return;
-									}
-									break;
-								case "tool_call":
-									emitToolCallEventWithDebug(
-										upstreamEvent.toolName,
-										asToolInput(upstreamEvent.input),
-										"running",
-										{ callId: upstreamEvent.callId },
-									);
-									break;
-								case "tool_result": {
-									const matchingToolCall = modelRun
-										.getNormalChatToolCalls()
-										.find((record) => record.callId === upstreamEvent.callId);
-									emitToolCallEventWithDebug(
-										upstreamEvent.toolName,
-										matchingToolCall?.input ?? {},
-										"done",
-										{
-											callId: upstreamEvent.callId,
-											outputSummary: matchingToolCall?.outputSummary ?? null,
-											sourceType: matchingToolCall?.sourceType ?? null,
-											candidates: matchingToolCall?.candidates ?? [],
-											metadata: matchingToolCall?.metadata ?? {},
-										},
-									);
-									break;
-								}
-								case "tool_error": {
-									const matchingToolCall = modelRun
-										.getNormalChatToolCalls()
-										.find((record) => record.callId === upstreamEvent.callId);
-									emitToolCallEventWithDebug(
-										upstreamEvent.toolName,
-										matchingToolCall?.input ?? {},
-										"done",
-										{
-											callId: upstreamEvent.callId,
-											outputSummary: null,
-											sourceType: null,
-											candidates: [],
-											metadata: {
-												ok: false,
-												evidenceReady: false,
-												error: upstreamEvent.error,
-											},
-										},
-									);
-									break;
-								}
-								case "usage": {
-									const mappedUsage = mapModelRunUsage(upstreamEvent.usage);
-									if (mappedUsage) {
-										latestProviderUsage = mappedUsage;
-									}
-									break;
-								}
-								case "finish":
-									latestModelDisplayName =
-										upstreamEvent.model.displayName ?? latestModelDisplayName;
-									console.warn(
-										"[DEBUG-diagnose-stream] Vercel AI SDK finish event received",
-										{
-											conversationId,
-											streamId,
-											modelId,
-											finishReason: upstreamEvent.finishReason,
-											rawFinishReason: upstreamEvent.rawFinishReason,
-											fullResponseLength: chunkRuntime.fullResponse.length,
-											thinkingLength: chunkRuntime.thinkingContent.length,
-											toolCallCount: chunkRuntime.toolCallRecords.length,
-										},
-									);
-									await completeOrRecoverAfterUpstreamEnd("end_event");
-									return;
-								case "error": {
-									const errorMessage = upstreamEvent.error;
-									console.error("[STREAM] Upstream error event payload", {
-										conversationId,
-										attempt,
-										errorMessage,
-									});
-									const upstreamError = new Error(errorMessage);
-									const errorCode = classifyStreamError(errorMessage);
-									if (
-										!hasVisibleAssistantAnswerOutput() &&
-										isModelTimeoutError(upstreamError)
-									) {
-										if (
-											await retryStreamOnTimeoutFailover(attempt, upstreamError)
-										) {
-											continue upstreamAttempt;
-										}
-										failStream(errorCode);
-										return;
-									}
-									if (
-										!hasVisibleAssistantAnswerOutput() &&
-										(await tryRateLimitFallbackAndContinue(
-											attempt,
-											upstreamError,
-										))
-									) {
-										continue upstreamAttempt;
-									}
-									if (
-										hasSuccessfulFileProductionToolCall() &&
-										flushBufferedStreamOutput() &&
-										hasPersistableStreamOutput()
-									) {
-										await completeSuccess();
-										return;
-									}
-									failStream(errorCode);
-									return;
-								}
-							}
-						}
-
-						if (ended) {
-							return;
-						}
-					} finally {
-						clearUpstreamIdleTimeout();
-					}
-
-					await completeOrRecoverAfterUpstreamEnd("stream_closed");
+				}
+				recordDurationPhase(
+					"model_stream_request",
+					modelStreamRequestStartedAt,
+				);
+				if (!modelRun) {
 					return;
 				}
+				latestModelId = modelRun.modelId ?? latestModelId;
+				latestModelDisplayName =
+					modelRun.modelDisplayName ?? latestModelDisplayName;
+				const prepared = modelRun.prepared ?? {};
+				emitPrefetchedToolCalls(modelRun.prefetchedToolCalls);
+				latestContextStatus = prepared.contextStatus;
+				initialContextStatus = latestContextStatus;
+				latestTaskState =
+					prepared.taskState ??
+					(await getConversationTaskState(user.id, conversationId).catch(
+						() => null,
+					));
+				latestTaskState = await attachContinuityToTaskState(
+					user.id,
+					latestTaskState ?? null,
+				).catch(() => latestTaskState ?? null);
+				initialTaskState = latestTaskState;
+				latestContextDebug =
+					prepared.contextDebug ??
+					(await getContextDebugState(user.id, conversationId).catch(
+						() => null,
+					));
+				initialContextDebug = latestContextDebug;
+				latestHonchoContext = prepared.honchoContext ?? null;
+				latestHonchoSnapshot = prepared.honchoSnapshot ?? null;
+				latestContextTraceSections = prepared.contextTraceSections;
+				initialContextTraceSections = latestContextTraceSections;
+
+				scheduleUpstreamIdleTimeout(attempt);
+				try {
+					for await (const upstreamEvent of modelRun.stream) {
+						recordElapsedPhase("first_upstream_event");
+						markUpstreamActivity(attempt);
+						switch (upstreamEvent.type) {
+							case "text_delta":
+								if (!emitChunkWithOutputHandling(upstreamEvent.text)) {
+									return;
+								}
+								break;
+							case "reasoning_delta":
+								if (!emitThinking(upstreamEvent.text)) {
+									return;
+								}
+								break;
+							case "tool_call":
+								emitToolCallEventWithDebug(
+									upstreamEvent.toolName,
+									asToolInput(upstreamEvent.input),
+									"running",
+									{ callId: upstreamEvent.callId },
+								);
+								break;
+							case "tool_result": {
+								const matchingToolCall = modelRun
+									.getNormalChatToolCalls()
+									.find((record) => record.callId === upstreamEvent.callId);
+								emitToolCallEventWithDebug(
+									upstreamEvent.toolName,
+									matchingToolCall?.input ?? {},
+									"done",
+									{
+										callId: upstreamEvent.callId,
+										outputSummary: matchingToolCall?.outputSummary ?? null,
+										sourceType: matchingToolCall?.sourceType ?? null,
+										candidates: matchingToolCall?.candidates ?? [],
+										metadata: matchingToolCall?.metadata ?? {},
+									},
+								);
+								break;
+							}
+							case "tool_error": {
+								const matchingToolCall = modelRun
+									.getNormalChatToolCalls()
+									.find((record) => record.callId === upstreamEvent.callId);
+								emitToolCallEventWithDebug(
+									upstreamEvent.toolName,
+									matchingToolCall?.input ?? {},
+									"done",
+									{
+										callId: upstreamEvent.callId,
+										outputSummary: null,
+										sourceType: null,
+										candidates: [],
+										metadata: {
+											ok: false,
+											evidenceReady: false,
+											error: upstreamEvent.error,
+										},
+									},
+								);
+								break;
+							}
+							case "usage": {
+								const mappedUsage = mapModelRunUsage(upstreamEvent.usage);
+								if (mappedUsage) {
+									latestProviderUsage = mappedUsage;
+								}
+								break;
+							}
+							case "finish":
+								latestModelId =
+									(upstreamEvent.model.modelId as ModelId | undefined) ??
+									latestModelId;
+								latestModelDisplayName =
+									upstreamEvent.model.displayName ?? latestModelDisplayName;
+								console.warn(
+									"[DEBUG-diagnose-stream] Vercel AI SDK finish event received",
+									{
+										conversationId,
+										streamId,
+										modelId,
+										finishReason: upstreamEvent.finishReason,
+										rawFinishReason: upstreamEvent.rawFinishReason,
+										fullResponseLength: chunkRuntime.fullResponse.length,
+										thinkingLength: chunkRuntime.thinkingContent.length,
+										toolCallCount: chunkRuntime.toolCallRecords.length,
+									},
+								);
+								await completeOrRecoverAfterUpstreamEnd("end_event");
+								return;
+							case "error": {
+								const errorMessage = upstreamEvent.error;
+								console.error("[STREAM] Upstream error event payload", {
+									conversationId,
+									attempt,
+									errorMessage,
+								});
+								const upstreamError = new Error(errorMessage);
+								const errorCode = classifyStreamError(errorMessage);
+								if (
+									!attemptedNonStreamFallback &&
+									!wasStopRequested() &&
+									!hasVisibleAssistantAnswerOutput() &&
+									shouldFallbackToNonStreaming(upstreamError) &&
+									!hasVisibleStreamOutput()
+								) {
+									await fallbackToNonStreaming(
+										"stream_read_failure",
+										attempt,
+										upstreamError,
+									);
+									return;
+								}
+								if (
+									hasSuccessfulFileProductionToolCall() &&
+									flushBufferedStreamOutput() &&
+									hasPersistableStreamOutput()
+								) {
+									await completeSuccess();
+									return;
+								}
+								failStream(errorCode);
+								return;
+							}
+						}
+					}
+
+					if (ended) {
+						return;
+					}
+				} finally {
+					clearUpstreamIdleTimeout();
+				}
+
+				await completeOrRecoverAfterUpstreamEnd("stream_closed");
+				return;
 			} catch (error) {
 				if (ended) {
 					return;
 				}
 				if (
-					wasActiveChatStreamStopRequested(streamId) &&
+					wasStopRequested() &&
 					error instanceof Error &&
 					(error.name === "AbortError" ||
 						error.message.toLowerCase().includes("abort"))
@@ -1345,18 +1225,7 @@ export function runChatStreamOrchestrator(
 				}
 				if (
 					!attemptedNonStreamFallback &&
-					!wasActiveChatStreamStopRequested(streamId) &&
-					!hasVisibleAssistantAnswerOutput() &&
-					(await tryRateLimitFallbackAndContinue(
-						latestUpstreamAttempt,
-						error,
-					))
-				) {
-					return;
-				}
-				if (
-					!attemptedNonStreamFallback &&
-					!wasActiveChatStreamStopRequested(streamId) &&
+					!wasStopRequested() &&
 					(upstreamIdleTimedOutBeforeOutput ||
 						isModelTimeoutError(error) ||
 						(shouldFallbackToNonStreaming(error) &&
@@ -1377,7 +1246,7 @@ export function runChatStreamOrchestrator(
 					}
 					if (
 						!attemptedNonStreamFallback &&
-						!wasActiveChatStreamStopRequested(streamId) &&
+						!wasStopRequested() &&
 						shouldFallbackToNonStreaming(error) &&
 						!hasVisibleAssistantAnswerOutput()
 					) {
@@ -1417,7 +1286,6 @@ export function runChatStreamOrchestrator(
 				clearInterval(heartbeatIntervalId);
 				clearTimeout(timeoutId);
 				clearUpstreamIdleTimeout();
-				clearFirstVisibleOutputTimeout();
 				if (streamId) {
 					unregisterActiveChatStream(streamId, upstreamAbortController);
 				}

@@ -1,3 +1,12 @@
+import {
+	checkForOrphanedStream,
+	getStreamBufferInfo,
+	type StreamCallbacks,
+	type StreamChatOptions,
+	type StreamHandle,
+	type StreamMetadata,
+	streamChat,
+} from "$lib/services/streaming";
 import type {
 	ArtifactSummary,
 	ChatMessage,
@@ -7,15 +16,6 @@ import type {
 	PendingSkillSelection,
 	ThinkingMode,
 } from "$lib/types";
-import {
-	checkForOrphanedStream,
-	getStreamBufferInfo,
-	streamChat,
-	type StreamCallbacks,
-	type StreamChatOptions,
-	type StreamHandle,
-	type StreamMetadata,
-} from "$lib/services/streaming";
 
 type StreamToolCallDetails = Parameters<
 	NonNullable<StreamCallbacks["onToolCall"]>
@@ -99,7 +99,9 @@ export type NormalChatClientTurnRuntimeAdapters = {
 		payload: NormalChatSendPayload,
 		retryAssistantMessageId?: string,
 	) => boolean;
-	startDeepResearchTurn: (params: DeepResearchTurnParams) => void | Promise<void>;
+	startDeepResearchTurn: (
+		params: DeepResearchTurnParams,
+	) => void | Promise<void>;
 	appendUserMessage: (message: ChatMessage) => void;
 	appendAssistantPlaceholder: (placeholder: ChatMessage) => void;
 	appendTokenChunk: (placeholderId: string, chunk: string) => void;
@@ -122,7 +124,9 @@ export type NormalChatClientTurnRuntimeAdapters = {
 		metadata?: StreamMetadata;
 	}) => void;
 	applyStreamMetadata: (metadata?: StreamMetadata) => void;
-	attachFileProductionJobsToAssistantMessage: (assistantMessageId: string) => void;
+	attachFileProductionJobsToAssistantMessage: (
+		assistantMessageId: string,
+	) => void;
 	pollMessageEvidence: (assistantMessageId: string) => void;
 	refreshMessageCost: (assistantMessageId: string) => void;
 	hydrateConversationDetail: () => void;
@@ -131,7 +135,9 @@ export type NormalChatClientTurnRuntimeAdapters = {
 		clientUserMessageId?: string | null,
 	) => void;
 	loadPersistedData: () => Promise<void> | void;
-	mergeGeneratedFiles?: (files: NonNullable<StreamMetadata["generatedFiles"]>) => void;
+	mergeGeneratedFiles?: (
+		files: NonNullable<StreamMetadata["generatedFiles"]>,
+	) => void;
 	setContextCompressionMarkers?: (
 		markers: NonNullable<StreamMetadata["contextCompressionSnapshots"]>,
 	) => void;
@@ -348,7 +354,9 @@ export function createNormalChatClientTurnRuntime(
 					status,
 					details,
 				);
-				if (adapters.shouldHydrateFileProductionJobsOnToolCall?.(name, status)) {
+				if (
+					adapters.shouldHydrateFileProductionJobsOnToolCall?.(name, status)
+				) {
 					adapters.hydrateConversationDetail();
 				}
 			},
@@ -437,10 +445,7 @@ export function createNormalChatClientTurnRuntime(
 					restoreQueuedTurnToDraft();
 				}
 
-				if (
-					params.payload &&
-					adapters.isPendingSkillUnavailableError(err)
-				) {
+				if (params.payload && adapters.isPendingSkillUnavailableError(err)) {
 					if (params.clientUserMessageId) {
 						adapters.removeMessage(params.clientUserMessageId);
 					}
@@ -638,7 +643,9 @@ export function createNormalChatClientTurnRuntime(
 		);
 		const retryAssistantMessageId = lastAssistantMsg?.id;
 		const retryAssistantIndex = retryAssistantMessageId
-			? retryMessages.findIndex((message) => message.id === retryAssistantMessageId)
+			? retryMessages.findIndex(
+					(message) => message.id === retryAssistantMessageId,
+				)
 			: -1;
 		const retryUserMessageId =
 			retryAssistantIndex > 0 &&
@@ -665,9 +672,7 @@ export function createNormalChatClientTurnRuntime(
 				personalityProfileId: adapters.getPersonalityProfileId(),
 				retryAssistantMessageId: retryAssistantMessageId ?? undefined,
 				retryUserMessageId,
-				retryUserMessage: retryAssistantMessageId
-					? lastUserMessage
-					: undefined,
+				retryUserMessage: retryAssistantMessageId ? lastUserMessage : undefined,
 			},
 		});
 	}
@@ -788,8 +793,7 @@ export function createNormalChatClientTurnRuntime(
 		const existingUserMessage = adapters
 			.getMessages()
 			.findLast(
-				(message) =>
-					message.role === "user" && message.content === userMessage,
+				(message) => message.role === "user" && message.content === userMessage,
 			);
 		return existingUserMessage?.id ?? null;
 	}
@@ -802,7 +806,10 @@ export function createNormalChatClientTurnRuntime(
 			adapters.getConversationId(),
 		);
 		if (!streamId) return false;
-		const bufferInfo = await adapters.getStreamBufferInfo(streamId);
+		const bufferInfo = await adapters.getStreamBufferInfo(
+			streamId,
+			adapters.getConversationId(),
+		);
 		return reconnectToOrphanedStream(streamId, bufferInfo?.userMessage ?? "");
 	}
 
@@ -839,14 +846,18 @@ export function createNormalChatClientTurnRuntime(
 	};
 }
 
-function cloneSendPayload(payload: NormalChatSendPayload): NormalChatSendPayload {
+function cloneSendPayload(
+	payload: NormalChatSendPayload,
+): NormalChatSendPayload {
 	return {
 		message: payload.message,
 		attachmentIds: [...(payload.attachmentIds ?? [])],
 		attachments: [...(payload.attachments ?? [])],
-		pendingAttachments: (payload.pendingAttachments ?? []).map((attachment) => ({
-			...attachment,
-		})),
+		pendingAttachments: (payload.pendingAttachments ?? []).map(
+			(attachment) => ({
+				...attachment,
+			}),
+		),
 		linkedSources: (payload.linkedSources ?? []).map((source) => ({
 			...source,
 			familyArtifactIds: [...source.familyArtifactIds],

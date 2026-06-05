@@ -296,9 +296,11 @@ describe("runStreamingNormalChatSendModel", () => {
 
 		expect(mocks.runStreamingNormalChatModelRun).toHaveBeenCalledWith(
 			expect.objectContaining({
-				providerOptions: undefined,
+				resolveProviderOptions: expect.any(Function),
 			}),
 		);
+		const call = mocks.runStreamingNormalChatModelRun.mock.calls[0]?.[0];
+		expect(call.resolveProviderOptions(call.provider)).toBeUndefined();
 	});
 
 	it("exposes prefetched and recorded tool calls while filtering failed calls from the final evidence-ready set", async () => {

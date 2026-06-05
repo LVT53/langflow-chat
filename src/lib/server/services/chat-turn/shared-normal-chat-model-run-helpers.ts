@@ -1,7 +1,11 @@
 import type { RuntimeConfig } from "$lib/server/config-store";
 import type { ModelConfig } from "$lib/server/env";
+import { inferModelContextWindow } from "$lib/server/services/model-context";
 import type { PromptContextLimits } from "$lib/server/services/normal-chat-context";
 import type { ModelId, ToolCallEntry } from "$lib/types";
+import { deriveModelContextBudget } from "./context-budget";
+
+const UNKNOWN_PROVIDER_MAX_MODEL_CONTEXT_FALLBACK = 150_000;
 
 export function isEvidenceReadyToolCall(toolCall: ToolCallEntry): boolean {
 	return (
@@ -51,19 +55,20 @@ export function resolvePromptModelConfig(params: {
 
 	return {
 		...baseModelConfig,
-		systemPrompt: params.runtimeConfig.systemPrompt || baseModelConfig.systemPrompt,
+		systemPrompt:
+			params.runtimeConfig.systemPrompt || baseModelConfig.systemPrompt,
 		baseUrl: params.provider.baseUrl,
 		apiKey: params.provider.apiKey,
 		modelName: params.provider.modelName,
 		displayName: params.provider.displayName,
-		maxTokens:
-			params.provider.maxOutputTokens ?? baseModelConfig.maxTokens,
+		maxTokens: params.provider.maxOutputTokens ?? baseModelConfig.maxTokens,
 	};
 }
 
 export function resolvePromptContextLimits(params: {
 	modelId: ModelId;
 	provider: {
+		modelName?: string | null;
 		maxModelContext?: number;
 		compactionUiThreshold?: number;
 		targetConstructedContext?: number;
@@ -71,14 +76,22 @@ export function resolvePromptContextLimits(params: {
 	runtimeConfig: RuntimeConfig;
 }): PromptContextLimits | undefined {
 	if (
-		typeof params.provider.maxModelContext === "number" &&
-		typeof params.provider.compactionUiThreshold === "number" &&
-		typeof params.provider.targetConstructedContext === "number"
+		params.modelId !== "model1" &&
+		params.modelId !== "model2" &&
+		params.modelId !== undefined
 	) {
-		return {
-			maxModelContext: params.provider.maxModelContext,
+		const providerBudget = deriveModelContextBudget({
+			maxModelContext:
+				params.provider.maxModelContext ??
+				inferModelContextWindow(params.provider.modelName) ??
+				UNKNOWN_PROVIDER_MAX_MODEL_CONTEXT_FALLBACK,
 			compactionUiThreshold: params.provider.compactionUiThreshold,
 			targetConstructedContext: params.provider.targetConstructedContext,
+		});
+		return {
+			maxModelContext: providerBudget.maxModelContext,
+			compactionUiThreshold: providerBudget.compactionUiThreshold,
+			targetConstructedContext: providerBudget.targetConstructedContext,
 		};
 	}
 

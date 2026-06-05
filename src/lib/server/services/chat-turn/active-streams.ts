@@ -6,6 +6,7 @@ const STOP_REQUEST_TTL_MS = 30_000;
 
 type ActiveChatStream = {
 	userId: string;
+	conversationId: string;
 	controller: AbortController;
 };
 
@@ -19,7 +20,11 @@ const userStreamCounts = new Map<string, number>();
 const conversationStreams = new Map<string, string>();
 
 // Stream token buffer for reconnection replay
-interface StreamTokenBuffer {
+export interface StreamTokenBuffer {
+	userId: string;
+	conversationId: string;
+	createdAt: number;
+	updatedAt: number;
 	userMessage: string;
 	tokens: string[];
 	thinking: string[];
@@ -39,6 +44,7 @@ interface StreamTokenBuffer {
 const streamBuffers = new Map<string, StreamTokenBuffer>();
 const BUFFER_MAX_TOKENS = 100_000;
 const BUFFER_CLEANUP_MS = 5 * 60 * 1000;
+const BUFFER_TTL_MS = BUFFER_CLEANUP_MS;
 
 let bufferCleanupTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -62,35 +68,133 @@ function startBufferCleanupTimer() {
 			return;
 		}
 
+		const now = Date.now();
 		for (const [streamId, buffer] of streamBuffers) {
-			void streamId;
-			void buffer;
+			if (isStreamBufferExpired(buffer, now)) {
+				streamBuffers.delete(streamId);
+			}
+		}
+
+		if (streamBuffers.size === 0) {
+			stopBufferCleanupTimer();
 		}
 	}, BUFFER_CLEANUP_MS);
 	unrefTimer(bufferCleanupTimer);
 }
 
-export function getStreamBuffer(streamId: string): StreamTokenBuffer | null {
-	return streamBuffers.get(streamId) ?? null;
+function conversationStreamKey(userId: string, conversationId: string): string {
+	return `${userId}:${conversationId}`;
 }
 
-export function getOrCreateStreamBuffer(
-	streamId: string,
-	userMessage: string,
-): StreamTokenBuffer {
-	let buffer = streamBuffers.get(streamId);
+function pendingStopKey(userId: string, streamId: string): string {
+	return `${userId}:${streamId}`;
+}
+
+function isStreamBufferExpired(
+	buffer: StreamTokenBuffer,
+	now = Date.now(),
+): boolean {
+	return now - buffer.updatedAt >= BUFFER_TTL_MS;
+}
+
+function getLiveStreamBuffer(streamId: string): StreamTokenBuffer | null {
+	const buffer = streamBuffers.get(streamId);
+	if (!buffer) return null;
+	if (isStreamBufferExpired(buffer)) {
+		clearStreamBuffer(streamId);
+		return null;
+	}
+	return buffer;
+}
+
+export function getStreamBuffer(params: {
+	streamId: string;
+	userId: string;
+	conversationId?: string;
+}): StreamTokenBuffer | null {
+	const buffer = getLiveStreamBuffer(params.streamId);
+	if (!buffer || buffer.userId !== params.userId) return null;
+	if (
+		params.conversationId !== undefined &&
+		buffer.conversationId !== params.conversationId
+	) {
+		return null;
+	}
+	return buffer;
+}
+
+export function getOrCreateStreamBuffer(params: {
+	streamId: string;
+	userId: string;
+	conversationId: string;
+	userMessage: string;
+}): StreamTokenBuffer {
+	let buffer = getLiveStreamBuffer(params.streamId);
+	if (
+		buffer &&
+		(buffer.userId !== params.userId ||
+			buffer.conversationId !== params.conversationId)
+	) {
+		buffer.listeners.clear();
+		streamBuffers.delete(params.streamId);
+		buffer = null;
+	}
 	if (!buffer) {
+		const now = Date.now();
 		buffer = {
-			userMessage,
+			userId: params.userId,
+			conversationId: params.conversationId,
+			createdAt: now,
+			updatedAt: now,
+			userMessage: params.userMessage,
 			tokens: [],
 			thinking: [],
 			toolCalls: [],
 			listeners: new Set(),
 		};
-		streamBuffers.set(streamId, buffer);
+		streamBuffers.set(params.streamId, buffer);
 		startBufferCleanupTimer();
 	}
 	return buffer;
+}
+
+export type StreamBufferSnapshot =
+	| { exists: false }
+	| {
+			exists: true;
+			userMessage: string;
+			tokenCount: number;
+			thinkingCount: number;
+			toolCallCount: number;
+	  };
+
+export function getStreamBufferSnapshot(params: {
+	streamId: string;
+	userId: string;
+	conversationId?: string;
+}): StreamBufferSnapshot {
+	const buffer = streamBuffers.get(params.streamId);
+	if (!buffer || buffer.userId !== params.userId) {
+		return { exists: false };
+	}
+	if (isStreamBufferExpired(buffer)) {
+		clearStreamBuffer(params.streamId);
+		return { exists: false };
+	}
+	if (
+		params.conversationId !== undefined &&
+		buffer.conversationId !== params.conversationId
+	) {
+		return { exists: false };
+	}
+
+	return {
+		exists: true,
+		userMessage: buffer.userMessage,
+		tokenCount: buffer.tokens.length,
+		thinkingCount: buffer.thinking.length,
+		toolCallCount: buffer.toolCalls.length,
+	};
 }
 
 export function appendToStreamBuffer(
@@ -108,8 +212,9 @@ export function appendToStreamBuffer(
 		metadata?: Record<string, string | number | boolean | null>;
 	},
 ) {
-	const buffer = streamBuffers.get(streamId);
+	const buffer = getLiveStreamBuffer(streamId);
 	if (!buffer) return;
+	buffer.updatedAt = Date.now();
 
 	if (event === "token" && data.text) {
 		buffer.tokens.push(data.text);
@@ -181,20 +286,30 @@ export function clearStreamBuffer(streamId: string) {
 }
 
 export function subscribeToStream(
-	streamId: string,
+	params: {
+		streamId: string;
+		userId: string;
+		conversationId: string;
+	},
 	listener: (chunk: string) => void,
-) {
-	const buffer = streamBuffers.get(streamId);
+): boolean {
+	const buffer = getStreamBuffer(params);
 	if (buffer) {
 		buffer.listeners.add(listener);
+		return true;
 	}
+	return false;
 }
 
 export function unsubscribeFromStream(
-	streamId: string,
+	params: {
+		streamId: string;
+		userId: string;
+		conversationId: string;
+	},
 	listener: (chunk: string) => void,
 ) {
-	const buffer = streamBuffers.get(streamId);
+	const buffer = getStreamBuffer(params);
 	if (buffer) {
 		buffer.listeners.delete(listener);
 	}
@@ -213,24 +328,26 @@ export function broadcastStreamChunk(streamId: string, chunk: string) {
 	}
 }
 
-function markPendingStop(streamId: string) {
-	if (pendingStops.has(streamId)) {
+function markPendingStop(params: { streamId: string; userId: string }) {
+	const key = pendingStopKey(params.userId, params.streamId);
+	if (pendingStops.has(key)) {
 		return;
 	}
 
 	const timeoutId = setTimeout(() => {
-		pendingStops.delete(streamId);
+		pendingStops.delete(key);
 	}, STOP_REQUEST_TTL_MS);
 	unrefTimer(timeoutId);
-	pendingStops.set(streamId, timeoutId);
+	pendingStops.set(key, timeoutId);
 }
 
-function clearPendingStop(streamId: string) {
-	const timeoutId = pendingStops.get(streamId);
+function clearPendingStop(params: { streamId: string; userId: string }) {
+	const key = pendingStopKey(params.userId, params.streamId);
+	const timeoutId = pendingStops.get(key);
 	if (timeoutId) {
 		clearTimeout(timeoutId);
 	}
-	pendingStops.delete(streamId);
+	pendingStops.delete(key);
 }
 
 export function registerActiveChatStream(params: {
@@ -239,19 +356,29 @@ export function registerActiveChatStream(params: {
 	controller: AbortController;
 	conversationId: string;
 }): boolean {
-	const existingStreamId = conversationStreams.get(params.conversationId);
+	if (activeStreams.has(params.streamId)) {
+		return false;
+	}
+
+	const existingStreamId = conversationStreams.get(
+		conversationStreamKey(params.userId, params.conversationId),
+	);
 	if (existingStreamId && existingStreamId !== params.streamId) {
 		return false;
 	}
 
 	activeStreams.set(params.streamId, {
 		userId: params.userId,
+		conversationId: params.conversationId,
 		controller: params.controller,
 	});
 
-	conversationStreams.set(params.conversationId, params.streamId);
+	conversationStreams.set(
+		conversationStreamKey(params.userId, params.conversationId),
+		params.streamId,
+	);
 
-	if (pendingStops.has(params.streamId)) {
+	if (pendingStops.has(pendingStopKey(params.userId, params.streamId))) {
 		params.controller.abort();
 	}
 
@@ -267,19 +394,14 @@ export function unregisterActiveChatStream(
 ) {
 	const activeStream = activeStreams.get(streamId);
 	if (!activeStream) {
-		clearPendingStop(streamId);
 		return;
 	}
 
 	if (!controller || activeStream.controller === controller) {
 		activeStreams.delete(streamId);
-
-		for (const [convId, sid] of conversationStreams) {
-			if (sid === streamId) {
-				conversationStreams.delete(convId);
-				break;
-			}
-		}
+		conversationStreams.delete(
+			conversationStreamKey(activeStream.userId, activeStream.conversationId),
+		);
 
 		const userId = activeStream.userId;
 		const currentCount = userStreamCounts.get(userId) ?? 1;
@@ -288,16 +410,50 @@ export function unregisterActiveChatStream(
 		} else {
 			userStreamCounts.set(userId, currentCount - 1);
 		}
+		clearPendingStop({ streamId, userId: activeStream.userId });
 	}
-	clearPendingStop(streamId);
 }
 
-export function getOrphanedStream(conversationId: string): string | null {
-	return conversationStreams.get(conversationId) ?? null;
+export function getOrphanedStream(params: {
+	userId: string;
+	conversationId: string;
+}): string | null {
+	return (
+		conversationStreams.get(
+			conversationStreamKey(params.userId, params.conversationId),
+		) ?? null
+	);
 }
 
-export function isStreamActive(streamId: string): boolean {
-	return activeStreams.has(streamId);
+export type StreamConversationStatus =
+	| { hasOrphanedStream: false }
+	| { hasOrphanedStream: true; streamId: string };
+
+export function getStreamConversationStatus(params: {
+	userId: string;
+	conversationId: string;
+}): StreamConversationStatus {
+	const streamId = getOrphanedStream(params);
+	if (!streamId) {
+		return { hasOrphanedStream: false };
+	}
+	return { hasOrphanedStream: true, streamId };
+}
+
+export function isStreamActive(params: {
+	streamId: string;
+	userId: string;
+	conversationId?: string;
+}): boolean {
+	const activeStream = activeStreams.get(params.streamId);
+	if (!activeStream || activeStream.userId !== params.userId) return false;
+	if (
+		params.conversationId !== undefined &&
+		activeStream.conversationId !== params.conversationId
+	) {
+		return false;
+	}
+	return true;
 }
 
 export function requestActiveChatStreamStop(params: {
@@ -307,7 +463,7 @@ export function requestActiveChatStreamStop(params: {
 	const activeStream = activeStreams.get(params.streamId);
 
 	if (!activeStream) {
-		markPendingStop(params.streamId);
+		markPendingStop(params);
 		return false;
 	}
 
@@ -315,15 +471,19 @@ export function requestActiveChatStreamStop(params: {
 		return false;
 	}
 
-	markPendingStop(params.streamId);
+	markPendingStop(params);
 	activeStream.controller.abort();
 	return true;
 }
 
-export function wasActiveChatStreamStopRequested(
-	streamId: string | undefined,
-): boolean {
-	return Boolean(streamId) && pendingStops.has(streamId);
+export function wasActiveChatStreamStopRequested(params: {
+	streamId: string | null | undefined;
+	userId: string;
+}): boolean {
+	return (
+		Boolean(params.streamId) &&
+		pendingStops.has(pendingStopKey(params.userId, params.streamId!))
+	);
 }
 
 export interface StreamCapacityCheck {

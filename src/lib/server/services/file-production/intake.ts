@@ -74,6 +74,7 @@ export interface SubmitFileProductionIntakeInput {
 	body: unknown;
 	now?: Date;
 	wakeWorker?: () => void | Promise<void>;
+	signal?: AbortSignal;
 }
 
 export interface FileProductionIntakeDependencies {
@@ -104,6 +105,17 @@ export type FileProductionIntakeResult =
 export type FileProductionIntakeConversationIdResult =
 	| { ok: true; conversationId: string }
 	| { ok: false; status: number; code: string; error: string };
+
+function throwIfAborted(signal: AbortSignal | undefined): void {
+	if (!signal?.aborted) return;
+	if (signal.reason instanceof Error) {
+		throw signal.reason;
+	}
+	if (typeof signal.reason === "string" && signal.reason.trim()) {
+		throw new Error(signal.reason.trim());
+	}
+	throw new Error("file production intake aborted");
+}
 
 interface FailureDraft {
 	conversationId: string;
@@ -352,9 +364,11 @@ export async function submitFileProductionIntakeWithDependencies(
 	input: SubmitFileProductionIntakeInput,
 	dependencies: FileProductionIntakeDependencies,
 ): Promise<FileProductionIntakeResult> {
+	throwIfAborted(input.signal);
 	const normalized = normalizeFileProductionIntake(input.body);
 	if (!normalized.ok) {
 		if (normalized.failureDraft) {
+			throwIfAborted(input.signal);
 			const job = await dependencies.createFailedFileProductionJob({
 				userId: input.userId,
 				conversationId: normalized.failureDraft.conversationId,
@@ -376,6 +390,7 @@ export async function submitFileProductionIntakeWithDependencies(
 		return normalized;
 	}
 
+	throwIfAborted(input.signal);
 	const request = normalized.value;
 	const requestJson = {
 		sourceMode: request.sourceMode,
@@ -391,6 +406,7 @@ export async function submitFileProductionIntakeWithDependencies(
 		sourceJsonBytes: Buffer.byteLength(JSON.stringify(requestJson), "utf8"),
 	});
 	if (!staticLimit.ok) {
+		throwIfAborted(input.signal);
 		const job = await dependencies.createFailedFileProductionJob({
 			userId: input.userId,
 			conversationId: request.conversationId,
@@ -422,6 +438,7 @@ export async function submitFileProductionIntakeWithDependencies(
 		};
 	}
 
+	throwIfAborted(input.signal);
 	const result = await dependencies.createOrReuseFileProductionJob({
 		userId: input.userId,
 		conversationId: request.conversationId,
@@ -436,9 +453,11 @@ export async function submitFileProductionIntakeWithDependencies(
 	});
 
 	if (result.job.status === "queued" || result.job.status === "running") {
+		throwIfAborted(input.signal);
 		await dependencies.wakeFileProductionWorker();
 	}
 
+	throwIfAborted(input.signal);
 	return {
 		ok: true,
 		status: 202,

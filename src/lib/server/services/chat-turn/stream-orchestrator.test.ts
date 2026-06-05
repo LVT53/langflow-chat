@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { requestActiveChatStreamStop } from "$lib/server/services/chat-turn/active-streams";
+import {
+	getStreamBuffer,
+	registerActiveChatStream,
+	requestActiveChatStreamStop,
+	unregisterActiveChatStream,
+} from "$lib/server/services/chat-turn/active-streams";
 import { runChatStreamOrchestrator } from "./stream-orchestrator";
 import type { ChatTurnPreflight } from "./types";
 
@@ -707,6 +712,40 @@ describe("stream-orchestrator SSE contract", () => {
 		expect(remainingBody).toContain('"wasStopped":true');
 	});
 
+	it("does not start a main stream when registry registration rejects the stream id", async () => {
+		const { runStreamingNormalChatSendModel } = await import(
+			"$lib/server/services/chat-turn/streaming-normal-chat-model-run"
+		);
+		const otherUserController = new AbortController();
+		registerActiveChatStream({
+			streamId: "colliding-main-stream",
+			userId: "other-user",
+			controller: otherUserController,
+			conversationId: "other-conversation",
+		});
+
+		try {
+			const response = runStream({
+				conversationId: "u1-conversation",
+				streamId: "colliding-main-stream",
+			});
+			const body = await response.text();
+
+			expect(body).toBe("");
+			expect(runStreamingNormalChatSendModel).not.toHaveBeenCalled();
+			expect(
+				getStreamBuffer({
+					streamId: "colliding-main-stream",
+					userId: "u1",
+					conversationId: "u1-conversation",
+				}),
+			).toBeNull();
+			expect(otherUserController.signal.aborted).toBe(false);
+		} finally {
+			unregisterActiveChatStream("colliding-main-stream", otherUserController);
+		}
+	});
+
 	it("keeps upstream running after passive downstream cancellation", async () => {
 		const { createMessage } = await import("$lib/server/services/messages");
 		const { runStreamingNormalChatSendModel } = await import(
@@ -750,7 +789,12 @@ describe("stream-orchestrator SSE contract", () => {
 				"Still running",
 				undefined,
 				undefined,
-				{ evidenceStatus: "pending", modelDisplayName: "Model One", providerDisplayName: undefined, providerIconUrl: null },
+				{
+					evidenceStatus: "pending",
+					modelDisplayName: "Model One",
+					providerDisplayName: undefined,
+					providerIconUrl: null,
+				},
 			);
 		});
 		expect(upstreamSignal?.aborted).toBe(false);

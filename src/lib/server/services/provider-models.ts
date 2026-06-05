@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { eq, and } from "drizzle-orm";
 import { db } from "../db";
 import { providerModels, providers } from "../db/schema";
+import { resolveProviderModelPersistenceContextDefaults } from "./provider-model-runtime-defaults";
 
 type ProviderModelRow = typeof providerModels.$inferSelect;
 
@@ -116,6 +117,7 @@ export async function createProviderModel(
 
 	const now = new Date();
 	const displayName = input.displayName ?? input.name;
+	const contextDefaults = resolveProviderModelPersistenceContextDefaults(input);
 
 	const [model] = await db
 		.insert(providerModels)
@@ -125,9 +127,9 @@ export async function createProviderModel(
 			name: input.name,
 			displayName,
 			iconAssetId: input.iconAssetId ?? null,
-			maxModelContext: input.maxModelContext ?? null,
-			compactionUiThreshold: input.compactionUiThreshold ?? null,
-			targetConstructedContext: input.targetConstructedContext ?? null,
+			maxModelContext: contextDefaults.maxModelContext,
+			compactionUiThreshold: contextDefaults.compactionUiThreshold,
+			targetConstructedContext: contextDefaults.targetConstructedContext,
 			maxMessageLength: input.maxMessageLength ?? null,
 			maxTokens: input.maxTokens ?? null,
 			reasoningEffort: input.reasoningEffort ?? null,
@@ -222,9 +224,37 @@ export async function updateProviderModel(
 
 	if (input.displayName !== undefined) updates.displayName = input.displayName;
 	if (input.iconAssetId !== undefined) updates.iconAssetId = input.iconAssetId;
-	if (input.maxModelContext !== undefined) updates.maxModelContext = input.maxModelContext;
-	if (input.compactionUiThreshold !== undefined) updates.compactionUiThreshold = input.compactionUiThreshold;
-	if (input.targetConstructedContext !== undefined) updates.targetConstructedContext = input.targetConstructedContext;
+	if (
+		input.maxModelContext !== undefined ||
+		input.compactionUiThreshold !== undefined ||
+		input.targetConstructedContext !== undefined
+	) {
+		const contextDefaults = resolveProviderModelPersistenceContextDefaults({
+			maxModelContext:
+				input.maxModelContext !== undefined
+					? input.maxModelContext
+					: existing.maxModelContext,
+			compactionUiThreshold: input.compactionUiThreshold,
+			targetConstructedContext: input.targetConstructedContext,
+		});
+		if (input.maxModelContext !== undefined) {
+			updates.maxModelContext = contextDefaults.maxModelContext;
+		}
+		if (
+			input.compactionUiThreshold !== undefined ||
+			input.maxModelContext !== undefined
+		) {
+			updates.compactionUiThreshold =
+				contextDefaults.compactionUiThreshold;
+		}
+		if (
+			input.targetConstructedContext !== undefined ||
+			input.maxModelContext !== undefined
+		) {
+			updates.targetConstructedContext =
+				contextDefaults.targetConstructedContext;
+		}
+	}
 	if (input.maxMessageLength !== undefined) updates.maxMessageLength = input.maxMessageLength;
 	if (input.maxTokens !== undefined) updates.maxTokens = input.maxTokens;
 	if (input.reasoningEffort !== undefined) updates.reasoningEffort = input.reasoningEffort;
@@ -290,6 +320,9 @@ export async function batchCreateProviderModels(
 			if (entry.supportsTools) capabilities.tools = "detected";
 			capabilitiesJson = JSON.stringify(capabilities);
 		}
+		const contextDefaults = resolveProviderModelPersistenceContextDefaults({
+			maxModelContext: entry.contextLength ?? null,
+		});
 
 		const [model] = await db
 			.insert(providerModels)
@@ -298,7 +331,9 @@ export async function batchCreateProviderModels(
 				providerId,
 				name: entry.name,
 				displayName: entry.displayName ?? entry.name,
-				maxModelContext: entry.contextLength ?? null,
+				maxModelContext: contextDefaults.maxModelContext,
+				compactionUiThreshold: contextDefaults.compactionUiThreshold,
+				targetConstructedContext: contextDefaults.targetConstructedContext,
 				capabilitiesJson,
 				enabled: 1,
 				sortOrder: 0,

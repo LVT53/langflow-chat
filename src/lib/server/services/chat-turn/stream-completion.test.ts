@@ -776,7 +776,11 @@ describe("completeStreamTurn", () => {
 
 		await completeStreamTurn({ ...defaultParams, isReconnect: true });
 
-		expect(mockGetStreamBuffer).toHaveBeenCalledWith("stream-1");
+		expect(mockGetStreamBuffer).toHaveBeenCalledWith({
+			streamId: "stream-1",
+			userId: "user-1",
+			conversationId: "conv-1",
+		});
 		expect(mockCreateMessage).toHaveBeenCalledWith(
 			"conv-1",
 			"user",

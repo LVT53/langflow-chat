@@ -3,6 +3,12 @@
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import {
+	DEFAULT_MAX_MODEL_CONTEXT_TOKENS,
+	MIN_MODEL_CONTEXT_TOKENS,
+	deriveDefaultCompactionUiThreshold as deriveCompactionUiThreshold,
+	deriveDefaultTargetConstructedContext as deriveTargetConstructedContext,
+} from "../model-context-defaults";
+import {
 	DEEP_RESEARCH_MODEL_ROLES,
 	type DeepResearchDepthBudgetPolicy,
 	type DeepResearchModelSelections,
@@ -138,10 +144,6 @@ const BYTE_SUFFIX_MULTIPLIERS: Record<string, number> = {
 	M: 1024 * 1024,
 	G: 1024 * 1024 * 1024,
 };
-const DEFAULT_MAX_MODEL_CONTEXT_TOKENS = 262_144;
-const MIN_MODEL_CONTEXT_TOKENS = 1_000;
-const COMPACTION_THRESHOLD_RATIO = 0.8;
-const TARGET_CONSTRUCTED_CONTEXT_RATIO = 0.9;
 
 export function parseByteSizeLimit(value: string): number {
 	const trimmed = value.trim();
@@ -193,26 +195,6 @@ function parsePositiveIntegerEnv(
 	return Math.max(
 		minimum,
 		Number.isNaN(parsed) || parsed <= 0 ? fallback : parsed,
-	);
-}
-
-function deriveCompactionUiThreshold(maxModelContext: number): number {
-	return Math.max(
-		1,
-		Math.min(
-			maxModelContext - 1,
-			Math.floor(maxModelContext * COMPACTION_THRESHOLD_RATIO),
-		),
-	);
-}
-
-function deriveTargetConstructedContext(maxModelContext: number): number {
-	return Math.max(
-		1,
-		Math.min(
-			maxModelContext - 1,
-			Math.floor(maxModelContext * TARGET_CONSTRUCTED_CONTEXT_RATIO),
-		),
 	);
 }
 
