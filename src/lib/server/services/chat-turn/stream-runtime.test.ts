@@ -97,9 +97,9 @@ describe("AI SDK UI stream contract fixture", () => {
 				payload !== "[DONE]" && payload.type === "data-stream-metadata",
 		);
 
-		expect(extractAiSdkUiStreamMetadataData(metadataPayload ?? "[DONE]")).toEqual(
-			aiSdkUiStreamContractMetadata,
-		);
+		expect(
+			extractAiSdkUiStreamMetadataData(metadataPayload ?? "[DONE]"),
+		).toEqual(aiSdkUiStreamContractMetadata);
 		expect(containsTerminalAiSdkUiStreamPayload(metadataFrame)).toBe(false);
 		expect(containsTerminalAiSdkUiStreamPayload(finishFrame)).toBe(true);
 		expect(containsTerminalAiSdkUiStreamPayload(doneFrame)).toBe(true);
@@ -228,6 +228,25 @@ describe("createServerChunkRuntime", () => {
 		expect(tokenTexts(chunks).join("")).toBe("The visible answer.");
 		expect(thinkingTexts(chunks).join("")).toBe("The model is planning.");
 		expect(tokenTexts(chunks).join("")).not.toContain("response");
+	});
+
+	it("does not leak orphan thinking close tags into visible stream output", () => {
+		const chunks: string[] = [];
+		const runtime = createServerChunkRuntime({
+			enqueueChunk(chunk) {
+				chunks.push(chunk);
+				return true;
+			},
+		});
+
+		runtime.emitChunkWithOutputHandling("I used the web tool. </thi");
+		runtime.emitChunkWithOutputHandling("nk> The visible answer.");
+		runtime.flushInlineThinkingBuffer();
+
+		expect(tokenTexts(chunks).join("")).toBe(
+			"I used the web tool.  The visible answer.",
+		);
+		expect(runtime.fullResponse).not.toContain("</think>");
 	});
 
 	it("strips leaked web research diagnostics from visible tokens", () => {
