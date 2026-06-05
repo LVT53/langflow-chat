@@ -85,6 +85,19 @@ function getFetchUrls(name: string, input: Record<string, unknown>): string[] {
 	return Object.values(input).flatMap(toUrlList);
 }
 
+function getFetchedSources(
+	segment: ThinkingSegment,
+): Array<{ title: string; url: string }> {
+	if (segment.type !== "tool_call" || segment.name !== "research_web") return [];
+	return (segment.candidates ?? [])
+		.filter((candidate) => candidate.sourceType === "web" && candidate.url)
+		.slice(0, 6)
+		.map((candidate) => ({
+			title: candidate.title || extractHostname(candidate.url ?? ""),
+			url: candidate.url as string,
+		}));
+}
+
 function formatToolCall(name: string, input: Record<string, unknown>): string {
 	const n = name.toLowerCase();
 	const firstVal = () => String(Object.values(input)[0] ?? "").slice(0, 200);
@@ -157,7 +170,30 @@ async function toggle() {
 	{#if visibleTools.length > 0}
 		<div class="tool-call-stack">
 			{#each visibleTools as tool, i (tool.callId ?? tool.name + JSON.stringify(tool.input) + '-' + i)}
-				{#if getFetchUrls(tool.name, tool.input).length > 0}
+				{@const fetchedSources = getFetchedSources(tool)}
+				{#if fetchedSources.length > 0}
+					{#each fetchedSources as source}
+						<div class="tool-call-row" class:is-running={tool.status === 'running'}>
+							{#if tool.status === 'running'}
+								<span class="tool-dot"></span>
+							{:else}
+								<svg class="check-icon-header" viewBox="0 0 12 12" fill="none">
+									<path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.5"
+										stroke-linecap="round" stroke-linejoin="round"/>
+								</svg>
+							{/if}
+							<span class="tool-label-text">
+								Fetched:
+								<a
+									class="tool-link"
+									href={source.url}
+									target="_blank"
+									rel="noopener noreferrer"
+									onclick={(event) => event.stopPropagation()}>{source.title}</a>
+							</span>
+						</div>
+					{/each}
+				{:else if getFetchUrls(tool.name, tool.input).length > 0}
 					{#each getFetchUrls(tool.name, tool.input) as url}
 						<div class="tool-call-row" class:is-running={tool.status === 'running'}>
 							{#if tool.status === 'running'}
@@ -195,7 +231,29 @@ async function toggle() {
 					{#if seg.type === 'text'}
 						<pre class="thinking-text">{seg.content}</pre>
 					{:else}
-						{#if getFetchUrls(seg.name, seg.input).length > 0}
+						{@const fetchedSources = getFetchedSources(seg)}
+						{#if fetchedSources.length > 0}
+							{#each fetchedSources as source}
+								<div class="tool-call-item">
+									{#if seg.status === 'done'}
+										<svg class="check-icon" viewBox="0 0 12 12" fill="none">
+											<path d="M2 6l3 3 5-5" stroke="currentColor" stroke-width="1.5"
+												stroke-linecap="round" stroke-linejoin="round"/>
+										</svg>
+									{:else}
+										<span class="tool-dot-inline"></span>
+									{/if}
+									<span class="tool-item-label">
+										Fetched:
+										<a
+											class="tool-link"
+											href={source.url}
+											target="_blank"
+											rel="noopener noreferrer">{source.title}</a>
+									</span>
+								</div>
+							{/each}
+						{:else if getFetchUrls(seg.name, seg.input).length > 0}
 							{#each getFetchUrls(seg.name, seg.input) as url}
 								<div class="tool-call-item">
 									{#if seg.status === 'done'}

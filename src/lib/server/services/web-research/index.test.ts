@@ -536,6 +536,52 @@ describe("researchWeb with SearXNG", () => {
 		);
 	});
 
+	it("keeps a substantial fetched-page excerpt for direct URL research", async () => {
+		const directUrl = "https://docs.example.com/long-guide";
+		const paragraphs = Array.from(
+			{ length: 20 },
+			(_, index) =>
+				`<p>Section ${index + 1}: Widget deployment guidance with operational context and configuration notes for production teams.</p>`,
+		);
+		paragraphs.push(
+			"<p>Section 21 retained detail: the rollback marker must remain available to the model after link fetching.</p>",
+		);
+		const fetchMock = vi.fn(async () =>
+			htmlResponse(`
+				<html>
+					<head><title>Long Widget Guide</title></head>
+					<body><article>${paragraphs.join("\n")}</article></body>
+				</html>
+			`),
+		);
+
+		const result = await researchWeb(
+			{
+				query: `Summarize the deployment guidance at ${directUrl}`,
+				maxSources: 1,
+			},
+			{
+				config: { ...webConfig, searxngBaseUrl: "" },
+				fetch: fetchMock,
+				now: new Date("2026-05-02T12:00:00.000Z"),
+				rerank: async (params) => ({
+					items: params.items.map((item, index) => ({
+						item,
+						index,
+						score: index === 0 ? 0.99 : 0.1,
+					})),
+					confidence: 99,
+				}),
+			},
+		);
+
+		expect(result.diagnostics.openedPageCount).toBe(1);
+		expect(result.answerBrief.markdown).toContain("Fetched page excerpts:");
+		expect(result.answerBrief.markdown).toContain(
+			"Section 21 retained detail",
+		);
+	});
+
 	it("prefers readable page prose over leading code blocks from pasted URLs", async () => {
 		const directUrl = "https://docs.example.com/tools";
 		const fetchMock = vi.fn(async (input: RequestInfo | URL) => {

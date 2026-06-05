@@ -484,8 +484,10 @@ export async function completeStreamTurn(
 	};
 
 	try {
-		const persistAssistantMessage =
-			!wasStopped || finalResponse.trim().length > 0;
+		const persistedAssistantResponse =
+			wasStopped && finalResponse.trim().length === 0
+				? "Stopped"
+				: finalResponse;
 		const completion = await finalizeChatTurn({
 			logPrefix: "[STREAM]",
 			streamId,
@@ -495,7 +497,7 @@ export async function completeStreamTurn(
 			persistUserMessage,
 			normalizedMessage,
 			upstreamMessage,
-			assistantResponse: finalResponse,
+			assistantResponse: persistedAssistantResponse,
 			assistantThinking: thinkingContent || undefined,
 			serverSegments: serverSegments.length > 0 ? serverSegments : undefined,
 			assistantMetadata: {
@@ -533,7 +535,7 @@ export async function completeStreamTurn(
 			continuitySource: "stream",
 			honchoContext: latestHonchoContext,
 			honchoSnapshot: latestHonchoSnapshot,
-			assistantMirrorContent: finalResponse,
+			assistantMirrorContent: wasStopped ? "" : finalResponse,
 			maintenanceReason: "chat_stream",
 			toolCalls: toolCallRecords,
 			contextTraceSections:
@@ -541,7 +543,8 @@ export async function completeStreamTurn(
 			webCitationAudit: citationGate?.audit,
 			linkedSources,
 			persistenceMode: "best_effort",
-			persistAssistantMessage,
+			persistAssistantMessage: true,
+			persistTurnState: !wasStopped,
 			createMessage,
 			persistUserTurnAttachments,
 			persistAssistantTurnState,
@@ -558,7 +561,9 @@ export async function completeStreamTurn(
 					attachedArtifacts: completion.attachedArtifacts,
 				}
 			: null;
-		persistedContextSources = completion.contextSources;
+		persistedContextSources = completion.turnState
+			? completion.contextSources
+			: null;
 		return sendEndAndClose(
 			completion.userMessage?.id,
 			completion.assistantMessage?.id,

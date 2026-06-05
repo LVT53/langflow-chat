@@ -85,4 +85,45 @@ describe('ThinkingBlock', () => {
 		expect(links[0]).toHaveAttribute('href', 'https://a.example/x');
 		expect(links[1]).toHaveAttribute('href', 'https://b.example/y');
 	});
+
+	it('shows fetched web source titles from research tool candidates', () => {
+		const segments: ThinkingSegment[] = [
+			{
+				type: 'tool_call',
+				name: 'research_web',
+				status: 'done',
+				input: {
+					query: 'latest pricing',
+				},
+				sourceType: 'web',
+				candidates: [
+					{
+						id: 'source-1',
+						title: 'Widget Pro Store Page',
+						url: 'https://shop.example.com/products/widget-pro',
+						sourceType: 'web',
+						material: true,
+					},
+				],
+			},
+		];
+
+		render(ThinkingBlock, {
+			props: {
+				content: '',
+				thinkingIsDone: true,
+				segments,
+			},
+		});
+
+		expect(screen.getByText(/Fetched:/)).toBeInTheDocument();
+		const link = screen.getByRole('link', { name: 'Widget Pro Store Page' });
+		expect(link).toHaveAttribute(
+			'href',
+			'https://shop.example.com/products/widget-pro',
+		);
+		expect(
+			screen.queryByText('Searching: "latest pricing"'),
+		).not.toBeInTheDocument();
+	});
 });
