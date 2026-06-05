@@ -127,7 +127,7 @@ export function buildGroundedWebModelPayload(
 		title: truncateText(item.title, 180),
 		url: truncateText(item.url, 500),
 		provider: item.provider,
-		quote: truncateText(item.quote, 500),
+		quote: truncateText(item.quote, 900),
 		score: item.score,
 	}));
 	const evidenceReady = evidence.length > 0;
@@ -145,7 +145,7 @@ export function buildGroundedWebModelPayload(
 			sourceCount: sources.length,
 			evidenceCount: evidence.length,
 		},
-		answerBriefMarkdown: truncateText(result.answerBrief.markdown, 12000),
+		answerBriefMarkdown: truncateText(result.answerBrief.markdown, 30000),
 		sources,
 		evidence,
 		diagnostics: {

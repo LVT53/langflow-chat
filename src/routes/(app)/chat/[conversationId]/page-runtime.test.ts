@@ -326,4 +326,55 @@ describe("chat page runtime integration", () => {
 			"Queued while hidden",
 		);
 	});
+
+	it("recovers a backgrounded stream on mobile pageshow without requiring reload", async () => {
+		vi.mocked(fetchConversationDetail).mockResolvedValue({
+			conversation: { id: "conv-1", title: "Chat", status: "open" },
+			messages: [
+				{
+					id: "server-user-1",
+					role: "user",
+					content: "Mobile leave",
+					timestamp: 1,
+				},
+				{
+					id: "server-assistant-1",
+					role: "assistant",
+					content: "Finished while mobile was away",
+					timestamp: 2,
+				},
+			],
+		});
+		render(Page, { data: pageData() });
+
+		await fireEvent.input(screen.getByTestId("message-input"), {
+			target: { value: "Mobile leave" },
+		});
+		await fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+		Object.defineProperty(document, "visibilityState", {
+			configurable: true,
+			value: "hidden",
+		});
+		const abortError = new Error("backgrounded");
+		abortError.name = "AbortError";
+		runtimeHarness.streamInvocations[0].callbacks.onError(abortError);
+
+		Object.defineProperty(document, "visibilityState", {
+			configurable: true,
+			value: "visible",
+		});
+		window.dispatchEvent(
+			new PageTransitionEvent("pageshow", { persisted: true }),
+		);
+
+		await waitFor(() => {
+			expect(fetchConversationDetail).toHaveBeenCalledWith("conv-1");
+		});
+		await waitFor(() => {
+			expect(
+				screen.getByText("Finished while mobile was away"),
+			).toBeInTheDocument();
+		});
+	});
 });

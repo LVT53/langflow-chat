@@ -1880,6 +1880,7 @@ function buildResearchAnswerBrief(params: {
 	const evidenceLines = evidence.map((item) =>
 		[`[${item.title}](${item.url})`, `Quote: ${item.quote}`].join("\n"),
 	);
+	const fetchedPageExcerptLines = buildFetchedPageExcerptLines(params.sources);
 	const markdown = [
 		`Research brief for: ${params.query}`,
 		"Citation rules:",
@@ -1890,14 +1891,33 @@ function buildResearchAnswerBrief(params: {
 		evidence.length > 0
 			? `Evidence snippets:\n${evidenceLines.join("\n\n")}`
 			: "Evidence snippets: none returned.",
+		fetchedPageExcerptLines.length > 0
+			? `Fetched page excerpts:\n${fetchedPageExcerptLines.join("\n\n")}`
+			: "",
 	].join("\n\n");
 
 	return {
-		markdown: truncate(markdown, 16000),
+		markdown: truncate(markdown, 32000),
 		instructions,
 		sources,
 		evidence,
 	};
+}
+
+function buildFetchedPageExcerptLines(sources: ResearchSource[]): string[] {
+	return sources
+		.filter((source) => Boolean(source.extraction))
+		.slice(0, 4)
+		.map((source) => {
+			const text = normalizeWhitespace(source.markdown ?? source.text ?? "");
+			if (!text) return null;
+			const excerptLength = source.provider === "direct" ? 8000 : 3200;
+			return [
+				`[${source.title}](${source.url})`,
+				`Fetched excerpt: ${truncate(text, excerptLength)}`,
+			].join("\n");
+		})
+		.filter((line): line is string => Boolean(line));
 }
 
 export async function researchWeb(

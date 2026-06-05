@@ -390,6 +390,11 @@ export function createNormalChatClientTurnRuntime(
 					adapters.refreshMessageCost(serverAssistantId);
 				}
 
+				adapters.maybeTriggerTitleGeneration(
+					params.completedUserMessage,
+					fullText,
+				);
+
 				if (metadata?.wasStopped) {
 					if (takeQueuedContextCompression()) {
 						void adapters.runManualContextCompression();
@@ -398,10 +403,6 @@ export function createNormalChatClientTurnRuntime(
 					return;
 				}
 
-				adapters.maybeTriggerTitleGeneration(
-					params.completedUserMessage,
-					fullText,
-				);
 				void drainPostTurnQueue();
 			},
 			onError(error) {

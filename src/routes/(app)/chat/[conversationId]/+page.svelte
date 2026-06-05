@@ -779,13 +779,16 @@ $effect(() => {
 	}
 });
 
-function handleVisibilityChange() {
-	if (document.visibilityState === "visible") {
-		normalChatRuntime.handleVisibilityVisible();
+function recoverVisiblePageActivity() {
+	if (document.visibilityState !== "visible") return;
+	normalChatRuntime.handleVisibilityVisible();
 
-		// Recover evidence for any messages with pending status
-		recoverPendingEvidence();
-	}
+	// Recover evidence for any messages with pending status
+	recoverPendingEvidence();
+}
+
+function handleVisibilityChange() {
+	recoverVisiblePageActivity();
 }
 
 function recoverPendingEvidence() {
@@ -981,6 +984,8 @@ onMount(() => {
 	});
 	triggerForkOpeningTransition();
 	document.addEventListener("visibilitychange", handleVisibilityChange);
+	window.addEventListener("pageshow", recoverVisiblePageActivity);
+	window.addEventListener("focus", recoverVisiblePageActivity);
 	window.addEventListener(
 		WORKSPACE_CONVERSATION_DELETED_EVENT,
 		handleWorkspaceConversationDeletedEvent,
@@ -995,6 +1000,8 @@ onMount(() => {
 onDestroy(() => {
 	if (browser) {
 		document.removeEventListener("visibilitychange", handleVisibilityChange);
+		window.removeEventListener("pageshow", recoverVisiblePageActivity);
+		window.removeEventListener("focus", recoverVisiblePageActivity);
 		window.removeEventListener(
 			WORKSPACE_CONVERSATION_DELETED_EVENT,
 			handleWorkspaceConversationDeletedEvent,

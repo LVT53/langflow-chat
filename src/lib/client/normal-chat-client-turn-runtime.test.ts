@@ -436,6 +436,10 @@ describe("Normal Chat Client Turn Runtime", () => {
 			wasStopped: true,
 		});
 
+		expect(adapters.maybeTriggerTitleGeneration).toHaveBeenCalledWith(
+			"First",
+			"Stopped",
+		);
 		expect(streamInvocations).toHaveLength(1);
 		expect(adapters.restorePayloadToDraft).toHaveBeenCalledWith(
 			expect.objectContaining({

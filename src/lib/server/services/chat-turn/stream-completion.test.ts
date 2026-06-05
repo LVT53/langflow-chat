@@ -852,9 +852,11 @@ describe("completeStreamTurn", () => {
 			undefined,
 			expect.objectContaining({ wasStopped: true }),
 		);
+		expect(mockPersistAssistantTurnState).not.toHaveBeenCalled();
+		expect(mockRunPostTurnTasks).not.toHaveBeenCalled();
 	});
 
-	it("does not persist an assistant message for stopped streams without visible text", async () => {
+	it("persists an assistant placeholder for stopped streams without visible text", async () => {
 		await completeStreamTurn({
 			...defaultParams,
 			wasStopped: true,
@@ -862,15 +864,25 @@ describe("completeStreamTurn", () => {
 			thinkingContent: "",
 		});
 
-		expect(mockCreateMessage).toHaveBeenCalledTimes(1);
-		expect(mockCreateMessage).toHaveBeenCalledWith(
+		expect(mockCreateMessage).toHaveBeenNthCalledWith(
+			1,
 			"conv-1",
 			"user",
 			"user message",
 		);
+		expect(mockCreateMessage).toHaveBeenNthCalledWith(
+			2,
+			"conv-1",
+			"assistant",
+			"Stopped",
+			undefined,
+			undefined,
+			expect.objectContaining({ wasStopped: true }),
+		);
 		expect(mockPersistAssistantTurnState).not.toHaveBeenCalled();
+		expect(mockRunPostTurnTasks).not.toHaveBeenCalled();
 		const data = getLatestEndPayload();
-		expect(data.assistantMessageId).toBeUndefined();
+		expect(data.assistantMessageId).toBe("asst-msg-1");
 	});
 
 	it("touches conversation and clears stream buffer on completion", async () => {

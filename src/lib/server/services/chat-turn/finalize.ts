@@ -133,6 +133,7 @@ export type FinalizeChatTurnParams = {
 	webCitationAudit?: PersistAssistantEvidenceParams["webCitationAudit"];
 	persistenceMode?: MessageCreationMode;
 	persistAssistantMessage?: boolean;
+	persistTurnState?: boolean;
 	createMessage?: CreateMessageFn;
 	persistUserTurnAttachments?: typeof persistUserTurnAttachments;
 	persistAssistantTurnState?: typeof persistAssistantTurnState;
@@ -337,7 +338,8 @@ export async function finalizeChatTurn(
 	}
 
 	let turnState: PersistAssistantTurnStateResult | null = null;
-	if (assistantMessage) {
+	const shouldPersistTurnState = params.persistTurnState ?? true;
+	if (assistantMessage && shouldPersistTurnState) {
 		if (params.skillControlOperations.length > 0) {
 			await commitSkillNoteOperationsAfterAssistantMessage({
 				userId: params.userId,
