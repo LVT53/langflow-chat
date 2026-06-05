@@ -1,11 +1,16 @@
 import { type ToolExecutionOptions, tool } from "ai";
 import { z } from "zod";
 
-import { getConfig } from "$lib/server/config-store";
 import type { FileProductionIntakeResult } from "$lib/server/services/file-production";
 import { submitFileProductionIntake } from "$lib/server/services/file-production";
 import { searchImages } from "$lib/server/services/image-search";
 import { getMemoryContext } from "$lib/server/services/memory-context";
+import {
+	buildGroundedWebModelPayload,
+	createGroundedWebCandidates,
+	createGroundedWebMetadata,
+	summarizeGroundedWebResult,
+} from "$lib/server/services/web-grounding";
 import { researchWeb } from "$lib/server/services/web-research";
 import {
 	compactImageSearchResults,
@@ -37,18 +42,15 @@ import {
 } from "./produce-file";
 
 import {
-	compactResearchWebModelPayload,
-	createResearchWebCandidates,
-	createResearchWebMetadata,
 	researchWebInputSchema,
 	sanitizeResearchWebInput,
-	summarizeResearchWebResult,
 } from "./research-web";
 
 import {
 	createToolCallRecorder,
+	executeToolWithEnvelope,
+	modelSafeToolError,
 	TOOL_TIMEOUTS_MS,
-	withTimeout,
 } from "./shared";
 
 // ── Public re-exports ──────────────────────────────────────────
@@ -139,49 +141,59 @@ export function createNormalChatTools(ctx: CreateNormalChatToolsContext) {
 				options: ToolExecutionOptions,
 			) => {
 				const safeInput = sanitizeResearchWebInput(input);
-				try {
-					const result = await withTimeout(
-						researchWeb(safeInput),
-						TOOL_TIMEOUTS_MS.research_web,
-						"research_web",
-					);
-					const modelPayload = compactResearchWebModelPayload(result);
-					const candidates = createResearchWebCandidates(result);
-					recorder.record({
-						callId: options.toolCallId,
-						name: "research_web",
-						input: safeInput,
-						status: "done",
-						outputSummary: summarizeResearchWebResult(result),
-						sourceType: "web",
-						candidates,
-						metadata: createResearchWebMetadata(result),
-					});
-					return modelPayload;
-				} catch (error) {
-					const modelPayload = {
-						success: false as const,
-						error:
-							error instanceof Error
-								? error.message
-								: i18n.research_web.errorPrefix,
-					};
-					recorder.record({
-						callId: options.toolCallId,
-						name: "research_web",
-						input: safeInput,
-						status: "done",
-						outputSummary: modelPayload.error,
-						sourceType: "web",
-						candidates: [],
-						metadata: {
-							ok: false,
-							evidenceReady: false,
-							error: modelPayload.error,
-						},
-					});
-					return modelPayload;
-				}
+				return executeToolWithEnvelope({
+					toolName: "research_web",
+					timeoutMs: TOOL_TIMEOUTS_MS.research_web,
+					options,
+					recorder,
+					run: async (abortSignal) => {
+						const result = await researchWeb(safeInput, {
+							signal: abortSignal,
+						});
+						const modelPayload = buildGroundedWebModelPayload(result);
+						const candidates = createGroundedWebCandidates(result);
+						return {
+							modelPayload,
+							entry: {
+								callId: options.toolCallId,
+								name: "research_web",
+								input: safeInput,
+								status: "done",
+								outputSummary: summarizeGroundedWebResult(result),
+								sourceType: "web",
+								candidates,
+								metadata: createGroundedWebMetadata(result),
+							},
+						};
+					},
+					onError: (error) => {
+						const message = modelSafeToolError(
+							error,
+							i18n.research_web.errorPrefix,
+						);
+						const modelPayload = {
+							success: false as const,
+							error: message,
+						};
+						return {
+							modelPayload,
+							entry: {
+								callId: options.toolCallId,
+								name: "research_web",
+								input: safeInput,
+								status: "done",
+								outputSummary: modelPayload.error,
+								sourceType: "web",
+								candidates: [],
+								metadata: {
+									ok: false,
+									evidenceReady: false,
+									error: modelPayload.error,
+								},
+							},
+						};
+					},
+				});
 			},
 		}),
 		memory_context: tool({
@@ -192,59 +204,67 @@ export function createNormalChatTools(ctx: CreateNormalChatToolsContext) {
 				options: ToolExecutionOptions,
 			) => {
 				const safeInput = sanitizeMemoryContextInput(input);
-				try {
-					const result = await withTimeout(
-						getMemoryContext({
+				return executeToolWithEnvelope({
+					toolName: "memory_context",
+					timeoutMs: TOOL_TIMEOUTS_MS.memory_context,
+					options,
+					recorder,
+					run: async () => {
+						const result = await getMemoryContext({
 							userId: ctx.userId,
 							conversationId: ctx.conversationId,
 							...safeInput,
-						}),
-						TOOL_TIMEOUTS_MS.memory_context,
-						"memory_context",
-					);
-					const candidates = compactMemoryContextCandidates(
-						result,
-						memoryContextCandidateLimit(input, result),
-					);
-					const modelPayload = compactMemoryContextModelPayload(
-						result,
-						candidates,
-					);
-					recorder.record({
-						callId: options.toolCallId,
-						name: "memory_context",
-						input: safeInput,
-						status: "done",
-						outputSummary: summarizeMemoryContextResult(result),
-						sourceType: "memory",
-						candidates,
-						metadata: createMemoryContextMetadata(result),
-					});
-					return modelPayload;
-				} catch (error) {
-					const modelPayload = {
-						success: false as const,
-						error:
-							error instanceof Error
-								? error.message
-								: i18n.memory_context.errorPrefix,
-					};
-					recorder.record({
-						callId: options.toolCallId,
-						name: "memory_context",
-						input: safeInput,
-						status: "done",
-						outputSummary: modelPayload.error,
-						sourceType: "memory",
-						candidates: [],
-						metadata: {
-							ok: false,
-							evidenceReady: false,
-							error: modelPayload.error,
-						},
-					});
-					return modelPayload;
-				}
+						});
+						const candidates = compactMemoryContextCandidates(
+							result,
+							memoryContextCandidateLimit(input, result),
+						);
+						const modelPayload = compactMemoryContextModelPayload(
+							result,
+							candidates,
+						);
+						return {
+							modelPayload,
+							entry: {
+								callId: options.toolCallId,
+								name: "memory_context",
+								input: safeInput,
+								status: "done",
+								outputSummary: summarizeMemoryContextResult(result),
+								sourceType: "memory",
+								candidates,
+								metadata: createMemoryContextMetadata(result),
+							},
+						};
+					},
+					onError: (error) => {
+						const message = modelSafeToolError(
+							error,
+							i18n.memory_context.errorPrefix,
+						);
+						const modelPayload = {
+							success: false as const,
+							error: message,
+						};
+						return {
+							modelPayload,
+							entry: {
+								callId: options.toolCallId,
+								name: "memory_context",
+								input: safeInput,
+								status: "done",
+								outputSummary: modelPayload.error,
+								sourceType: "memory",
+								candidates: [],
+								metadata: {
+									ok: false,
+									evidenceReady: false,
+									error: modelPayload.error,
+								},
+							},
+						};
+					},
+				});
 			},
 		}),
 		image_search: tool({
@@ -255,60 +275,68 @@ export function createNormalChatTools(ctx: CreateNormalChatToolsContext) {
 				options: ToolExecutionOptions,
 			) => {
 				const safeInput = sanitizeImageSearchInput(input);
-				try {
-					const results = await withTimeout(
-						searchImages(safeInput.query),
-						TOOL_TIMEOUTS_MS.image_search,
-						"image_search",
-					);
-					const compactResults = compactImageSearchResults(results);
-					const candidates = createImageSearchCandidates(compactResults);
-					const modelPayload = {
-						success: true as const,
-						name: "image_search",
-						sourceType: "web",
-						message: `Found ${compactResults.length} ${compactResults.length === 1 ? "image" : "images"}`,
-						results: compactResults,
-					};
-					recorder.record({
-						callId: options.toolCallId,
-						name: "image_search",
-						input: safeInput,
-						status: "done",
-						outputSummary: `${modelPayload.message}.`,
-						sourceType: "web",
-						candidates,
-						metadata: {
-							ok: true,
-							evidenceReady: true,
-							resultCount: compactResults.length,
-						},
-					});
-					return modelPayload;
-				} catch (error) {
-					const modelPayload = {
-						success: false as const,
-						error:
-							error instanceof Error
-								? error.message
-								: i18n.image_search.errorPrefix,
-					};
-					recorder.record({
-						callId: options.toolCallId,
-						name: "image_search",
-						input: safeInput,
-						status: "done",
-						outputSummary: modelPayload.error,
-						sourceType: "web",
-						candidates: [],
-						metadata: {
-							ok: false,
-							evidenceReady: false,
-							error: modelPayload.error,
-						},
-					});
-					return modelPayload;
-				}
+				return executeToolWithEnvelope({
+					toolName: "image_search",
+					timeoutMs: TOOL_TIMEOUTS_MS.image_search,
+					options,
+					recorder,
+					run: async () => {
+						const results = await searchImages(safeInput.query);
+						const compactResults = compactImageSearchResults(results);
+						const candidates = createImageSearchCandidates(compactResults);
+						const modelPayload = {
+							success: true as const,
+							name: "image_search",
+							sourceType: "web",
+							message: `Found ${compactResults.length} ${compactResults.length === 1 ? "image" : "images"}`,
+							results: compactResults,
+						};
+						return {
+							modelPayload,
+							entry: {
+								callId: options.toolCallId,
+								name: "image_search",
+								input: safeInput,
+								status: "done",
+								outputSummary: `${modelPayload.message}.`,
+								sourceType: "web",
+								candidates,
+								metadata: {
+									ok: true,
+									evidenceReady: true,
+									resultCount: compactResults.length,
+								},
+							},
+						};
+					},
+					onError: (error) => {
+						const message = modelSafeToolError(
+							error,
+							i18n.image_search.errorPrefix,
+						);
+						const modelPayload = {
+							success: false as const,
+							error: message,
+						};
+						return {
+							modelPayload,
+							entry: {
+								callId: options.toolCallId,
+								name: "image_search",
+								input: safeInput,
+								status: "done",
+								outputSummary: modelPayload.error,
+								sourceType: "web",
+								candidates: [],
+								metadata: {
+									ok: false,
+									evidenceReady: false,
+									error: modelPayload.error,
+								},
+							},
+						};
+					},
+				});
 			},
 		}),
 		produce_file: tool({
@@ -390,50 +418,60 @@ export function createNormalChatTools(ctx: CreateNormalChatToolsContext) {
 					return modelPayload;
 				}
 
-				try {
-					const result = await withTimeout(
-						submitFileProductionIntake({
+				return executeToolWithEnvelope({
+					toolName: "produce_file",
+					timeoutMs: TOOL_TIMEOUTS_MS.produce_file,
+					options,
+					recorder,
+					run: async (abortSignal) => {
+						const result = await submitFileProductionIntake({
 							userId: ctx.userId,
 							body: intakeBody,
-						}),
-						TOOL_TIMEOUTS_MS.produce_file,
-						"produce_file",
-					);
-					if (result.ok) {
-						sameTurnProduceFileResults.set(sameTurnDedupeKey, result);
-					}
-					const modelPayload = compactProduceFileModelPayload(result);
-					recorder.record(
-						createProduceFileToolCallEntry({
-							callId: options.toolCallId,
-							input: safeInput,
-							result,
-							outputSummary: summarizeProduceFileResult(modelPayload),
-						}),
-					);
-					return modelPayload;
-				} catch (error) {
-					const modelPayload = {
-						ok: false as const,
-						status: 500,
-						error: i18n.produce_file.errorPrefix,
-					};
-					recorder.record({
-						callId: options.toolCallId,
-						name: "produce_file",
-						input: safeInput,
-						status: "done",
-						outputSummary: modelPayload.error,
-						sourceType: "tool",
-						metadata: {
-							ok: false,
-							evidenceReady: false,
-							intakeStatus: 500,
-							error: error instanceof Error ? error.message : String(error),
-						},
-					});
-					return modelPayload;
-				}
+							signal: abortSignal,
+						});
+						if (result.ok) {
+							sameTurnProduceFileResults.set(sameTurnDedupeKey, result);
+						}
+						const modelPayload = compactProduceFileModelPayload(result);
+						return {
+							modelPayload,
+							entry: createProduceFileToolCallEntry({
+								callId: options.toolCallId,
+								input: safeInput,
+								result,
+								outputSummary: summarizeProduceFileResult(modelPayload),
+							}),
+						};
+					},
+					onError: (error) => {
+						const safeError = modelSafeToolError(
+							error,
+							i18n.produce_file.errorPrefix,
+						);
+						const modelPayload = {
+							ok: false as const,
+							status: 500,
+							error: i18n.produce_file.errorPrefix,
+						};
+						return {
+							modelPayload,
+							entry: {
+								callId: options.toolCallId,
+								name: "produce_file",
+								input: safeInput,
+								status: "done",
+								outputSummary: modelPayload.error,
+								sourceType: "tool",
+								metadata: {
+									ok: false,
+									evidenceReady: false,
+									intakeStatus: 500,
+									error: safeError,
+								},
+							},
+						};
+					},
+				});
 			},
 		}),
 		done: tool({

@@ -676,7 +676,10 @@ describe("Normal Chat Client Turn Runtime", () => {
 
 		await runtime.checkForOrphanedStreamOnMount();
 
-		expect(adapters.getStreamBufferInfo).toHaveBeenCalledWith("stream-1");
+		expect(adapters.getStreamBufferInfo).toHaveBeenCalledWith(
+			"stream-1",
+			"conv-1",
+		);
 		expect(streamInvocations[0]).toMatchObject({
 			message: "Resume me",
 			options: {

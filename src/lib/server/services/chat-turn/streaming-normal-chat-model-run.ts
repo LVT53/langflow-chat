@@ -1,28 +1,26 @@
 import { randomUUID } from "node:crypto";
 import type { RuntimeConfig } from "$lib/server/config-store";
 import type { LegacyContextTraceSectionInput } from "$lib/server/services/chat-turn/context-trace";
-import { NORMAL_CHAT_MAX_TOOL_STEPS } from "$lib/server/services/chat-turn/tool-step-budget";
-import {
-	type AuthenticatedPromptUser,
-	prepareOutboundChatContext,
-} from "$lib/server/services/normal-chat-context";
-import {
-	buildNormalChatModelRunProviderOptions,
-	resolveNormalChatModelRunProvider,
-	runStreamingNormalChatModelRun,
-	type NormalChatModelRunProvider,
-	type StreamingNormalChatModelRunEvent,
-} from "$lib/server/services/normal-chat-model";
-import {
-	createNormalChatTools,
-} from "$lib/server/services/normal-chat-tools";
-import { detectLanguage } from "$lib/server/services/language";
 import {
 	createRequestAbortSignal,
 	isEvidenceReadyToolCall,
 	resolvePromptContextLimits,
 	resolvePromptModelConfig,
 } from "$lib/server/services/chat-turn/shared-normal-chat-model-run-helpers";
+import { NORMAL_CHAT_MAX_TOOL_STEPS } from "$lib/server/services/chat-turn/tool-step-budget";
+import { detectLanguage } from "$lib/server/services/language";
+import {
+	type AuthenticatedPromptUser,
+	prepareOutboundChatContext,
+} from "$lib/server/services/normal-chat-context";
+import {
+	buildNormalChatModelRunProviderOptions,
+	type NormalChatModelRunProvider,
+	resolveNormalChatModelRunProvider,
+	runStreamingNormalChatModelRun,
+	type StreamingNormalChatModelRunEvent,
+} from "$lib/server/services/normal-chat-model";
+import { createNormalChatTools } from "$lib/server/services/normal-chat-tools";
 import type {
 	ContextDebugState,
 	ConversationContextStatus,
@@ -80,10 +78,7 @@ export async function runStreamingNormalChatSendModel(
 	const modelId = params.modelId ?? "model1";
 	const provider =
 		params.overrideProvider ??
-		(await resolveNormalChatModelRunProvider(
-			modelId,
-			params.runtimeConfig,
-		));
+		(await resolveNormalChatModelRunProvider(modelId, params.runtimeConfig));
 	const modelConfig = resolvePromptModelConfig({
 		modelId,
 		provider,
@@ -119,11 +114,14 @@ export async function runStreamingNormalChatSendModel(
 	const getNormalChatToolCalls = () => normalChatTools.getToolCalls();
 	const stream = runStreamingNormalChatModelRun({
 		provider,
+		modelId,
+		runtimeConfig: params.runtimeConfig,
 		system: prepared.systemPrompt,
-		providerOptions: buildNormalChatModelRunProviderOptions(
-			provider,
-			params.thinkingMode,
-		),
+		resolveProviderOptions: (attemptProvider) =>
+			buildNormalChatModelRunProviderOptions(
+				attemptProvider,
+				params.thinkingMode,
+			),
 		abortSignal: createRequestAbortSignal(
 			params.runtimeConfig.requestTimeoutMs,
 			params.signal,

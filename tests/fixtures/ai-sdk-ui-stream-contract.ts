@@ -1,4 +1,11 @@
-export type AiSdkUiStreamFixturePart = Record<string, unknown>;
+import {
+	AI_SDK_UI_STREAM_DONE,
+	encodeAiSdkUiStreamDoneFrame,
+	encodeAiSdkUiStreamPart,
+	type UiMessageStreamPart,
+} from "../../src/lib/services/ai-sdk-ui-stream-contract";
+
+export type AiSdkUiStreamFixturePart = UiMessageStreamPart;
 
 export type AiSdkUiStreamFixturePayload = AiSdkUiStreamFixturePart | "[DONE]";
 
@@ -149,9 +156,9 @@ export const oldBrowserSseNamedEndEvent =
 export function encodeAiSdkUiFixtureFrame(
 	payload: AiSdkUiStreamFixturePayload,
 ): string {
-	return `data: ${
-		payload === "[DONE]" ? payload : JSON.stringify(payload)
-	}\n\n`;
+	return payload === AI_SDK_UI_STREAM_DONE
+		? encodeAiSdkUiStreamDoneFrame()
+		: encodeAiSdkUiStreamPart(payload);
 }
 
 export function encodeAiSdkUiFixtureFrames(

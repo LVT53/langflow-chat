@@ -32,7 +32,7 @@ export const POST: RequestHandler = async (event) => {
 	if (!conversation) {
 		return json({ error: "Conversation not found" }, { status: 404 });
 	}
-	if (getOrphanedStream(conversationId)) {
+	if (getOrphanedStream({ userId: user.id, conversationId })) {
 		return json(
 			{
 				error:

@@ -190,6 +190,7 @@ interface ResearchDeps {
 	config?: WebResearchConfig;
 	fetch?: typeof fetch;
 	now?: Date;
+	signal?: AbortSignal;
 	rerank?: ResearchRerankFn<ResearchEvidence>;
 	sourceRerank?: ResearchRerankFn<ResearchSource>;
 }
@@ -200,6 +201,7 @@ interface ProviderSearchParams {
 	config: WebResearchConfig;
 	fetch: typeof fetch;
 	nowIso: string;
+	signal?: AbortSignal;
 }
 
 interface NormalizedResearchRequest {
@@ -209,6 +211,17 @@ interface NormalizedResearchRequest {
 	sourcePolicy: ResearchSourcePolicy;
 	maxSources: number;
 	quoteRequired: boolean;
+}
+
+function combineAbortSignals(
+	...signals: Array<AbortSignal | undefined>
+): AbortSignal | undefined {
+	const activeSignals = signals.filter((signal): signal is AbortSignal =>
+		Boolean(signal),
+	);
+	if (activeSignals.length === 0) return undefined;
+	if (activeSignals.length === 1) return activeSignals[0];
+	return AbortSignal.any(activeSignals);
 }
 
 export interface DiscoveryResearchRequest extends ResearchRequest {
@@ -332,7 +345,11 @@ function normalizeWhitespace(value: string): string {
 }
 
 function normalizeUrlHostname(hostname: string): string {
-	return hostname.trim().toLowerCase().replace(/^\[|\]$/g, "").replace(/\.$/, "");
+	return hostname
+		.trim()
+		.toLowerCase()
+		.replace(/^\[|\]$/g, "")
+		.replace(/\.$/, "");
 }
 
 function isBlockedIpv4Address(hostname: string): boolean {
@@ -824,6 +841,7 @@ async function searchSearxng(
 			headers: {
 				Accept: "application/json",
 			},
+			signal: params.signal,
 		});
 
 		if (!response.ok) {
@@ -1301,6 +1319,7 @@ async function fetchPageContent(params: {
 	request: NormalizedResearchRequest;
 	config: WebResearchConfig;
 	fetch: typeof fetch;
+	signal?: AbortSignal;
 }): Promise<{
 	title: string | null;
 	text: string | null;
@@ -1317,7 +1336,10 @@ async function fetchPageContent(params: {
 				"User-Agent":
 					"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 			},
-			signal: AbortSignal.timeout(PAGE_FETCH_TIMEOUT_MS),
+			signal: combineAbortSignals(
+				params.signal,
+				AbortSignal.timeout(PAGE_FETCH_TIMEOUT_MS),
+			),
 		});
 		if (!response.ok) return null;
 		const contentType = response.headers.get("content-type") ?? "";
@@ -1390,6 +1412,7 @@ async function openTopPages(params: {
 	request: NormalizedResearchRequest;
 	config: WebResearchConfig;
 	fetch: typeof fetch;
+	signal?: AbortSignal;
 }): Promise<
 	Map<
 		string,
@@ -1505,6 +1528,7 @@ async function enrichYouTubeTranscriptSources(params: {
 	config: WebResearchConfig;
 	fetch: typeof fetch;
 	nowIso: string;
+	signal?: AbortSignal;
 }): Promise<{
 	candidateCount: number;
 	fetchedCount: number;
@@ -1525,6 +1549,7 @@ async function enrichYouTubeTranscriptSources(params: {
 					url: source.url,
 					fetch: params.fetch,
 					timeoutMs: YOUTUBE_TRANSCRIPT_TIMEOUT_MS,
+					signal: params.signal,
 				});
 				if (!transcript) return;
 
@@ -1920,6 +1945,7 @@ export async function researchWeb(
 				config,
 				fetch: fetchImpl,
 				nowIso,
+				signal: deps.signal,
 			});
 			sourceBatches.push({
 				sources,
@@ -1996,6 +2022,7 @@ export async function researchWeb(
 			request: normalized,
 			config,
 			fetch: fetchImpl,
+			signal: deps.signal,
 		});
 		diagnostics.openedPageCount = opened.size;
 		if (selectedSources.length > 0 && opened.size === 0) {
@@ -2024,6 +2051,7 @@ export async function researchWeb(
 		config,
 		fetch: fetchImpl,
 		nowIso,
+		signal: deps.signal,
 	});
 	diagnostics.youtubeTranscriptCandidateCount =
 		youtubeTranscriptResult.candidateCount;

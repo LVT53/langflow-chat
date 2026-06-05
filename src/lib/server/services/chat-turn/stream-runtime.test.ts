@@ -3,7 +3,14 @@ import { join } from "node:path";
 import { createUIMessageStream, createUIMessageStreamResponse } from "ai";
 import { describe, expect, it } from "vitest";
 import {
+	containsTerminalAiSdkUiStreamPayload,
+	extractAiSdkUiStreamMetadataData,
+} from "$lib/services/ai-sdk-ui-stream-contract";
+import {
+	aiSdkUiStreamContractMetadata,
+	aiSdkUiStreamContractParts,
 	aiSdkUiStreamContractSequence,
+	encodeAiSdkUiFixtureFrame,
 	encodeAiSdkUiFixtureFrames,
 	malformedAiSdkUiStreamFrames,
 	oldBrowserSseNamedEndEvent,
@@ -58,6 +65,44 @@ describe("AI SDK UI stream contract fixture", () => {
 		);
 
 		expect(decoded).toEqual(["[DONE]"]);
+	});
+
+	it("does not decode trailing partial blocks or treat them as terminal", () => {
+		const partialTextFrame = encodeAiSdkUiFixtureFrame(
+			aiSdkUiStreamContractParts.textDeltaHello,
+		).trimEnd();
+		const partialFinishFrame = encodeAiSdkUiFixtureFrame(
+			aiSdkUiStreamContractParts.finish,
+		).trimEnd();
+
+		expect(decodeUiMessageStreamParts(partialTextFrame)).toEqual([]);
+		expect(containsTerminalAiSdkUiStreamPayload(partialFinishFrame)).toBe(
+			false,
+		);
+	});
+
+	it("extracts metadata and terminal state through the shared contract", () => {
+		const metadataFrame = encodeAiSdkUiFixtureFrame(
+			aiSdkUiStreamContractParts.metadata,
+		);
+		const finishFrame = encodeAiSdkUiFixtureFrame(
+			aiSdkUiStreamContractParts.finish,
+		);
+		const doneFrame = createUiMessageStreamDoneFrame();
+		const decoded = decodeUiMessageStreamParts(
+			`${metadataFrame}${finishFrame}${doneFrame}`,
+		);
+		const metadataPayload = decoded.find(
+			(payload) =>
+				payload !== "[DONE]" && payload.type === "data-stream-metadata",
+		);
+
+		expect(extractAiSdkUiStreamMetadataData(metadataPayload ?? "[DONE]")).toEqual(
+			aiSdkUiStreamContractMetadata,
+		);
+		expect(containsTerminalAiSdkUiStreamPayload(metadataFrame)).toBe(false);
+		expect(containsTerminalAiSdkUiStreamPayload(finishFrame)).toBe(true);
+		expect(containsTerminalAiSdkUiStreamPayload(doneFrame)).toBe(true);
 	});
 });
 

@@ -114,6 +114,10 @@ describe("POST /api/conversations/[id]/context-compression", () => {
 
 		expect(response.status).toBe(200);
 		expect(mockGetConversation).toHaveBeenCalledWith("user-1", "conv-1");
+		expect(mockGetOrphanedStream).toHaveBeenCalledWith({
+			userId: "user-1",
+			conversationId: "conv-1",
+		});
 		expect(mockListSourceMessages).toHaveBeenCalledWith("conv-1");
 		expect(mockRunContextCompression).toHaveBeenCalledWith(
 			expect.objectContaining({

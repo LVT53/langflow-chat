@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng-local
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./searxng-settings.yml:/etc/searxng/settings.yml:ro
+    environment:
+      - SEARXNG_SETTINGS_PATH=/etc/searxng/settings.yml
+    restart: unless-stopped
+
+  redis:
+    image: redis:alpine
+    container_name: searxng-redis
+    restart: unless-stopped
+    command: redis-server --save "" --appendonly no
+
+networks:
+  default:
+    name: searxng-network

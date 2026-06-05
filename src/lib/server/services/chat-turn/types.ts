@@ -28,6 +28,7 @@ export type ParsedChatTurnRequest = {
 	conversationId: string;
 	normalizedMessage: string;
 	streamId?: string;
+	reconnectToStreamId?: string;
 	modelId: ModelId | undefined;
 	modelDisplayName: string;
 	providerDisplayName?: string;

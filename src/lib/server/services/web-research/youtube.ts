@@ -338,13 +338,16 @@ async function fetchWithTimeout(
 	input: string,
 	init: RequestInit,
 	timeoutMs: number,
+	signal?: AbortSignal,
 ): Promise<Response> {
 	const controller = new AbortController();
 	const timeout = setTimeout(() => controller.abort(), timeoutMs);
 	try {
 		return await fetchImpl(input, {
 			...init,
-			signal: controller.signal,
+			signal: signal
+				? AbortSignal.any([signal, controller.signal])
+				: controller.signal,
 		});
 	} finally {
 		clearTimeout(timeout);
@@ -374,6 +377,7 @@ async function fetchCaptionSnippets(params: {
 	translateTo: string | null;
 	fetch: typeof fetch;
 	timeoutMs: number;
+	signal?: AbortSignal;
 }): Promise<YouTubeTranscriptSnippet[]> {
 	if (!params.track.baseUrl) return [];
 
@@ -388,6 +392,7 @@ async function fetchCaptionSnippets(params: {
 		captionUrl.toString(),
 		{ method: "GET", headers: youtubeRequestHeaders() },
 		params.timeoutMs,
+		params.signal,
 	);
 	if (!response.ok) {
 		throw new Error(`caption_fetch_failed_${response.status}`);
@@ -409,6 +414,7 @@ export async function fetchYouTubeTranscript(params: {
 	fetch: typeof fetch;
 	languages?: string[];
 	timeoutMs?: number;
+	signal?: AbortSignal;
 }): Promise<YouTubeTranscriptResult | null> {
 	const videoId = extractYouTubeVideoId(params.url);
 	if (!videoId) return null;
@@ -418,6 +424,7 @@ export async function fetchYouTubeTranscript(params: {
 		buildWatchUrl(videoId),
 		{ method: "GET", headers: youtubeRequestHeaders() },
 		params.timeoutMs ?? DEFAULT_TRANSCRIPT_TIMEOUT_MS,
+		params.signal,
 	);
 	if (!response.ok) {
 		throw new Error(`watch_fetch_failed_${response.status}`);
@@ -450,6 +457,7 @@ export async function fetchYouTubeTranscript(params: {
 		translateTo,
 		fetch: params.fetch,
 		timeoutMs: params.timeoutMs ?? DEFAULT_TRANSCRIPT_TIMEOUT_MS,
+		signal: params.signal,
 	});
 	if (snippets.length === 0) {
 		throw new Error("transcript_empty");

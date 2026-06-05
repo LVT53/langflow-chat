@@ -8,6 +8,10 @@ import {
 	normalizeConfiguredModelId,
 	normalizeDeepResearchDepthBudgetPolicy,
 } from "$lib/deep-research-models";
+import {
+	deriveDefaultCompactionUiThreshold as deriveCompactionUiThreshold,
+	deriveDefaultTargetConstructedContext as deriveTargetConstructedContext,
+} from "$lib/model-context-defaults";
 import { deriveMaxMessageLengthFromContextTokens } from "$lib/model-limit-presets";
 import type { ModelId } from "$lib/types";
 import { db } from "./db";
@@ -305,20 +309,6 @@ async function resolveLowestModelMaxMessageLength(
 
 	return Math.min(
 		...candidates.filter((value): value is number => value != null),
-	);
-}
-
-function deriveCompactionUiThreshold(maxModelContext: number): number {
-	return Math.max(
-		1,
-		Math.min(maxModelContext - 1, Math.floor(maxModelContext * 0.8)),
-	);
-}
-
-function deriveTargetConstructedContext(maxModelContext: number): number {
-	return Math.max(
-		1,
-		Math.min(maxModelContext - 1, Math.floor(maxModelContext * 0.9)),
 	);
 }
 

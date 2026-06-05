@@ -2,7 +2,14 @@ import { randomUUID } from "node:crypto";
 import type { RuntimeConfig } from "$lib/server/config-store";
 import type { ProviderUsageSnapshot } from "$lib/server/services/analytics";
 import type { LegacyContextTraceSectionInput } from "$lib/server/services/chat-turn/context-trace";
+import {
+	createRequestAbortSignal,
+	isEvidenceReadyToolCall,
+	resolvePromptContextLimits,
+	resolvePromptModelConfig,
+} from "$lib/server/services/chat-turn/shared-normal-chat-model-run-helpers";
 import { NORMAL_CHAT_MAX_TOOL_STEPS } from "$lib/server/services/chat-turn/tool-step-budget";
+import { detectLanguage } from "$lib/server/services/language";
 import {
 	type AuthenticatedPromptUser,
 	prepareOutboundChatContext,
@@ -10,20 +17,11 @@ import {
 import {
 	buildNormalChatModelRunProviderOptions,
 	mapNormalChatModelRunUsageToProviderSnapshot,
+	type NormalChatModelRunProvider,
 	resolveNormalChatModelRunProvider,
 	runPlainNormalChatModelRun,
-	type NormalChatModelRunProvider,
 } from "$lib/server/services/normal-chat-model";
-import {
-	createNormalChatTools,
-} from "$lib/server/services/normal-chat-tools";
-import { detectLanguage } from "$lib/server/services/language";
-import {
-	createRequestAbortSignal,
-	isEvidenceReadyToolCall,
-	resolvePromptContextLimits,
-	resolvePromptModelConfig,
-} from "$lib/server/services/chat-turn/shared-normal-chat-model-run-helpers";
+import { createNormalChatTools } from "$lib/server/services/normal-chat-tools";
 import type {
 	ContextDebugState,
 	ConversationContextStatus,
@@ -79,10 +77,7 @@ export async function runPlainNormalChatSendModel(
 	const modelId = params.modelId ?? "model1";
 	const provider =
 		params.overrideProvider ??
-		(await resolveNormalChatModelRunProvider(
-			modelId,
-			params.runtimeConfig,
-		));
+		(await resolveNormalChatModelRunProvider(modelId, params.runtimeConfig));
 	const modelConfig = resolvePromptModelConfig({
 		modelId,
 		provider,
@@ -119,11 +114,14 @@ export async function runPlainNormalChatSendModel(
 	const tools = params.disableTools ? undefined : normalChatTools.tools;
 	const result = await runPlainNormalChatModelRun({
 		provider,
+		modelId,
+		runtimeConfig: params.runtimeConfig,
 		system: prepared.systemPrompt,
-		providerOptions: buildNormalChatModelRunProviderOptions(
-			provider,
-			params.thinkingMode,
-		),
+		resolveProviderOptions: (attemptProvider) =>
+			buildNormalChatModelRunProviderOptions(
+				attemptProvider,
+				params.thinkingMode,
+			),
 		abortSignal: createRequestAbortSignal(
 			params.runtimeConfig.requestTimeoutMs,
 			params.signal,
@@ -161,8 +159,8 @@ export async function runPlainNormalChatSendModel(
 		prefetchedToolCalls: prepared.prefetchedToolCalls,
 		normalChatToolCalls,
 		toolCalls,
-		modelId,
+		modelId: result.model.modelId as ModelId,
 		modelDisplayName: result.model.displayName,
-		resolvedProviderId: provider.id,
+		resolvedProviderId: result.model.providerId,
 	};
 }

@@ -1,5 +1,5 @@
+import { containsTerminalAiSdkUiStreamPayload } from "$lib/services/ai-sdk-ui-stream-contract";
 import {
-	decodeUiMessageStreamParts,
 	streamDataPartEvent,
 	streamReasoningDeltaEvent,
 	streamReasoningStartEvent,
@@ -25,16 +25,30 @@ export interface ReconnectBuffer {
 }
 
 export interface ReconnectDeps {
+	userId: string;
+	conversationId: string;
 	enqueueChunk: (chunk: string) => boolean;
 	closeDownstream: () => void;
 	downstreamAbortSignal: AbortSignal;
-	getStreamBuffer: (streamId: string) => ReconnectBuffer | undefined;
+	getStreamBuffer: (params: {
+		streamId: string;
+		userId: string;
+		conversationId: string;
+	}) => ReconnectBuffer | undefined;
 	subscribeToStream: (
-		streamId: string,
+		params: {
+			streamId: string;
+			userId: string;
+			conversationId: string;
+		},
 		listener: (chunk: string) => void,
-	) => void;
+	) => boolean;
 	unsubscribeFromStream: (
-		streamId: string,
+		params: {
+			streamId: string;
+			userId: string;
+			conversationId: string;
+		},
 		listener: (chunk: string) => void,
 	) => void;
 	createSsePreludeComment: () => string;
@@ -45,19 +59,14 @@ function unrefTimer(timer: ReturnType<typeof setInterval>) {
 	timer.unref?.();
 }
 
-function containsTerminalUiMessageStreamPart(chunk: string): boolean {
-	return decodeUiMessageStreamParts(chunk).some((part) => {
-		if (part === "[DONE]") return true;
-		return part.type === "finish" || part.type === "data-stream-error";
-	});
-}
-
 export function doReconnect(targetStreamId: string, deps: ReconnectDeps): void {
 	const {
 		enqueueChunk,
 		closeDownstream,
 		downstreamAbortSignal,
 		getStreamBuffer,
+		userId,
+		conversationId,
 		subscribeToStream,
 		unsubscribeFromStream,
 		createSsePreludeComment,
@@ -68,7 +77,11 @@ export function doReconnect(targetStreamId: string, deps: ReconnectDeps): void {
 		enqueueChunk(createSsePreludeComment());
 		enqueueChunk(createSseHeartbeatComment());
 
-		const buffer = getStreamBuffer(targetStreamId);
+		const buffer = getStreamBuffer({
+			streamId: targetStreamId,
+			userId,
+			conversationId,
+		});
 		if (buffer) {
 			const hasContent =
 				buffer.tokens.length > 0 ||
@@ -122,22 +135,41 @@ export function doReconnect(targetStreamId: string, deps: ReconnectDeps): void {
 			}
 		}
 
-		let reconnectHeartbeatId: ReturnType<typeof setInterval>;
+		let reconnectHeartbeatId: ReturnType<typeof setInterval> | null = null;
+		const clearReconnectHeartbeat = () => {
+			if (!reconnectHeartbeatId) return;
+			clearInterval(reconnectHeartbeatId);
+			reconnectHeartbeatId = null;
+		};
 		const liveListener = (chunk: string) => {
 			enqueueChunk(chunk);
-			if (containsTerminalUiMessageStreamPart(chunk)) {
-				unsubscribeFromStream(targetStreamId, liveListener);
-				clearInterval(reconnectHeartbeatId);
+			if (containsTerminalAiSdkUiStreamPayload(chunk)) {
+				unsubscribeFromStream(
+					{ streamId: targetStreamId, userId, conversationId },
+					liveListener,
+				);
+				clearReconnectHeartbeat();
 				closeDownstream();
 			}
 		};
-		subscribeToStream(targetStreamId, liveListener);
+		const subscribed = subscribeToStream(
+			{ streamId: targetStreamId, userId, conversationId },
+			liveListener,
+		);
+		if (subscribed === false) {
+			enqueueChunk(streamDataPartEvent("data-waiting", {}));
+			closeDownstream();
+			return;
+		}
 
 		downstreamAbortSignal.addEventListener(
 			"abort",
 			() => {
-				unsubscribeFromStream(targetStreamId, liveListener);
-				clearInterval(reconnectHeartbeatId);
+				unsubscribeFromStream(
+					{ streamId: targetStreamId, userId, conversationId },
+					liveListener,
+				);
+				clearReconnectHeartbeat();
 				closeDownstream();
 			},
 			{ once: true },

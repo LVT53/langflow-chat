@@ -120,14 +120,15 @@ describe("runPlainNormalChatSendModel", () => {
 
 		expect(mocks.runPlainNormalChatModelRun).toHaveBeenCalledWith(
 			expect.objectContaining({
-				providerOptions: {
-					model1: { reasoningEffort: "high" },
-				},
+				resolveProviderOptions: expect.any(Function),
 				abortSignal: expect.any(AbortSignal),
 			}),
 		);
 		const call = mocks.runPlainNormalChatModelRun.mock.calls[0]?.[0];
 		expect(call.abortSignal.aborted).toBe(false);
+		expect(call.resolveProviderOptions(call.provider)).toEqual({
+			model1: { reasoningEffort: "high" },
+		});
 	});
 
 	it("omits plain-run reasoning options when capability evidence rejects reasoning controls", async () => {
@@ -181,9 +182,11 @@ describe("runPlainNormalChatSendModel", () => {
 
 		expect(mocks.runPlainNormalChatModelRun).toHaveBeenCalledWith(
 			expect.objectContaining({
-				providerOptions: undefined,
+				resolveProviderOptions: expect.any(Function),
 			}),
 		);
+		const call = mocks.runPlainNormalChatModelRun.mock.calls[0]?.[0];
+		expect(call.resolveProviderOptions(call.provider)).toBeUndefined();
 	});
 
 	it("passes provider-specific context limits into prompt preparation", async () => {

@@ -74,6 +74,8 @@ describe("doReconnect", () => {
 
 	function callDoReconnect(targetStreamId = "test-stream") {
 		doReconnect(targetStreamId, {
+			userId: "user-1",
+			conversationId: "conversation-1",
 			enqueueChunk,
 			closeDownstream,
 			downstreamAbortSignal: abortController.signal,
@@ -83,6 +85,14 @@ describe("doReconnect", () => {
 			createSsePreludeComment,
 			createSseHeartbeatComment,
 		});
+	}
+
+	function streamOwnerParams(streamId = "test-stream") {
+		return {
+			streamId,
+			userId: "user-1",
+			conversationId: "conversation-1",
+		};
 	}
 
 	function makeBuffer(
@@ -172,7 +182,7 @@ describe("doReconnect", () => {
 		callDoReconnect();
 
 		expect(subscribeToStream).toHaveBeenCalledWith(
-			"test-stream",
+			streamOwnerParams(),
 			expect.any(Function),
 		);
 	});
@@ -251,9 +261,31 @@ describe("doReconnect", () => {
 			]).join(""),
 		);
 
-		expect(unsubscribeFromStream).toHaveBeenCalledWith("test-stream", listener);
+		expect(unsubscribeFromStream).toHaveBeenCalledWith(
+			streamOwnerParams(),
+			listener,
+		);
 		expect(clearInterval).toHaveBeenCalled();
 		expect(closeDownstream).toHaveBeenCalled();
+	});
+
+	it("does not close downstream on a partial terminal frame without an SSE block delimiter", () => {
+		callDoReconnect();
+
+		const listener = subscribeToStream.mock.calls[0][1] as (
+			chunk: string,
+		) => void;
+		const partialTerminalChunk = encodeAiSdkUiFixtureFrames([
+			aiSdkUiStreamContractParts.finish,
+		])
+			.join("")
+			.trimEnd();
+		listener(partialTerminalChunk);
+
+		expect(enqueueChunk).toHaveBeenCalledWith(partialTerminalChunk);
+		expect(unsubscribeFromStream).not.toHaveBeenCalled();
+		expect(clearedIntervalIds).toEqual([]);
+		expect(closeDownstream).not.toHaveBeenCalled();
 	});
 
 	it("ignores old Browser SSE named end events without closing downstream", () => {
@@ -282,7 +314,10 @@ describe("doReconnect", () => {
 		listener(liveChunk);
 
 		expect(enqueueChunk).toHaveBeenCalledWith(liveChunk);
-		expect(unsubscribeFromStream).toHaveBeenCalledWith("test-stream", listener);
+		expect(unsubscribeFromStream).toHaveBeenCalledWith(
+			streamOwnerParams(),
+			listener,
+		);
 		expect(clearInterval).toHaveBeenCalled();
 		expect(closeDownstream).toHaveBeenCalled();
 	});
@@ -295,7 +330,10 @@ describe("doReconnect", () => {
 		) => void;
 		listener(streamErrorEvent("timeout"));
 
-		expect(unsubscribeFromStream).toHaveBeenCalledWith("test-stream", listener);
+		expect(unsubscribeFromStream).toHaveBeenCalledWith(
+			streamOwnerParams(),
+			listener,
+		);
 		expect(clearInterval).toHaveBeenCalled();
 		expect(closeDownstream).toHaveBeenCalled();
 	});
@@ -308,7 +346,10 @@ describe("doReconnect", () => {
 		) => void;
 		abortController.abort();
 
-		expect(unsubscribeFromStream).toHaveBeenCalledWith("test-stream", listener);
+		expect(unsubscribeFromStream).toHaveBeenCalledWith(
+			streamOwnerParams(),
+			listener,
+		);
 		expect(clearInterval).toHaveBeenCalled();
 		expect(closeDownstream).toHaveBeenCalled();
 	});

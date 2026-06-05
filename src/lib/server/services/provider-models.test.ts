@@ -158,6 +158,8 @@ describe("ProviderModel CRUD", () => {
 			});
 
 			expect(model.maxModelContext).toBe(200000);
+			expect(model.compactionUiThreshold).toBe(160000);
+			expect(model.targetConstructedContext).toBe(180000);
 			expect(model.maxTokens).toBe(4096);
 			expect(model.reasoningEffort).toBe("high");
 			expect(model.thinkingType).toBe("enabled");
@@ -169,6 +171,23 @@ describe("ProviderModel CRUD", () => {
 			expect(model.outputUsdMicrosPer1m).toBe(7500);
 			expect(model.enabled).toBe(true);
 			expect(model.sortOrder).toBe(5);
+		});
+
+		it("keeps explicit context defaults authoritative when creating a model", async () => {
+			const { createProviderModel } = await import("./provider-models");
+			const provider = await seedProvider();
+
+			const model = await createProviderModel({
+				providerId: provider.id,
+				name: "explicit-context",
+				maxModelContext: 200000,
+				compactionUiThreshold: 120000,
+				targetConstructedContext: 150000,
+			});
+
+			expect(model.maxModelContext).toBe(200000);
+			expect(model.compactionUiThreshold).toBe(120000);
+			expect(model.targetConstructedContext).toBe(150000);
 		});
 
 		it("rejects creation when provider_id does not exist", async () => {
@@ -442,6 +461,8 @@ describe("ProviderModel CRUD", () => {
 
 			expect(updated.displayName).toBe("New Name");
 			expect(updated.maxModelContext).toBe(128000);
+			expect(updated.compactionUiThreshold).toBe(102400);
+			expect(updated.targetConstructedContext).toBe(115200);
 			expect(updated.maxTokens).toBe(8000);
 		});
 
@@ -584,13 +605,16 @@ describe("ProviderModel CRUD", () => {
 			const provider = await seedProvider();
 
 			const models = await batchCreateProviderModels(provider.id, [
-				{ name: "model-a", displayName: "Model A" },
+				{ name: "model-a", displayName: "Model A", contextLength: 64000 },
 				{ name: "model-b", displayName: "Model B" },
 				{ name: "model-c" },
 			]);
 
 			expect(models).toHaveLength(3);
 			expect(models.map((m) => m.name)).toEqual(["model-a", "model-b", "model-c"]);
+			expect(models[0].maxModelContext).toBe(64000);
+			expect(models[0].compactionUiThreshold).toBe(51200);
+			expect(models[0].targetConstructedContext).toBe(57600);
 			expect(models[2].displayName).toBe("model-c"); // defaults to name
 
 			const all = await listProviderModels(provider.id);
