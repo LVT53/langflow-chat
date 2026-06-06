@@ -58,7 +58,9 @@ describe('ThinkingBlock', () => {
 		await fireEvent.click(screen.getByRole('button', { name: /Thought/ }));
 
 		expect(screen.getByText('I checked the relevant source.')).toBeInTheDocument();
-		expect(screen.getByRole('link', { name: 'example.com' })).toHaveAttribute(
+		const links = screen.getAllByRole('link', { name: 'example.com' });
+		expect(links.length).toBeGreaterThan(0);
+		expect(links[0]).toHaveAttribute(
 			'href',
 			'https://example.com/article',
 		);
@@ -332,8 +334,10 @@ describe('ThinkingBlock', () => {
 
 		await fireEvent.click(screen.getByRole('button', { name: /Thought/ }));
 
-		expect(screen.getByText(/Fetched:/)).toBeInTheDocument();
-		const link = screen.getByRole('link', { name: 'Widget Pro Store Page' });
+		expect(screen.getAllByText(/Fetched:/).length).toBeGreaterThan(0);
+		const links = screen.getAllByRole('link', { name: 'Widget Pro Store Page' });
+		expect(links.length).toBeGreaterThan(0);
+		const link = links[0]!;
 		expect(link).toHaveAttribute(
 			'href',
 			'https://shop.example.com/products/widget-pro',

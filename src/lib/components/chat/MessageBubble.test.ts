@@ -312,8 +312,8 @@ describe('MessageBubble', () => {
 
 		await rerender({ message: doneMessage });
 		expect(screen.queryByTestId('deliberation-status-line')).not.toBeInTheDocument();
-		expect(screen.getByRole('button', { name: 'Thought' })).toBeInTheDocument();
-		await fireEvent.click(screen.getByRole('button', { name: 'Thought' }));
+		expect(screen.getByRole('button', { name: /Thought/ })).toBeInTheDocument();
+		await fireEvent.click(screen.getByRole('button', { name: /Thought/ }));
 		expect(
 			screen.getByText('Reviewed context and sources'),
 		).toBeInTheDocument();
@@ -384,7 +384,7 @@ describe('MessageBubble', () => {
 
 		render(MessageBubble, { message });
 
-		expect(screen.getByRole('button', { name: 'Thought' })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: /Thought/ })).toBeInTheDocument();
 		expect(screen.queryByRole('button', { name: 'Thinking' })).not.toBeInTheDocument();
 	});
 

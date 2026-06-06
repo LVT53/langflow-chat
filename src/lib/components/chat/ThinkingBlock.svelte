@@ -78,7 +78,7 @@ const visibleSegments = $derived(
 );
 const hasSegments = $derived(visibleSegments.length > 0);
 const visibleTools = $derived(
-	thinkingIsDone ? [] : segments.filter(isVisibleThinkingToolCall),
+	segments.filter(isVisibleThinkingToolCall),
 );
 const hasVisibleSurface = $derived(
 	content.trim().length > 0 || hasSegments || visibleTools.length > 0,
