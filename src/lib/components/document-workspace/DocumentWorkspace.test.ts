@@ -467,6 +467,7 @@ describe("DocumentWorkspace", () => {
 		expect(desktopWorkspace).toHaveClass("workspace-shell-expanded");
 		expect(main).toHaveAttribute("data-presentation", "expanded");
 		expect(main).toHaveAttribute("data-layout", "rail-and-preview");
+		expect(desktopWorkspace.style.transform).toContain("scale");
 		expect(
 			within(desktopWorkspace).queryByRole("button", {
 				name: /return .* docked workspace/i,
