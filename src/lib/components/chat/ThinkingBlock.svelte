@@ -26,6 +26,8 @@ let prevContentLength = $state(0);
 let contentFresh = $state(false);
 let newCharStart = $state(-1);
 let freshTimeout: ReturnType<typeof setTimeout> | undefined;
+let thinkingSeconds = $state(0);
+let thinkingTimerInterval: ReturnType<typeof setInterval> | undefined;
 
 const label = $derived(thinkingIsDone ? "Thought" : "Thinking");
 const isActiveThinking = $derived(!thinkingIsDone);
@@ -106,6 +108,29 @@ $effect(() => {
 	return () => {
 		clearTimeout(freshTimeout);
 	};
+});
+
+$effect(() => {
+	if (isActiveThinking) {
+		thinkingTimerInterval = setInterval(() => {
+			thinkingSeconds += 1;
+		}, 1000);
+	} else {
+		clearInterval(thinkingTimerInterval);
+		thinkingSeconds = 0;
+	}
+	return () => {
+		clearInterval(thinkingTimerInterval);
+	};
+});
+
+const formattedThinkingTime = $derived.by(() => {
+	if (thinkingSeconds < 60) {
+		return `${thinkingSeconds} s`;
+	}
+	const minutes = Math.floor(thinkingSeconds / 60);
+	const seconds = thinkingSeconds % 60;
+	return `${minutes}m ${seconds}s`;
 });
 
 function extractHostname(raw: string): string {
@@ -222,7 +247,13 @@ async function toggle() {
 		onclick={toggle}
 		aria-expanded={expanded}
 	>
-		<span class="thinking-label" class:is-active={isActiveThinking}>{label}</span>
+		<span class="thinking-label" class:is-active={isActiveThinking}>
+			{#if isActiveThinking && formattedThinkingTime}
+				{formattedThinkingTime} · {label}
+			{:else}
+				{label}
+			{/if}
+		</span>
 		<svg
 			class="chevron"
 			class:expanded

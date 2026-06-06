@@ -287,7 +287,7 @@ describe('MessageBubble', () => {
 		expect(screen.getByTestId('reasoning-depth-indicator')).toHaveTextContent(
 			'Max reasoning depth',
 		);
-		expect(screen.getByText('Thinking')).toBeInTheDocument();
+		expect(screen.getByText(/Thinking/)).toBeInTheDocument();
 		expect(screen.queryByText('Preparing response...')).not.toBeInTheDocument();
 		expect(screen.queryByText('Preparing context')).not.toBeInTheDocument();
 		expect(

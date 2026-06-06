@@ -92,7 +92,7 @@ describe('ThinkingBlock', () => {
 			},
 		});
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Thinking' }));
+		await fireEvent.click(screen.getByRole('button', { name: /Thinking/ }));
 		await rerender({
 			content: rawTrace,
 			thinkingIsDone: false,
@@ -125,7 +125,7 @@ describe('ThinkingBlock', () => {
 			},
 		});
 
-		expect(screen.getByRole('button', { name: 'Thinking' })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: /Thinking/ })).toBeInTheDocument();
 		const links = screen.getAllByRole('link', { name: /(?:a|b)\.example/ });
 
 		expect(links).toHaveLength(2);
@@ -164,8 +164,8 @@ describe('ThinkingBlock', () => {
 			},
 		});
 
-		expect(screen.getByRole('button', { name: 'Thinking' })).toBeInTheDocument();
-		await fireEvent.click(screen.getByRole('button', { name: 'Thinking' }));
+		expect(screen.getByRole('button', { name: /Thinking/ })).toBeInTheDocument();
+		await fireEvent.click(screen.getByRole('button', { name: /Thinking/ }));
 		expect(screen.getAllByText(/Fetched:/)).toHaveLength(2);
 		expect(
 			screen.getAllByRole('link', { name: 'Widget Pro Store Page' }),
@@ -272,7 +272,7 @@ describe('ThinkingBlock', () => {
 			},
 		});
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Thinking' }));
+		await fireEvent.click(screen.getByRole('button', { name: /Thinking/ }));
 
 		expect(screen.getByText('Checking answer plan')).toBeInTheDocument();
 		expect(screen.queryByText('Reviewed context and sources')).not.toBeInTheDocument();

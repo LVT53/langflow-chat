@@ -425,7 +425,7 @@
 		{/if}
 	{#if !isUser && liveDeliberationStatusLabel}
 		{#key `${liveDeliberationStatus?.id ?? 'deliberation'}:${liveDeliberationStatusLabel}`}
-			<div class="deliberation-status-line" data-testid="deliberation-status-line" aria-live="polite">
+			<div class="deliberation-status-line" class:is-running={liveDeliberationStatus?.status === 'running'} data-testid="deliberation-status-line" aria-live="polite">
 				{#if liveDeliberationStatusIconType === 'search'}
 					<svg
 						class="deliberation-status-icon"
@@ -890,12 +890,31 @@
 		align-items: center;
 		gap: var(--space-xs);
 		margin: 0 0 var(--space-xs);
-		color: var(--text-muted);
+		color: var(--accent);
 		font-family: 'Nimbus Sans L', sans-serif;
 		font-size: 14px;
 		font-weight: 600;
 		line-height: 1.25;
 		animation: deliberationStatusFade 220ms var(--ease-out) both;
+	}
+
+	.deliberation-status-line.is-running {
+		background: linear-gradient(
+			90deg,
+			var(--text-muted)    0%,
+			var(--text-muted)    35%,
+			var(--accent)        47%,
+			var(--text-primary)  50%,
+			var(--accent)        53%,
+			var(--text-muted)    65%,
+			var(--text-muted)    100%
+		);
+		background-size: 500% 100%;
+		background-clip: text;
+		-webkit-background-clip: text;
+		color: transparent;
+		-webkit-text-fill-color: transparent;
+		animation: thinking-sweep 4s linear infinite;
 	}
 
 	.deliberation-status-icon {
@@ -914,6 +933,11 @@
 			opacity: 1;
 			transform: translateY(0);
 		}
+	}
+
+	@keyframes thinking-sweep {
+		0%   { background-position: 200% center; }
+		100% { background-position: -200% center; }
 	}
 	.prose-container :global(.prose) {
 		width: 100%;
@@ -1287,6 +1311,13 @@
 
 	@media (prefers-reduced-motion: reduce) {
 		.deliberation-status-line {
+			animation: none;
+		}
+
+		.deliberation-status-line.is-running {
+			color: var(--accent);
+			-webkit-text-fill-color: var(--accent);
+			background: none;
 			animation: none;
 		}
 
