@@ -1208,6 +1208,11 @@
 		display: inline-flex;
 	}
 
+	.action-tooltip-container {
+		position: relative;
+		display: inline-flex;
+	}
+
 	.timestamp-label {
 		font-size: 11px;
 		color: var(--text-muted);
