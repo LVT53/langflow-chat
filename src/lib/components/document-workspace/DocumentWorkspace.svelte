@@ -61,7 +61,11 @@ let compareSummary = $state<ReturnType<typeof summarizeTextComparison> | null>(
 	null,
 );
 let compareLoading = $state(false);
-let compareError = $state<string | null>(null);
+	let compareError = $state<string | null>(null);
+	let syncScrollEnabled = $state(false);
+	let leftPanelBody: HTMLDivElement | undefined = $state(undefined);
+	let rightPanelBody: HTMLDivElement | undefined = $state(undefined);
+	let isSyncingScroll = false;
 let documentPreviewRendererModulePromise: Promise<DocumentPreviewRendererModule> | null =
 	null;
 let desktopShellElement = $state<HTMLElement | null>(null);
@@ -657,6 +661,19 @@ $effect(() => {
 		cancelled = true;
 	};
 });
+
+function syncScroll(source: HTMLDivElement, target: HTMLDivElement | undefined) {
+	if (!syncScrollEnabled || isSyncingScroll || !target) return;
+	isSyncingScroll = true;
+	target.scrollTop = source.scrollTop;
+	requestAnimationFrame(() => {
+		isSyncingScroll = false;
+	});
+}
+
+function toggleSyncScroll() {
+	syncScrollEnabled = !syncScrollEnabled;
+}
 </script>
 
 <svelte:window onkeydown={handleWindowKeydown} />
@@ -852,7 +869,8 @@ $effect(() => {
 			<div class="workspace-body">
 				{#if compareMode && comparedDocument}
 					<div class="workspace-compare">
-						<div class="workspace-compare-header">
+					<div class="workspace-compare-header">
+						<div class="workspace-compare-header-left">
 							<div>
 								<div class="workspace-compare-title">{$t('documentWorkspace.compareVersionsTitle')}</div>
 								{#if compareSummary}
@@ -861,20 +879,37 @@ $effect(() => {
 									</div>
 								{/if}
 							</div>
-							<label class="workspace-compare-select-wrap">
-								<span class="workspace-compare-select-label">{$t('documentWorkspace.against')}</span>
-								<select
-									class="workspace-compare-select"
-									bind:value={compareDocumentId}
-								>
-									{#each familyDocuments.filter((document) => document.id !== activeDocument.id) as document (document.id)}
-										<option value={document.id}>
-											{getDocumentVersionLabel(document) ?? getDocumentTitle(document)}
-										</option>
-									{/each}
-								</select>
-							</label>
+							<button
+								type="button"
+								class="btn-icon-bare workspace-sync-scroll-button"
+								class:workspace-sync-scroll-active={syncScrollEnabled}
+								onclick={toggleSyncScroll}
+								aria-label={syncScrollEnabled ? $t('documentWorkspace.disableSyncScroll') : $t('documentWorkspace.enableSyncScroll')}
+								title={syncScrollEnabled ? $t('documentWorkspace.disableSyncScroll') : $t('documentWorkspace.enableSyncScroll')}
+								aria-pressed={syncScrollEnabled}
+							>
+								<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+									<path d="M18 8v5a2 2 0 0 1-2 2H8" />
+									<path d="M8 16v-5a2 2 0 0 1 2-2h8" />
+									<path d="m15 11 3 3 3-3" />
+									<path d="m9 13-3-3-3 3" />
+								</svg>
+							</button>
 						</div>
+						<label class="workspace-compare-select-wrap">
+							<span class="workspace-compare-select-label">{$t('documentWorkspace.against')}</span>
+							<select
+								class="workspace-compare-select"
+								bind:value={compareDocumentId}
+							>
+								{#each familyDocuments.filter((document) => document.id !== activeDocument.id) as document (document.id)}
+									<option value={document.id}>
+										{getDocumentVersionLabel(document) ?? getDocumentTitle(document)}
+									</option>
+								{/each}
+							</select>
+						</label>
+					</div>
 
 						{#if compareLoading}
 							<div class="workspace-compare-state">{$t('documentWorkspace.loadingComparison')}</div>
@@ -887,8 +922,11 @@ $effect(() => {
 										<span class="workspace-compare-panel-label">{$t('documentWorkspace.current')}</span>
 										<span class="workspace-compare-panel-meta">{getDocumentTitle(activeDocument)} {getDocumentVersionLabel(activeDocument) ?? ''}</span>
 									</div>
-									<div class="workspace-compare-panel-body">
+									<div class="workspace-compare-panel-body" bind:this={leftPanelBody} onscroll={() => syncScroll(leftPanelBody, rightPanelBody)}>
 										{@html compareCurrentTextHtml}
+									</div>
+									<div class="workspace-compare-panel-body" bind:this={rightPanelBody} onscroll={() => syncScroll(rightPanelBody, leftPanelBody)}>
+										{@html compareOtherTextHtml}
 									</div>
 								</section>
 								<section class="workspace-compare-panel">
@@ -1119,13 +1157,31 @@ $effect(() => {
 		{#if compareMode && comparedDocument}
 			<div class="workspace-compare">
 				<div class="workspace-compare-header">
-					<div>
-						<div class="workspace-compare-title">{$t('documentWorkspace.compareVersionsTitle')}</div>
-						{#if compareSummary}
-							<div class="workspace-compare-summary">
-								{$t('documentWorkspace.compareSummary', { changed: compareSummary.changedLines, added: compareSummary.addedLines, removed: compareSummary.removedLines })}
-							</div>
-						{/if}
+					<div class="workspace-compare-header-left">
+						<div>
+							<div class="workspace-compare-title">{$t('documentWorkspace.compareVersionsTitle')}</div>
+							{#if compareSummary}
+								<div class="workspace-compare-summary">
+									{$t('documentWorkspace.compareSummary', { changed: compareSummary.changedLines, added: compareSummary.addedLines, removed: compareSummary.removedLines })}
+								</div>
+							{/if}
+						</div>
+						<button
+							type="button"
+							class="btn-icon-bare workspace-sync-scroll-button"
+							class:workspace-sync-scroll-active={syncScrollEnabled}
+							onclick={toggleSyncScroll}
+							aria-label={syncScrollEnabled ? $t('documentWorkspace.disableSyncScroll') : $t('documentWorkspace.enableSyncScroll')}
+							title={syncScrollEnabled ? $t('documentWorkspace.disableSyncScroll') : $t('documentWorkspace.enableSyncScroll')}
+							aria-pressed={syncScrollEnabled}
+						>
+							<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+								<path d="M18 8v5a2 2 0 0 1-2 2H8" />
+								<path d="M8 16v-5a2 2 0 0 1 2-2h8" />
+								<path d="m15 11 3 3 3-3" />
+								<path d="m9 13-3-3-3 3" />
+							</svg>
+						</button>
 					</div>
 					<label class="workspace-compare-select-wrap">
 						<span class="workspace-compare-select-label">{$t('documentWorkspace.against')}</span>
@@ -1150,7 +1206,7 @@ $effect(() => {
 								<span class="workspace-compare-panel-label">{$t('documentWorkspace.current')}</span>
 								<span class="workspace-compare-panel-meta">{getDocumentTitle(activeDocument)} {getDocumentVersionLabel(activeDocument) ?? ''}</span>
 							</div>
-							<div class="workspace-compare-panel-body">
+							<div class="workspace-compare-panel-body" bind:this={leftPanelBody} onscroll={() => syncScroll(leftPanelBody, rightPanelBody)}>
 								{@html compareCurrentTextHtml}
 							</div>
 						</section>
@@ -1159,7 +1215,7 @@ $effect(() => {
 								<span class="workspace-compare-panel-label">{$t('documentWorkspace.compared')}</span>
 								<span class="workspace-compare-panel-meta">{getDocumentTitle(comparedDocument)} {getDocumentVersionLabel(comparedDocument) ?? ''}</span>
 							</div>
-							<div class="workspace-compare-panel-body">
+							<div class="workspace-compare-panel-body" bind:this={rightPanelBody} onscroll={() => syncScroll(rightPanelBody, leftPanelBody)}>
 								{@html compareOtherTextHtml}
 							</div>
 						</section>
@@ -1550,12 +1606,18 @@ $effect(() => {
 	.workspace-compare-header {
 		display: flex;
 		flex-wrap: wrap;
-		align-items: end;
+		align-items: center;
 		justify-content: space-between;
 		gap: 0.9rem;
 		padding: 0.95rem 1rem 0.8rem;
 		border-bottom: 1px solid var(--border-default);
 		background: color-mix(in srgb, var(--surface-elevated) 72%, var(--surface-page) 28%);
+	}
+
+	.workspace-compare-header-left {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
 	}
 
 	.workspace-compare-title {
@@ -1604,6 +1666,19 @@ $effect(() => {
 
 	.workspace-compare-state-error {
 		color: var(--danger);
+	}
+
+	.workspace-sync-scroll-button {
+		color: var(--text-muted);
+		transition: color 150ms var(--ease-out);
+	}
+
+	.workspace-sync-scroll-button:hover {
+		color: var(--text-secondary);
+	}
+
+	.workspace-sync-scroll-button.workspace-sync-scroll-active {
+		color: var(--accent);
 	}
 
 	.workspace-compare-grid {
