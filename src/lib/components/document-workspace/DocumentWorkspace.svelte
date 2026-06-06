@@ -71,6 +71,7 @@ let isVisible = $state(false);
 let shouldRender = $state(false);
 let closeAnimationTimer: ReturnType<typeof setTimeout> | null = null;
 let shouldShowWorkspaceShell = $derived(open && documents.length > 0);
+let lastPresentation = $state<"docked" | "expanded" | null>(null);
 
 // Page navigation state
 let currentPage = $state(1);
@@ -133,6 +134,40 @@ $effect(() => {
 		}, 150);
 	}
 });
+
+$effect(() => {
+	if (!shouldShowWorkspaceShell) {
+		lastPresentation = presentation;
+		return;
+	}
+
+	if (lastPresentation === null) {
+		lastPresentation = presentation;
+		return;
+	}
+
+	if (presentation === lastPresentation) return;
+	lastPresentation = presentation;
+
+	isVisible = false;
+	const frame = requestAnimationFrame(() => {
+		isVisible = true;
+	});
+
+	return () => {
+		cancelAnimationFrame(frame);
+	};
+});
+
+let desktopShellTransform = $derived(
+	presentation === "expanded"
+		? isVisible
+			? "translateY(0) scale(1)"
+			: "translateY(0.45rem) scale(0.985)"
+		: isVisible
+			? "translateX(0)"
+			: "translateX(-20px)",
+);
 
 function startResize(event: MouseEvent) {
 	isResizing = true;
@@ -901,10 +936,14 @@ $effect(() => {
 		class:workspace-shell-expanded={presentation === "expanded"}
 		style:width={presentation === "docked" && workspaceWidth > 0 ? `${workspaceWidth}px` : undefined}
 		style:transition={
-			isResizing ? 'none' : 'opacity 150ms ease-out, transform 150ms ease-out'
+			isResizing
+				? 'none'
+				: presentation === 'expanded'
+					? 'opacity 180ms ease-out, transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1)'
+					: 'opacity 150ms ease-out, transform 150ms ease-out'
 		}
 		style:opacity={isVisible ? '1' : '0'}
-		style:transform={isVisible ? 'translateX(0)' : 'translateX(-20px)'}
+		style:transform={desktopShellTransform}
 		aria-label={$t('documentWorkspace.documentWorkspace')}
 	>
 		<div 
@@ -1379,11 +1418,13 @@ $effect(() => {
 		border-radius: 999px;
 		background: color-mix(in srgb, var(--surface-elevated) 66%, var(--surface-page) 34%);
 		color: var(--text-muted);
+		cursor: pointer;
 		transition:
 			border-color var(--duration-fast) ease,
 			background-color var(--duration-fast) ease,
 			color var(--duration-fast) ease,
-			transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1);
+			transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+			box-shadow var(--duration-fast) ease;
 	}
 
 	.workspace-compare-toggle:hover,
@@ -1396,6 +1437,7 @@ $effect(() => {
 
 	.workspace-compare-toggle:hover {
 		transform: translateY(-1px);
+		box-shadow: 0 7px 16px color-mix(in srgb, var(--shadow-color, #000) 9%, transparent 91%);
 	}
 
 	.workspace-compare-toggle:focus-visible {
@@ -1700,7 +1742,7 @@ $effect(() => {
 		min-width: 0;
 		gap: 0.35rem;
 		overflow-x: auto;
-		padding-bottom: 0.05rem;
+		padding: 0.18rem 0.1rem 0.42rem;
 	}
 
 	.workspace-history-chip {
@@ -1716,6 +1758,7 @@ $effect(() => {
 		background: var(--surface-elevated);
 		text-align: left;
 		color: var(--text-secondary);
+		cursor: pointer;
 		transition:
 			border-color var(--duration-fast) ease,
 			background-color var(--duration-fast) ease,
@@ -1801,6 +1844,7 @@ $effect(() => {
 			border-left: 1px solid var(--border-subtle);
 			background: var(--surface-page);
 			transition: opacity var(--duration-standard) ease-out, transform var(--duration-standard) ease-out;
+			transform-origin: center;
 			opacity: 0;
 			transform: translateX(-20px);
 		}
