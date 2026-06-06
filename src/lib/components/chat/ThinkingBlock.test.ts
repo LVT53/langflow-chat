@@ -51,11 +51,11 @@ describe('ThinkingBlock', () => {
 			},
 		});
 
-		expect(screen.getByRole('button', { name: 'Thought' })).toBeInTheDocument();
-		expect(screen.queryByText('example.com')).not.toBeInTheDocument();
+		expect(screen.getByRole('button', { name: /Thought/ })).toBeInTheDocument();
+
 		expect(screen.queryByText(/Thinking trace saved|Thought available/i)).not.toBeInTheDocument();
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Thought' }));
+		await fireEvent.click(screen.getByRole('button', { name: /Thought/ }));
 
 		expect(screen.getByText('I checked the relevant source.')).toBeInTheDocument();
 		expect(screen.getByRole('link', { name: 'example.com' })).toHaveAttribute(
@@ -74,7 +74,7 @@ describe('ThinkingBlock', () => {
 			},
 		});
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Thought' }));
+		await fireEvent.click(screen.getByRole('button', { name: /Thought/ }));
 
 		const thoughtText = screen.getByText(/gonna search the Web\.\s+I am digging deeper\./);
 		expect(thoughtText.textContent).toContain('gonna search the Web.\n\nI am digging deeper.');
@@ -203,7 +203,7 @@ describe('ThinkingBlock', () => {
 			},
 		});
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Thought' }));
+		await fireEvent.click(screen.getByRole('button', { name: /Thought/ }));
 
 		const statusRows = container.querySelectorAll('.status-step');
 		expect(statusRows).toHaveLength(3);
@@ -234,9 +234,9 @@ describe('ThinkingBlock', () => {
 			},
 		});
 
-		expect(screen.getByRole('button', { name: 'Thought' })).toBeInTheDocument();
+		expect(screen.getByRole('button', { name: /Thought/ })).toBeInTheDocument();
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Thought' }));
+		await fireEvent.click(screen.getByRole('button', { name: /Thought/ }));
 		await waitFor(() =>
 			expect(screen.getByText('Reviewed context and sources')).toBeInTheDocument(),
 		);
@@ -330,7 +330,7 @@ describe('ThinkingBlock', () => {
 			},
 		});
 
-		await fireEvent.click(screen.getByRole('button', { name: 'Thought' }));
+		await fireEvent.click(screen.getByRole('button', { name: /Thought/ }));
 
 		expect(screen.getByText(/Fetched:/)).toBeInTheDocument();
 		const link = screen.getByRole('link', { name: 'Widget Pro Store Page' });

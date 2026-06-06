@@ -29,8 +29,7 @@ let freshTimeout: ReturnType<typeof setTimeout> | undefined;
 let thinkingSeconds = $state(0);
 let thinkingTimerInterval: ReturnType<typeof setInterval> | undefined;
 
-const label = $derived(thinkingIsDone ? "Thought" : "Thinking");
-const isActiveThinking = $derived(!thinkingIsDone);
+	const isActiveThinking = $derived(!thinkingIsDone);
 const visibleSegmentsRaw = $derived(segments.filter(isVisibleThinkingSegment));
 
 function isDeliberationStatusSegment(segment: ThinkingSegment): boolean {
@@ -110,19 +109,18 @@ $effect(() => {
 	};
 });
 
-$effect(() => {
-	if (isActiveThinking) {
-		thinkingTimerInterval = setInterval(() => {
-			thinkingSeconds += 1;
-		}, 1000);
-	} else {
-		clearInterval(thinkingTimerInterval);
-		thinkingSeconds = 0;
-	}
-	return () => {
-		clearInterval(thinkingTimerInterval);
-	};
-});
+	$effect(() => {
+		if (isActiveThinking) {
+			thinkingTimerInterval = setInterval(() => {
+				thinkingSeconds += 1;
+			}, 1000);
+		} else {
+			clearInterval(thinkingTimerInterval);
+		}
+		return () => {
+			clearInterval(thinkingTimerInterval);
+		};
+	});
 
 const formattedThinkingTime = $derived.by(() => {
 	if (thinkingSeconds < 60) {
@@ -249,9 +247,13 @@ async function toggle() {
 	>
 		<span class="thinking-label" class:is-active={isActiveThinking}>
 			{#if isActiveThinking && formattedThinkingTime}
-				{formattedThinkingTime} · {label}
+				{formattedThinkingTime} · {$t('chat.thinking')}
+			{:else if thinkingIsDone && formattedThinkingTime}
+				{$t('chat.thoughtFor', { time: formattedThinkingTime })}
+			{:else if thinkingIsDone}
+				{$t('chat.thought')}
 			{:else}
-				{label}
+				{$t('chat.thinking')}
 			{/if}
 		</span>
 		<svg
@@ -270,8 +272,8 @@ async function toggle() {
 		</svg>
 	</button>
 
-	{#if visibleTools.length > 0}
-		<div class="tool-call-stack">
+	{#if visibleTools.length > 0 || thinkingIsDone}
+		<div class="tool-call-stack" class:fade-out={thinkingIsDone}>
 			{#each visibleTools as tool, i (tool.callId ?? tool.name + JSON.stringify(tool.input) + '-' + i)}
 				{@const fetchedSources = getFetchedSources(tool)}
 				{#if fetchedSources.length > 0}
@@ -510,8 +512,8 @@ async function toggle() {
 	}
 
 	@keyframes thinking-sweep {
-		0%   { background-position: 200% center; }
-		100% { background-position: -200% center; }
+		0%   { background-position: 250% center; }
+		100% { background-position: -250% center; }
 	}
 
 	.thinking-label.is-active {
@@ -530,7 +532,7 @@ async function toggle() {
 		-webkit-background-clip: text;
 		color: transparent;
 		-webkit-text-fill-color: transparent;
-		animation: thinking-sweep 4s linear infinite;
+		animation: thinking-sweep 6s linear infinite;
 	}
 
 	.chevron {
@@ -548,6 +550,16 @@ async function toggle() {
 		padding: var(--space-xs) 0;
 		width: 100%;
 		min-width: 0;
+		transition: opacity 400ms var(--ease-out), max-height 400ms var(--ease-out);
+		max-height: 999px;
+		overflow: hidden;
+	}
+
+	.tool-call-stack.fade-out {
+		opacity: 0;
+		max-height: 0;
+		padding: 0;
+		pointer-events: none;
 	}
 
 	.tool-call-row {
