@@ -1,19 +1,19 @@
 <script lang="ts">
 	import { isDark } from '$lib/stores/theme';
 	import { t } from '$lib/i18n';
-	import { estimateTokenCount } from '$lib/utils/tokens';
-	import { isVisibleThinkingToolCall } from '$lib/utils/tool-calls';
+	import { isVisibleThinkingSegment, isVisibleThinkingToolCall } from '$lib/utils/tool-calls';
 	import { tokenizeTextLinks } from '$lib/services/linkify';
 	import type {
 		ArtifactSummary,
 		ChatMessage,
+		DepthAppliedProfile,
 		DocumentWorkspaceItem,
 		FileProductionJob,
 	} from '$lib/types';
 	import MarkdownRenderer from './MarkdownRenderer.svelte';
 	import ThinkingBlock from './ThinkingBlock.svelte';
+	import ResponseAuditDetails from './ResponseAuditDetails.svelte';
 	import LogoMark from './LogoMark.svelte';
-	import ModelIcon from '$lib/components/ui/ModelIcon.svelte';
 	import FileAttachment from './FileAttachment.svelte';
 	import MessageEvidenceDetails from './MessageEvidenceDetails.svelte';
 	import FileProductionCard from './FileProductionCard.svelte';
@@ -89,16 +89,69 @@
 	let isUser = $derived(message.role === 'user');
 	let hasAttachments = $derived((message.attachments?.length ?? 0) > 0);
 	let hasThinking = $derived(Boolean(message.thinking?.trim()));
-	let hasToolCalls = $derived(
-		(message.thinkingSegments?.some(isVisibleThinkingToolCall)) ?? false
+	const isStreaming = $derived(
+		Boolean(message.isStreaming || message.isThinkingStreaming),
 	);
-	let thinkingTokenCount = $derived(hasThinking ? estimateTokenCount(message.thinking ?? '') : 0);
-	let responseTokenCount = $derived(estimateTokenCount(message.content));
-	let totalTokenCount = $derived(thinkingTokenCount + responseTokenCount);
-	let hasTokenInfo = $derived(hasThinking || responseTokenCount > 0 || message.costUsd != null);
+	let liveResponseActivityEntries = $derived(
+		!isUser && isStreaming ? (message.responseActivity ?? []) : [],
+	);
+	let thinkingSegmentsForDisplay = $derived(message.thinkingSegments ?? []);
+	let visibleThinkingSegmentsForDisplay = $derived(
+		isStreaming
+			? (() => {
+				const latestDeliberationStatus = [...thinkingSegmentsForDisplay]
+					.reverse()
+					.find(
+						(segment) =>
+							segment.type === 'status' &&
+							segment.id.startsWith('deliberation-pass-') &&
+							segment.label?.trim(),
+					);
+				if (!latestDeliberationStatus) {
+					return thinkingSegmentsForDisplay;
+				}
+
+				return thinkingSegmentsForDisplay.filter((segment) =>
+					segment.type !== 'status' ||
+					!segment.id.startsWith('deliberation-pass-') ||
+					segment.id === latestDeliberationStatus.id,
+				);
+			})()
+			: thinkingSegmentsForDisplay,
+	);
+	let deliberationThinkingStatus = $derived(
+		[...thinkingSegmentsForDisplay]
+			.reverse()
+			.find(
+				(segment) =>
+					segment.type === "status" &&
+					segment.id.startsWith("deliberation-pass-") &&
+					segment.label?.trim(),
+			),
+	);
+	let hasVisibleThinkingSegments = $derived(
+		thinkingSegmentsForDisplay.some(isVisibleThinkingSegment)
+	);
+	let hasToolCalls = $derived(
+		thinkingSegmentsForDisplay.some(isVisibleThinkingToolCall)
+	);
+	let hasResponseAuditInfo = $derived(
+		!isUser &&
+			(message.content.trim().length > 0 ||
+				hasThinking ||
+				Boolean(message.modelDisplayName) ||
+				Boolean(message.providerDisplayName) ||
+				message.generationDurationMs != null ||
+				message.costUsd != null ||
+				message.thinkingTokenCount != null ||
+				message.responseTokenCount != null ||
+				message.totalTokenCount != null ||
+				Boolean(message.depthMetadata))
+	);
 	let messageModelIconUrl = $derived(
 		message.modelId ? (modelIcons[message.modelId] ?? null) : null,
 	);
+	let auditDetailsId = $derived(`message-info-${message.id}`);
 	let skillDrafts = $derived(message.skillDrafts ?? []);
 	let sourceForks = $derived(message.sourceForks);
 	let userMessageSegments = $derived(isUser ? tokenizeTextLinks(message.content) : []);
@@ -110,12 +163,49 @@
 	let isGenerating = $derived(Boolean(message.isStreaming || message.isThinkingStreaming));
 	let hasVisibleContent = $derived(message.content.trim().length > 0);
 	let hasFileProductionCards = $derived(fileProductionJobs.length > 0 && Boolean(conversationId));
+	let liveDeliberationStatus = $derived(
+		isStreaming
+			? [...liveResponseActivityEntries]
+				.reverse()
+				.find((entry) => entry.kind === 'deliberation' && entry.label?.trim())
+				?? deliberationThinkingStatus
+			: undefined
+	);
+	let liveDeliberationStatusLabel = $derived(liveDeliberationStatus?.label?.trim() ?? '');
+	const liveDeliberationStatusIconType = $derived.by(() => {
+		if (!liveDeliberationStatus?.id) {
+			return 'search';
+		}
+
+		const match = /deliberation-pass-(\d+)/i.exec(liveDeliberationStatus.id);
+		const pass = match ? Number.parseInt(match[1], 10) : NaN;
+
+		if (!Number.isInteger(pass)) {
+			return 'search';
+		}
+		if (pass === 1) return 'search';
+		if (pass === 2) return 'file';
+		return 'check';
+	});
+	let liveDepthProfile = $derived(
+		liveResponseActivityEntries.find((entry) => entry.kind === 'depth')?.detail as
+			| DepthAppliedProfile
+			| undefined,
+	);
+	let resolvedDepthProfile = $derived(
+		liveDepthProfile ?? message.depthMetadata?.appliedProfile,
+	);
+	let isDeliberativeDepthProfile = $derived(
+		resolvedDepthProfile === 'extended' || resolvedDepthProfile === 'maximum',
+	);
 	let showPreparingStatus = $derived(
 		!isUser &&
 			isGenerating &&
 			!hasVisibleContent &&
 			!hasThinking &&
-			!hasToolCalls &&
+			!hasVisibleThinkingSegments &&
+			!isDeliberativeDepthProfile &&
+			!liveDeliberationStatusLabel &&
 			skillDrafts.length === 0 &&
 			!hasFileProductionCards
 	);
@@ -135,7 +225,17 @@
 	);
 	let showLogoBelow = $derived(!isUser && isLast && (hasThinking || isGenerating));
 	let thinkingIsDone = $derived(
-		hasThinking && !message.isThinkingStreaming && (message.content.trim().length > 0 || isDone)
+		!message.isThinkingStreaming && (message.content.trim().length > 0 || isDone)
+	);
+	let reasoningDepthIndicatorProfile = $derived(
+		getVisibleReasoningDepthProfile(liveDepthProfile ?? message.depthMetadata?.appliedProfile),
+	);
+	let reasoningDepthIndicatorLabel = $derived(
+		reasoningDepthIndicatorProfile === 'maximum'
+			? $t('messageBubble.maxReasoningDepth')
+			: reasoningDepthIndicatorProfile === 'extended'
+				? $t('messageBubble.extendedReasoningDepth')
+				: '',
 	);
 
 	function getClipboardText(content: string) {
@@ -206,22 +306,15 @@
 		return `${day} ${month} ${year}, ${h}:${m}`;
 	}
 
-	function formatDuration(ms: number): string {
-		if (ms < 1000) {
-			return `${ms}ms`;
-		}
-		const seconds = ms / 1000;
-		if (seconds < 60) {
-			return `${seconds.toFixed(1)}s`;
-		}
-		const minutes = Math.floor(seconds / 60);
-		const remainingSeconds = (seconds % 60).toFixed(1);
-		return `${minutes}m ${remainingSeconds}s`;
-	}
-
 	function toggleTimestampTooltip(e: MouseEvent) {
 		e.stopPropagation();
 		showTimestampTooltip = !showTimestampTooltip;
+	}
+
+	function getVisibleReasoningDepthProfile(
+		profile: DepthAppliedProfile | undefined,
+	): 'extended' | 'maximum' | null {
+		return profile === 'extended' || profile === 'maximum' ? profile : null;
 	}
 
 	let timestampLabel = $derived(isUser ? formatTimestamp(message.timestamp) : '');
@@ -300,13 +393,100 @@
 			? 'max-w-[85%] min-w-0 rounded-md border border-border-subtle bg-surface-elevated p-sm text-text-primary shadow-sm md:max-w-[80%]'
 			: isUser
 				? 'w-full min-w-0 max-w-full rounded-md border border-border bg-surface-elevated p-md text-text-primary shadow-sm'
-				: 'w-full min-w-0 max-w-full rounded-none bg-surface-page p-sm text-text-primary'}"
+			: 'w-full min-w-0 max-w-full rounded-none bg-surface-page p-sm text-text-primary'}"
 	>
-		{#if !isUser && (hasThinking || hasToolCalls)}
+		{#if !isUser && reasoningDepthIndicatorLabel && (hasThinking || hasVisibleThinkingSegments || hasToolCalls)}
+			<div class="reasoning-depth-indicator" data-testid="reasoning-depth-indicator">
+				<svg
+					class="reasoning-depth-icon"
+					width="14"
+					height="14"
+					viewBox="0 0 24 24"
+					fill="none"
+					stroke="currentColor"
+					stroke-width="2"
+					stroke-linecap="round"
+					stroke-linejoin="round"
+					aria-hidden="true"
+				>
+					<path d="M12 5a3 3 0 0 0-5.7-1.3 3 3 0 0 0-2.7 5.1 3 3 0 0 0 0 5.4 3 3 0 0 0 2.7 5.1A3 3 0 0 0 12 19Z" />
+					<path d="M12 5a3 3 0 0 1 5.7-1.3 3 3 0 0 1 2.7 5.1 3 3 0 0 1 0 5.4 3 3 0 0 1-2.7 5.1A3 3 0 0 1 12 19Z" />
+					<path d="M12 5v14" />
+					<path d="M8 9h1" />
+					<path d="M15 9h1" />
+					<path d="M8 15h1" />
+					<path d="M15 15h1" />
+				</svg>
+				<span>{reasoningDepthIndicatorLabel}</span>
+			</div>
+		{/if}
+	{#if !isUser && liveDeliberationStatusLabel}
+		{#key `${liveDeliberationStatus?.id ?? 'deliberation'}:${liveDeliberationStatusLabel}`}
+			<div class="deliberation-status-line" data-testid="deliberation-status-line" aria-live="polite">
+				{#if liveDeliberationStatusIconType === 'search'}
+					<svg
+						class="deliberation-status-icon"
+						data-deliberation-icon="search"
+						width="14"
+						height="14"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"
+					>
+						<circle cx="10.5" cy="10.5" r="7.5" />
+						<path d="m20.5 20.5-4.35-4.35" />
+					</svg>
+				{:else if liveDeliberationStatusIconType === 'file'}
+					<svg
+						class="deliberation-status-icon"
+						data-deliberation-icon="file"
+						width="14"
+						height="14"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"
+					>
+						<path d="M4 4h10l5 5v13H4Z" />
+						<path d="m14 4 5 5h-5Z" />
+						<path d="M7 11h9" />
+						<path d="M7 15h9" />
+					</svg>
+				{:else}
+					<svg
+						class="deliberation-status-icon"
+						data-deliberation-icon="check"
+						width="14"
+						height="14"
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+						stroke-linecap="round"
+						stroke-linejoin="round"
+						aria-hidden="true"
+					>
+						<circle cx="12" cy="12" r="9" />
+						<path d="M8 12l2.5 2.5 5-5" />
+					</svg>
+				{/if}
+				<span>{liveDeliberationStatusLabel}</span>
+			</div>
+			{/key}
+		{/if}
+		{#if !isUser && (hasThinking || hasVisibleThinkingSegments || hasToolCalls)}
 			<ThinkingBlock
 				content={message.thinking ?? ''}
 				thinkingIsDone={thinkingIsDone}
-				segments={message.thinkingSegments ?? []}
+				segments={visibleThinkingSegmentsForDisplay}
+				streaming={isStreaming}
 			/>
 		{/if}
 		{#if isUser}
@@ -472,12 +652,13 @@
 			class:justify-end={isUser}
 			class:justify-start={!isUser}
 		>
-			{#if !isUser && hasTokenInfo}
+			{#if !isUser && hasResponseAuditInfo}
 				<div class="info-container">
 					<button
 						type="button"
 						class="btn-icon-bare info-button sm:!min-h-[36px] sm:!min-w-[36px]"
-						aria-label={$t('messageBubble.messageInfo')}
+						aria-label={$t('messageBubble.info')}
+						aria-describedby={auditDetailsId}
 					>
 						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 							<circle cx="12" cy="12" r="10"></circle>
@@ -485,58 +666,15 @@
 							<line x1="12" y1="8" x2="12.01" y2="8"></line>
 						</svg>
 					</button>
-						<div class="info-tooltip">
-							<div class="tooltip-content">
-								{#if message.modelDisplayName}
-									{#if message.providerDisplayName}
-										<div class="tooltip-row">
-											<span class="tooltip-label">Provider</span>
-											<span class="tooltip-value tooltip-model-value">
-												<ModelIcon iconUrl={message.providerIconUrl ?? null} displayName={message.providerDisplayName} size={18} />
-												<span>{message.providerDisplayName}</span>
-											</span>
-										</div>
-									{/if}
-									<div class="tooltip-row">
-										<span class="tooltip-label">Model</span>
-										<span class="tooltip-value tooltip-model-value">
-											<ModelIcon iconUrl={messageModelIconUrl} displayName={message.modelDisplayName} size={18} />
-											<span>{message.modelDisplayName}</span>
-										</span>
-									</div>
-								{/if}
-								{#if message.generationDurationMs && message.generationDurationMs > 0}
-									<div class="tooltip-row">
-										<span class="tooltip-label">Response time</span>
-										<span class="tooltip-value">{formatDuration(message.generationDurationMs)}</span>
-									</div>
-								{/if}
-								{#if hasThinking}
-									<div class="tooltip-row">
-										<span class="tooltip-label">Thinking tokens</span>
-										<span class="tooltip-value">{thinkingTokenCount.toLocaleString()}</span>
-									</div>
-								{/if}
-								{#if responseTokenCount > 0}
-									<div class="tooltip-row">
-										<span class="tooltip-label">Response tokens</span>
-										<span class="tooltip-value">{responseTokenCount.toLocaleString()}</span>
-									</div>
-								{/if}
-								{#if totalTokenCount > 0}
-									<div class="tooltip-row">
-										<span class="tooltip-label">Total tokens</span>
-										<span class="tooltip-value">{totalTokenCount.toLocaleString()}</span>
-									</div>
-								{/if}
-								{#if message.costUsd != null}
-									<div class="tooltip-row">
-										<span class="tooltip-label">Cost</span>
-										<span class="tooltip-value">${message.costUsd.toFixed(6)}</span>
-									</div>
-								{/if}
-							</div>
-						</div>
+					<div
+						id={auditDetailsId}
+						class="info-popover"
+					>
+						<ResponseAuditDetails
+							{message}
+							modelIconUrl={messageModelIconUrl}
+						/>
+					</div>
 				</div>
 			{/if}
 
@@ -558,7 +696,11 @@
 							<path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
 						</svg>
 					</button>
-					<div id={`${regenerateButtonId}-tooltip`} class="action-tooltip" role="tooltip">
+					<div
+						id={`${regenerateButtonId}-tooltip`}
+						class="action-tooltip"
+						role="tooltip"
+					>
 						<div class="tooltip-content">
 							<div class="tooltip-row">
 								<span class="tooltip-value">{$t('messageBubble.actionRegenerate')}</span>
@@ -591,7 +733,11 @@
 							</svg>
 						{/if}
 					</button>
-					<div id={`${forkButtonId}-tooltip`} class="action-tooltip" role="tooltip">
+					<div
+						id={`${forkButtonId}-tooltip`}
+						class="action-tooltip"
+						role="tooltip"
+					>
 						<div class="tooltip-content">
 							<div class="tooltip-row">
 								<span class="tooltip-value">{forkBusy ? $t('fork.creating') : $t('messageBubble.actionFork')}</span>
@@ -632,7 +778,11 @@
 								<path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
 							</svg>
 						</button>
-						<div id={`${editButtonId}-tooltip`} class="action-tooltip" role="tooltip">
+						<div
+							id={`${editButtonId}-tooltip`}
+							class="action-tooltip"
+							role="tooltip"
+						>
 							<div class="tooltip-content">
 								<div class="tooltip-row">
 									<span class="tooltip-value">{$t('messageBubble.actionEdit')}</span>
@@ -663,7 +813,11 @@
 						</svg>
 					{/if}
 				</button>
-				<div id={`${copyButtonId}-tooltip`} class="action-tooltip" role="tooltip">
+				<div
+					id={`${copyButtonId}-tooltip`}
+					class="action-tooltip"
+					role="tooltip"
+				>
 					<div class="tooltip-content">
 						<div class="tooltip-row">
 							<span class="tooltip-value">{$t('messageBubble.actionCopy')}</span>
@@ -709,6 +863,55 @@
 		box-shadow: 0 0 0 2px color-mix(in srgb, var(--focus-ring) 42%, transparent);
 	}
 
+	.reasoning-depth-indicator {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-xs);
+		margin-bottom: var(--space-xs);
+		color: var(--text-muted);
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 14px;
+		font-weight: 700;
+		line-height: 1.25;
+	}
+
+	.reasoning-depth-icon {
+		width: 14px;
+		height: 14px;
+		flex: 0 0 auto;
+		color: currentColor;
+	}
+
+	.deliberation-status-line {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-xs);
+		margin: 0 0 var(--space-xs);
+		color: var(--text-muted);
+		font-family: 'Nimbus Sans L', sans-serif;
+		font-size: 14px;
+		font-weight: 600;
+		line-height: 1.25;
+		animation: deliberationStatusFade 220ms var(--ease-out) both;
+	}
+
+	.deliberation-status-icon {
+		width: 14px;
+		height: 14px;
+		flex: 0 0 auto;
+		color: currentColor;
+	}
+
+	@keyframes deliberationStatusFade {
+		from {
+			opacity: 0;
+			transform: translateY(-2px);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
 	.prose-container :global(.prose) {
 		width: 100%;
 		min-width: 0;
@@ -945,7 +1148,7 @@
 		display: inline-flex;
 	}
 
-	.info-tooltip {
+	.info-popover {
 		position: absolute;
 		bottom: calc(100% + 8px);
 		left: 0;
@@ -961,8 +1164,8 @@
 		max-width: calc(100vw - 2rem);
 	}
 
-	.info-container:hover .info-tooltip,
-	.info-button:focus-visible + .info-tooltip {
+	.info-container:hover .info-popover,
+	.info-container:focus-within .info-popover {
 		opacity: 1;
 		visibility: visible;
 		transform: translateY(0);
@@ -988,28 +1191,23 @@
 		line-height: 1.4;
 	}
 
-	.tooltip-row + .tooltip-row {
-		margin-top: var(--space-xs);
-	}
-
-	.tooltip-label {
-		color: var(--text-muted);
-	}
-
 	.tooltip-value {
 		color: var(--text-primary);
 		font-weight: 500;
 		font-variant-numeric: tabular-nums;
 	}
 
-	.tooltip-model-value {
+	.timestamp-container {
+		position: relative;
 		display: inline-flex;
-		min-width: 0;
-		align-items: center;
-		gap: var(--space-xs);
 	}
 
-	.timestamp-container {
+	.action-tooltip-container {
+		position: relative;
+		display: inline-flex;
+	}
+
+	.action-tooltip-container {
 		position: relative;
 		display: inline-flex;
 	}
@@ -1085,7 +1283,11 @@
 	}
 
 	@media (prefers-reduced-motion: reduce) {
-		.info-tooltip,
+		.deliberation-status-line {
+			animation: none;
+		}
+
+		.info-popover,
 		.timestamp-tooltip,
 		.action-tooltip {
 			transition: none;
