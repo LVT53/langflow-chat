@@ -1718,13 +1718,8 @@ $effect(() => {
 		align-items: stretch;
 		gap: 0.42rem;
 		padding: 0.58rem 0.75rem 0.64rem;
-		border-left: 1px solid var(--border-default);
 		border-bottom: 1px solid var(--border-default);
 		background: color-mix(in srgb, var(--surface-page) 94%, transparent 6%);
-	}
-
-	.workspace-shell-mobile .workspace-history {
-		border-left: none;
 	}
 
 	.workspace-history-label {
