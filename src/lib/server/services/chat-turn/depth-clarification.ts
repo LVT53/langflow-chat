@@ -44,15 +44,23 @@ export type DepthClarificationGateResult =
 const HIGH_COST_PROFILES = new Set(["extended", "maximum"]);
 
 const BROAD_TARGET_QUALIFIER_PATTERN =
-	/\b(all|every|complete|comprehensive|full|viable)\b/i;
+	/\b(all|every|complete|comprehensive|full|viable|[oö]sszes|minden|teljes|[eé]letk[eé]pes)\b/i;
 const OPEN_TARGET_PATTERN =
-	/\b(options?|alternatives?|platforms?|vendors?|tools?|solutions?|approaches?|source set|decision criteria)\b/i;
+	/\b(options?|alternatives?|platforms?|vendors?|tools?|solutions?|approaches?|source set|decision criteria|opci[oó]k?|alternat[ií]v[aá]k?|platformok|eszk[oö]z[oö]k|megold[aá]sok|forr[aá]sk[oö]r|d[oö]nt[eé]si szempont)\b/i;
 const EXPENSIVE_WORK_PATTERN =
-	/\b(research|investigate|compare|evaluate|assess|analy[sz]e|migration plan|implementation plan|strategy|roadmap|architecture)\b/i;
+	/\b(research|investigate|compare|evaluate|assess|analy[sz]e|migration plan|implementation plan|strategy|roadmap|architecture|kutass|kutasd|hasonl[ií]ts|[eé]rt[eé]kel|elemezz|migr[aá]ci[oó]s terv|strat[eé]gia|[uú]titerv|architekt[uú]ra)\b/i;
 const ASSUMPTION_PATTERN =
 	/\b(assume|make an assumption|use your best judgment|use your best judgement|pick one|choose one|proceed|go ahead|continue anyway|default to)\b/i;
 const HUNGARIAN_ASSUMPTION_PATTERN =
 	/\b(feltetelezz|feltételezz|tegy[ée]l fel|d[oö]nts|valassz|válassz|menj tovabb|menj tovább|folytasd)\b/i;
+const EXPLICIT_UNKNOWN_TARGET_PATTERN =
+	/\b(which|what|unspecified|unknown|tbd|to be decided|not sure|choose later)\b/i;
+const HUNGARIAN_UNKNOWN_TARGET_PATTERN =
+	/\b(nem meghat[aá]rozott|ismeretlen|nincs megadva|m[eé]g nem d[oö]nt[oö]tt|k[eé]s[oő]bb v[aá]laszt)\b/i;
+const ANSWERABILITY_ANCHOR_PATTERN =
+	/\b(architecture|strategy|policy|roadmap|deadline|budget|gdpr|privacy|latency|cost|reliability|hungarian|magyar|provider|model|support|automation|enterprise|saas|implementation|migration)\b/i;
+const DECISION_REQUEST_PATTERN =
+	/\b(recommend|decide|compare|assess|evaluate|choose|ship|should we|what is the)\b/i;
 
 export async function evaluateDepthClarificationGate(params: {
 	message: string;
@@ -106,6 +114,20 @@ export async function evaluateDepthClarificationGate(params: {
 		}),
 	);
 	if (classifierDecision?.outcome === "ask") {
+		if (isAnswerableEnough(params.message)) {
+			const assumption = renderDepthAssumption(language);
+			return {
+				action: "proceed",
+				assumptionPrefix: renderDepthAssumptionPrefix(language, assumption),
+				depthMetadata: withDepthClarificationMetadata(depthMetadata, {
+					outcome: "proceed_with_assumption",
+					reason: "classifier",
+					language,
+					classifierSource: "injected",
+					assumption,
+				}),
+			};
+		}
 		const text =
 			classifierDecision.question ?? renderDepthClarificationQuestion(language);
 		return {
@@ -213,10 +235,27 @@ function shouldAskDeterministically(
 		depthMetadata.signals?.outputRoom === "expanded" ||
 		depthMetadata.signals?.toolUse === "source_heavy";
 	if (!broadSignals) return false;
+	if (isAnswerableEnough(message)) return false;
 	return (
+		(EXPLICIT_UNKNOWN_TARGET_PATTERN.test(message) ||
+			HUNGARIAN_UNKNOWN_TARGET_PATTERN.test(message)) &&
 		BROAD_TARGET_QUALIFIER_PATTERN.test(message) &&
 		OPEN_TARGET_PATTERN.test(message) &&
 		EXPENSIVE_WORK_PATTERN.test(message)
+	);
+}
+
+function isAnswerableEnough(message: string): boolean {
+	if (
+		EXPLICIT_UNKNOWN_TARGET_PATTERN.test(message) ||
+		HUNGARIAN_UNKNOWN_TARGET_PATTERN.test(message)
+	) {
+		return false;
+	}
+	return (
+		ANSWERABILITY_ANCHOR_PATTERN.test(message) &&
+		(DECISION_REQUEST_PATTERN.test(message) ||
+			message.split(/\s+/).filter(Boolean).length >= 18)
 	);
 }
 

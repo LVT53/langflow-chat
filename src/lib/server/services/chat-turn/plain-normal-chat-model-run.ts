@@ -7,6 +7,7 @@ import {
 	runNormalChatDeliberationPasses,
 	shouldRunDeliberationPasses,
 	sumUsage,
+	verifyAndRepairDeliberatedFinalAnswer,
 } from "$lib/server/services/chat-turn/deliberation-runner";
 import {
 	type DepthClarificationClassifier,
@@ -241,6 +242,23 @@ export async function runPlainNormalChatSendModel(
 			},
 		],
 	});
+	const finalAnswerRepair =
+		deliberation && activeDepthEffort
+			? await verifyAndRepairDeliberatedFinalAnswer({
+					text: result.text,
+					originalUserMessage: params.message,
+					systemPrompt: prepared.systemPrompt,
+					briefs: deliberation.briefs,
+					provider,
+					modelId,
+					runtimeConfig: params.runtimeConfig,
+					depthEffort: activeDepthEffort,
+					abortSignal: createRequestAbortSignal(
+						params.runtimeConfig.requestTimeoutMs,
+						params.signal,
+					),
+				})
+			: null;
 	const normalChatToolCalls = normalChatTools.getToolCalls();
 	const evidenceReadyNormalChatToolCalls = normalChatToolCalls.filter(
 		isEvidenceReadyToolCall,
@@ -253,8 +271,8 @@ export async function runPlainNormalChatSendModel(
 
 	return {
 		text: clarificationGate.assumptionPrefix
-			? `${clarificationGate.assumptionPrefix}\n\n${result.text}`
-			: result.text,
+			? `${clarificationGate.assumptionPrefix}\n\n${finalAnswerRepair?.text ?? result.text}`
+			: (finalAnswerRepair?.text ?? result.text),
 		contextStatus: prepared.contextStatus,
 		taskState: prepared.taskState,
 		contextDebug: prepared.contextDebug,
@@ -262,7 +280,10 @@ export async function runPlainNormalChatSendModel(
 		honchoSnapshot: prepared.honchoSnapshot,
 		contextTraceSections: prepared.contextTraceSections,
 		providerUsage: mapNormalChatModelRunUsageToProviderSnapshot(
-			sumUsage(deliberation?.usage ?? {}, result.usage),
+			sumUsage(
+				sumUsage(deliberation?.usage ?? {}, result.usage),
+				finalAnswerRepair?.usage ?? {},
+			),
 		),
 		prefetchedToolCalls: prepared.prefetchedToolCalls,
 		normalChatToolCalls,

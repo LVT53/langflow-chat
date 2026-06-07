@@ -84,6 +84,18 @@ type GenericDeliberationPassKind = Exclude<
 	| "viable_alternatives_preservation"
 >;
 
+export type DeliberationWorkspaceReport = {
+	intent: string;
+	mustInclude: string[];
+	evidenceNeeds: string[];
+	recommendationGuidance: string[];
+	viableAlternatives: string[];
+	risks: string[];
+	languageRequirements: string[];
+	finalStyle: string[];
+	openQuestions: string[];
+};
+
 export type NormalChatDeliberationBrief =
 	| {
 			pass: number;
@@ -113,6 +125,13 @@ export type NormalChatDeliberationResult = {
 	toolCalls: ToolCallEntry[];
 };
 
+export type DeliberatedFinalAnswerQualityResult = {
+	text: string;
+	usage: NormalChatModelRunUsage;
+	repaired: boolean;
+	issues: string[];
+};
+
 export type NormalChatDeliberationParams = {
 	userId: string;
 	conversationId: string;
@@ -134,6 +153,7 @@ type RunPassResult = {
 	brief: NormalChatDeliberationBrief | null;
 	usage: NormalChatModelRunUsage;
 	constrained: boolean;
+	degraded?: boolean;
 };
 
 export {
@@ -161,6 +181,7 @@ export async function runNormalChatDeliberationPasses(
 		recorder: deliberationRecorder,
 	});
 	const briefs: NormalChatDeliberationBrief[] = [];
+	let workspaceReport = emptyWorkspaceReport();
 	let usage = emptyUsage();
 	const constraints: string[] = [];
 
@@ -179,6 +200,7 @@ export async function runNormalChatDeliberationPasses(
 			...params,
 			passSpec,
 			previousBriefs: briefs,
+			workspaceReport,
 			tools,
 		});
 		params.onStatus?.(
@@ -191,9 +213,13 @@ export async function runNormalChatDeliberationPasses(
 		usage = sumUsage(usage, result.usage);
 		if (result.brief) {
 			briefs.push(result.brief);
+			workspaceReport = reduceWorkspaceReport(workspaceReport, result.brief);
 		}
 		if (result.constrained) {
 			constraints.push(`deliberation_pass_${passSpec.pass}_constrained`);
+		}
+		if (result.degraded) {
+			constraints.push(`deliberation_pass_${passSpec.pass}_degraded`);
 		}
 	}
 
@@ -292,6 +318,261 @@ function createFocusedWorkspaceBrief(
 			relevantFindings: salientConstraints,
 			edgeCases,
 			finalAnswerGuidance,
+		},
+	};
+}
+
+function emptyWorkspaceReport(): DeliberationWorkspaceReport {
+	return {
+		intent: "",
+		mustInclude: [],
+		evidenceNeeds: [],
+		recommendationGuidance: [],
+		viableAlternatives: [],
+		risks: [],
+		languageRequirements: [],
+		finalStyle: [],
+		openQuestions: [],
+	};
+}
+
+function reduceWorkspaceReport(
+	current: DeliberationWorkspaceReport,
+	entry: NormalChatDeliberationBrief,
+): DeliberationWorkspaceReport {
+	const next: DeliberationWorkspaceReport = {
+		intent: current.intent,
+		mustInclude: [...current.mustInclude],
+		evidenceNeeds: [...current.evidenceNeeds],
+		recommendationGuidance: [...current.recommendationGuidance],
+		viableAlternatives: [...current.viableAlternatives],
+		risks: [...current.risks],
+		languageRequirements: [...current.languageRequirements],
+		finalStyle: [...current.finalStyle],
+		openQuestions: [...current.openQuestions],
+	};
+
+	if (entry.kind === "context_source_gap_review") {
+		next.intent = entry.brief.userIntent || next.intent;
+		appendUnique(next.mustInclude, entry.brief.relevantFindings);
+		appendUnique(
+			next.evidenceNeeds,
+			entry.brief.evidenceNeeds.map((need) => `${need.need} (${need.status})`),
+		);
+		appendUnique(next.recommendationGuidance, entry.brief.finalAnswerGuidance);
+		appendUnique(next.risks, entry.brief.edgeCases);
+		appendUnique(next.openQuestions, entry.brief.missingContextQuestions);
+		if (mentionsHungarian(entry.brief.userIntent)) {
+			appendUnique(next.languageRequirements, [
+				"Hungarian-speaking users must remain first-class.",
+			]);
+		}
+		return trimWorkspaceReport(next);
+	}
+
+	if (entry.kind === "answer_plan_critique") {
+		appendUnique(next.risks, [
+			...entry.brief.answerRisks,
+			...entry.brief.contradictionsOrTensions,
+		]);
+		appendUnique(next.mustInclude, [
+			...entry.brief.missedUserNeeds,
+			...entry.brief.mustInclude,
+		]);
+		appendUnique(next.finalStyle, entry.brief.formatRequirements);
+		appendUnique(next.recommendationGuidance, entry.brief.finalAnswerGuidance);
+		return trimWorkspaceReport(next);
+	}
+
+	if (entry.kind === "viable_alternatives_preservation") {
+		appendUnique(next.viableAlternatives, entry.brief.viableAlternatives);
+		appendUnique(
+			next.recommendationGuidance,
+			entry.brief.recommendationBalance,
+		);
+		appendUnique(next.openQuestions, entry.brief.exitCriteria);
+		appendUnique(next.finalStyle, entry.brief.finalAnswerGuidance);
+		return trimWorkspaceReport(next);
+	}
+
+	appendUnique(next.mustInclude, entry.brief.findings);
+	appendUnique(next.risks, entry.brief.risks);
+	appendUnique(next.openQuestions, entry.brief.openQuestions);
+	appendUnique(next.recommendationGuidance, entry.brief.finalAnswerGuidance);
+	if (entry.kind === "hungarian_parity_check") {
+		appendUnique(next.languageRequirements, entry.brief.findings);
+	}
+	if (entry.kind === "final_format_style_check") {
+		appendUnique(next.finalStyle, entry.brief.findings);
+	}
+	if (entry.kind === "contradiction_risk_check") {
+		appendUnique(next.viableAlternatives, entry.brief.openQuestions);
+	}
+	return trimWorkspaceReport(next);
+}
+
+function trimWorkspaceReport(
+	report: DeliberationWorkspaceReport,
+): DeliberationWorkspaceReport {
+	return {
+		intent: report.intent,
+		mustInclude: report.mustInclude.slice(0, MAX_LIST_ITEMS),
+		evidenceNeeds: report.evidenceNeeds.slice(0, MAX_LIST_ITEMS),
+		recommendationGuidance: report.recommendationGuidance.slice(
+			0,
+			MAX_LIST_ITEMS,
+		),
+		viableAlternatives: report.viableAlternatives.slice(0, MAX_LIST_ITEMS),
+		risks: report.risks.slice(0, MAX_LIST_ITEMS),
+		languageRequirements: report.languageRequirements.slice(0, MAX_LIST_ITEMS),
+		finalStyle: report.finalStyle.slice(0, MAX_LIST_ITEMS),
+		openQuestions: report.openQuestions.slice(0, MAX_LIST_ITEMS),
+	};
+}
+
+function createMicroCheckBrief(
+	passSpec: PlannedDeliberationPass,
+	params: Pick<
+		NormalChatDeliberationParams,
+		"preparedInputValue" | "language"
+	> & {
+		workspaceReport: DeliberationWorkspaceReport;
+	},
+): NormalChatDeliberationBrief | null {
+	const userMessage =
+		extractMarkdownSection(params.preparedInputValue, "Current User Message") ??
+		params.preparedInputValue;
+	const normalizedRequest = normalizeWhitespace(userMessage);
+	const lower = normalizedRequest.toLowerCase();
+
+	if (passSpec.kind === "missed_user_need_check") {
+		return genericBrief(passSpec, {
+			focusAreas: ["Explicit user requirements"],
+			findings: [
+				...selectSalientSentences(normalizedRequest, [
+					"must",
+					"require",
+					"recommend",
+					"compare",
+					"risk",
+					"budget",
+					"latency",
+					"privacy",
+					"gdpr",
+					"hungarian",
+				]),
+				...params.workspaceReport.mustInclude,
+			],
+			risks: [],
+			openQuestions: params.workspaceReport.openQuestions,
+			finalAnswerGuidance: [
+				"Cover every explicit constraint before optimizing style.",
+			],
+		});
+	}
+
+	if (passSpec.kind === "contradiction_risk_check") {
+		return genericBrief(passSpec, {
+			focusAreas: ["Risks, tensions, and viable second-best paths"],
+			findings: selectSalientSentences(normalizedRequest, [
+				"risk",
+				"avoid",
+				"cost",
+				"latency",
+				"privacy",
+				"reliability",
+				"gdpr",
+				"failover",
+				"alternative",
+				"second",
+				"switch",
+			]),
+			risks: params.workspaceReport.risks,
+			openQuestions:
+				lower.includes("alternative") ||
+				lower.includes("second") ||
+				lower.includes("switch")
+					? ["Preserve second-best options and switching criteria."]
+					: params.workspaceReport.openQuestions,
+			finalAnswerGuidance: [
+				"Be decisive while naming material tradeoffs and reversal triggers.",
+			],
+		});
+	}
+
+	if (passSpec.kind === "final_format_style_check") {
+		return genericBrief(passSpec, {
+			focusAreas: ["Final answer shape"],
+			findings: [
+				"Answer in natural prose, bullets, or tables; do not emit raw JSON unless requested.",
+				"Keep enough concrete rationale to justify the recommendation.",
+			],
+			risks: ["Over-compressing Max output into a checklist."],
+			openQuestions: [],
+			finalAnswerGuidance: [
+				"Use user-facing language and avoid process narration.",
+			],
+		});
+	}
+
+	if (passSpec.kind === "hungarian_parity_check") {
+		if (
+			params.language !== "hu" &&
+			!mentionsHungarian(normalizedRequest) &&
+			params.workspaceReport.languageRequirements.length === 0
+		) {
+			return genericBrief(passSpec, {
+				focusAreas: ["Hungarian parity"],
+				findings: [],
+				risks: [],
+				openQuestions: [],
+				finalAnswerGuidance: [],
+			});
+		}
+		return genericBrief(passSpec, {
+			focusAreas: ["Hungarian parity"],
+			findings: [
+				"Treat Hungarian-language users and Hungarian text as first-class constraints.",
+				"Call out Hungarian retrieval, morphology, localization, or legal implications when relevant.",
+			],
+			risks: [
+				"Do not silently route Hungarian users through weaker assumptions.",
+			],
+			openQuestions: [],
+			finalAnswerGuidance: [
+				"Include Hungarian implications where they affect the recommendation.",
+			],
+		});
+	}
+
+	return null;
+}
+
+function genericBrief(
+	passSpec: PlannedDeliberationPass,
+	brief: DeliberationGenericPassBrief,
+): NormalChatDeliberationBrief {
+	return {
+		pass: passSpec.pass,
+		kind: passSpec.kind as GenericDeliberationPassKind,
+		brief: {
+			focusAreas: brief.focusAreas.slice(0, MAX_LIST_ITEMS),
+			findings: brief.findings
+				.map(stringValue)
+				.filter(Boolean)
+				.slice(0, MAX_LIST_ITEMS),
+			risks: brief.risks
+				.map(stringValue)
+				.filter(Boolean)
+				.slice(0, MAX_LIST_ITEMS),
+			openQuestions: brief.openQuestions
+				.map(stringValue)
+				.filter(Boolean)
+				.slice(0, MAX_LIST_ITEMS),
+			finalAnswerGuidance: brief.finalAnswerGuidance
+				.map(stringValue)
+				.filter(Boolean)
+				.slice(0, MAX_LIST_ITEMS),
 		},
 	};
 }
@@ -514,11 +795,84 @@ function finalAnswerGuidanceFromRequest(value: string): string[] {
 	return guidance.slice(0, MAX_LIST_ITEMS);
 }
 
+function finalAnswerQualityIssues(params: {
+	text: string;
+	userMessage: string;
+	briefs: NormalChatDeliberationBrief[];
+}): string[] {
+	const issues: string[] = [];
+	const answer = params.text.trim();
+	const lowerAnswer = answer.toLowerCase();
+	const lowerRequest = params.userMessage.toLowerCase();
+	const workspaceReport = params.briefs.reduce(
+		(report, brief) => reduceWorkspaceReport(report, brief),
+		emptyWorkspaceReport(),
+	);
+
+	if (
+		/^\s*\{[\s\S]*\}\s*$/.test(answer) ||
+		lowerAnswer.includes('"recommendation"')
+	) {
+		issues.push("Answer appears to expose raw JSON or deliberation structure.");
+	}
+	if (
+		/^(i can do that|before i start|which platform|please clarify)/i.test(
+			answer,
+		)
+	) {
+		issues.push(
+			"Answer asks for clarification even though Max should proceed with reasonable assumptions.",
+		);
+	}
+	if (
+		(lowerRequest.includes("alternative") ||
+			lowerRequest.includes("second-best") ||
+			lowerRequest.includes("second best")) &&
+		!/\b(alternative|second[- ]best|fallback|option)\b/i.test(answer)
+	) {
+		issues.push(
+			"Answer should preserve viable alternatives or second-best paths.",
+		);
+	}
+	if (
+		(lowerRequest.includes("switching") || lowerRequest.includes("criteria")) &&
+		!/\b(criteria|trigger|threshold|switch|when to)\b/i.test(answer)
+	) {
+		issues.push(
+			"Answer should include switching criteria or trigger thresholds.",
+		);
+	}
+	if (
+		(mentionsHungarian(lowerRequest) ||
+			workspaceReport.languageRequirements.length > 0) &&
+		!/\b(hungarian|magyar|hungary)\b/i.test(answer)
+	) {
+		issues.push("Answer should include Hungarian-language implications.");
+	}
+	if (
+		workspaceReport.risks.length > 0 &&
+		!/\b(risk|mitigation|caveat|tradeoff|trade-off)\b/i.test(answer)
+	) {
+		issues.push(
+			"Answer should name material risks, mitigations, or tradeoffs.",
+		);
+	}
+	return issues.slice(0, MAX_LIST_ITEMS);
+}
+
+function mentionsHungarian(value: string): boolean {
+	return /\b(hungarian|magyar|hungary|magyarorsz[aá]g)\b/i.test(value);
+}
+
 export function appendDeliberationBriefsToInput(
 	inputValue: string,
 	briefs: NormalChatDeliberationBrief[],
 ): string {
 	if (briefs.length === 0) return inputValue;
+	const workspaceReport = briefs.reduce(
+		(report, brief) => reduceWorkspaceReport(report, brief),
+		emptyWorkspaceReport(),
+	);
 	return [
 		inputValue,
 		"## Normal Chat Deliberation Guidance",
@@ -526,7 +880,7 @@ export function appendDeliberationBriefsToInput(
 		"Treat these notes as private judgment, not as an output format. Answer in natural user-facing prose, bullets, and tables as appropriate; do not emit raw JSON unless the user explicitly requested JSON.",
 		"Preserve enough concrete detail, examples, and rationale for a high-quality answer instead of compressing the response into a checklist.",
 		"If the notes include viable alternatives, keep the final answer decisive while preserving conditional alternatives, second-best paths, and exit criteria that remain genuinely viable.",
-		serializeBriefsForPrompt(briefs),
+		serializeWorkspaceReport(workspaceReport),
 	].join("\n\n");
 }
 
@@ -538,6 +892,100 @@ export function sumUsage(
 		inputTokens: sumOptional(left.inputTokens, right.inputTokens),
 		outputTokens: sumOptional(left.outputTokens, right.outputTokens),
 		totalTokens: sumOptional(left.totalTokens, right.totalTokens),
+	};
+}
+
+export async function verifyAndRepairDeliberatedFinalAnswer(params: {
+	text: string;
+	originalUserMessage: string;
+	systemPrompt: string;
+	briefs: NormalChatDeliberationBrief[];
+	provider: NormalChatModelRunProvider;
+	modelId: ModelId;
+	runtimeConfig: RuntimeConfig;
+	depthEffort: ReasoningDepthEffort | null;
+	abortSignal?: AbortSignal;
+}): Promise<DeliberatedFinalAnswerQualityResult> {
+	if (!params.depthEffort || params.briefs.length === 0) {
+		return {
+			text: params.text,
+			usage: emptyUsage(),
+			repaired: false,
+			issues: [],
+		};
+	}
+	const issues = finalAnswerQualityIssues({
+		text: params.text,
+		userMessage: params.originalUserMessage,
+		briefs: params.briefs,
+	});
+	if (issues.length === 0) {
+		return {
+			text: params.text,
+			usage: emptyUsage(),
+			repaired: false,
+			issues,
+		};
+	}
+
+	let result: PlainNormalChatModelRunResult;
+	try {
+		result = await runPlainNormalChatModelRun({
+			provider: params.provider,
+			modelId: params.modelId,
+			runtimeConfig: params.runtimeConfig,
+			system: [
+				params.systemPrompt,
+				"You are repairing a completed Max-depth answer. Keep the user's requested substance, but fix only the listed quality issues. Return the revised final answer only.",
+			].join("\n\n"),
+			resolveProviderOptions: (attemptProvider) =>
+				buildReasoningDepthProviderOptions(attemptProvider, params.depthEffort),
+			abortSignal: params.abortSignal,
+			maxOutputTokens: 4_000,
+			messages: [
+				{
+					role: "user",
+					content: [
+						{
+							type: "text",
+							text: [
+								"Original user message:",
+								params.originalUserMessage,
+								"Quality issues to fix:",
+								issues.map((issue) => `- ${issue}`).join("\n"),
+								"Private deliberation guidance:",
+								serializeWorkspaceReport(
+									params.briefs.reduce(
+										(report, brief) => reduceWorkspaceReport(report, brief),
+										emptyWorkspaceReport(),
+									),
+								),
+								"Current answer:",
+								params.text,
+							].join("\n\n"),
+						},
+					],
+				},
+			],
+		});
+	} catch (error) {
+		if (error instanceof Error && error.name === "AbortError") {
+			throw error;
+		}
+		return {
+			text: params.text,
+			usage: emptyUsage(),
+			repaired: false,
+			issues,
+		};
+	}
+
+	const repairedText = result.text.trim();
+	return {
+		text: repairedText || params.text,
+		usage: result.usage,
+		repaired: Boolean(repairedText),
+		issues,
 	};
 }
 
@@ -578,6 +1026,7 @@ async function runDeliberationPass(
 	params: NormalChatDeliberationParams & {
 		passSpec: PlannedDeliberationPass;
 		previousBriefs: NormalChatDeliberationBrief[];
+		workspaceReport: DeliberationWorkspaceReport;
 		tools: ReturnType<typeof createDeliberationTools>;
 	},
 ): Promise<RunPassResult> {
@@ -597,6 +1046,25 @@ async function runDeliberationPass(
 			),
 			usage: emptyUsage(),
 			constrained: false,
+		};
+	}
+
+	const microBrief = createMicroCheckBrief(params.passSpec, params);
+	if (microBrief) {
+		return {
+			brief: microBrief,
+			usage: emptyUsage(),
+			constrained: false,
+		};
+	}
+
+	const promptText = deliberationUserPrompt(params);
+	if (shouldDegradePassBeforeModelCall(params.passSpec, promptText, params)) {
+		return {
+			brief: createDegradedModelPassBrief(params.passSpec, params),
+			usage: emptyUsage(),
+			constrained: false,
+			degraded: true,
 		};
 	}
 
@@ -630,7 +1098,7 @@ async function runDeliberationPass(
 					content: [
 						{
 							type: "text",
-							text: deliberationUserPrompt(params),
+							text: promptText,
 						},
 					],
 				},
@@ -737,6 +1205,7 @@ function deliberationUserPrompt(
 	params: NormalChatDeliberationParams & {
 		passSpec: PlannedDeliberationPass;
 		previousBriefs: NormalChatDeliberationBrief[];
+		workspaceReport: DeliberationWorkspaceReport;
 	},
 ): string {
 	const schema = schemaShape(params.passSpec);
@@ -757,6 +1226,7 @@ function deliberationContextForPass(
 	params: NormalChatDeliberationParams & {
 		passSpec: PlannedDeliberationPass;
 		previousBriefs: NormalChatDeliberationBrief[];
+		workspaceReport: DeliberationWorkspaceReport;
 	},
 ): string {
 	if (params.passSpec.schema === "first_pass") return params.preparedInputValue;
@@ -771,11 +1241,60 @@ function deliberationContextForPass(
 		].join("\n\n");
 	}
 	return [
+		"Focused workspace report:",
+		serializeWorkspaceReport(params.workspaceReport),
 		"Original prepared prompt context summary:",
-		truncate(params.preparedInputValue, 7_000),
-		"Previous deliberation brief:",
-		serializeBriefsForPrompt(params.previousBriefs),
+		truncate(params.preparedInputValue, 3_000),
 	].join("\n\n");
+}
+
+function shouldDegradePassBeforeModelCall(
+	passSpec: PlannedDeliberationPass,
+	promptText: string,
+	_params: Pick<NormalChatDeliberationParams, "preparedInputValue"> & {
+		workspaceReport: DeliberationWorkspaceReport;
+	},
+): boolean {
+	if (passSpec.maxToolSteps === 0) return true;
+	const outputAllowance = passSpec.maxOutputTokens * 4;
+	const promptAllowance = Math.max(6_000, outputAllowance * 2);
+	return promptText.length > promptAllowance;
+}
+
+function createDegradedModelPassBrief(
+	passSpec: PlannedDeliberationPass,
+	params: Pick<NormalChatDeliberationParams, "preparedInputValue"> & {
+		workspaceReport: DeliberationWorkspaceReport;
+	},
+): NormalChatDeliberationBrief {
+	return genericBrief(passSpec, {
+		focusAreas: [`${passSpec.kind} degraded to compact workspace check`],
+		findings: params.workspaceReport.mustInclude,
+		risks: params.workspaceReport.risks,
+		openQuestions: params.workspaceReport.openQuestions,
+		finalAnswerGuidance: [
+			...params.workspaceReport.recommendationGuidance,
+			"Do not invent missing evidence; qualify gaps from the focused workspace.",
+		],
+	});
+}
+
+function serializeWorkspaceReport(report: DeliberationWorkspaceReport): string {
+	const lines = [];
+	if (report.intent) lines.push(`- intent: ${report.intent}`);
+	for (const [label, values] of [
+		["must include", report.mustInclude],
+		["evidence needs", report.evidenceNeeds],
+		["recommendation guidance", report.recommendationGuidance],
+		["viable alternatives", report.viableAlternatives],
+		["risks", report.risks],
+		["language requirements", report.languageRequirements],
+		["final style", report.finalStyle],
+		["open questions", report.openQuestions],
+	] as const) {
+		if (values.length > 0) lines.push(`- ${label}: ${values.join("; ")}`);
+	}
+	return lines.length > 0 ? lines.join("\n") : "- no focused report yet";
 }
 
 function schemaShape(passSpec: PlannedDeliberationPass) {

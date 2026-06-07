@@ -73,6 +73,52 @@ describe("Depth Clarification gate", () => {
 		});
 	});
 
+	it("blocks classifier clarification when the high-cost request is answerable", async () => {
+		const classifier = vi.fn(async () => ({
+			outcome: "ask" as const,
+			reason: "classifier",
+			question: "Please choose a target.",
+		}));
+
+		const result = await evaluateDepthClarificationGate({
+			message:
+				"Compare enterprise deep research architectures for a SaaS team with cost, latency, citations, and Hungarian support constraints.",
+			depthMetadata: highCostDepthMetadata,
+			classifier,
+			language: "en",
+		});
+
+		expect(result).toMatchObject({
+			action: "proceed",
+			depthMetadata: {
+				outcome: "proceeded_with_assumption",
+				clarification: {
+					outcome: "proceed_with_assumption",
+					reason: "classifier",
+				},
+			},
+		});
+	});
+
+	it("still asks when the user explicitly leaves the target unknown", async () => {
+		const result = await evaluateDepthClarificationGate({
+			message:
+				"Research all viable platform options for an unspecified source set and build a complete migration plan.",
+			depthMetadata: highCostDepthMetadata,
+			language: "en",
+		});
+
+		expect(result).toMatchObject({
+			action: "ask",
+			depthMetadata: {
+				clarification: {
+					outcome: "ask",
+					reason: "multiple_plausible_targets",
+				},
+			},
+		});
+	});
+
 	it("normalizes malformed classifier decisions to null", () => {
 		expect(
 			normalizeDepthClarificationClassifierDecision({

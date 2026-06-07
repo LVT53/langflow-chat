@@ -303,7 +303,7 @@ describe("runStreamingNormalChatSendModel", () => {
 		});
 	});
 
-	it("returns a synthetic clarification stream before expensive prompt preparation for high-cost ambiguous work", async () => {
+	it("proceeds with broad but answerable high-cost streaming work instead of asking unnecessarily", async () => {
 		const result = await runStreamingNormalChatSendModel({
 			userId: "user-1",
 			runtimeConfig,
@@ -328,23 +328,10 @@ describe("runStreamingNormalChatSendModel", () => {
 			events.push(event);
 		}
 
-		expect(mocks.prepareOutboundChatContext).not.toHaveBeenCalled();
-		expect(mocks.runStreamingNormalChatModelRun).not.toHaveBeenCalled();
-		expect(events).toEqual([
-			{
-				type: "text_delta",
-				text: expect.stringContaining("I can do that, but I need one choice"),
-			},
-			{
-				type: "finish",
-				finishReason: "stop",
-			},
-		]);
-		expect(result.depthMetadata?.clarification).toMatchObject({
-			outcome: "ask",
-			reason: "multiple_plausible_targets",
-			language: "en",
-		});
+		expect(mocks.prepareOutboundChatContext).toHaveBeenCalled();
+		expect(mocks.runStreamingNormalChatModelRun).toHaveBeenCalled();
+		expect(events).toEqual([{ type: "text_delta", text: "Answer" }]);
+		expect(result.depthMetadata).not.toHaveProperty("clarification");
 	});
 
 	it("leaves tool choice automatic for explicit file requests after removing produce_file auto-force", async () => {

@@ -571,7 +571,7 @@ describe("runPlainNormalChatSendModel", () => {
 		});
 	});
 
-	it("returns a localized clarification before expensive prompt preparation for high-cost ambiguous work", async () => {
+	it("proceeds with broad but answerable high-cost work instead of asking unnecessarily", async () => {
 		const result = await runPlainNormalChatSendModel({
 			userId: "user-1",
 			runtimeConfig: {
@@ -616,17 +616,10 @@ describe("runPlainNormalChatSendModel", () => {
 			},
 		});
 
-		expect(mocks.prepareOutboundChatContext).not.toHaveBeenCalled();
-		expect(mocks.runPlainNormalChatModelRun).not.toHaveBeenCalled();
-		expect(result.text).toContain("I can do that, but I need one choice");
-		expect(result.text).toContain(
-			"Which platform, source set, or decision criteria",
-		);
-		expect(result.depthMetadata?.clarification).toMatchObject({
-			outcome: "ask",
-			reason: "multiple_plausible_targets",
-			language: "en",
-		});
+		expect(mocks.prepareOutboundChatContext).toHaveBeenCalled();
+		expect(mocks.runPlainNormalChatModelRun).toHaveBeenCalled();
+		expect(result.text).toBe("Answer");
+		expect(result.depthMetadata).not.toHaveProperty("clarification");
 	});
 
 	it("proceeds with a visible assumption prefix when the user asks the model to assume", async () => {

@@ -9,11 +9,15 @@ export const DELIBERATION_MAX_OUTPUT_TOKENS = 2_400;
 export const DELIBERATION_REPAIR_MAX_OUTPUT_TOKENS = 1_200;
 export const DELIBERATION_TOOL_STEPS = 8;
 export const DELIBERATION_NO_TOOL_STEPS = 0;
-export const DELIBERATION_MAX_PASS_COUNT = 5;
+export const DELIBERATION_MAX_PASS_COUNT = 9;
 
 export type DeliberationPassKind =
 	| "context_source_gap_review"
 	| "answer_plan_critique"
+	| "missed_user_need_check"
+	| "contradiction_risk_check"
+	| "final_format_style_check"
+	| "hungarian_parity_check"
 	| "evidence_gap_review"
 	| "source_reconciliation"
 	| "adversarial_edge_case_check"
@@ -89,6 +93,94 @@ const DELIBERATION_PASS_CATALOGUE: Record<
 				running: "Választerv ellenőrzése",
 				done: "Választerv ellenőrizve",
 				error: "Választerv ellenőrizve",
+			},
+		},
+	},
+	missed_user_need_check: {
+		kind: "missed_user_need_check",
+		schema: "generic_brief",
+		maxOutputTokens: DELIBERATION_MAX_OUTPUT_TOKENS,
+		repairMaxOutputTokens: DELIBERATION_REPAIR_MAX_OUTPUT_TOKENS,
+		maxToolSteps: DELIBERATION_NO_TOOL_STEPS,
+		useDepthProviderOptions: false,
+		systemFocusInstruction:
+			"Focus only on missing user requirements, explicit constraints, and must-include points. Do not draft final-answer prose.",
+		statusLabels: {
+			en: {
+				running: "Checking missed requirements",
+				done: "Checked missed requirements",
+				error: "Checked missed requirements",
+			},
+			hu: {
+				running: "Hiányzó elvárások ellenőrzése",
+				done: "Hiányzó elvárások ellenőrizve",
+				error: "Hiányzó elvárások ellenőrizve",
+			},
+		},
+	},
+	contradiction_risk_check: {
+		kind: "contradiction_risk_check",
+		schema: "generic_brief",
+		maxOutputTokens: DELIBERATION_MAX_OUTPUT_TOKENS,
+		repairMaxOutputTokens: DELIBERATION_REPAIR_MAX_OUTPUT_TOKENS,
+		maxToolSteps: DELIBERATION_NO_TOOL_STEPS,
+		useDepthProviderOptions: false,
+		systemFocusInstruction:
+			"Focus only on contradictions, material risks, overclaiming, and second-best paths. Do not draft final-answer prose.",
+		statusLabels: {
+			en: {
+				running: "Checking risks and tensions",
+				done: "Checked risks and tensions",
+				error: "Checked risks and tensions",
+			},
+			hu: {
+				running: "Kockázatok és ellentmondások ellenőrzése",
+				done: "Kockázatok és ellentmondások ellenőrizve",
+				error: "Kockázatok és ellentmondások ellenőrizve",
+			},
+		},
+	},
+	final_format_style_check: {
+		kind: "final_format_style_check",
+		schema: "generic_brief",
+		maxOutputTokens: DELIBERATION_MAX_OUTPUT_TOKENS,
+		repairMaxOutputTokens: DELIBERATION_REPAIR_MAX_OUTPUT_TOKENS,
+		maxToolSteps: DELIBERATION_NO_TOOL_STEPS,
+		useDepthProviderOptions: false,
+		systemFocusInstruction:
+			"Focus only on final answer format, prose style, concision, and avoiding raw deliberation JSON. Do not draft final-answer prose.",
+		statusLabels: {
+			en: {
+				running: "Checking answer shape",
+				done: "Checked answer shape",
+				error: "Checked answer shape",
+			},
+			hu: {
+				running: "Válaszforma ellenőrzése",
+				done: "Válaszforma ellenőrizve",
+				error: "Válaszforma ellenőrizve",
+			},
+		},
+	},
+	hungarian_parity_check: {
+		kind: "hungarian_parity_check",
+		schema: "generic_brief",
+		maxOutputTokens: DELIBERATION_MAX_OUTPUT_TOKENS,
+		repairMaxOutputTokens: DELIBERATION_REPAIR_MAX_OUTPUT_TOKENS,
+		maxToolSteps: DELIBERATION_NO_TOOL_STEPS,
+		useDepthProviderOptions: false,
+		systemFocusInstruction:
+			"Focus only on whether Hungarian-speaking users, Hungarian language, or Hungary-specific constraints need first-class treatment. Do not draft final-answer prose.",
+		statusLabels: {
+			en: {
+				running: "Checking Hungarian parity",
+				done: "Checked Hungarian parity",
+				error: "Checked Hungarian parity",
+			},
+			hu: {
+				running: "Magyar paritás ellenőrzése",
+				done: "Magyar paritás ellenőrizve",
+				error: "Magyar paritás ellenőrizve",
 			},
 		},
 	},
@@ -213,7 +305,10 @@ const DELIBERATION_PASS_PLAN_BY_PROFILE: Record<
 	extended: ["context_source_gap_review"],
 	maximum: [
 		"context_source_gap_review",
-		"answer_plan_critique",
+		"missed_user_need_check",
+		"contradiction_risk_check",
+		"final_format_style_check",
+		"hungarian_parity_check",
 		"viable_alternatives_preservation",
 	],
 };
@@ -251,6 +346,12 @@ function planDeliberationPassKinds(
 	}
 	if (profile === "maximum" && shouldRunAdversarialPass(signals)) {
 		expanded.push("adversarial_edge_case_check");
+	}
+	if (profile === "maximum") {
+		expanded.push("missed_user_need_check");
+		expanded.push("contradiction_risk_check");
+		expanded.push("final_format_style_check");
+		expanded.push("hungarian_parity_check");
 	}
 	if (expanded.length === 1 && profile === "maximum") {
 		expanded.push("answer_plan_critique");

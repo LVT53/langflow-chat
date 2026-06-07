@@ -24,7 +24,7 @@ describe("Reasoning Depth evaluation harness", () => {
 				title: "Ambiguous high-cost comparison asks before spending Max",
 				kind: "depth_clarification",
 				message:
-					"Research all viable platforms and compare every option for the migration plan.",
+					"Research all viable platforms for an unspecified source set and compare every option for the migration plan.",
 				language: "en",
 				depthMetadata: highCostDepthMetadata,
 				expectedAction: "ask",
@@ -54,7 +54,7 @@ describe("Reasoning Depth evaluation harness", () => {
 				title: "Hungarian ambiguity asks in Hungarian",
 				kind: "depth_clarification",
 				message:
-					"Kutasd fel az összes életképes platformot, és hasonlíts össze minden opciót a migrációs tervhez.",
+					"Kutasd fel az összes életképes platformot egy még nem meghatározott forráskörhöz, és hasonlíts össze minden opciót a migrációs tervhez.",
 				language: "hu",
 				depthMetadata: highCostDepthMetadata,
 				expectedAction: "ask",
