@@ -60,7 +60,6 @@ export type GroundedWebModelPayload = {
 				attemptedCount: number;
 				succeededCount: number;
 				cacheHitCount: number;
-				crawl4aiFallbackCount: number;
 				lowQualityCount: number;
 				blockedCount: number;
 				failedCount: number;

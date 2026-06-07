@@ -93,11 +93,6 @@ vi.mock("../env", () => ({
 		webResearchExtractorMode: "readability",
 		webResearchExtractTimeoutMs: 6000,
 		webResearchExtractCacheTtlHours: 24,
-		webResearchCrawl4aiEnabled: false,
-		webResearchCrawl4aiBaseUrl: "",
-		webResearchCrawl4aiTimeoutMs: 9000,
-		webResearchCrawl4aiMaxFallbackSources: 1,
-		webResearchCrawl4aiMinQualityScore: 0.45,
 		webResearchLlmExtractionReviewEnabled: false,
 	},
 	envConfig: {
@@ -174,11 +169,6 @@ vi.mock("../env", () => ({
 		webResearchExtractorMode: "readability",
 		webResearchExtractTimeoutMs: 6000,
 		webResearchExtractCacheTtlHours: 24,
-		webResearchCrawl4aiEnabled: false,
-		webResearchCrawl4aiBaseUrl: "",
-		webResearchCrawl4aiTimeoutMs: 9000,
-		webResearchCrawl4aiMaxFallbackSources: 1,
-		webResearchCrawl4aiMinQualityScore: 0.45,
 		webResearchLlmExtractionReviewEnabled: false,
 	},
 }));
@@ -260,25 +250,12 @@ describe("Knowledge Store Config", () => {
 				webResearchExtractorMode: "readability",
 				webResearchExtractTimeoutMs: 6000,
 				webResearchExtractCacheTtlHours: 24,
-				webResearchCrawl4aiEnabled: false,
-				webResearchCrawl4aiBaseUrl: "",
-				webResearchCrawl4aiTimeoutMs: 9000,
-				webResearchCrawl4aiMaxFallbackSources: 1,
-				webResearchCrawl4aiMinQualityScore: 0.45,
 			});
 
 			adminConfigRows = [
 				{ key: "WEB_RESEARCH_EXTRACTOR_MODE", value: "auto" },
 				{ key: "WEB_RESEARCH_EXTRACT_TIMEOUT_MS", value: "500" },
 				{ key: "WEB_RESEARCH_EXTRACT_CACHE_TTL_HOURS", value: "-1" },
-				{ key: "WEB_RESEARCH_CRAWL4AI_ENABLED", value: "true" },
-				{
-					key: "WEB_RESEARCH_CRAWL4AI_BASE_URL",
-					value: " http://crawl4ai:11235/ ",
-				},
-				{ key: "WEB_RESEARCH_CRAWL4AI_TIMEOUT_MS", value: "250" },
-				{ key: "WEB_RESEARCH_CRAWL4AI_MAX_FALLBACK_SOURCES", value: "-3" },
-				{ key: "WEB_RESEARCH_CRAWL4AI_MIN_QUALITY_SCORE", value: "2" },
 			];
 
 			await refreshConfig();
@@ -287,21 +264,11 @@ describe("Knowledge Store Config", () => {
 				webResearchExtractorMode: "auto",
 				webResearchExtractTimeoutMs: 1000,
 				webResearchExtractCacheTtlHours: 0,
-				webResearchCrawl4aiEnabled: true,
-				webResearchCrawl4aiBaseUrl: "http://crawl4ai:11235/",
-				webResearchCrawl4aiTimeoutMs: 1000,
-				webResearchCrawl4aiMaxFallbackSources: 0,
-				webResearchCrawl4aiMinQualityScore: 1,
 			});
 			expect(getResolvedAdminConfigValues()).toMatchObject({
 				WEB_RESEARCH_EXTRACTOR_MODE: "auto",
 				WEB_RESEARCH_EXTRACT_TIMEOUT_MS: "1000",
 				WEB_RESEARCH_EXTRACT_CACHE_TTL_HOURS: "0",
-				WEB_RESEARCH_CRAWL4AI_ENABLED: "true",
-				WEB_RESEARCH_CRAWL4AI_BASE_URL: "http://crawl4ai:11235/",
-				WEB_RESEARCH_CRAWL4AI_TIMEOUT_MS: "1000",
-				WEB_RESEARCH_CRAWL4AI_MAX_FALLBACK_SOURCES: "0",
-				WEB_RESEARCH_CRAWL4AI_MIN_QUALITY_SCORE: "1",
 			});
 		});
 

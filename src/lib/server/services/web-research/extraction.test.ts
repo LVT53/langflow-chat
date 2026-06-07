@@ -12,13 +12,6 @@ function htmlResponse(value: string): Response {
 	});
 }
 
-function jsonResponse(value: unknown): Response {
-	return new Response(JSON.stringify(value), {
-		status: 200,
-		headers: { "Content-Type": "application/json" },
-	});
-}
-
 const articleHtml = `
 <!doctype html>
 <html>
@@ -157,53 +150,6 @@ describe("web research extraction", () => {
 		});
 	});
 
-	it("does not reuse a local-only cached extraction after enabling fallback", async () => {
-		const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-			const url = String(input);
-			if (url === "https://thin.example.com/page") {
-				return htmlResponse(
-					"<html><body><main>Enable JavaScript.</main></body></html>",
-				);
-			}
-			if (url === "http://127.0.0.1:11235/md") {
-				return jsonResponse({
-					markdown:
-						"# Rendered Page\n\nCrawl4AI returned source-derived Markdown after fallback was enabled.",
-				});
-			}
-			throw new Error(`unexpected fetch ${url}`);
-		});
-		const baseConfig = {
-			webResearchExtractorMode: "readability" as const,
-			webResearchExtractCacheTtlHours: 1,
-		};
-
-		const localOnly = await extractWebResearchPage({
-			url: "https://thin.example.com/page",
-			config: baseConfig,
-			fetch: fetchMock,
-			now: 1000,
-		});
-		const withFallback = await extractWebResearchPage({
-			url: "https://thin.example.com/page",
-			config: {
-				...baseConfig,
-				webResearchCrawl4aiEnabled: true,
-				webResearchCrawl4aiBaseUrl: "http://127.0.0.1:11235",
-				webResearchCrawl4aiMaxFallbackSources: 1,
-				webResearchCrawl4aiMinQualityScore: 0.9,
-			},
-			fetch: fetchMock,
-			fallbackBudget: { remaining: 1 },
-			now: 2000,
-		});
-
-		expect(localOnly?.diagnostics.cacheHit).toBe(false);
-		expect(withFallback?.diagnostics.cacheHit).toBe(false);
-		expect(withFallback?.diagnostics.extractor).toBe("crawl4ai");
-		expect(fetchMock).toHaveBeenCalledTimes(3);
-	});
-
 	it("blocks unsafe redirects before following them", async () => {
 		const fetchMock = vi.fn(
 			async () =>
@@ -227,79 +173,4 @@ describe("web research extraction", () => {
 		});
 	});
 
-	it("uses Crawl4AI only as a capped fallback for poor local extraction", async () => {
-		const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-			const url = String(input);
-			if (url === "https://thin.example.com/page") {
-				return htmlResponse(
-					"<html><body><main>Enable JavaScript.</main></body></html>",
-				);
-			}
-			if (url === "http://127.0.0.1:11235/md") {
-				return jsonResponse({
-					markdown:
-						"# Fallback Page\n\nCrawl4AI rendered the page and returned enough Markdown evidence for the model.\n\n- Rendered content\n- Citation-safe text",
-				});
-			}
-			throw new Error(`unexpected fetch ${url}`);
-		});
-		const fallbackBudget = { remaining: 1 };
-
-		const result = await extractWebResearchPage({
-			url: "https://thin.example.com/page",
-			config: {
-				webResearchExtractorMode: "readability",
-				webResearchExtractCacheTtlHours: 0,
-				webResearchCrawl4aiEnabled: true,
-				webResearchCrawl4aiBaseUrl: "http://127.0.0.1:11235",
-				webResearchCrawl4aiMaxFallbackSources: 1,
-				webResearchCrawl4aiMinQualityScore: 0.9,
-			},
-			fetch: fetchMock,
-			fallbackBudget,
-		});
-
-		expect(result?.diagnostics.extractor).toBe("crawl4ai");
-		expect(result?.diagnostics.fallbackUsed).toBe(true);
-		expect(result?.markdown).toContain("Crawl4AI rendered the page");
-		expect(fallbackBudget.remaining).toBe(0);
-		expect(fetchMock).toHaveBeenCalledTimes(2);
-	});
-
-	it("keeps the local extraction when Crawl4AI returns generated-looking text", async () => {
-		const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-			const url = String(input);
-			if (url === "https://thin.example.com/page") {
-				return htmlResponse(
-					"<html><body><main>Enable JavaScript.</main></body></html>",
-				);
-			}
-			if (url === "http://127.0.0.1:11235/md") {
-				return jsonResponse({
-					markdown:
-						"As an AI language model, here is a generated summary of the page.",
-				});
-			}
-			throw new Error(`unexpected fetch ${url}`);
-		});
-
-		const result = await extractWebResearchPage({
-			url: "https://thin.example.com/page",
-			config: {
-				webResearchExtractorMode: "readability",
-				webResearchExtractCacheTtlHours: 0,
-				webResearchCrawl4aiEnabled: true,
-				webResearchCrawl4aiBaseUrl: "http://127.0.0.1:11235",
-				webResearchCrawl4aiMaxFallbackSources: 1,
-				webResearchCrawl4aiMinQualityScore: 0.9,
-			},
-			fetch: fetchMock,
-			fallbackBudget: { remaining: 1 },
-		});
-
-		expect(result?.diagnostics.extractor).not.toBe("crawl4ai");
-		expect(result?.diagnostics.fallbackUsed).toBe(false);
-		expect(result?.plainText).toContain("Enable JavaScript");
-		expect(result?.plainText).not.toContain("AI language model");
-	});
 });

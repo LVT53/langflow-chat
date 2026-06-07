@@ -9,7 +9,6 @@ import {
 	getWebResearchExtractionMetrics,
 	type WebResearchExtractionConfig,
 	type WebResearchExtractionDiagnostics,
-	type WebResearchFallbackBudget,
 } from "./extraction";
 import {
 	canonicalYouTubeUrl,
@@ -160,8 +159,7 @@ export interface ResearchDiagnostics {
 		attemptedCount: number;
 		succeededCount: number;
 		cacheHitCount: number;
-		crawl4aiFallbackCount: number;
-		lowQualityCount: number;
+			lowQualityCount: number;
 		blockedCount: number;
 		failedCount: number;
 		totalLatencyMs: number;
@@ -297,11 +295,6 @@ const DEFAULT_WEB_RESEARCH_CONFIG: WebResearchConfig = {
 	webResearchExtractorMode: "readability",
 	webResearchExtractTimeoutMs: PAGE_FETCH_TIMEOUT_MS,
 	webResearchExtractCacheTtlHours: 24,
-	webResearchCrawl4aiEnabled: false,
-	webResearchCrawl4aiBaseUrl: "",
-	webResearchCrawl4aiTimeoutMs: 9_000,
-	webResearchCrawl4aiMaxFallbackSources: 1,
-	webResearchCrawl4aiMinQualityScore: 0.45,
 	webResearchLlmExtractionReviewEnabled: false,
 };
 const HTTP_URL_RE = /https?:\/\/[^\s<>)\]]+/gi;
@@ -374,26 +367,6 @@ function toWebResearchConfig(
 			"webResearchExtractCacheTtlHours" in config
 				? config.webResearchExtractCacheTtlHours
 				: 24,
-		webResearchCrawl4aiEnabled:
-			"webResearchCrawl4aiEnabled" in config
-				? config.webResearchCrawl4aiEnabled
-				: false,
-		webResearchCrawl4aiBaseUrl:
-			"webResearchCrawl4aiBaseUrl" in config
-				? config.webResearchCrawl4aiBaseUrl
-				: "",
-		webResearchCrawl4aiTimeoutMs:
-			"webResearchCrawl4aiTimeoutMs" in config
-				? config.webResearchCrawl4aiTimeoutMs
-				: 9_000,
-		webResearchCrawl4aiMaxFallbackSources:
-			"webResearchCrawl4aiMaxFallbackSources" in config
-				? config.webResearchCrawl4aiMaxFallbackSources
-				: 1,
-		webResearchCrawl4aiMinQualityScore:
-			"webResearchCrawl4aiMinQualityScore" in config
-				? config.webResearchCrawl4aiMinQualityScore
-				: 0.45,
 		webResearchLlmExtractionReviewEnabled:
 			"webResearchLlmExtractionReviewEnabled" in config
 				? config.webResearchLlmExtractionReviewEnabled
@@ -1334,7 +1307,6 @@ async function fetchPageContent(params: {
 	config: WebResearchConfig;
 	fetch: typeof fetch;
 	signal?: AbortSignal;
-	fallbackBudget?: WebResearchFallbackBudget;
 }): Promise<{
 	title: string | null;
 	text: string | null;
@@ -1354,7 +1326,6 @@ async function fetchPageContent(params: {
 		},
 		fetch: params.fetch,
 		signal: params.signal,
-		fallbackBudget: params.fallbackBudget,
 	});
 	if (!extracted) return null;
 	if (
@@ -1440,18 +1411,12 @@ async function openTopPages(params: {
 			extraction: ResearchSource["extraction"];
 		}
 	>();
-	const fallbackBudget: WebResearchFallbackBudget = {
-		remaining: Math.max(
-			0,
-			params.config.webResearchCrawl4aiMaxFallbackSources ?? 0,
-		),
-	};
 	const pageResults = await mapWithConcurrency(
 		params.sources,
 		PAGE_OPEN_CONCURRENCY,
 		async (source) => ({
 			source,
-			content: await fetchPageContent({ ...params, source, fallbackBudget }),
+			content: await fetchPageContent({ ...params, source }),
 		}),
 	);
 	for (const result of pageResults) {
@@ -1954,7 +1919,6 @@ export async function researchWeb(
 			attemptedCount: 0,
 			succeededCount: 0,
 			cacheHitCount: 0,
-			crawl4aiFallbackCount: 0,
 			lowQualityCount: 0,
 			blockedCount: 0,
 			failedCount: 0,
@@ -2092,9 +2056,6 @@ export async function researchWeb(
 			cacheHitCount:
 				extractionMetricsAfter.cacheHitCount -
 				extractionMetricsBefore.cacheHitCount,
-			crawl4aiFallbackCount:
-				extractionMetricsAfter.crawl4aiFallbackCount -
-				extractionMetricsBefore.crawl4aiFallbackCount,
 			lowQualityCount:
 				extractionMetricsAfter.lowQualityCount -
 				extractionMetricsBefore.lowQualityCount,

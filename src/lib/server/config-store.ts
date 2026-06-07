@@ -110,11 +110,6 @@ export const ADMIN_CONFIG_KEYS = [
 	"WEB_RESEARCH_EXTRACTOR_MODE",
 	"WEB_RESEARCH_EXTRACT_TIMEOUT_MS",
 	"WEB_RESEARCH_EXTRACT_CACHE_TTL_HOURS",
-	"WEB_RESEARCH_CRAWL4AI_ENABLED",
-	"WEB_RESEARCH_CRAWL4AI_BASE_URL",
-	"WEB_RESEARCH_CRAWL4AI_TIMEOUT_MS",
-	"WEB_RESEARCH_CRAWL4AI_MAX_FALLBACK_SOURCES",
-	"WEB_RESEARCH_CRAWL4AI_MIN_QUALITY_SCORE",
 	"BRAVE_SEARCH_API_KEY",
 	"APP_VERSION_OVERRIDE",
 	"SYSTEM_PROMPT",
@@ -234,11 +229,6 @@ export interface RuntimeConfig {
 	webResearchExtractorMode: "readability" | "basic" | "auto";
 	webResearchExtractTimeoutMs: number;
 	webResearchExtractCacheTtlHours: number;
-	webResearchCrawl4aiEnabled: boolean;
-	webResearchCrawl4aiBaseUrl: string;
-	webResearchCrawl4aiTimeoutMs: number;
-	webResearchCrawl4aiMaxFallbackSources: number;
-	webResearchCrawl4aiMinQualityScore: number;
 	webResearchLlmExtractionReviewEnabled: boolean;
 	braveSearchApiKey: string;
 	concurrentStreamLimit: number;
@@ -294,10 +284,6 @@ function parseIntOverride(value: string): number | undefined {
 	return Number.isNaN(parsed) ? undefined : parsed;
 }
 
-function parseFloatOverride(value: string): number | undefined {
-	const parsed = Number.parseFloat(value);
-	return Number.isNaN(parsed) ? undefined : parsed;
-}
 
 function normalizeWebResearchExtractorMode(
 	value: string,
@@ -841,30 +827,6 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 		if (parsed !== undefined)
 			config.webResearchExtractCacheTtlHours = Math.max(0, parsed);
 	},
-	WEB_RESEARCH_CRAWL4AI_ENABLED: (config, value) => {
-		config.webResearchCrawl4aiEnabled = value === "true";
-	},
-	WEB_RESEARCH_CRAWL4AI_BASE_URL: (config, value) => {
-		config.webResearchCrawl4aiBaseUrl = value.trim();
-	},
-	WEB_RESEARCH_CRAWL4AI_TIMEOUT_MS: (config, value) => {
-		const parsed = parseIntOverride(value);
-		if (parsed !== undefined)
-			config.webResearchCrawl4aiTimeoutMs = Math.max(1000, parsed);
-	},
-	WEB_RESEARCH_CRAWL4AI_MAX_FALLBACK_SOURCES: (config, value) => {
-		const parsed = parseIntOverride(value);
-		if (parsed !== undefined)
-			config.webResearchCrawl4aiMaxFallbackSources = Math.max(0, parsed);
-	},
-	WEB_RESEARCH_CRAWL4AI_MIN_QUALITY_SCORE: (config, value) => {
-		const parsed = parseFloatOverride(value);
-		if (parsed !== undefined)
-			config.webResearchCrawl4aiMinQualityScore = Math.max(
-				0,
-				Math.min(1, parsed),
-			);
-	},
 	BRAVE_SEARCH_API_KEY: (config, value) => {
 		config.braveSearchApiKey = value;
 	},
@@ -1309,17 +1271,6 @@ export function getResolvedAdminConfigValues(
 		WEB_RESEARCH_EXTRACT_TIMEOUT_MS: String(config.webResearchExtractTimeoutMs),
 		WEB_RESEARCH_EXTRACT_CACHE_TTL_HOURS: String(
 			config.webResearchExtractCacheTtlHours,
-		),
-		WEB_RESEARCH_CRAWL4AI_ENABLED: String(config.webResearchCrawl4aiEnabled),
-		WEB_RESEARCH_CRAWL4AI_BASE_URL: config.webResearchCrawl4aiBaseUrl,
-		WEB_RESEARCH_CRAWL4AI_TIMEOUT_MS: String(
-			config.webResearchCrawl4aiTimeoutMs,
-		),
-		WEB_RESEARCH_CRAWL4AI_MAX_FALLBACK_SOURCES: String(
-			config.webResearchCrawl4aiMaxFallbackSources,
-		),
-		WEB_RESEARCH_CRAWL4AI_MIN_QUALITY_SCORE: String(
-			config.webResearchCrawl4aiMinQualityScore,
 		),
 		BRAVE_SEARCH_API_KEY: config.braveSearchApiKey,
 		APP_VERSION_OVERRIDE: config.appVersionOverride ?? "",

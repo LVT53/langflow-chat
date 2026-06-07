@@ -350,7 +350,7 @@ Directly: creates user message → startDeepResearchJobShell → returns job
 | **Inference paradigm** | Explicit pass-based workflow (7 named passes) | ReAct loop + IterResearch (Heavy Mode) |
 | **Context management** | Fixed budgets per pass | 128K context, 110K hard limit, forced synthesis on exhaustion |
 | **Web search** | SearXNG (self-hosted) + crawl/extract | Serper.dev API + Jina AI Reader |
-| **Page reading** | Local Readability + optional Crawl4AI fallback | Jina AI → LLM extraction with retry + truncation |
+| **Page reading** | Local Readability  | Jina AI → LLM extraction with retry + truncation |
 | **Source quality** | Multi-signal scoring (independence, freshness, directness, authority) | Relies on LLM extraction quality + implicit authority from Serper ranking |
 | **Evidence verification** | Formal citation audit with per-claim verification | Implicit via IterResearch workspace reconstruction |
 | **Output** | Structured report blocks → Markdown rendering | ReAct: `<answer>` tags; Heavy Mode: structured reports with streaming phases |
@@ -403,7 +403,7 @@ Our pass system already does this, but passes are fixed (discovery → review �
 
 - **Custom model training** — Qwen's 30B MoE with CPT/SFT/RL is a massive investment. We use general-purpose models.
 - **Serper.dev dependency** — We already have SearXNG self-hosting. Keep it.
-- **Jina AI dependency** — We have local Readability + Crawl4AI.
+- **Jina AI dependency** — We have local Readability  extraction.
 - **vLLM GPU serving** — We're a Node.js app, not a Python ML serving stack.
 - **Synthetic data flywheel** — Overkill for our scope; we don't need to generate training data.
 

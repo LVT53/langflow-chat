@@ -722,13 +722,6 @@ function configLabelKey(key: string): string {
 		WEB_RESEARCH_EXTRACT_TIMEOUT_MS: "admin.webResearchExtractTimeoutMs",
 		WEB_RESEARCH_EXTRACT_CACHE_TTL_HOURS:
 			"admin.webResearchExtractCacheTtlHours",
-		WEB_RESEARCH_CRAWL4AI_ENABLED: "admin.webResearchCrawl4aiEnabled",
-		WEB_RESEARCH_CRAWL4AI_BASE_URL: "admin.webResearchCrawl4aiBaseUrl",
-		WEB_RESEARCH_CRAWL4AI_TIMEOUT_MS: "admin.webResearchCrawl4aiTimeoutMs",
-		WEB_RESEARCH_CRAWL4AI_MAX_FALLBACK_SOURCES:
-			"admin.webResearchCrawl4aiMaxFallbackSources",
-		WEB_RESEARCH_CRAWL4AI_MIN_QUALITY_SCORE:
-			"admin.webResearchCrawl4aiMinQualityScore",
 		TITLE_GEN_SYSTEM_PROMPT_EN: "admin.titleGenPromptEn",
 		TITLE_GEN_SYSTEM_PROMPT_HU: "admin.titleGenPromptHu",
 		TITLE_GEN_SYSTEM_PROMPT_CODE_APPENDIX_EN: "admin.titleGenCodeAppendixEn",
@@ -773,9 +766,6 @@ const NUMBER_KEYS = new Set([
 	"WEB_RESEARCH_FRESHNESS_HOURS",
 	"WEB_RESEARCH_EXTRACT_TIMEOUT_MS",
 	"WEB_RESEARCH_EXTRACT_CACHE_TTL_HOURS",
-	"WEB_RESEARCH_CRAWL4AI_TIMEOUT_MS",
-	"WEB_RESEARCH_CRAWL4AI_MAX_FALLBACK_SOURCES",
-	"WEB_RESEARCH_CRAWL4AI_MIN_QUALITY_SCORE",
 	"MAX_FILE_UPLOAD_SIZE",
 	"REQUEST_TIMEOUT_MS",
 	"MODEL_TIMEOUT_FAILOVER_TIMEOUT_MS",
@@ -1301,54 +1291,6 @@ function placeholderFor(key: string): string {
 						id={key}
 						type="number"
 						min="0"
-						class="settings-input"
-						bind:value={adminConfig[key]}
-						placeholder={placeholderFor(key)}
-					/>
-				</div>
-			{/each}
-		</div>
-
-		<div class="grid gap-3">
-			<div class="flex items-center justify-between rounded-md border border-border-subtle px-3 py-2">
-				<div>
-					<label class="settings-label mb-0" for="WEB_RESEARCH_CRAWL4AI_ENABLED">{$t(configLabelKey('WEB_RESEARCH_CRAWL4AI_ENABLED'))}</label>
-				</div>
-				<label class="relative inline-flex cursor-pointer items-center">
-					<input
-						id="WEB_RESEARCH_CRAWL4AI_ENABLED"
-						type="checkbox"
-						class="peer sr-only"
-						checked={adminConfig.WEB_RESEARCH_CRAWL4AI_ENABLED === 'true'}
-						onchange={(event) => {
-							adminConfig.WEB_RESEARCH_CRAWL4AI_ENABLED = event.currentTarget.checked ? 'true' : 'false';
-						}}
-					/>
-					<div class="peer h-6 w-11 rounded-full bg-surface-secondary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent peer-checked:after:translate-x-full"></div>
-				</label>
-			</div>
-		</div>
-
-		<div class="grid gap-3 md:grid-cols-2">
-			<div>
-				<label class="settings-label" for="WEB_RESEARCH_CRAWL4AI_BASE_URL">{$t(configLabelKey('WEB_RESEARCH_CRAWL4AI_BASE_URL'))}</label>
-				<input
-					id="WEB_RESEARCH_CRAWL4AI_BASE_URL"
-					type="url"
-					class="settings-input"
-					bind:value={adminConfig.WEB_RESEARCH_CRAWL4AI_BASE_URL}
-					placeholder={placeholderFor('WEB_RESEARCH_CRAWL4AI_BASE_URL')}
-					autocomplete="off"
-				/>
-			</div>
-			{#each ['WEB_RESEARCH_CRAWL4AI_TIMEOUT_MS', 'WEB_RESEARCH_CRAWL4AI_MAX_FALLBACK_SOURCES', 'WEB_RESEARCH_CRAWL4AI_MIN_QUALITY_SCORE'] as key}
-				<div>
-					<label class="settings-label" for={key}>{$t(configLabelKey(key))}</label>
-					<input
-						id={key}
-						type="number"
-						min="0"
-						step={key === 'WEB_RESEARCH_CRAWL4AI_MIN_QUALITY_SCORE' ? '0.01' : '1'}
 						class="settings-input"
 						bind:value={adminConfig[key]}
 						placeholder={placeholderFor(key)}

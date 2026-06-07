@@ -58,8 +58,7 @@ Web work runs through the app-owned `research_web` AI SDK tool. It can also enri
 
 1. Deploy the app code. `scripts/deploy.sh` pulls `origin main`, so merge `dev` to `main` first or use your manual deploy flow if you are testing directly from `dev`.
 2. Run a SearXNG instance reachable by the app and set `SEARXNG_BASE_URL`, for example `http://127.0.0.1:8080` for a same-host Docker container. The SearXNG instance must allow JSON output in `settings.yml` under `search: formats: [html, json]`; otherwise `research_web` diagnostics will show provider failures with HTTP 403.
-3. Optionally run Crawl4AI as the sparse bad-page fallback. Start it with `docker compose --profile crawl4ai -f docker-compose.crawl4ai.yml up -d`, set `WEB_RESEARCH_CRAWL4AI_ENABLED=true`, and set `WEB_RESEARCH_CRAWL4AI_BASE_URL=http://127.0.0.1:11235`. Leave it disabled unless local extraction diagnostics show low-quality opened pages.
-4. Set `BRAVE_SEARCH_API_KEY` only when the separate `image_search` tool should be available.
+34. Set `BRAVE_SEARCH_API_KEY` only when the separate `image_search` tool should be available.
 5. Configure the primary Normal Chat model with `MODEL_1_BASEURL`, `MODEL_1_API_KEY`, and `MODEL_1_NAME`, or through Settings > Administration > System. The endpoint must expose an OpenAI-compatible chat-completions surface that the AI SDK provider can call.
 6. Leave the optional `WEB_RESEARCH_*` env vars at their defaults unless you need different breadth, extraction, fallback, or latency behavior. They can also be changed later in Settings > Administration > System > Web Research.
 7. Keep `TEI_RERANKER_URL` configured if you want source and evidence reranking. Search still works without TEI reranking, but diagnostics will show `sourceReranked: false` when reranking is unavailable or not confident.
@@ -71,8 +70,7 @@ Post-deploy checks:
 - Ask for a PDF report with headings, a table, and a bar chart. It should create a successful file-production card; `unsupported_document_block` means the running AlfyAI app or document-source contract has drifted.
 - Ask for a product review summary that should include video evidence; if YouTube videos are selected and transcripts are exposed, diagnostics should show `youtubeTranscriptFetchedCount > 0`.
 - In the `research_web` tool result diagnostics, expect `providers.searxngConfigured: true`, `openedPageCount > 0`, `selectedSourceCount > 0`, and `evidenceCandidateCount > 0`.
-- If Crawl4AI is enabled, verify the service directly with `curl -s http://127.0.0.1:11235/health` and `curl -s -H 'Content-Type: application/json' -d '{"url":"https://example.com"}' http://127.0.0.1:11235/md`.
-- For healthy pages, expect `pageExtraction.crawl4aiFallbackCount` to stay `0`; fallback should rise only when local Readability extraction is low quality or unusable.
+- For healthy pages, local Readability extraction should produce quality Markdown evidence.
 - For prices, dates, availability, specs, and similar exact values, `exactEvidenceCandidateCount` should usually be greater than `0`.
 - YouTube transcript access is best-effort because some videos disable captions, require age/cookie access, or block server IPs. In those cases the video can still be returned as a source, and diagnostics include `youtube_transcript_unavailable`.
 - When TEI reranking is configured and confident, `sourceReranked` and `reranked` should usually be `true`.
@@ -193,11 +191,6 @@ Notes before the tables:
 | `WEB_RESEARCH_EXTRACTOR_MODE` | No | `readability` | Page extraction mode for opened sources: `readability`, `auto`, or `basic` | Use `basic` only for troubleshooting parser issues | Can also be overridden in admin config |
 | `WEB_RESEARCH_EXTRACT_TIMEOUT_MS` | No | `6000` | Timeout for local opened-page fetch and extraction | Lower to protect latency, raise for slow official sources | Minimum `1000`; can also be overridden in admin config |
 | `WEB_RESEARCH_EXTRACT_CACHE_TTL_HOURS` | No | `24` | In-memory TTL for extracted page Markdown/plain text | Lower for highly volatile pages or set `0` to disable cache | Cache is process-local and keyed by URL/extractor version |
-| `WEB_RESEARCH_CRAWL4AI_ENABLED` | No | `false` | Enables sparse Crawl4AI fallback for low-quality local extraction | Enable only when a self-hosted Crawl4AI service is available | Requires `WEB_RESEARCH_CRAWL4AI_BASE_URL`; not a search provider |
-| `WEB_RESEARCH_CRAWL4AI_BASE_URL` | No | empty | Base URL for the self-hosted Crawl4AI service, such as `http://127.0.0.1:11235` | Set only when fallback is enabled | Empty disables fallback calls even if enabled |
-| `WEB_RESEARCH_CRAWL4AI_TIMEOUT_MS` | No | `9000` | Timeout for each Crawl4AI fallback request | Tune for your Docker host and page complexity | Minimum `1000`; fallback failures degrade to local extraction |
-| `WEB_RESEARCH_CRAWL4AI_MAX_FALLBACK_SOURCES` | No | `1` | Max Crawl4AI fallback pages per research turn | Keep low to protect chat latency | `0` disables fallback calls without changing other settings |
-| `WEB_RESEARCH_CRAWL4AI_MIN_QUALITY_SCORE` | No | `0.45` | Local extraction quality threshold below which fallback is eligible | Raise if too many poor local extractions reach the model | Clamped from `0` to `1` |
 | `WEB_RESEARCH_LLM_EXTRACTION_REVIEW_ENABLED` | No | `false` | Reserved flag for a future local-model extraction review step | Leave disabled; current implementation does not rewrite evidence with an LLM | Parsed from env only; not exposed as an active admin setting |
 | `CONCURRENT_STREAM_LIMIT` | No | `3` | Max concurrent chat streams across all users | Lower it to reduce server load | Can also be overridden in admin config |
 | `PER_USER_STREAM_LIMIT` | No | `1` | Max concurrent chat streams per user | Lower it to reduce per-user load | Can also be overridden in admin config |

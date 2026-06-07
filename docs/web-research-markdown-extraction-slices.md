@@ -6,7 +6,7 @@ This is a local `$to-issues` draft for improving model-facing web search quality
 
 Improve Normal Chat and Deep Research source quality by keeping SearXNG as the search/discovery layer while replacing the current regex-flattened page fetches with clean, citation-safe Markdown extraction.
 
-The default path is **Option 1: in-process Readability plus HTML-to-Markdown extraction**. The sparse fallback is **Option 2: a self-hosted Crawl4AI HTTP service** only for pages where local extraction is clearly poor, blocked, or too sparse.
+The default path is **Option 1: in-process Readability plus HTML-to-Markdown extraction**.
 
 ## Documentation Check
 
@@ -15,8 +15,7 @@ Evidence reviewed before drafting:
 - SearXNG search API documentation: `/search` can return JSON when enabled, but SearXNG remains a discovery/search API and does not provide clean full-page Markdown content.
 - `mozilla/readability`: server-side article extraction returns title, content, text content, metadata, and length-like fields after parsing a DOM.
 - Turndown documentation: converts HTML to Markdown and supports custom rules for elements that need preservation.
-- Crawl4AI documentation: self-hosted Docker service exposes Markdown generation endpoints such as `/md` and supports raw/filtered Markdown output.
-- Firecrawl self-host documentation was checked as a comparison point, but it is not selected for this plan because Crawl4AI is more directly aligned with the free, self-hosted, sparse-fallback requirement.
+- Firecrawl self-host documentation was checked as a comparison point, but it is not selected for this plan 
 
 ## Current State
 
@@ -55,31 +54,13 @@ Option 1 is the default implementation. It runs in the app process and avoids a 
 
 Expected latency impact: small for normal pages because this replaces local regex cleanup with local parsing and conversion. The fetch remains the dominant cost.
 
-## Option 2: Sparse Crawl4AI Fallback
-
-Option 2 is only used when Option 1 produces poor extraction quality or a page appears JS-heavy/blocked:
-
-1. Keep Crawl4AI disabled unless a self-hosted base URL is configured.
-2. Call Crawl4AI for at most a small number of sources per research turn.
-3. Prefer it for exact/deep-research modes where missing page content has high answer risk.
-4. Never call it for healthy local extractions.
-5. Record fallback reason, latency, status, and output length in diagnostics.
-
-Expected latency impact: bounded by strict per-turn caps and only paid on bad pages. It should be a rescue path, not a second default crawler.
-
 ## Proposed Configuration
 
 These names are draft-level and should be aligned with the existing config-store naming style during implementation.
 
 - `WEB_RESEARCH_EXTRACTOR_MODE=readability|basic|auto`
 - `WEB_RESEARCH_EXTRACT_TIMEOUT_MS=6000`
-- `WEB_RESEARCH_EXTRACT_CACHE_TTL_HOURS=24`
-- `WEB_RESEARCH_CRAWL4AI_ENABLED=false`
-- `WEB_RESEARCH_CRAWL4AI_BASE_URL=`
-- `WEB_RESEARCH_CRAWL4AI_TIMEOUT_MS=9000`
-- `WEB_RESEARCH_CRAWL4AI_MAX_FALLBACK_SOURCES=1`
-- `WEB_RESEARCH_CRAWL4AI_MIN_QUALITY_SCORE=0.45`
-- `WEB_RESEARCH_LLM_EXTRACTION_REVIEW_ENABLED=false`
+- `WEB_RESEARCH_EXTRACT_CACHE_TTL_HOURS=24`- `WEB_RESEARCH_LLM_EXTRACTION_REVIEW_ENABLED=false`
 
 ## Slice Dependency Order
 
@@ -87,7 +68,6 @@ These names are draft-level and should be aligned with the existing config-store
 2. `WRE-02` makes Readability Markdown the default extractor.
 3. `WRE-03` routes Markdown-derived evidence through Normal Chat and Deep Research.
 4. `WRE-04` adds cache, configuration, and diagnostics.
-5. `WRE-05` adds the sparse Crawl4AI fallback.
 6. `WRE-06` adds quality coverage and regression fixtures.
 7. `WRE-07` is optional and only covers local LLM review of extraction quality.
 
@@ -235,46 +215,10 @@ Verification:
 - Run config and settings tests if present.
 - Add tests for cache hit/miss, extractor version invalidation, and diagnostics redaction.
 
-### WRE-05. Add Sparse Crawl4AI Fallback
-
-Type: AFK  
-Blocked by: `WRE-04`  
-User stories covered: rescue bad pages, self-hosted free fallback, bounded latency
-
-What to build:
-
-- Add an optional Crawl4AI HTTP client behind the extraction adapter.
-- Add a local Docker Compose example for Crawl4AI, separate from SearXNG unless there is a clear deployment reason to combine them.
-- Keep fallback disabled unless `WEB_RESEARCH_CRAWL4AI_ENABLED=true` and a base URL is configured.
-- Invoke Crawl4AI only when local extraction quality is below threshold, content is too short, blocked-page signals are present, or the mode is exact/deep-research and local extraction cannot supply usable evidence.
-- Cap fallback calls per turn with `WEB_RESEARCH_CRAWL4AI_MAX_FALLBACK_SOURCES`.
-- Treat Crawl4AI output as source-derived Markdown, then run the same evidence selection and citation audit path.
-
-Likely touched modules:
-
-- new `src/lib/server/services/web-research/crawl4ai.ts`
-- `src/lib/server/services/web-research/extraction.ts`
-- `src/lib/server/config-store.ts`
-- `docker-compose.crawl4ai.yml` or deployment docs
-- `README.md` or deployment documentation, if the repo expects service setup there
-
-Acceptance criteria:
-
-- Healthy local extractions do not call Crawl4AI.
-- Bad local extractions call Crawl4AI only when enabled and capped.
-- Crawl4AI failures degrade to the local extractor result and never fail the whole search turn by default.
-- Diagnostics include fallback reason, status, latency, and markdown length.
-- The fallback remains self-hosted and free of charge.
-
-Verification:
-
-- Add mocked Crawl4AI client tests.
-- Add tests for disabled fallback, healthy extraction no-call, low-quality extraction call, cap enforcement, timeout, and service failure.
-
 ### WRE-06. Add Deep Research Quality Coverage For Markdown Sources
 
 Type: AFK  
-Blocked by: `WRE-03`; can be expanded after `WRE-05`  
+Blocked by: `WRE-03`  
 User stories covered: measurable source-review improvement, regression protection
 
 What to build:
@@ -341,13 +285,10 @@ Verification:
 
 Ship `WRE-01` through `WRE-04` first. That delivers the default self-hosted, low-latency improvement without adding another runtime service.
 
-Then ship `WRE-05` only if quality fixtures or production diagnostics show enough low-quality opened pages to justify the extra moving part.
-
-Keep `WRE-07` deferred until deterministic extraction and sparse Crawl4AI fallback have measurable gaps.
+Keep `WRE-07` deferred until deterministic extraction have measurable gaps.
 
 ## Review Questions Before Publishing Issues
 
-1. Does `WRE-01` through `WRE-04` feel like the right first milestone, or should cache/config wait until after the Crawl4AI fallback?
-2. Should Crawl4AI live in a separate compose file or be added next to the existing SearXNG compose setup?
-3. Is one fallback source per research turn the right starting cap, or should Deep Research allow two while Normal Chat stays at one?
+1. Does `WRE-01` through `WRE-04` feel like the right first milestone
+2. 3. Is one fallback source per research turn the right starting cap, or should Deep Research allow two while Normal Chat stays at one?
 4. Should the optional Qwen review slice remain deferred, or should we add it as an experiment behind a hard-off flag in the first milestone?

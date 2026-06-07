@@ -11,16 +11,7 @@ export interface WebResearchExtractionConfig {
 	webResearchExtractorMode?: WebResearchExtractorMode;
 	webResearchExtractTimeoutMs?: number;
 	webResearchExtractCacheTtlHours?: number;
-	webResearchCrawl4aiEnabled?: boolean;
-	webResearchCrawl4aiBaseUrl?: string;
-	webResearchCrawl4aiTimeoutMs?: number;
-	webResearchCrawl4aiMaxFallbackSources?: number;
-	webResearchCrawl4aiMinQualityScore?: number;
 	webResearchLlmExtractionReviewEnabled?: boolean;
-}
-
-export interface WebResearchFallbackBudget {
-	remaining: number;
 }
 
 export interface WebResearchExtractionQuality {
@@ -35,7 +26,7 @@ export interface WebResearchExtractionQuality {
 }
 
 export interface WebResearchExtractionDiagnostics {
-	extractor: "readability" | "basic" | "crawl4ai";
+	extractor: "readability" | "basic";
 	mode: WebResearchExtractorMode;
 	latencyMs: number;
 	contentType: string | null;
@@ -64,7 +55,6 @@ export interface WebResearchExtractionMetrics {
 	attemptedCount: number;
 	succeededCount: number;
 	cacheHitCount: number;
-	crawl4aiFallbackCount: number;
 	lowQualityCount: number;
 	blockedCount: number;
 	failedCount: number;
@@ -75,8 +65,6 @@ export interface WebResearchExtractionMetrics {
 const EXTRACTOR_VERSION = "readability-markdown-v2";
 const DEFAULT_EXTRACT_TIMEOUT_MS = 6_000;
 const DEFAULT_CACHE_TTL_HOURS = 24;
-const DEFAULT_CRAWL4AI_TIMEOUT_MS = 9_000;
-const DEFAULT_CRAWL4AI_MIN_QUALITY_SCORE = 0.45;
 const MAX_CACHE_ENTRIES = 512;
 const MAX_MARKDOWN_CHARS = 80_000;
 const BLOCKED_HOSTNAMES = new Set([
@@ -89,8 +77,6 @@ const HTML_CONTENT_TYPE_RE =
 const TEXT_CONTENT_TYPE_RE = /text\/plain/i;
 const BLOCKED_PAGE_RE =
 	/\b(captcha|access denied|enable javascript|checking your browser|cloudflare|are you a human|unusual traffic)\b/i;
-const GENERATED_FALLBACK_RE =
-	/\b(as an ai language model|i (?:cannot|can't) browse|i do not have access to|generated summary|here(?:'s| is) (?:a )?summary of)\b/i;
 
 const cache = new Map<
 	string,
@@ -101,7 +87,6 @@ const metrics: WebResearchExtractionMetrics = {
 	attemptedCount: 0,
 	succeededCount: 0,
 	cacheHitCount: 0,
-	crawl4aiFallbackCount: 0,
 	lowQualityCount: 0,
 	blockedCount: 0,
 	failedCount: 0,
@@ -236,22 +221,7 @@ function cacheTtlMs(config: WebResearchExtractionConfig): number {
 }
 
 function cacheKey(url: string, config: WebResearchExtractionConfig): string {
-	const fallbackKey = config.webResearchCrawl4aiEnabled
-		? [
-				"crawl4ai",
-				config.webResearchCrawl4aiBaseUrl?.trim().replace(/\/+$/, "") ?? "",
-				Math.max(0, config.webResearchCrawl4aiMaxFallbackSources ?? 0),
-				Math.max(
-					0,
-					Math.min(
-						1,
-						config.webResearchCrawl4aiMinQualityScore ??
-							DEFAULT_CRAWL4AI_MIN_QUALITY_SCORE,
-					),
-				),
-			].join(":")
-		: "local";
-	return `${EXTRACTOR_VERSION}:${extractionMode(config)}:${fallbackKey}:${canonicalizeUrl(url)}`;
+	return `${EXTRACTOR_VERSION}:${extractionMode(config)}:local:${canonicalizeUrl(url)}`;
 }
 
 function cloneResult(
@@ -590,57 +560,7 @@ function scoreQuality(
 	};
 }
 
-function shouldUseFallback(
-	result: WebResearchExtractedPage | null,
-	config: WebResearchExtractionConfig,
-): { use: boolean; reason: string | null } {
-	if (!config.webResearchCrawl4aiEnabled) return { use: false, reason: null };
-	if (!config.webResearchCrawl4aiBaseUrl?.trim())
-		return { use: false, reason: null };
-	if (!result) return { use: true, reason: "local_extraction_failed" };
-	const threshold =
-		typeof config.webResearchCrawl4aiMinQualityScore === "number"
-			? Math.max(0, Math.min(1, config.webResearchCrawl4aiMinQualityScore))
-			: DEFAULT_CRAWL4AI_MIN_QUALITY_SCORE;
-	if (result.quality.score < threshold) {
-		return { use: true, reason: "low_quality_local_extraction" };
-	}
-	if (result.quality.blockedHint)
-		return { use: true, reason: "blocked_page_hint" };
-	return { use: false, reason: null };
-}
 
-async function fetchCrawl4aiMarkdown(params: {
-	url: string;
-	config: WebResearchExtractionConfig;
-	fetch: typeof fetch;
-	signal?: AbortSignal;
-}): Promise<string | null> {
-	const baseUrl = params.config.webResearchCrawl4aiBaseUrl?.trim();
-	if (!baseUrl) return null;
-	const endpoint = `${baseUrl.replace(/\/+$/, "")}/md`;
-	const response = await params.fetch(endpoint, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ url: params.url }),
-		signal: combineAbortSignals(
-			params.signal,
-			AbortSignal.timeout(
-				timeoutMs(
-					params.config.webResearchCrawl4aiTimeoutMs,
-					DEFAULT_CRAWL4AI_TIMEOUT_MS,
-				),
-			),
-		),
-	});
-	if (!response.ok) return null;
-	const payload = (await response.json().catch(() => null)) as unknown;
-	if (payload && typeof payload === "object" && "markdown" in payload) {
-		const markdown = (payload as { markdown?: unknown }).markdown;
-		return typeof markdown === "string" && markdown.trim() ? markdown : null;
-	}
-	return null;
-}
 
 async function hasSafeDnsResolution(value: string): Promise<boolean> {
 	try {
@@ -706,13 +626,6 @@ async function fetchSafeSource(params: {
 	return { response: null, url: currentUrl, errorCode: "too_many_redirects" };
 }
 
-function fallbackMarkdownIsUsable(markdown: string): boolean {
-	const plainText = markdownToPlainText(markdown);
-	if (!plainText) return false;
-	if (BLOCKED_PAGE_RE.test(plainText)) return false;
-	if (GENERATED_FALLBACK_RE.test(plainText)) return false;
-	return true;
-}
 
 function buildResult(params: {
 	title: string | null;
@@ -749,7 +662,6 @@ function recordResult(
 	}
 	metrics.succeededCount += 1;
 	if (result.quality.lowQualityReasons.length > 0) metrics.lowQualityCount += 1;
-	if (result.diagnostics.fallbackUsed) metrics.crawl4aiFallbackCount += 1;
 }
 
 export function getWebResearchExtractionMetrics(): WebResearchExtractionMetrics {
@@ -761,7 +673,6 @@ export function resetWebResearchExtractionForTests(): void {
 	metrics.attemptedCount = 0;
 	metrics.succeededCount = 0;
 	metrics.cacheHitCount = 0;
-	metrics.crawl4aiFallbackCount = 0;
 	metrics.lowQualityCount = 0;
 	metrics.blockedCount = 0;
 	metrics.failedCount = 0;
@@ -774,7 +685,6 @@ export async function extractWebResearchPage(params: {
 	config: WebResearchExtractionConfig;
 	fetch?: typeof fetch;
 	signal?: AbortSignal;
-	fallbackBudget?: WebResearchFallbackBudget;
 	now?: number;
 }): Promise<WebResearchExtractedPage | null> {
 	const startedAt = Date.now();
@@ -898,57 +808,12 @@ export async function extractWebResearchPage(params: {
 				: "fetch_failed";
 	}
 
-	const fallbackDecision = shouldUseFallback(localResult, params.config);
-	let result = localResult;
-	if (fallbackDecision.use && (params.fallbackBudget?.remaining ?? 0) > 0) {
-		if (params.fallbackBudget) params.fallbackBudget.remaining -= 1;
-		try {
-			const fallbackMarkdown = await fetchCrawl4aiMarkdown({
-				url: params.url,
-				config: params.config,
-				fetch: fetchImpl,
-				signal: params.signal,
-			});
-			if (fallbackMarkdown && fallbackMarkdownIsUsable(fallbackMarkdown)) {
-				const markdown = normalizeMarkdown(fallbackMarkdown);
-				result = buildResult({
-					title: localResult?.title ?? null,
-					markdown,
-					plainText: markdownToPlainText(markdown),
-					excerpt: markdownToPlainText(markdown).slice(0, 280),
-					metadata: localResult?.metadata ?? {
-						siteName: hostLabel(params.url),
-					},
-					diagnostics: {
-						extractor: "crawl4ai",
-						mode,
-						latencyMs: Date.now() - startedAt,
-						contentType: localResult?.diagnostics.contentType ?? null,
-						status: localResult?.diagnostics.status ?? null,
-						cacheHit: false,
-						fallbackUsed: true,
-						fallbackReason: fallbackDecision.reason,
-						errorCode: null,
-					},
-				});
-			}
-		} catch {
-			if (!result) localError = "crawl4ai_failed";
-		}
-	}
+	const result = localResult;
 
 	const latencyMs = Date.now() - startedAt;
 	if (result) {
 		result.diagnostics.latencyMs = latencyMs;
-		if (
-			!(
-				params.config.webResearchCrawl4aiEnabled &&
-				fallbackDecision.use &&
-				result === localResult
-			)
-		) {
-			writeCache(params.url, params.config, now, result);
-		}
+		writeCache(params.url, params.config, now, result);
 	} else if (localError) {
 		metrics.lastErrorCode = localError;
 	}

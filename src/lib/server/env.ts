@@ -116,11 +116,6 @@ interface Config {
 		webResearchExtractorMode: "readability" | "basic" | "auto";
 		webResearchExtractTimeoutMs: number;
 		webResearchExtractCacheTtlHours: number;
-		webResearchCrawl4aiEnabled: boolean;
-		webResearchCrawl4aiBaseUrl: string;
-		webResearchCrawl4aiTimeoutMs: number;
-		webResearchCrawl4aiMaxFallbackSources: number;
-		webResearchCrawl4aiMinQualityScore: number;
 		webResearchLlmExtractionReviewEnabled: boolean;
 		braveSearchApiKey: string;
 	concurrentStreamLimit: number;
@@ -219,10 +214,6 @@ function parseIntegerEnv(value: string | undefined, fallback: number): number {
 	return Number.isNaN(parsed) ? fallback : parsed;
 }
 
-function parseFloatEnv(value: string | undefined, fallback: number): number {
-	const parsed = Number.parseFloat(value ?? "");
-	return Number.isNaN(parsed) ? fallback : parsed;
-}
 
 function normalizeWebResearchExtractorMode(
 	value: string | undefined,
@@ -632,31 +623,6 @@ function readConfig(): Config {
 			webResearchExtractCacheTtlHours: Math.max(
 				0,
 				parseIntegerEnv(process.env.WEB_RESEARCH_EXTRACT_CACHE_TTL_HOURS, 24),
-			),
-			webResearchCrawl4aiEnabled:
-				process.env.WEB_RESEARCH_CRAWL4AI_ENABLED === "true",
-			webResearchCrawl4aiBaseUrl:
-				process.env.WEB_RESEARCH_CRAWL4AI_BASE_URL || "",
-			webResearchCrawl4aiTimeoutMs: Math.max(
-				1000,
-				parseIntegerEnv(process.env.WEB_RESEARCH_CRAWL4AI_TIMEOUT_MS, 9000),
-			),
-			webResearchCrawl4aiMaxFallbackSources: Math.max(
-				0,
-				parseIntegerEnv(
-					process.env.WEB_RESEARCH_CRAWL4AI_MAX_FALLBACK_SOURCES,
-					1,
-				),
-			),
-			webResearchCrawl4aiMinQualityScore: Math.max(
-				0,
-				Math.min(
-					1,
-					parseFloatEnv(
-						process.env.WEB_RESEARCH_CRAWL4AI_MIN_QUALITY_SCORE,
-						0.45,
-					),
-				),
 			),
 			webResearchLlmExtractionReviewEnabled:
 				process.env.WEB_RESEARCH_LLM_EXTRACTION_REVIEW_ENABLED === "true",
