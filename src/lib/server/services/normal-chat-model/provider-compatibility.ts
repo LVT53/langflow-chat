@@ -62,6 +62,15 @@ export function transformNormalChatModelRunRequestBody(
 		delete transformed.max_tokens;
 	}
 
+	if (
+		isGpt5ReasoningModel(provider.modelName) &&
+		transformed.reasoning_effort !== undefined &&
+		Array.isArray(transformed.tools) &&
+		transformed.tools.length > 0
+	) {
+		delete transformed.reasoning_effort;
+	}
+
 	return transformed;
 }
 
@@ -171,6 +180,12 @@ function isKimiAllowedToolChoice(value: unknown): boolean {
 
 function isNamedToolChoice(value: unknown): boolean {
 	return isRecord(value) && value.type === "function";
+}
+
+function isGpt5ReasoningModel(modelName: string): boolean {
+	return (
+		modelName.startsWith("gpt-5") && !modelName.startsWith("gpt-5-chat")
+	);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
