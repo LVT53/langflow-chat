@@ -1,5 +1,6 @@
 <script lang="ts">
 import { onMount } from "svelte";
+import { ChevronRight, EllipsisVertical, Folder, FolderOpen, Loader, MessageSquarePlus, Pencil, Trash2 } from "@lucide/svelte";
 import type { Project } from "$lib/types";
 import { t } from "$lib/i18n";
 import {
@@ -198,22 +199,15 @@ function createConversation(e: MouseEvent) {
 		class="mr-1 flex h-4 w-4 shrink-0 items-center justify-center text-icon-muted transition-transform duration-150"
 		class:rotate-90={expanded}
 	>
-		<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-			<polyline points="9 18 15 12 9 6" />
-		</svg>
+	<ChevronRight size={12} strokeWidth={2.5} aria-hidden="true" />
 	</span>
 
 	<!-- Folder icon -->
 	<span class="mr-1.5 flex shrink-0 items-center" class:text-accent={expanded} class:text-icon-muted={!expanded}>
 		{#if expanded}
-			<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-				<path d="M6 14a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5l2 2h5a2 2 0 0 1 2 2v2"/>
-				<path d="M22 18a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v7z"/>
-			</svg>
+		<FolderOpen size={15} strokeWidth={2} aria-hidden="true" />
 		{:else}
-			<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-				<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-			</svg>
+		<Folder size={15} strokeWidth={2} aria-hidden="true" />
 		{/if}
 	</span>
 
@@ -244,15 +238,9 @@ function createConversation(e: MouseEvent) {
 			title={$t('sidebar.newChatInProject')}
 		>
 			{#if creatingConversation}
-				<svg class="project-action-spinner" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-					<path d="M21 12a9 9 0 0 1-9 9"/>
-					<path d="M3 12a9 9 0 0 1 9-9"/>
-				</svg>
+			<Loader class="project-action-spinner" size={16} strokeWidth={2.2} aria-hidden="true" />
 			{:else}
-				<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-					<path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v8z"/>
-					<path d="M12 8v6"/><path d="M9 11h6"/>
-				</svg>
+			<MessageSquarePlus size={16} strokeWidth={2.1} aria-hidden="true" />
 			{/if}
 		</button>
 
@@ -264,9 +252,7 @@ function createConversation(e: MouseEvent) {
 			onclick={toggleMenu}
 			aria-label={$t('sidebar.projectOptions')}
 		>
-			<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-				<circle cx="12" cy="12" r="1" /><circle cx="12" cy="5" r="1" /><circle cx="12" cy="19" r="1" />
-			</svg>
+		<EllipsisVertical size={16} strokeWidth={2} aria-hidden="true" />
 		</button>
 	</div>
 
@@ -287,15 +273,9 @@ function createConversation(e: MouseEvent) {
 				aria-busy={creatingConversation}
 			>
 				{#if creatingConversation}
-					<svg class="project-option-icon project-action-spinner" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-						<path d="M21 12a9 9 0 0 1-9 9"/>
-						<path d="M3 12a9 9 0 0 1 9-9"/>
-					</svg>
+				<Loader class="project-option-icon project-action-spinner" size={15} strokeWidth={2.2} aria-hidden="true" />
 				{:else}
-					<svg class="project-option-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-						<path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v8z"/>
-						<path d="M12 8v6"/><path d="M9 11h6"/>
-					</svg>
+				<MessageSquarePlus class="project-option-icon" size={15} strokeWidth={2.1} aria-hidden="true" />
 				{/if}
 				<span>{$t('sidebar.newChatInProject')}</span>
 			</button>
@@ -304,9 +284,7 @@ function createConversation(e: MouseEvent) {
 				class="project-option flex min-h-[32px] w-full items-center text-left font-sans text-[12px] text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
 				onclick={startRename}
 			>
-				<svg class="project-option-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-					<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4Z"/>
-				</svg>
+			<Pencil class="project-option-icon" size={15} strokeWidth={2} aria-hidden="true" />
 				<span>{$t('sidebar.rename')}</span>
 			</button>
 			<button
@@ -314,9 +292,7 @@ function createConversation(e: MouseEvent) {
 				class="project-option project-option-danger flex min-h-[32px] w-full items-center text-left font-sans text-[12px] text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
 				onclick={handleDelete}
 			>
-				<svg class="project-option-icon project-option-icon-danger" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-					<path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/>
-				</svg>
+			<Trash2 class="project-option-icon project-option-icon-danger" size={15} strokeWidth={2} aria-hidden="true" />
 				<span>{$t('sidebar.delete')}</span>
 			</button>
 		</div>
