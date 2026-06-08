@@ -188,6 +188,12 @@ $effect.pre(() => {
 	// Restore saved scroll position on page refresh.
 	if (pendingRestoreScroll !== null) {
 		void restoreScrollToPosition(pendingRestoreScroll);
+		// Update counters so subsequent effect runs don't treat
+		// existing messages as "new" and override restored position.
+		lastMessageCount = dedupedMessages.length;
+		lastFileProductionJobCount = fileProductionJobs.length;
+		lastDeepResearchJobCount = deepResearchJobs.length;
+		lastContextCompressionMarkerCount = contextCompressionMarkers.length;
 		return;
 	}
 
@@ -372,16 +378,22 @@ function contextCompressionMarkerLabel(marker: ContextCompressionMarker): string
 }
 
 async function restoreScrollToPosition(position: number) {
-	pendingRestoreScroll = null;
-	if (!scrollContainer) return;
+	if (!scrollContainer) {
+		pendingRestoreScroll = null;
+		return;
+	}
 	await tick();
 	requestAnimationFrame(() => {
-		if (!scrollContainer) return;
+		if (!scrollContainer) {
+			pendingRestoreScroll = null;
+			return;
+		}
 		scrollContainer.scrollTop = position;
 		// Reflect the restored scroll position in shouldAutoScroll so
 		// streaming content won't fight the user's manual scroll.
 		const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
 		shouldAutoScroll = (scrollHeight - scrollTop - clientHeight) < 50;
+		pendingRestoreScroll = null;
 	});
 }
 
