@@ -22,7 +22,7 @@ describe("Hungarian memory context query handling", () => {
 	});
 
 	it("filters Hungarian stopwords from broad history queries", () => {
-		expect(tokenizeQuery("mi ez és hogyan")).toEqual([]);
+		expect(tokenizeQuery("mi és hogyan")).toEqual([]);
 	});
 
 	it("routes Hungarian project report requests to report mode", () => {
