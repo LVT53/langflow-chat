@@ -21,6 +21,7 @@
 	import SearchModal from '../search/SearchModal.svelte';
 	import AvatarCircle from '../ui/AvatarCircle.svelte';
 	import AppVersionBadge from './AppVersionBadge.svelte';
+	import { ChevronRight, ChevronLeft, X, FilePen, Search, Loader, BookOpen, LogOut } from '@lucide/svelte';
 	import type { ConversationListItem, SessionUser, Project } from '$lib/types';
 	import { avatarState } from '$lib/stores/avatar';
 
@@ -193,13 +194,9 @@
 			title={isCollapsed ? $t('sidebar.expandSidebar') : $t('sidebar.collapseSidebar')}
 		>
 			{#if isCollapsed}
-				<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-					<polyline points="9 18 15 12 9 6" />
-				</svg>
+				<ChevronRight size={20} strokeWidth={2.2} aria-hidden="true" />
 			{:else}
-				<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-					<polyline points="15 18 9 12 15 6" />
-				</svg>
+				<ChevronLeft size={20} strokeWidth={2.2} aria-hidden="true" />
 			{/if}
 		</button>
 
@@ -209,10 +206,7 @@
 			onclick={() => sidebarOpen.set(false)}
 			aria-label={$t('sidebar.closeSidebar')}
 		>
-			<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-				<line x1="18" x2="6" y1="6" y2="18" />
-				<line x1="6" x2="18" y1="6" y2="18" />
-			</svg>
+			<X size={24} strokeWidth={2} aria-hidden="true" />
 		</button>
 	</div>
 
@@ -228,10 +222,7 @@
 					title={$t('sidebar.newChat')}
 					aria-label={$t('sidebar.newChat')}
 				>
-					<svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-						<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-						<path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-					</svg>
+				<FilePen size={19} strokeWidth={2.1} aria-hidden="true" />
 				</button>
 				<button
 					type="button"
@@ -240,10 +231,7 @@
 					title={$t('sidebar.search')}
 					aria-label={$t('sidebar.searchConversations')}
 				>
-					<svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-						<circle cx="11" cy="11" r="7"></circle>
-						<path d="m20 20-3.5-3.5"></path>
-					</svg>
+				<Search size={19} strokeWidth={2.1} aria-hidden="true" />
 				</button>
 				<button
 					type="button"
@@ -253,43 +241,24 @@
 					aria-label={$t('sidebar.openKnowledgeBase')}
 					aria-busy={knowledgePending}
 				>
-					{#if knowledgePending}
-						<svg
-							class="animate-spin"
-							xmlns="http://www.w3.org/2000/svg"
-							width="18"
-							height="18"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2.1"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-						>
-							<path d="M21 12a9 9 0 1 1-6.219-8.56" />
-						</svg>
+				{#if knowledgePending}
+					<Loader class="animate-spin" size={18} strokeWidth={2.1} aria-hidden="true" />
 					{:else}
-						<svg xmlns="http://www.w3.org/2000/svg" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-							<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-							<path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z" />
-						</svg>
-					{/if}
-				</button>
-			</div>
-		{:else}
-			<!-- Expanded: search pill + compose icon in a single row -->
-			<div class="flex items-center gap-2">
-				<!-- Search pill -->
-				<button
-					type="button"
-					class="search-pill flex flex-1 cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-left text-sm text-text-muted transition-colors duration-150 hover:border-border-focus hover:bg-surface-page focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-					onclick={openSearchModal}
-					aria-label={$t('sidebar.searchConversations')}
-				>
-					<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-icon-muted">
-						<circle cx="11" cy="11" r="7"></circle>
-						<path d="m20 20-3.5-3.5"></path>
-					</svg>
+					<BookOpen size={19} strokeWidth={2.1} aria-hidden="true" />
+				{/if}
+			</button>
+		</div>
+	{:else}
+		<!-- Expanded: search pill + compose icon in a single row -->
+		<div class="flex items-center gap-2">
+			<!-- Search pill -->
+			<button
+				type="button"
+				class="search-pill flex flex-1 cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-left text-sm text-text-muted transition-colors duration-150 hover:border-border-focus hover:bg-surface-page focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+				onclick={openSearchModal}
+				aria-label={$t('sidebar.searchConversations')}
+			>
+				<Search size={15} strokeWidth={2.1} class="shrink-0 text-icon-muted" aria-hidden="true" />
 					<span class="flex-1 truncate">{$t('sidebar.search')}</span>
 				</button>
 				<!-- New chat compose button -->
@@ -300,10 +269,7 @@
 					title={$t('sidebar.newChat')}
 					aria-label={$t('sidebar.newChat')}
 				>
-					<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-						<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-						<path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-					</svg>
+			<FilePen size={18} strokeWidth={2.1} aria-hidden="true" />
 				</button>
 				<button
 					type="button"
@@ -313,27 +279,11 @@
 					aria-label={$t('sidebar.openKnowledgeBase')}
 					aria-busy={knowledgePending}
 				>
-					{#if knowledgePending}
-						<svg
-							class="animate-spin"
-							xmlns="http://www.w3.org/2000/svg"
-							width="18"
-							height="18"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2.1"
-							stroke-linecap="round"
-							stroke-linejoin="round"
-						>
-							<path d="M21 12a9 9 0 1 1-6.219-8.56" />
-						</svg>
-					{:else}
-						<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-							<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-							<path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z" />
-						</svg>
-					{/if}
+			{#if knowledgePending}
+					<Loader class="animate-spin" size={18} strokeWidth={2.1} aria-hidden="true" />
+				{:else}
+					<BookOpen size={18} strokeWidth={2.1} aria-hidden="true" />
+				{/if}
 				</button>
 			</div>
 		{/if}
@@ -370,21 +320,17 @@
 						size={22}
 					/>
 				</button>
-				<button
-					type="button"
-					class="logout-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-icon-muted transition-colors duration-150 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-					onclick={handleLogout}
-					title={$t('sidebar.logout')}
-					aria-label={$t('sidebar.logout')}
-				>
-					<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-						<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-						<polyline points="16 17 21 12 16 7"></polyline>
-						<line x1="21" y1="12" x2="9" y2="12"></line>
-					</svg>
-				</button>
-			</div>
-		{:else}
+		<button
+				type="button"
+				class="logout-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-icon-muted transition-colors duration-150 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+				onclick={handleLogout}
+				title={$t('sidebar.logout')}
+				aria-label={$t('sidebar.logout')}
+			>
+				<LogOut size={17} strokeWidth={2} aria-hidden="true" />
+			</button>
+		</div>
+	{:else}
 			<!-- Expanded: profile info (→ settings) + logout icon in one row -->
 			<div class="flex items-center gap-2">
 				<button
@@ -406,19 +352,15 @@
 						<div class="truncate text-xs text-text-muted">{user?.email ?? ''}</div>
 					</div>
 				</button>
-				<button
-					type="button"
-					class="logout-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-icon-muted transition-colors duration-150 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-					onclick={handleLogout}
-					title={$t('sidebar.logout')}
-					aria-label={$t('sidebar.logout')}
-				>
-					<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-						<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-						<polyline points="16 17 21 12 16 7"></polyline>
-						<line x1="21" y1="12" x2="9" y2="12"></line>
-					</svg>
-				</button>
+			<button
+				type="button"
+				class="logout-btn flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-icon-muted transition-colors duration-150 hover:text-danger focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+				onclick={handleLogout}
+				title={$t('sidebar.logout')}
+				aria-label={$t('sidebar.logout')}
+			>
+				<LogOut size={17} strokeWidth={2} aria-hidden="true" />
+			</button>
 			</div>
 		{/if}
 	</div>

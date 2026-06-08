@@ -35,6 +35,7 @@ import {
 	SIDEBAR_DESKTOP_BREAKPOINT,
 } from "$lib/stores/ui";
 import { t } from "$lib/i18n";
+import { ChevronRight, Plus, FolderPlus } from "@lucide/svelte";
 import type { ConversationListItem, Project } from "$lib/types";
 import ConversationItem from "./ConversationItem.svelte";
 import ProjectItem from "./ProjectItem.svelte";
@@ -735,9 +736,7 @@ function handleNewProjectKeydown(e: KeyboardEvent) {
 					onclick={toggleProjectsSection}
 				>
 					<span class="flex h-4 w-4 shrink-0 items-center justify-center text-icon-muted transition-transform duration-150" class:rotate-90={projectsSectionExpanded}>
-						<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-							<polyline points="9 18 15 12 9 6" />
-						</svg>
+						<ChevronRight size={12} strokeWidth={2.5} aria-hidden="true" />
 					</span>
 					<span class="text-[11px] font-medium uppercase tracking-wider text-text-muted">{$t('sidebar.projects')}</span>
 				</button>
@@ -747,9 +746,7 @@ function handleNewProjectKeydown(e: KeyboardEvent) {
 					aria-label={$t('sidebar.createNewProject')}
 					onclick={startCreateProject}
 				>
-					<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-						<line x1="12" x2="12" y1="5" y2="19" /><line x1="5" x2="19" y1="12" y2="12" />
-					</svg>
+					<Plus size={13} strokeWidth={2.5} aria-hidden="true" />
 				</button>
 			</div>
 
@@ -920,9 +917,7 @@ function handleNewProjectKeydown(e: KeyboardEvent) {
 				onclick={toggleProjectsSection}
 			>
 				<span class="flex h-4 w-4 shrink-0 items-center justify-center text-icon-muted transition-transform duration-150" class:rotate-90={projectsSectionExpanded}>
-					<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-						<polyline points="9 18 15 12 9 6" />
-					</svg>
+					<ChevronRight size={12} strokeWidth={2.5} aria-hidden="true" />
 				</span>
 				<span class="text-[11px] font-medium uppercase tracking-wider text-text-muted">{$t('sidebar.projects')}</span>
 			</button>
@@ -932,9 +927,7 @@ function handleNewProjectKeydown(e: KeyboardEvent) {
 				aria-label={$t('sidebar.createNewProject')}
 				onclick={startCreateProject}
 			>
-				<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-					<line x1="12" x2="12" y1="5" y2="19" /><line x1="5" x2="19" y1="12" y2="12" />
-				</svg>
+				<Plus size={13} strokeWidth={2.5} aria-hidden="true" />
 			</button>
 		</div>
 		{#if projectsSectionExpanded}
@@ -958,11 +951,7 @@ function handleNewProjectKeydown(e: KeyboardEvent) {
 						aria-label={$t('sidebar.createNewProject')}
 					>
 						<div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-surface-elevated text-icon-muted">
-							<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-								<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-								<line x1="12" y1="11" x2="12" y2="17"/>
-								<line x1="9" y1="14" x2="15" y2="14"/>
-							</svg>
+							<FolderPlus size={14} strokeWidth={2} aria-hidden="true" />
 						</div>
 						<div>
 							<p class="text-[12px] font-medium text-text-secondary">{$t('sidebar.noProjectsYet')}</p>
@@ -1014,9 +1003,7 @@ function handleNewProjectKeydown(e: KeyboardEvent) {
 							onclick={toggleChatsSection}
 						>
 							<span class="flex h-4 w-4 shrink-0 items-center justify-center text-icon-muted transition-transform duration-150" class:rotate-90={chatsSectionExpanded}>
-								<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-									<polyline points="9 18 15 12 9 6" />
-								</svg>
+								<ChevronRight size={12} strokeWidth={2.5} aria-hidden="true" />
 							</span>
 							<span class="text-[11px] font-medium uppercase tracking-wider text-text-muted">{$t('sidebar.chats')}</span>
 						</button>

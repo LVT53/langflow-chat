@@ -5,6 +5,7 @@ import { fade } from "svelte/transition";
 import { goto } from "$app/navigation";
 import { browser } from "$app/environment";
 import { t } from "$lib/i18n";
+import { X, Search, Loader, MessageSquare, Folder, ChevronRight } from "@lucide/svelte";
 import { conversations, loadConversations } from "$lib/stores/conversations";
 import { projects } from "$lib/stores/projects";
 import {
@@ -178,20 +179,14 @@ onDestroy(() => {
 						onclick={handleClose}
 						aria-label={$t('searchModal.close')}
 					>
-						<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-							<line x1="18" x2="6" y1="6" y2="18"></line>
-							<line x1="6" x2="18" y1="6" y2="18"></line>
-						</svg>
+				<X size={16} strokeWidth={2.1} aria-hidden="true" />
 					</button>
 				</div>
 			</div>
 
 			<div class="search-modal-input-band border-b px-4 py-3">
 				<div class="search-input-wrapper flex items-center gap-2.5 rounded-lg border px-3 py-2">
-					<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-icon-muted">
-						<circle cx="11" cy="11" r="7"></circle>
-						<path d="m20 20-3.5-3.5"></path>
-					</svg>
+			<Search size={16} strokeWidth={2.1} class="shrink-0 text-icon-muted" aria-hidden="true" />
 					<input
 						bind:this={searchInputRef}
 						bind:value={searchQuery}
@@ -206,10 +201,7 @@ onDestroy(() => {
 							onclick={() => (searchQuery = '')}
 							aria-label={$t('searchModal.clear')}
 						>
-							<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-								<line x1="18" x2="6" y1="6" y2="18"></line>
-								<line x1="6" x2="18" y1="6" y2="18"></line>
-							</svg>
+					<X size={14} strokeWidth={2.1} aria-hidden="true" />
 						</button>
 					{/if}
 				</div>
@@ -219,19 +211,14 @@ onDestroy(() => {
 				{#if conversationLoading}
 					<div class="flex flex-col items-center justify-center px-4 py-12 text-center">
 						<div class="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-surface-elevated">
-							<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="animate-spin text-icon-muted">
-								<circle cx="12" cy="12" r="10" stroke-dasharray="32" stroke-dashoffset="12" stroke-linecap="round"></circle>
-							</svg>
+					<Loader class="animate-spin" size={17} strokeWidth={2} aria-hidden="true" />
 						</div>
 						<h3 class="text-[13px] font-sans text-text-primary">{$t('searchModal.loading')}</h3>
 					</div>
 				{:else if conversationResults.length === 0}
 					<div class="flex flex-col items-center justify-center px-4 py-12 text-center">
 						<div class="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-surface-elevated">
-							<svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-icon-muted">
-								<circle cx="11" cy="11" r="7"></circle>
-								<path d="m20 20-3.5-3.5"></path>
-							</svg>
+					<Search size={17} strokeWidth={2} class="text-icon-muted" aria-hidden="true" />
 						</div>
 						<h3 class="text-[13px] font-sans text-text-primary">{$t('searchModal.noMatches')}</h3>
 						<p class="mt-1 text-[12px] font-sans text-text-muted">
@@ -254,9 +241,7 @@ onDestroy(() => {
 											onclick={() => handleSelection(conversation.id)}
 										>
 											<div class="search-result-icon flex h-8 w-8 shrink-0 items-center justify-center rounded-md">
-												<svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" class="text-icon-muted">
-													<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-												</svg>
+										<MessageSquare size={15} strokeWidth={2.1} class="text-icon-muted" aria-hidden="true" />
 											</div>
 											<div class="min-w-0 flex-1">
 												<div class="truncate text-[13px] font-sans font-medium text-text-primary">
@@ -266,16 +251,12 @@ onDestroy(() => {
 													<div class="mt-0.5 text-[11px] font-sans text-accent">{$t('searchModal.currentConversation')}</div>
 												{:else if conversation.projectId && projectsMap[conversation.projectId]}
 													<div class="mt-0.5 flex items-center gap-1 text-[11px] font-sans text-text-muted">
-														<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="shrink-0">
-															<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-														</svg>
+												<Folder size={11} strokeWidth={2} class="shrink-0" aria-hidden="true" />
 														{projectsMap[conversation.projectId]}
 													</div>
 												{/if}
 											</div>
-											<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-icon-muted">
-												<path d="m9 18 6-6-6-6"></path>
-											</svg>
+										<ChevronRight size={14} strokeWidth={2.1} class="shrink-0 text-icon-muted" aria-hidden="true" />
 										</button>
 									{/each}
 								</div>

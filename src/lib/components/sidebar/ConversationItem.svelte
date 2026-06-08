@@ -1,5 +1,6 @@
 <script lang="ts">
 import { onMount } from "svelte";
+import { Check, ChevronRight, EllipsisVertical, Folder, GitBranch, Pencil, Pin, Trash2, X } from "@lucide/svelte";
 import type { ConversationListItem, Project } from "$lib/types";
 import { t } from "$lib/i18n";
 import {
@@ -325,13 +326,7 @@ onMount(() => {
 						aria-label={indicatorLabel}
 						title={indicatorLabel}
 					>
-						<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-							<path d="M4 12h5"/>
-							<path d="M9 12c4 0 5-6 10-6"/>
-							<path d="M16 3l3 3-3 3"/>
-							<path d="M9 12c4 0 5 6 10 6"/>
-							<path d="M16 15l3 3-3 3"/>
-						</svg>
+					<GitBranch size={13} strokeWidth={2.2} aria-hidden="true" />
 						<span class="fork-indicator-tooltip" aria-hidden="true">{indicatorLabel}</span>
 					</span>
 				{/if}
@@ -360,21 +355,7 @@ onMount(() => {
 			onclick={toggleMenu}
 			aria-label={$t('sidebar.conversationOptions')}
 		>
-			<svg
-				xmlns="http://www.w3.org/2000/svg"
-				width="16"
-				height="16"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="2"
-				stroke-linecap="round"
-				stroke-linejoin="round"
-			>
-				<circle cx="12" cy="12" r="1" />
-				<circle cx="12" cy="5" r="1" />
-				<circle cx="12" cy="19" r="1" />
-			</svg>
+		<EllipsisVertical size={16} strokeWidth={2} aria-hidden="true" />
 		</button>
 
 		{#if menuOpen}
@@ -391,10 +372,7 @@ onMount(() => {
 					class="conversation-option flex min-h-[32px] w-full items-center text-left font-sans text-[12px] text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
 					onclick={handleTogglePin}
 				>
-					<svg class="conversation-option-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-						<path d="M12 17v5"/>
-						<path d="M8 4h8l-1 6 3 3v2H6v-2l3-3z"/>
-					</svg>
+				<Pin class="conversation-option-icon" size={15} strokeWidth={2} aria-hidden="true" />
 					<span>{conversation.sidebarPinned ? $t('sidebar.unpinFromSidebar') : $t('sidebar.pinToSidebar')}</span>
 				</button>
 				<button
@@ -403,10 +381,7 @@ onMount(() => {
 					class="conversation-option flex min-h-[32px] w-full items-center text-left font-sans text-[12px] text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
 					onclick={startRename}
 				>
-					<svg class="conversation-option-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-						<path d="M12 20h9" />
-						<path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4Z" />
-					</svg>
+				<Pencil class="conversation-option-icon" size={15} strokeWidth={2} aria-hidden="true" />
 					<span>{$t('sidebar.rename')}</span>
 				</button>
 
@@ -417,13 +392,9 @@ onMount(() => {
 						class:conversation-option-active={showProjectSubmenu}
 						onclick={toggleProjectSubmenu}
 					>
-						<svg class="conversation-option-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-							<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-						</svg>
-						<span class="flex-1">{$t('sidebar.moveToProject')}</span>
-						<svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="shrink-0 text-icon-muted mr-1">
-							<polyline points="9 18 15 12 9 6" />
-						</svg>
+						<Folder class="conversation-option-icon" size={15} strokeWidth={2} aria-hidden="true" />
+					<span class="flex-1">{$t('sidebar.moveToProject')}</span>
+					<ChevronRight class="shrink-0 text-icon-muted mr-1" size={13} strokeWidth={2.5} aria-hidden="true" />
 					</button>
 				{/if}
 
@@ -433,13 +404,7 @@ onMount(() => {
 					class="conversation-option conversation-option-danger flex min-h-[32px] w-full items-center text-left font-sans text-[12px] text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
 					onclick={handleDelete}
 				>
-					<svg class="conversation-option-icon conversation-option-icon-danger" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-						<path d="M3 6h18" />
-						<path d="M8 6V4h8v2" />
-						<path d="M19 6l-1 14H6L5 6" />
-						<path d="M10 11v6" />
-						<path d="M14 11v6" />
-					</svg>
+				<Trash2 class="conversation-option-icon conversation-option-icon-danger" size={15} strokeWidth={2} aria-hidden="true" />
 					<span>{$t('sidebar.delete')}</span>
 				</button>
 			</div>
@@ -459,14 +424,10 @@ onMount(() => {
 						class:conversation-option-current={conversation.projectId === proj.id}
 						onclick={(event) => handleMoveToProject(event, proj.id)}
 					>
-						<svg class="conversation-option-icon" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-							<path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-						</svg>
-						<span class="truncate">{proj.name}</span>
-						{#if conversation.projectId === proj.id}
-							<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="ml-auto shrink-0 text-accent">
-								<polyline points="20 6 9 17 4 12" />
-							</svg>
+						<Folder class="conversation-option-icon" size={15} strokeWidth={2} aria-hidden="true" />
+					<span class="truncate">{proj.name}</span>
+					{#if conversation.projectId === proj.id}
+						<Check class="ml-auto shrink-0 text-accent" size={14} strokeWidth={2.5} aria-hidden="true" />
 						{/if}
 					</button>
 				{/each}
@@ -476,9 +437,7 @@ onMount(() => {
 						class="conversation-option flex min-h-[30px] w-full items-center text-left font-sans text-[12px] text-text-muted transition-colors duration-150 focus-visible:outline-none cursor-pointer"
 						onclick={(event) => handleMoveToProject(event, null)}
 					>
-						<svg class="conversation-option-icon opacity-60" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-							<line x1="18" x2="6" y1="6" y2="18"/><line x1="6" x2="18" y1="6" y2="18"/>
-						</svg>
+				<X class="conversation-option-icon opacity-60" size={15} strokeWidth={2} aria-hidden="true" />
 						<span>{$t('sidebar.removeFromProject')}</span>
 					</button>
 				{/if}

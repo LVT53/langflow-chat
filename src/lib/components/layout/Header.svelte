@@ -4,6 +4,7 @@
 	import { logout } from '$lib/client/api/auth';
 	import { clearClientAccountState } from '$lib/client/session-boundary';
 	import { t } from '$lib/i18n';
+	import { Menu, User, Plus, LogOut } from '@lucide/svelte';
 	import { markPreviousConversationId } from '$lib/client/conversation-session';
 	import { portal, setMenuBaseBackground, updateMenuPosition, setupMenuSync } from '$lib/utils/popup-menu';
 	import {
@@ -98,21 +99,7 @@
 			onclick={toggleSidebar}
 			aria-label={$t('header.toggleSidebar')}
 		>
-			<svg
-				xmlns="http://www.w3.org/2000/svg"
-				width="24"
-				height="24"
-				viewBox="0 0 24 24"
-				fill="none"
-				stroke="currentColor"
-				stroke-width="2"
-				stroke-linecap="round"
-				stroke-linejoin="round"
-			>
-				<line x1="3" x2="21" y1="6" y2="6" />
-				<line x1="3" x2="21" y1="12" y2="12" />
-				<line x1="3" x2="21" y1="18" y2="18" />
-			</svg>
+			<Menu size={24} strokeWidth={2} aria-hidden="true" />
 		</button>
 	</div>
 
@@ -129,10 +116,7 @@
 				title={$t('header.openUserMenu')}
 				aria-expanded={mobileMenuOpen}
 			>
-				<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-					<path d="M20 21a8 8 0 0 0-16 0" />
-					<circle cx="12" cy="8" r="5" />
-				</svg>
+			<User size={20} strokeWidth={2} class="header-option-icon" aria-hidden="true" />
 			</button>
 
 			{#if mobileMenuOpen}
@@ -146,10 +130,7 @@
 						class="header-option header-option-accent flex min-h-[38px] w-full items-center px-[3px] py-[3px] text-left text-sm font-sans text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
 						onclick={handleNewConversation}
 					>
-						<svg class="header-option-icon header-option-icon-accent" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-							<line x1="12" x2="12" y1="5" y2="19" />
-							<line x1="5" x2="19" y1="12" y2="12" />
-						</svg>
+					<Plus size={18} strokeWidth={2.1} class="header-option-icon header-option-icon-accent" aria-hidden="true" />
 						<span>{$t('header.newChat')}</span>
 					</button>
 					<button
@@ -159,21 +140,14 @@
 							goto('/settings');
 						}}
 					>
-						<svg class="header-option-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-							<path d="M20 21a8 8 0 0 0-16 0" />
-							<circle cx="12" cy="8" r="5" />
-						</svg>
+					<User size={18} strokeWidth={2.1} class="header-option-icon" aria-hidden="true" />
 						<span>{$t('header.profileAndSettings')}</span>
 					</button>
 					<button
 						class="header-option header-option-danger flex min-h-[38px] w-full items-center px-[3px] py-[3px] text-left text-sm font-sans text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
 						onclick={handleLogout}
 					>
-						<svg class="header-option-icon header-option-icon-danger" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
-							<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-							<polyline points="16 17 21 12 16 7"></polyline>
-							<line x1="21" y1="12" x2="9" y2="12"></line>
-						</svg>
+					<LogOut size={18} strokeWidth={2.1} class="header-option-icon header-option-icon-danger" aria-hidden="true" />
 						<span>{$t('header.logout')}</span>
 					</button>
 				</div>

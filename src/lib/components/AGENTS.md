@@ -126,6 +126,14 @@ Pages may have `_components/` directories for page-scoped UI:
 
 These are **page-internal** — do not import them from other pages. If logic becomes shared, move to `src/lib/components/` or `src/lib/client/api/`.
 
+## Icon Policy
+
+- **All UI icons must be sourced from Lucide** ([lucide.dev](https://lucide.dev)) via `@lucide/svelte`. Never write inline `<svg>` elements for icons.
+- Import icons with PascalCase names: `import { FileText, Search, X } from "@lucide/svelte";`
+- Always set `size`, `strokeWidth`, and `class` props to match the design system. Add `aria-hidden="true"` to decorative icons.
+- **Exceptions**: `LogoMark.svelte` (brand logo), `ContextUsageRing.svelte` (data visualization), and icons with no verified Lucide equivalent.
+- When replacing an inline icon, consult the migration mapping in the commit history for the exhaustive table.
+
 Chat-route presentation rule:
 - `ChatComposerPanel` and `ChatMessagePane` are part of the chat-detail layout, not the landing-page hero. Keep the composer bottom-docked on the chat route and keep the message surface visible even when a brand-new conversation has no persisted messages yet.
 - The app shell must not infer "current conversation was deleted" purely from the sidebar list. Empty bootstrap chats may be real before they become list-visible.

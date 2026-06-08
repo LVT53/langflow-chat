@@ -609,6 +609,7 @@ Rules:
 - keep spacing on the existing 4px-derived scale exposed through the spacing tokens
 - preserve the reading-first visual direction: quiet UI chrome, generous spacing, and message content as the focal surface
 - if you change color, spacing, radius, or typography primitives, update both `src/app.css` and the Tailwind mapping when needed
+- **Icon sourcing**: all UI icons MUST come from [Lucide](https://lucide.dev) via `@lucide/svelte`. Never write inline `<svg>` elements for icons — always import the equivalent Lucide component. The only exceptions are: (a) the custom brand logo (`LogoMark.svelte`), (b) data visualization SVGs that are charts/graphs not icons (`ContextUsageRing.svelte`), and (c) icons that have no Lucide equivalent (verify before concluding none exists). When adding a new icon, import it from `@lucide/svelte` with the correct PascalCase name, set `size` and `strokeWidth` to match the design system, and always include `aria-hidden="true"` on decorative icons.
 
 Scroll ownership contract:
 
@@ -728,6 +729,7 @@ Run these too when relevant:
 - No stores that also become API clients.
 - No monolithic catch-all service file that mixes unrelated concerns again.
 - No revival of deleted legacy files just because they reappear as untracked leftovers after merges or agentic runs; verify git history before restoring anything outside the tracked graph.
+- No new hand-crafted inline `<svg>` icon elements. All UI icons must come from `@lucide/svelte` (see Visual System rules).
 
 ## Doc Map
 
