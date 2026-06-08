@@ -845,35 +845,50 @@ export async function executeCode(
 		let extractionError: string | undefined;
 		try {
 			files = await extractFilesFromContainer(sandbox.container);
-			const inspectionFiles = outputInspection?.files ?? [];
-			if (inspectionFiles.length > 0) {
-				const extractedFilenames = new Set(
-					files.map((f) => path.basename(f.filename)),
+		} catch (error) {
+			extractionError = error instanceof Error ? error.message : String(error);
+		}
+
+		const inspectionFiles = outputInspection?.files ?? [];
+		if (inspectionFiles.length > 0) {
+			const extractedFilenames = new Set(
+				files.map((f) => path.basename(f.filename)),
+			);
+			const missingFiles = inspectionFiles.filter(
+				(f) => !extractedFilenames.has(path.basename(f.relativePath)),
+			);
+			if (missingFiles.length > 0) {
+				console.warn(
+					"[FILE_PRODUCTION] Archive extraction missed in-container output files; reading missing files in-container",
+					{
+						containerId: sandbox.container.id,
+						totalInspectionFiles: inspectionFiles.length,
+						extractedFiles: files.length,
+						missingFiles: missingFiles.length,
+						missing: missingFiles,
+					},
 				);
-				const missingFiles = inspectionFiles.filter(
-					(f) => !extractedFilenames.has(path.basename(f.relativePath)),
-				);
-				if (missingFiles.length > 0) {
-					console.warn(
-						"[FILE_PRODUCTION] Archive extraction missed in-container output files; reading missing files in-container",
-						{
-							containerId: sandbox.container.id,
-							totalInspectionFiles: inspectionFiles.length,
-							extractedFiles: files.length,
-							missingFiles: missingFiles.length,
-							missing: missingFiles,
-						},
-					);
+				try {
 					const missingFileOutputs = await readFilesFromInsideContainer(
 						sandbox.container,
 						language,
 						missingFiles,
 					);
 					files = [...files, ...missingFileOutputs];
+					extractionError = undefined;
+				} catch (fallbackError) {
+					console.warn(
+						"[FILE_PRODUCTION] In-container fallback read also failed; will attempt re-inspection if applicable",
+						{
+							containerId: sandbox.container.id,
+							error:
+								fallbackError instanceof Error
+									? fallbackError.message
+									: String(fallbackError),
+						},
+					);
 				}
 			}
-		} catch (error) {
-			extractionError = error instanceof Error ? error.message : String(error);
 		}
 
 		// Re-inspection: if execution succeeded but no files were collected, wait briefly and retry once.
@@ -884,11 +899,7 @@ export async function executeCode(
 				sandbox.container,
 				language,
 			);
-			if (
-				reInspection &&
-				reInspection.files.length > 0 &&
-				extractionError === undefined
-			) {
+			if (reInspection && reInspection.files.length > 0) {
 				console.warn(
 					"[FILE_PRODUCTION] Re-inspection found output files after initial empty result; retrying collection",
 					{
@@ -903,6 +914,7 @@ export async function executeCode(
 						language,
 						reInspection.files,
 					);
+					extractionError = undefined;
 				} catch (error) {
 					extractionError =
 						error instanceof Error ? error.message : String(error);
