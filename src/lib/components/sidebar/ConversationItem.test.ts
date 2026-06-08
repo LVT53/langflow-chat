@@ -70,7 +70,7 @@ describe("ConversationItem Component", () => {
 		expect(
 			screen.queryByRole("button", { name: "Fork of Source title, fork 2" }),
 		).not.toBeInTheDocument();
-		expect(indicator.querySelector("circle")).not.toBeInTheDocument();
+		expect(indicator.getAttribute("role")).toBe("img");
 		expect(screen.queryByRole("tree")).not.toBeInTheDocument();
 	});
 

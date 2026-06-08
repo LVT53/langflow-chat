@@ -119,7 +119,7 @@ describe('MessageArea', () => {
 			contextDebug: null,
 		});
 
-		await fireEvent.click(getByRole('button', { name: 'Thought for 0 s' }));
+		await fireEvent.click(getByRole('button', { name: 'Thought for 0s' }));
 		expect(getByText(/step one\s+step two/)).toBeTruthy();
 
 		await rerender({
@@ -503,8 +503,8 @@ describe('MessageArea', () => {
 		expect(boundaryMarker).toHaveClass('fork-lineage-marker');
 		expect(originMarker).toHaveClass('fork-lineage-marker');
 		expect(boundaryMarker.querySelector('.fork-boundary-line')).not.toBeInTheDocument();
-		expect(boundaryMarker.querySelector('circle')).not.toBeInTheDocument();
-		expect(originMarker.querySelector('circle')).not.toBeInTheDocument();
+		expect(boundaryMarker.querySelector('.fork-lineage-icon')).toBeTruthy();
+		expect(originMarker.querySelector('.fork-lineage-icon')).toBeTruthy();
 	});
 
 	it('renders context compression markers as compact timeline events', () => {
