@@ -349,12 +349,21 @@ function getDocumentSourceLabel(document: DocumentWorkspaceItem): string {
 		: $t("documentWorkspace.fromKnowledgeBase");
 }
 
-let familyDocuments = $derived.by(() => {
-	if (!activeDocument?.documentFamilyId) return [];
+let familyDocuments = $state<DocumentWorkspaceItem[]>([]);
+
+$effect(() => {
+	const activeDoc = activeDocument;
+	if (!activeDoc?.documentFamilyId) {
+		familyDocuments = [];
+		return;
+	}
+
+	const currentAvailable = availableDocuments;
+	const currentDocuments = documents;
 
 	const mergedById = new Map<string, DocumentWorkspaceItem>();
-	for (const document of [...availableDocuments, ...documents]) {
-		if (document.documentFamilyId !== activeDocument.documentFamilyId) continue;
+	for (const document of [...currentAvailable, ...currentDocuments]) {
+		if (document.documentFamilyId !== activeDoc.documentFamilyId) continue;
 		const existing = mergedById.get(document.id);
 		mergedById.set(
 			document.id,
@@ -362,12 +371,12 @@ let familyDocuments = $derived.by(() => {
 		);
 	}
 
-	return Array.from(mergedById.values()).sort((left, right) => {
+	familyDocuments = Array.from(mergedById.values()).sort((left, right) => {
 		const leftVersion = left.versionNumber ?? 0;
 		const rightVersion = right.versionNumber ?? 0;
 		if (rightVersion !== leftVersion) return rightVersion - leftVersion;
-		if (left.id === activeDocument.id) return -1;
-		if (right.id === activeDocument.id) return 1;
+		if (left.id === activeDoc.id) return -1;
+		if (right.id === activeDoc.id) return 1;
 		return getDocumentTitle(left).localeCompare(getDocumentTitle(right));
 	});
 });
