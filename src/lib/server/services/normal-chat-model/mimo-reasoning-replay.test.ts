@@ -31,14 +31,15 @@ describe("MiMo reasoning content replay", () => {
 			]),
 		});
 
+		expect(replayed).not.toBe(body);
 		expect(replayed).toMatchObject({
-			messages: [
-				{},
-				{
+			messages: expect.arrayContaining([
+				expect.objectContaining({
+					role: "assistant",
 					reasoning_content:
 						"The user needs weather, so I should call the weather tool.",
-				},
-			],
+				}),
+			]),
 		});
 	});
 
