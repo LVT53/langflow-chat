@@ -85,14 +85,7 @@ type ProviderFamily =
 function identifyProviderFamily(
 	provider: NormalChatModelRunCompatibilityProvider,
 ): ProviderFamily {
-	const haystack = [
-		provider.name,
-		provider.displayName,
-		provider.baseUrl,
-		provider.modelName,
-	]
-		.join(" ")
-		.toLowerCase();
+	const haystack = providerCompatibilityHaystack(provider);
 
 	if (
 		provider.baseUrl.includes("api.openai.com") ||
@@ -110,10 +103,31 @@ function identifyProviderFamily(
 	if (/\bqwen\b|qwen-|dashscope|qwencloud|aliyun|alibaba/.test(haystack)) {
 		return "qwen";
 	}
-	if (/\bmimo\b|mimo-|xiaomimimo|api\.xiaomimimo\./.test(haystack)) {
+	if (isMiMoProvider(provider)) {
 		return "mimo";
 	}
 	return "generic";
+}
+
+export function isMiMoProvider(
+	provider: NormalChatModelRunCompatibilityProvider,
+): boolean {
+	return /\bmimo\b|mimo-|xiaomimimo|api\.xiaomimimo\./.test(
+		providerCompatibilityHaystack(provider),
+	);
+}
+
+function providerCompatibilityHaystack(
+	provider: NormalChatModelRunCompatibilityProvider,
+): string {
+	return [
+		provider.name,
+		provider.displayName,
+		provider.baseUrl,
+		provider.modelName,
+	]
+		.join(" ")
+		.toLowerCase();
 }
 
 function usesMaxCompletionTokens(family: ProviderFamily): boolean {
