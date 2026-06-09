@@ -2,7 +2,6 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { runPlainNormalChatModelRun } from "$lib/server/services/normal-chat-model";
 import {
 	AI_SMOKE_API_KEY,
-	AI_SMOKE_MODEL_ID,
 	AI_SMOKE_PLAIN_TEXT,
 	AI_SMOKE_SCENARIOS,
 } from "../fixtures/ai/openai-compatible-scenarios";
