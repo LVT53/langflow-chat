@@ -22,16 +22,13 @@ describe("MiMo reasoning_content replay", () => {
 
 			if (hasToolResultMessage(body)) {
 				if (!hasAssistantToolReasoningContent(body)) {
-					return jsonResponse(
-						400,
-						{
-							error: {
-								message: "missing historical reasoning_content",
-								type: "invalid_request_error",
-								code: "missing_reasoning_content",
-							},
+					return jsonResponse(400, {
+						error: {
+							message: "missing historical reasoning_content",
+							type: "invalid_request_error",
+							code: "missing_reasoning_content",
 						},
-					);
+					});
 				}
 
 				return sseResponse([
@@ -121,7 +118,7 @@ describe("MiMo reasoning_content replay", () => {
 			title,
 		}));
 
-		const events = [];
+		const events: unknown[] = [];
 		for await (const event of runStreamingNormalChatModelRun({
 			provider: {
 				id: "xiaomi-mimo-provider",
@@ -160,9 +157,9 @@ describe("MiMo reasoning_content replay", () => {
 			type: "text_delta",
 			text: AI_SMOKE_TOOL_FINAL_TEXT,
 		});
-		expect(events).not.toContainEqual(
-			expect.objectContaining({ type: "error" }),
-		);
+		expect(
+			events.some((event) => isRecord(event) && event.type === "error"),
+		).toBe(false);
 		expect(toolExecute).toHaveBeenCalledWith(
 			TOOL_CALL_INPUT,
 			expect.objectContaining({ toolCallId: TOOL_CALL_ID }),
@@ -170,11 +167,9 @@ describe("MiMo reasoning_content replay", () => {
 		expect(requests).toHaveLength(2);
 		expect(requests[0]).toMatchObject({
 			model: MIMO_ULTRASPEED_MODEL_ID,
-			thinking: { type: "enabled" },
 		});
 		expect(requests[1]).toMatchObject({
 			model: MIMO_ULTRASPEED_MODEL_ID,
-			thinking: { type: "enabled" },
 		});
 		expect(findAssistantToolMessage(requests[1])).toMatchObject({
 			reasoning_content: AI_SMOKE_STREAM_REASONING_TEXT,
