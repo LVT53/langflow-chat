@@ -631,8 +631,8 @@ function summarizeForkContextProvenance(params: {
 	messages: PromptContextMessage[];
 	copiedForkPointMessageId?: string | null;
 }): ForkContextProvenanceSummary | null {
-	const inheritedMessages = params.messages.filter(
-		(message) => message.forkCopy,
+	const inheritedMessages = params.messages.filter((message) =>
+		getPromptMessageForkCopy(message),
 	);
 	if (inheritedMessages.length === 0) return null;
 
@@ -651,14 +651,17 @@ function summarizeForkContextProvenance(params: {
 		sourceConversationIds: Array.from(
 			new Set(
 				inheritedMessages
-					.map((message) => message.forkCopy?.sourceConversationId)
+					.map(
+						(message) =>
+							getPromptMessageForkCopy(message)?.sourceConversationId,
+					)
 					.filter((value): value is string => Boolean(value)),
 			),
 		),
 		sourceMessageIds: Array.from(
 			new Set(
 				inheritedMessages
-					.map((message) => message.forkCopy?.sourceMessageId)
+					.map((message) => getPromptMessageForkCopy(message)?.sourceMessageId)
 					.filter((value): value is string => Boolean(value)),
 			),
 		),
@@ -667,11 +670,24 @@ function summarizeForkContextProvenance(params: {
 }
 
 function serializePromptMessageContent(message: PromptContextMessage): string {
-	if (!message.forkCopy) return message.content;
+	const forkCopy = getPromptMessageForkCopy(message);
+	if (!forkCopy) return message.content;
 	return [
-		`[Inherited copied turn from source conversation ${message.forkCopy.sourceConversationId}; source message ${message.forkCopy.sourceMessageId}]`,
+		`[Inherited copied turn from source conversation ${forkCopy.sourceConversationId}; source message ${forkCopy.sourceMessageId}]`,
 		message.content,
 	].join("\n");
+}
+
+function getPromptMessageForkCopy(message: PromptContextMessage) {
+	return (
+		message.forkCopy ??
+		(
+			message as PromptContextMessage & {
+				fork_copy?: PromptContextMessage["forkCopy"];
+			}
+		).fork_copy ??
+		null
+	);
 }
 
 function resolveContextLatencyTier(params: {
@@ -768,11 +784,16 @@ async function buildShallowConstructedContext(params: {
 				snapshot: contextCompressionPromptSnapshot.snapshot,
 			})
 		: sessionMessages;
-	const forkOrigin = promptSessionMessages.some((message) => message.forkCopy)
+	const forkProvenanceMessages =
+		storedMessages.length > 0 ? storedMessages : sessionMessages;
+	const hasForkCopyProvenance = forkProvenanceMessages.some((message) =>
+		getPromptMessageForkCopy(message),
+	);
+	const forkOrigin = hasForkCopyProvenance
 		? await getConversationForkOrigin(params.conversationId).catch(() => null)
 		: null;
 	const forkProvenance = summarizeForkContextProvenance({
-		messages: sessionMessages,
+		messages: forkProvenanceMessages,
 		copiedForkPointMessageId: forkOrigin?.copiedForkPointMessageId ?? null,
 	});
 	const allTurns = selectRecentRoleTurns(
@@ -1014,8 +1035,10 @@ export async function buildConstructedContext(params: {
 				snapshot: contextCompressionPromptSnapshot.snapshot,
 			})
 		: sessionMessages;
+	const forkProvenanceMessages =
+		storedMessages.length > 0 ? storedMessages : sessionMessages;
 	const forkProvenance = summarizeForkContextProvenance({
-		messages: sessionMessages,
+		messages: forkProvenanceMessages,
 		copiedForkPointMessageId: forkOrigin?.copiedForkPointMessageId ?? null,
 	});
 	const currentAttachments = resolvedAttachments.promptArtifacts;

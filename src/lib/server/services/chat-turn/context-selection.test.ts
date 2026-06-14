@@ -574,6 +574,151 @@ describe("buildConstructedContext", () => {
 		expect(mocks.selectWorkingSetArtifactsForPrompt).not.toHaveBeenCalled();
 	});
 
+	it("preserves shallow fork provenance when compression filters inherited fork copies from the prompt", async () => {
+		resetConstructedContextMocks();
+		mocks.loadHonchoPromptContext.mockResolvedValue({
+			sessionMessages: [
+				{
+					id: "fork-user-1",
+					role: "user",
+					content: "INHERITED_RAW_SOURCE_QUESTION",
+					createdAt: 1,
+					messageSequence: 1,
+					forkCopy: {
+						sourceMessageId: "source-user-1",
+						sourceConversationId: "source-conv",
+						sourceRole: "user",
+						sourceCreatedAt: "2026-05-15T10:00:01.000Z",
+					},
+				},
+				{
+					id: "fork-assistant-1",
+					role: "assistant",
+					content: "INHERITED_RAW_SOURCE_ANSWER",
+					createdAt: 2,
+					messageSequence: 2,
+					forkCopy: {
+						sourceMessageId: "source-assistant-1",
+						sourceConversationId: "source-conv",
+						sourceRole: "assistant",
+						sourceCreatedAt: "2026-05-15T10:00:02.000Z",
+					},
+				},
+				{
+					id: "fork-user-2",
+					role: "user",
+					content: "Fork-local follow-up",
+					createdAt: 3,
+					messageSequence: 3,
+					forkCopy: null,
+				},
+			],
+			storedMessages: [
+				{
+					id: "fork-user-1",
+					role: "user",
+					content: "INHERITED_RAW_SOURCE_QUESTION",
+					createdAt: 1,
+					messageSequence: 1,
+					forkCopy: {
+						sourceMessageId: "source-user-1",
+						sourceConversationId: "source-conv",
+						sourceRole: "user",
+						sourceCreatedAt: "2026-05-15T10:00:01.000Z",
+					},
+				},
+				{
+					id: "fork-assistant-1",
+					role: "assistant",
+					content: "INHERITED_RAW_SOURCE_ANSWER",
+					createdAt: 2,
+					messageSequence: 2,
+					forkCopy: {
+						sourceMessageId: "source-assistant-1",
+						sourceConversationId: "source-conv",
+						sourceRole: "assistant",
+						sourceCreatedAt: "2026-05-15T10:00:02.000Z",
+					},
+				},
+				{
+					id: "fork-user-2",
+					role: "user",
+					content: "Fork-local follow-up",
+					createdAt: 3,
+					messageSequence: 3,
+					forkCopy: null,
+				},
+			],
+			summary: null,
+			peerContext: "",
+			honchoContext: null,
+			honchoSnapshot: null,
+		});
+		mocks.getLatestValidContextCompressionSnapshot.mockResolvedValue({
+			id: "snapshot-1",
+			conversationId: "fork-conv",
+			userId: "user-1",
+			trigger: "manual",
+			status: "valid",
+			modelId: "model-1",
+			sourceStartMessageId: "fork-user-1",
+			sourceEndMessageId: "fork-assistant-1",
+			sourceStartMessageSequence: 1,
+			sourceEndMessageSequence: 2,
+			snapshot: {
+				goal: "Keep inherited fork continuity.",
+				currentState: "Inherited fork exchange is compressed.",
+				importantFacts: ["COMPRESSED_FORK_FACT"],
+			},
+			sourceCoverage: {},
+			sourceRefs: [],
+			estimatedTokens: 64,
+			sourceTokenEstimate: 128,
+			failureReason: null,
+			createdAt: new Date("2026-05-15T10:00:00.000Z"),
+			updatedAt: new Date("2026-05-15T10:00:00.000Z"),
+		});
+		mocks.getConversationForkOrigin.mockResolvedValue({
+			forkConversationId: "fork-conv",
+			sourceConversationId: "source-conv",
+			sourceAssistantMessageId: "source-assistant-1",
+			sourceConversationIdAvailable: true,
+			sourceAssistantMessageIdAvailable: true,
+			copiedForkPointMessageId: "fork-assistant-1",
+			sourceTitle: "Source title",
+			forkSequence: 1,
+			createdAt: Date.now(),
+		});
+
+		const constructed = await buildConstructedContext({
+			userId: "user-1",
+			conversationId: "fork-conv",
+			message: "Thanks.",
+			modelId: "local-model",
+			contextLimits: {
+				maxModelContext: 16_000,
+				compactionUiThreshold: 12_000,
+				targetConstructedContext: 8_000,
+			},
+		});
+
+		expect(constructed.inputValue).toContain("COMPRESSED_FORK_FACT");
+		expect(constructed.inputValue).toContain("Fork-local follow-up");
+		expect(constructed.inputValue).not.toContain(
+			"INHERITED_RAW_SOURCE_QUESTION",
+		);
+		expect(constructed.inputValue).not.toContain("INHERITED_RAW_SOURCE_ANSWER");
+		expect(mocks.getConversationForkOrigin).toHaveBeenCalledWith("fork-conv");
+		expect(constructed.contextDebug?.forkProvenance).toMatchObject({
+			inheritedMessageCount: 2,
+			inheritedTurnCount: 1,
+			forkLocalMessageCount: 1,
+			sourceConversationIds: ["source-conv"],
+			sourceMessageIds: ["source-user-1", "source-assistant-1"],
+			copiedForkPointMessageId: "fork-assistant-1",
+		});
+	});
+
 	it("combines Honcho, task, attachment, and evidence candidates from the chat-turn boundary", async () => {
 		resetConstructedContextMocks();
 

@@ -324,10 +324,15 @@ let selectedPersonalityId = $state<string | null>(
 let bootstrapMode = initialBootstrapMode;
 let sidecarPending = initialSidecarPending;
 let hydratingConversation = false;
+let detailMetadataEpoch = 0;
 let suppressHydration = $state(false);
 // Set to true when we're waiting for the initial pending message to be sent (landing page transition)
 let initialStreamPending = $state(untrack(() => data.bootstrap ?? false));
 const evidencePollControllers = new Map<string, AbortController>();
+
+function markDetailMetadataFreshnessBoundary() {
+	detailMetadataEpoch += 1;
+}
 
 function applyNormalChatRuntimeSnapshot(snapshot: NormalChatRuntimeSnapshot) {
 	normalChatRuntimeActive = snapshot.active;
@@ -468,6 +473,9 @@ const normalChatRuntime = createBrowserNormalChatClientTurnRuntime({
 		);
 	},
 	applyStreamMetadata: (metadata) => {
+		if (metadata) {
+			markDetailMetadataFreshnessBoundary();
+		}
 		contextStatus = metadata?.contextStatus ?? contextStatus;
 		contextSources = metadata?.contextSources ?? contextSources;
 		activeWorkingSet = metadata?.activeWorkingSet ?? activeWorkingSet;
@@ -493,17 +501,20 @@ const normalChatRuntime = createBrowserNormalChatClientTurnRuntime({
 		return loadPersistedData();
 	},
 	mergeGeneratedFiles: (files) => {
+		markDetailMetadataFreshnessBoundary();
 		const existingIds = new Set(generatedFiles.map((file) => file.id));
 		const newFiles = files.filter((file) => !existingIds.has(file.id));
 		generatedFiles = [...generatedFiles, ...newFiles];
 	},
 	mergeFileProductionJobs: (jobs) => {
+		markDetailMetadataFreshnessBoundary();
 		fileProductionJobs = jobs.reduce(
 			(currentJobs, job) => mergeFileProductionJob(currentJobs, job),
 			fileProductionJobs,
 		);
 	},
 	setContextCompressionMarkers: (markers) => {
+		markDetailMetadataFreshnessBoundary();
 		contextCompressionMarkers = markers;
 	},
 	maybeTriggerTitleGeneration,
@@ -811,6 +822,7 @@ function resetState() {
 	conversationStatus = data.conversation.status ?? "open";
 	totalCostUsdMicros = data.totalCostUsdMicros ?? 0;
 	totalTokens = data.totalTokens ?? 0;
+	detailMetadataEpoch = 0;
 	restorePersistedWorkspaceState();
 	bootstrapMode = data.bootstrap ?? false;
 	sidecarPending = data.sidecarPending ?? false;
@@ -876,6 +888,30 @@ function recoverPendingEvidence() {
 		) {
 			void pollMessageEvidence(message.id);
 		}
+	}
+}
+
+function applyConversationDetailMetadata(
+	detail: Awaited<ReturnType<typeof fetchConversationDetail>>,
+) {
+	markDetailMetadataFreshnessBoundary();
+	contextStatus = detail.contextStatus ?? contextStatus;
+	contextSources = detail.contextSources ?? contextSources;
+	activeWorkingSet = detail.activeWorkingSet ?? activeWorkingSet;
+	taskState = detail.taskState ?? taskState;
+	contextDebug = detail.contextDebug ?? contextDebug;
+	if (detail.generatedFiles) {
+		generatedFiles = [...detail.generatedFiles];
+	}
+	if (detail.fileProductionJobs) {
+		fileProductionJobs = [...detail.fileProductionJobs];
+	}
+	if (detail.contextCompressionSnapshots) {
+		contextCompressionMarkers = [...detail.contextCompressionSnapshots];
+	}
+	if (detail.totalCostUsdMicros != null) {
+		totalCostUsdMicros = detail.totalCostUsdMicros;
+		totalTokens = detail.totalTokens ?? 0;
 	}
 }
 
@@ -970,27 +1006,7 @@ async function pollForCompletion(
 
 		normalChatRuntime.completePollingRecovery();
 
-		// Update context status
-		if (detail.contextStatus) {
-			contextStatus = detail.contextStatus;
-		}
-		if (detail.contextSources) {
-			contextSources = detail.contextSources;
-		}
-		if (detail.activeWorkingSet) {
-			activeWorkingSet = detail.activeWorkingSet;
-		}
-		if (detail.taskState) {
-			taskState = detail.taskState;
-		}
-
-		// Update generated files
-		if (detail.generatedFiles) {
-			generatedFiles = [...(detail.generatedFiles ?? [])];
-		}
-		if (detail.fileProductionJobs) {
-			fileProductionJobs = [...(detail.fileProductionJobs ?? [])];
-		}
+		applyConversationDetailMetadata(detail);
 		if (detail.deepResearchJobs) {
 			deepResearchJobs = mergeDeepResearchJobsForHydration(
 				deepResearchJobs,
@@ -1024,14 +1040,8 @@ async function loadPersistedData() {
 	);
 	if (detail) {
 		messages.set([...(detail.messages ?? [])]);
-		contextStatus = detail.contextStatus ?? contextStatus;
-		contextSources = detail.contextSources ?? contextSources;
+		applyConversationDetailMetadata(detail);
 		forkOrigin = detail.forkOrigin ?? forkOrigin;
-		activeWorkingSet = detail.activeWorkingSet ?? activeWorkingSet;
-		taskState = detail.taskState ?? taskState;
-		contextDebug = detail.contextDebug ?? contextDebug;
-		generatedFiles = [...(detail.generatedFiles ?? [])];
-		fileProductionJobs = [...(detail.fileProductionJobs ?? [])];
 		deepResearchJobs = mergeDeepResearchJobsForHydration(
 			deepResearchJobs,
 			detail.deepResearchJobs ?? [],
@@ -1117,6 +1127,7 @@ onDestroy(() => {
 async function hydrateConversationDetail(conversationId: string) {
 	if (hydratingConversation) return;
 	hydratingConversation = true;
+	const requestMetadataEpoch = detailMetadataEpoch;
 
 	try {
 		const payload = await fetchConversationDetail(conversationId);
@@ -1129,27 +1140,30 @@ async function hydrateConversationDetail(conversationId: string) {
 		if (!suppressHydration) {
 			attachedArtifacts = payload.attachedArtifacts ?? attachedArtifacts;
 		}
-		activeWorkingSet = payload.activeWorkingSet ?? activeWorkingSet;
-		contextStatus = payload.contextStatus ?? contextStatus;
-		contextSources = payload.contextSources ?? contextSources;
-		taskState = payload.taskState ?? taskState;
-		contextDebug = payload.contextDebug ?? contextDebug;
+		const metadataIsFresh = requestMetadataEpoch === detailMetadataEpoch;
+		if (metadataIsFresh) {
+			activeWorkingSet = payload.activeWorkingSet ?? activeWorkingSet;
+			contextStatus = payload.contextStatus ?? contextStatus;
+			contextSources = payload.contextSources ?? contextSources;
+			taskState = payload.taskState ?? taskState;
+			contextDebug = payload.contextDebug ?? contextDebug;
+			generatedFiles = payload.generatedFiles ?? generatedFiles;
+			fileProductionJobs = payload.fileProductionJobs ?? fileProductionJobs;
+			contextCompressionMarkers =
+				payload.contextCompressionSnapshots ?? contextCompressionMarkers;
+			totalCostUsdMicros = payload.totalCostUsdMicros ?? totalCostUsdMicros;
+			totalTokens = payload.totalTokens ?? totalTokens;
+		}
 		conversationDraft = payload.draft ?? conversationDraft;
 		forkOrigin = payload.forkOrigin ?? forkOrigin;
-		generatedFiles = payload.generatedFiles ?? generatedFiles;
-		fileProductionJobs = payload.fileProductionJobs ?? fileProductionJobs;
 		deepResearchJobs = payload.deepResearchJobs
 			? mergeDeepResearchJobsForHydration(
 					deepResearchJobs,
 					payload.deepResearchJobs,
 				)
 			: deepResearchJobs;
-		contextCompressionMarkers =
-			payload.contextCompressionSnapshots ?? contextCompressionMarkers;
 		activeSkillSession = payload.activeSkillSession ?? null;
 		conversationStatus = payload.conversation?.status ?? conversationStatus;
-		totalCostUsdMicros = payload.totalCostUsdMicros ?? totalCostUsdMicros;
-		totalTokens = payload.totalTokens ?? totalTokens;
 		bootstrapMode = false;
 		sidecarPending = false;
 

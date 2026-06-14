@@ -296,6 +296,120 @@ describe("chat page runtime integration", () => {
 		);
 	});
 
+	it("applies full detail metadata when polling recovers a completed stream", async () => {
+		let resolveDetail: (
+			value: Awaited<ReturnType<typeof fetchConversationDetail>>,
+		) => void = () => {};
+		vi.mocked(fetchConversationDetail).mockReturnValueOnce(
+			new Promise((resolve) => {
+				resolveDetail = resolve;
+			}),
+		);
+		render(Page, {
+			data: pageData({
+				messages: [
+					{
+						id: "assistant-previous",
+						role: "assistant",
+						content: "Earlier answer",
+						timestamp: 1,
+					},
+				],
+			}),
+		});
+
+		await fireEvent.input(screen.getByTestId("message-input"), {
+			target: { value: "First turn" },
+		});
+		await fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+		expect(runtimeHarness.streamInvocations).toHaveLength(1);
+		runtimeHarness.streamInvocations[0].callbacks.onWaiting?.();
+
+		resolveDetail({
+			conversation: { id: "conv-1", title: "Chat", status: "open" },
+			messages: [
+				{
+					id: "assistant-previous",
+					role: "assistant",
+					content: "Earlier answer",
+					timestamp: 1,
+				},
+				{
+					id: "server-user-1",
+					role: "user",
+					content: "First turn",
+					timestamp: 2,
+				},
+				{
+					id: "server-assistant-1",
+					role: "assistant",
+					content: "Done",
+					timestamp: 3,
+				},
+			],
+			contextStatus: {
+				estimatedTokens: 5000,
+				targetTokens: 10000,
+				thresholdTokens: 12000,
+				compactionMode: "none",
+				routingStage: "deterministic",
+				routingConfidence: 100,
+				verificationStatus: "skipped",
+				layersUsed: [],
+				recentTurnCount: 2,
+				workingSetCount: 0,
+				workingSetArtifactIds: [],
+				workingSetApplied: false,
+				taskStateApplied: false,
+				promptArtifactCount: 0,
+			},
+			contextDebug: {
+				routingStage: "deterministic",
+				routingConfidence: 100,
+				verificationStatus: "skipped",
+				activeTaskObjective: null,
+				taskLocked: false,
+				selectedEvidence: [
+					{
+						artifactId: "artifact-1",
+						title: "Recovered evidence",
+						source: "document",
+						relevance: 0.9,
+						reason: "polling recovery",
+					},
+				],
+				pinnedEvidence: [],
+				excludedEvidence: [],
+			},
+			contextCompressionSnapshots: [
+				{
+					id: "snapshot-1",
+					trigger: "automatic",
+					status: "valid",
+					sourceEndMessageId: "assistant-previous",
+					createdAt: 1,
+					updatedAt: 1,
+				},
+			],
+			totalCostUsdMicros: 420_000,
+			totalTokens: 42,
+		});
+
+		await waitFor(() => {
+			expect(screen.getByText("Done")).toBeInTheDocument();
+		});
+		await fireEvent.click(
+			screen.getByRole("button", { name: /Prompt budget usage/i }),
+		);
+
+		expect(screen.getByText("$0.4200 · 42 tokens")).toBeInTheDocument();
+		expect(screen.getByText("Selected evidence")).toBeInTheDocument();
+		expect(
+			screen.getByTestId("context-compression-marker-snapshot-1"),
+		).toBeInTheDocument();
+	});
+
 	it("applies normal stream completion deltas without hydrating conversation detail", async () => {
 		render(Page, { data: pageData() });
 
@@ -362,7 +476,9 @@ describe("chat page runtime integration", () => {
 		await waitFor(() => {
 			expect(screen.getByText("Created")).toBeInTheDocument();
 		});
-		await fireEvent.click(screen.getByRole("button", { name: "No context yet" }));
+		await fireEvent.click(
+			screen.getByRole("button", { name: "No context yet" }),
+		);
 		expect(screen.getByText("$0.4200 · 42 tokens")).toBeInTheDocument();
 		expect(fetchConversationDetail).toHaveBeenCalledTimes(
 			detailCallsBeforeCompletion,
@@ -439,11 +555,142 @@ describe("chat page runtime integration", () => {
 		await waitFor(() => {
 			expect(fetchConversationDetail).toHaveBeenCalledWith("conv-1");
 		});
-		await fireEvent.click(screen.getByRole("button", { name: "No context yet" }));
+		await fireEvent.click(
+			screen.getByRole("button", { name: "No context yet" }),
+		);
 
 		await waitFor(() => {
 			expect(screen.getByText("$0.4200 · 42 tokens")).toBeInTheDocument();
 		});
+	});
+
+	it("does not let a slow same-conversation sidecar overwrite newer stream metadata", async () => {
+		let resolveSidecarDetail: (
+			value: Awaited<ReturnType<typeof fetchConversationDetail>>,
+		) => void = () => {};
+		vi.mocked(fetchConversationDetail).mockReturnValueOnce(
+			new Promise((resolve) => {
+				resolveSidecarDetail = resolve;
+			}),
+		);
+		render(Page, {
+			data: pageData({
+				sidecarPending: true,
+				messages: [
+					{
+						id: "assistant-1",
+						role: "assistant",
+						content: "Previous answer",
+						timestamp: 1,
+					},
+				],
+			}),
+		});
+		await waitFor(() => {
+			expect(fetchConversationDetail).toHaveBeenCalledWith("conv-1");
+		});
+
+		await fireEvent.input(screen.getByTestId("message-input"), {
+			target: { value: "Make a report" },
+		});
+		await fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+		expect(runtimeHarness.streamInvocations).toHaveLength(1);
+		runtimeHarness.streamInvocations[0].callbacks.onEnd("Created", {
+			userMessageId: "server-user-1",
+			assistantMessageId: "assistant-2",
+			generatedFiles: [
+				{
+					id: "file-1",
+					conversationId: "conv-1",
+					assistantMessageId: "assistant-2",
+					artifactId: "artifact-1",
+					documentFamilyId: null,
+					documentFamilyStatus: null,
+					documentLabel: null,
+					documentRole: null,
+					versionNumber: null,
+					originConversationId: null,
+					originAssistantMessageId: null,
+					sourceChatFileId: null,
+					filename: "report.pdf",
+					mimeType: "application/pdf",
+					sizeBytes: 123,
+					createdAt: 1,
+				},
+			],
+			fileProductionJobs: [
+				{
+					id: "job-1",
+					conversationId: "conv-1",
+					assistantMessageId: "assistant-2",
+					title: "Report",
+					status: "succeeded",
+					createdAt: 1,
+					updatedAt: 2,
+					files: [
+						{
+							id: "file-1",
+							filename: "report.pdf",
+							mimeType: "application/pdf",
+							sizeBytes: 123,
+							downloadUrl: "/api/chat/files/file-1/download",
+							previewUrl: "/api/chat/files/file-1/preview",
+						},
+					],
+					warnings: [],
+				},
+			],
+			contextCompressionSnapshots: [
+				{
+					id: "snapshot-1",
+					trigger: "manual",
+					status: "valid",
+					sourceEndMessageId: "assistant-1",
+					createdAt: 1,
+					updatedAt: 1,
+				},
+			],
+			totalCostUsdMicros: 420_000,
+			totalTokens: 42,
+		});
+
+		await waitFor(() => {
+			expect(screen.getByText("report.pdf")).toBeInTheDocument();
+		});
+		await fireEvent.click(
+			screen.getByRole("button", { name: "No context yet" }),
+		);
+		expect(screen.getByText("$0.4200 · 42 tokens")).toBeInTheDocument();
+		expect(
+			screen.getByTestId("context-compression-marker-snapshot-1"),
+		).toBeInTheDocument();
+
+		resolveSidecarDetail({
+			conversation: { id: "conv-1", title: "Chat", status: "open" },
+			messages: [
+				{
+					id: "assistant-1",
+					role: "assistant",
+					content: "Previous answer",
+					timestamp: 1,
+				},
+			],
+			generatedFiles: [],
+			fileProductionJobs: [],
+			contextCompressionSnapshots: [],
+			totalCostUsdMicros: 10_000,
+			totalTokens: 1,
+		});
+		await Promise.resolve();
+		await Promise.resolve();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect(screen.getByText("report.pdf")).toBeInTheDocument();
+		expect(screen.getByText("$0.4200 · 42 tokens")).toBeInTheDocument();
+		expect(
+			screen.getByTestId("context-compression-marker-snapshot-1"),
+		).toBeInTheDocument();
 	});
 
 	it("preserves a restored queued draft when background recovery falls back to persisted detail", async () => {
@@ -501,6 +748,122 @@ describe("chat page runtime integration", () => {
 		expect(screen.getByTestId("message-input")).toHaveValue(
 			"Queued while hidden",
 		);
+	});
+
+	it("applies full detail metadata when persisted recovery loads a completed stream", async () => {
+		vi.mocked(fetchConversationDetail).mockResolvedValue({
+			conversation: { id: "conv-1", title: "Chat", status: "open" },
+			messages: [
+				{
+					id: "assistant-previous",
+					role: "assistant",
+					content: "Earlier answer",
+					timestamp: 1,
+				},
+				{
+					id: "server-user-1",
+					role: "user",
+					content: "Background turn",
+					timestamp: 2,
+				},
+				{
+					id: "server-assistant-1",
+					role: "assistant",
+					content: "Finished while hidden",
+					timestamp: 3,
+				},
+			],
+			contextStatus: {
+				estimatedTokens: 5000,
+				targetTokens: 10000,
+				thresholdTokens: 12000,
+				compactionMode: "none",
+				routingStage: "deterministic",
+				routingConfidence: 100,
+				verificationStatus: "skipped",
+				layersUsed: [],
+				recentTurnCount: 2,
+				workingSetCount: 0,
+				workingSetArtifactIds: [],
+				workingSetApplied: false,
+				taskStateApplied: false,
+				promptArtifactCount: 0,
+			},
+			contextDebug: {
+				routingStage: "deterministic",
+				routingConfidence: 100,
+				verificationStatus: "skipped",
+				activeTaskObjective: null,
+				taskLocked: false,
+				selectedEvidence: [
+					{
+						artifactId: "artifact-1",
+						title: "Recovered evidence",
+						source: "document",
+						relevance: 0.9,
+						reason: "persisted recovery",
+					},
+				],
+				pinnedEvidence: [],
+				excludedEvidence: [],
+			},
+			contextCompressionSnapshots: [
+				{
+					id: "snapshot-1",
+					trigger: "automatic",
+					status: "valid",
+					sourceEndMessageId: "assistant-previous",
+					createdAt: 1,
+					updatedAt: 1,
+				},
+			],
+			totalCostUsdMicros: 420_000,
+			totalTokens: 42,
+		});
+		render(Page, {
+			data: pageData({
+				messages: [
+					{
+						id: "assistant-previous",
+						role: "assistant",
+						content: "Earlier answer",
+						timestamp: 1,
+					},
+				],
+			}),
+		});
+
+		await fireEvent.input(screen.getByTestId("message-input"), {
+			target: { value: "Background turn" },
+		});
+		await fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+		Object.defineProperty(document, "visibilityState", {
+			configurable: true,
+			value: "hidden",
+		});
+		const abortError = new Error("backgrounded");
+		abortError.name = "AbortError";
+		runtimeHarness.streamInvocations[0].callbacks.onError(abortError);
+
+		Object.defineProperty(document, "visibilityState", {
+			configurable: true,
+			value: "visible",
+		});
+		document.dispatchEvent(new Event("visibilitychange"));
+
+		await waitFor(() => {
+			expect(screen.getByText("Finished while hidden")).toBeInTheDocument();
+		});
+		await fireEvent.click(
+			screen.getByRole("button", { name: /Prompt budget usage/i }),
+		);
+
+		expect(screen.getByText("$0.4200 · 42 tokens")).toBeInTheDocument();
+		expect(screen.getByText("Selected evidence")).toBeInTheDocument();
+		expect(
+			screen.getByTestId("context-compression-marker-snapshot-1"),
+		).toBeInTheDocument();
 	});
 
 	it("recovers a backgrounded stream on mobile pageshow without requiring reload", async () => {
