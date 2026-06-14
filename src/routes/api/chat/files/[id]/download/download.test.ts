@@ -18,9 +18,12 @@ const mockResolveGeneratedFileServing = vi.mocked(resolveGeneratedFileServing);
 function makeEvent(
 	fileId = "file-1",
 	user = { id: "user-1", email: "test@example.com" },
+	headers?: HeadersInit,
 ) {
 	return {
-		request: new Request(`http://localhost/api/chat/files/${fileId}/download`),
+		request: new Request(`http://localhost/api/chat/files/${fileId}/download`, {
+			headers,
+		}),
 		locals: { user },
 		params: { id: fileId },
 		url: new URL(`http://localhost/api/chat/files/${fileId}/download`),
@@ -117,6 +120,42 @@ describe("GET /api/chat/files/[id]/download", () => {
 		expect(Buffer.from(await response.arrayBuffer()).toString()).toBe(
 			"hello world",
 		);
+	});
+
+	it("passes byte range requests through and preserves 416 responses", async () => {
+		mockResolveGeneratedFileServing.mockResolvedValue({
+			ok: true,
+			status: 416,
+			body: new Uint8Array(0),
+			headers: {
+				"Content-Type": "application/pdf",
+				"Content-Length": "0",
+				"Content-Range": "bytes */11",
+				"Accept-Ranges": "bytes",
+				"Content-Disposition": "attachment; filename*=UTF-8''report.pdf",
+				"Cache-Control": "private, no-store",
+			},
+		});
+
+		const response = await GET(
+			makeEvent(
+				"file-1",
+				{ id: "user-1", email: "test@example.com" },
+				{
+					Range: "bytes=99-120",
+				},
+			),
+		);
+
+		expect(response.status).toBe(416);
+		expect(response.headers.get("Content-Range")).toBe("bytes */11");
+		expect(await response.text()).toBe("");
+		expect(mockResolveGeneratedFileServing).toHaveBeenCalledWith({
+			userId: "user-1",
+			fileId: "file-1",
+			mode: "download",
+			rangeHeader: "bytes=99-120",
+		});
 	});
 
 	it("returns legacy conversation-owner fallback bytes resolved by the service", async () => {

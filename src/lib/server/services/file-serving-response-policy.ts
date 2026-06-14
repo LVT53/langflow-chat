@@ -15,6 +15,11 @@ export interface FileServingRangeResult {
 	headers: Record<string, string>;
 }
 
+export type ParsedFileServingRange =
+	| { start: number; end: number; unsatisfiable?: false }
+	| { unsatisfiable: true }
+	| null;
+
 const RESTRICTED_PREVIEW_CSP =
 	"default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
 
@@ -87,7 +92,7 @@ export function applyFileServingRange(params: {
 	rangeHeader?: string | null;
 }): FileServingRangeResult {
 	const totalLength = params.body.byteLength;
-	const range = parseSingleByteRange(params.rangeHeader, totalLength);
+	const range = parseFileServingRange(params.rangeHeader, totalLength);
 	if (!range) {
 		return {
 			status: 200,
@@ -108,7 +113,9 @@ export function applyFileServingRange(params: {
 		};
 	}
 
-	const body = params.body.subarray(range.start, range.end + 1);
+	const body = Uint8Array.from(
+		params.body.subarray(range.start, range.end + 1),
+	);
 	return {
 		status: 206,
 		body,
@@ -120,13 +127,10 @@ export function applyFileServingRange(params: {
 	};
 }
 
-function parseSingleByteRange(
+export function parseFileServingRange(
 	rangeHeader: string | null | undefined,
 	totalLength: number,
-):
-	| { start: number; end: number; unsatisfiable?: false }
-	| { unsatisfiable: true }
-	| null {
+): ParsedFileServingRange {
 	const range = rangeHeader?.trim();
 	if (!range?.startsWith("bytes=") || range.includes(",")) {
 		return null;

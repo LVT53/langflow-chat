@@ -101,6 +101,10 @@ export async function loadPreviewRuntime(
 			};
 		}
 
+		// PDF.js can issue HTTP range requests when it owns the URL load, but this
+		// runtime currently hands renderers a Blob. Passing the source URL through
+		// would require a wider renderer contract change, so PDF previews still load
+		// the full blob here.
 		const blob = await response.blob();
 		const mimeType = getEffectiveMimeType(input.mimeType, blob.type);
 		const fileType = await resolvePreviewFileType({

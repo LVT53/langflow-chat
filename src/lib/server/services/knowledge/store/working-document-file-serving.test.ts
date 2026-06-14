@@ -136,6 +136,37 @@ describe("resolveWorkingDocumentFileServing", () => {
 		});
 	});
 
+	it("serves stored working-document ranges without reading the full file", async () => {
+		const pdfBuffer = Buffer.from("0123456789");
+		await writeKnowledgeFile(
+			"data/knowledge/resolver-user-123/ranged.pdf",
+			pdfBuffer,
+		);
+		mockGetArtifactForUser.mockResolvedValue({
+			id: "source-ranged",
+			name: "ranged.pdf",
+			storagePath: "data/knowledge/resolver-user-123/ranged.pdf",
+			contentText: null,
+			mimeType: "application/pdf",
+			extension: "pdf",
+			type: "source_document",
+			metadata: null,
+		});
+
+		const result = await resolveWorkingDocumentFileServing({
+			userId,
+			artifactId: "source-ranged",
+			mode: "preview",
+			rangeHeader: "bytes=5-7",
+		});
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) throw new Error("expected successful resolution");
+		expect(result.status).toBe(206);
+		expect(Buffer.from(result.body).toString()).toBe("567");
+		expect(result.headers["Content-Range"]).toBe("bytes 5-7/10");
+	});
+
 	it("delegates generated output source chat files to generated file serving", async () => {
 		const delegatedResult = {
 			ok: true,

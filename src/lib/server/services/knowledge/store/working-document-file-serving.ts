@@ -1,8 +1,9 @@
-import { readFile } from "node:fs/promises";
+import { open, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import {
 	applyFileServingRange,
 	buildFileServingResponseHeaders,
+	parseFileServingRange,
 } from "$lib/server/services/file-serving-response-policy";
 import { resolveGeneratedFileServing } from "$lib/server/services/generated-file-serving";
 import type { Artifact } from "$lib/types";
@@ -168,6 +169,9 @@ async function resolveStoredArtifact(params: {
 			: `${safeName}.${filenameArtifact.extension}`;
 
 	if (params.artifact.contentText) {
+		// DB-backed text artifacts do not have a partial storage read path. The
+		// shared range policy still copies partial responses to avoid retaining the
+		// full backing buffer.
 		const textBuffer = Buffer.from(params.artifact.contentText, "utf-8");
 		const rangedResponse = applyFileServingRange({
 			body: textBuffer,
@@ -216,11 +220,29 @@ async function resolveStoredArtifact(params: {
 
 	try {
 		const filePath = join(process.cwd(), params.artifact.storagePath);
-		const fileBuffer = await readFile(filePath);
 		const previewName =
 			safeName.includes(".") || !params.artifact.extension
 				? safeName
 				: `${safeName}.${params.artifact.extension}`;
+		const contentType =
+			params.mode === "preview"
+				? getPreviewContentType(previewName, params.artifact.mimeType)
+				: params.artifact.mimeType || "application/octet-stream";
+		const totalLength = await getStoredFileLength(filePath);
+		const partialResponse = await resolveStoredArtifactPartialRange({
+			filePath,
+			mode: params.mode,
+			rangeHeader: params.rangeHeader,
+			totalLength,
+			contentType,
+			filename: params.mode === "preview" ? safeName : downloadName,
+			safetyFilenames: [previewName, params.artifact.storagePath],
+		});
+		if (partialResponse) {
+			return partialResponse;
+		}
+
+		const fileBuffer = await readFile(filePath);
 
 		const rangedResponse = applyFileServingRange({
 			body: fileBuffer,
@@ -228,10 +250,7 @@ async function resolveStoredArtifact(params: {
 			headers: buildFileServingResponseHeaders({
 				mode: params.mode,
 				contentLength: fileBuffer.length,
-				contentType:
-					params.mode === "preview"
-						? getPreviewContentType(previewName, params.artifact.mimeType)
-						: params.artifact.mimeType || "application/octet-stream",
+				contentType,
 				filename: params.mode === "preview" ? safeName : downloadName,
 				safetyFilenames: [previewName, params.artifact.storagePath],
 			}),
@@ -267,5 +286,77 @@ async function resolveStoredArtifact(params: {
 			status: 500,
 			error: "Failed to read file",
 		};
+	}
+}
+
+async function resolveStoredArtifactPartialRange(params: {
+	filePath: string;
+	mode: WorkingDocumentFileServingMode;
+	rangeHeader?: string | null;
+	totalLength: number;
+	contentType: string;
+	filename: string;
+	safetyFilenames: readonly string[];
+}): Promise<WorkingDocumentFileServingSuccess | null> {
+	if (!params.rangeHeader) return null;
+
+	const range = parseFileServingRange(params.rangeHeader, params.totalLength);
+	if (!range) return null;
+
+	const headers = buildFileServingResponseHeaders({
+		mode: params.mode,
+		contentLength: params.totalLength,
+		contentType: params.contentType,
+		filename: params.filename,
+		safetyFilenames: params.safetyFilenames,
+	});
+
+	if (range.unsatisfiable) {
+		return {
+			ok: true,
+			status: 416,
+			body: new Uint8Array(0),
+			headers: {
+				...headers,
+				"Content-Length": "0",
+				"Content-Range": `bytes */${params.totalLength}`,
+			},
+		};
+	}
+
+	const body = await readStoredFileRange(
+		params.filePath,
+		range.start,
+		range.end,
+	);
+	return {
+		ok: true,
+		status: 206,
+		body,
+		headers: {
+			...headers,
+			"Content-Length": body.byteLength.toString(),
+			"Content-Range": `bytes ${range.start}-${range.end}/${params.totalLength}`,
+		},
+	};
+}
+
+async function getStoredFileLength(filePath: string): Promise<number> {
+	return (await stat(filePath)).size;
+}
+
+async function readStoredFileRange(
+	filePath: string,
+	start: number,
+	end: number,
+): Promise<Uint8Array> {
+	const byteLength = end - start + 1;
+	const body = new Uint8Array(byteLength);
+	const file = await open(filePath, "r");
+	try {
+		const { bytesRead } = await file.read(body, 0, byteLength, start);
+		return bytesRead === byteLength ? body : body.slice(0, bytesRead);
+	} finally {
+		await file.close();
 	}
 }

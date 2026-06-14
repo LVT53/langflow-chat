@@ -1,3 +1,5 @@
+import { open, stat } from "node:fs/promises";
+import { extname, join } from "node:path";
 import {
 	getChatFileByConversationOwner,
 	getChatFileByUser,
@@ -12,6 +14,7 @@ import { hasSucceededFileProductionJobForChatFile } from "$lib/server/services/f
 import {
 	applyFileServingRange,
 	buildFileServingResponseHeaders,
+	parseFileServingRange,
 } from "$lib/server/services/file-serving-response-policy";
 import { getPreviewContentType } from "$lib/utils/file-preview";
 
@@ -33,6 +36,62 @@ export interface GeneratedFileServingError {
 export type GeneratedFileServingResult =
 	| GeneratedFileServingSuccess
 	| GeneratedFileServingError;
+
+const CHAT_FILES_DIR = join(process.cwd(), "data", "chat-files");
+// These generated-file types need full-content validation before serving. Range
+// requests for them fall back to a full read, then the response policy copies the
+// selected byte window so the full backing buffer is not retained by the response.
+const FULL_VALIDATION_EXTENSIONS = new Set([
+	".txt",
+	".md",
+	".markdown",
+	".csv",
+	".html",
+	".htm",
+	".css",
+	".scss",
+	".sass",
+	".less",
+	".js",
+	".mjs",
+	".cjs",
+	".jsx",
+	".ts",
+	".tsx",
+	".py",
+	".sh",
+	".bash",
+	".zsh",
+	".json",
+	".xml",
+	".yaml",
+	".yml",
+	".toml",
+	".sql",
+	".graphql",
+	".gql",
+	".ini",
+	".env",
+	".conf",
+	".log",
+	".rb",
+	".rs",
+	".go",
+	".java",
+	".kt",
+	".kts",
+	".swift",
+	".cs",
+	".cpp",
+	".cxx",
+	".cc",
+	".c",
+	".h",
+	".hpp",
+	".php",
+	".r",
+	".xlsx",
+]);
 
 export async function resolveGeneratedFileServing(params: {
 	userId: string;
@@ -67,6 +126,23 @@ export async function resolveGeneratedFileServing(params: {
 		};
 	}
 
+	const filename = params.displayFilename || chatFile.filename;
+	const contentType = getPreviewContentType(
+		chatFile.filename,
+		chatFile.mimeType,
+	);
+
+	const partialResponse = await resolveGeneratedFilePartialRange({
+		chatFile,
+		mode: params.mode,
+		rangeHeader: params.rangeHeader,
+		contentType,
+		filename,
+	});
+	if (partialResponse) {
+		return partialResponse;
+	}
+
 	const fileContent =
 		(await readChatFileContentByUser(params.fileId, params.userId)) ??
 		(await readChatFileContentByConversationOwner(
@@ -94,12 +170,6 @@ export async function resolveGeneratedFileServing(params: {
 		};
 	}
 
-	const filename = params.displayFilename || chatFile.filename;
-	const contentType = getPreviewContentType(
-		chatFile.filename,
-		chatFile.mimeType,
-	);
-
 	const rangedResponse = applyFileServingRange({
 		body: fileContent,
 		rangeHeader: params.rangeHeader,
@@ -116,4 +186,90 @@ export async function resolveGeneratedFileServing(params: {
 		ok: true,
 		...rangedResponse,
 	};
+}
+
+async function resolveGeneratedFilePartialRange(params: {
+	chatFile: { filename: string; storagePath: string };
+	mode: GeneratedFileServingMode;
+	rangeHeader?: string | null;
+	contentType: string;
+	filename: string;
+}): Promise<GeneratedFileServingSuccess | null> {
+	if (!params.rangeHeader) return null;
+	if (requiresFullGeneratedFileValidation(params.chatFile.filename))
+		return null;
+	if (!isSafeChatFileStoragePath(params.chatFile.storagePath)) return null;
+
+	const filePath = join(CHAT_FILES_DIR, params.chatFile.storagePath);
+	let totalLength: number;
+	try {
+		totalLength = (await stat(filePath)).size;
+	} catch {
+		return null;
+	}
+
+	const range = parseFileServingRange(params.rangeHeader, totalLength);
+	if (!range) return null;
+
+	const headers = buildFileServingResponseHeaders({
+		mode: params.mode,
+		contentLength: totalLength,
+		contentType: params.contentType,
+		filename: params.filename,
+		safetyFilenames: [params.chatFile.filename],
+	});
+
+	if (range.unsatisfiable) {
+		return {
+			ok: true,
+			status: 416,
+			body: new Uint8Array(0),
+			headers: {
+				...headers,
+				"Content-Length": "0",
+				"Content-Range": `bytes */${totalLength}`,
+			},
+		};
+	}
+
+	const body = await readFileRange(filePath, range.start, range.end);
+	return {
+		ok: true,
+		status: 206,
+		body,
+		headers: {
+			...headers,
+			"Content-Length": body.byteLength.toString(),
+			"Content-Range": `bytes ${range.start}-${range.end}/${totalLength}`,
+		},
+	};
+}
+
+function requiresFullGeneratedFileValidation(filename: string): boolean {
+	return FULL_VALIDATION_EXTENSIONS.has(extname(filename).toLowerCase());
+}
+
+function isSafeChatFileStoragePath(storagePath: string): boolean {
+	return Boolean(
+		storagePath &&
+			!storagePath.includes("..") &&
+			!storagePath.startsWith("/") &&
+			!storagePath.startsWith("\\"),
+	);
+}
+
+async function readFileRange(
+	filePath: string,
+	start: number,
+	end: number,
+): Promise<Uint8Array> {
+	const byteLength = end - start + 1;
+	const body = new Uint8Array(byteLength);
+	const file = await open(filePath, "r");
+	try {
+		const { bytesRead } = await file.read(body, 0, byteLength, start);
+		return bytesRead === byteLength ? body : body.slice(0, bytesRead);
+	} finally {
+		await file.close();
+	}
 }

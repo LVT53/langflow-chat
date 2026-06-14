@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("$lib/server/services/chat-files", () => ({
 	getChatFileByConversationOwner: vi.fn(),
@@ -55,6 +57,13 @@ describe("resolveGeneratedFileServing", () => {
 		mockHasSucceededFileProductionJobForChatFile.mockResolvedValue(false);
 	});
 
+	afterEach(async () => {
+		await rm(join(process.cwd(), "data", "chat-files", "conv-1"), {
+			recursive: true,
+			force: true,
+		});
+	});
+
 	it("serves a user-owned generated file with inline preview headers", async () => {
 		mockGetChatFileByUser.mockResolvedValue(chatFile());
 		mockReadChatFileContentByUser.mockResolvedValue(Buffer.from("hello world"));
@@ -105,6 +114,42 @@ describe("resolveGeneratedFileServing", () => {
 		expect(result.headers["Content-Disposition"]).toBe(
 			'inline; filename="notes.txt"',
 		);
+	});
+
+	it("serves range-safe generated file ranges without reading the full file", async () => {
+		const storagePath = "conv-1/file-1.pdf";
+		const absolutePath = join(process.cwd(), "data", "chat-files", storagePath);
+		await mkdir(dirname(absolutePath), { recursive: true });
+		await writeFile(absolutePath, Buffer.from("0123456789"));
+		mockGetChatFileByUser.mockResolvedValue(
+			chatFile({
+				filename: "report.pdf",
+				mimeType: "application/pdf",
+				sizeBytes: 10,
+				storagePath,
+			}),
+		);
+		mockReadChatFileContentByUser.mockResolvedValue(null);
+		mockReadChatFileContentByConversationOwner.mockResolvedValue(null);
+
+		const result = await resolveGeneratedFileServing({
+			userId: "user-1",
+			fileId: "file-1",
+			mode: "preview",
+			rangeHeader: "bytes=5-7",
+		});
+
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+		expect(result.status).toBe(206);
+		expect(Buffer.from(result.body).toString()).toBe("567");
+		expect(result.headers).toMatchObject({
+			"Content-Length": "3",
+			"Content-Range": "bytes 5-7/10",
+			"Content-Type": "application/pdf",
+		});
+		expect(mockReadChatFileContentByUser).not.toHaveBeenCalled();
+		expect(mockReadChatFileContentByConversationOwner).not.toHaveBeenCalled();
 	});
 
 	it("serves generated HTML previews with restrictive browser headers", async () => {

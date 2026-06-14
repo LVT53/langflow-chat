@@ -1,4 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockRequireAuth = vi.fn();
 const mockGetArtifactForUser = vi.fn();
@@ -27,10 +29,28 @@ import { GET } from "./+server";
 type DownloadRouteEvent = Parameters<typeof GET>[0];
 
 describe("GET /api/knowledge/[id]/download", () => {
-	const mockUser = { id: "user-123", email: "test@example.com" };
+	const mockUser = { id: "download-user-123", email: "test@example.com" };
 
-	function makeDownloadEvent(artifactId: string): DownloadRouteEvent {
+	async function writeDownloadFile(
+		storagePath: string,
+		contents: Buffer | string,
+	) {
+		const absolutePath = join(process.cwd(), storagePath);
+		await mkdir(dirname(absolutePath), { recursive: true });
+		await writeFile(absolutePath, contents);
+	}
+
+	function makeDownloadEvent(
+		artifactId: string,
+		headers?: HeadersInit,
+	): DownloadRouteEvent {
 		return {
+			request: new Request(
+				`http://localhost/api/knowledge/${artifactId}/download`,
+				{
+					headers,
+				},
+			),
 			locals: { user: mockUser },
 			params: { id: artifactId },
 		} as unknown as DownloadRouteEvent;
@@ -42,6 +62,13 @@ describe("GET /api/knowledge/[id]/download", () => {
 		mockGetSourceArtifactId.mockResolvedValue(null);
 		mockGetChatFileByUser.mockResolvedValue(null);
 		mockReadChatFileContentByUser.mockResolvedValue(null);
+	});
+
+	afterEach(async () => {
+		await rm(join(process.cwd(), "data", "knowledge", mockUser.id), {
+			recursive: true,
+			force: true,
+		});
 	});
 
 	it("returns text artifact downloads with attachment and no-store headers", async () => {
@@ -68,6 +95,35 @@ describe("GET /api/knowledge/[id]/download", () => {
 		expect(response.headers.get("Cache-Control")).toBe("private, no-store");
 		expect(response.headers.get("Content-Security-Policy")).toBeNull();
 		expect(await response.text()).toBe("Private note content");
+	});
+
+	it("propagates suffix range responses for stored downloads", async () => {
+		await writeDownloadFile(
+			"data/knowledge/download-user-123/ranged.pdf",
+			Buffer.from("0123456789"),
+		);
+		mockGetArtifactForUser.mockResolvedValue({
+			id: "source-ranged",
+			name: "ranged.pdf",
+			storagePath: "data/knowledge/download-user-123/ranged.pdf",
+			contentText: null,
+			mimeType: "application/pdf",
+			extension: "pdf",
+			type: "source_document",
+			metadata: null,
+		});
+
+		const response = await GET(
+			makeDownloadEvent("source-ranged", { Range: "bytes=-4" }),
+		);
+
+		expect(response.status).toBe(206);
+		expect(response.headers.get("Content-Range")).toBe("bytes 6-9/10");
+		expect(response.headers.get("Content-Length")).toBe("4");
+		expect(response.headers.get("Content-Disposition")).toBe(
+			"attachment; filename*=UTF-8''ranged.pdf",
+		);
+		expect(await response.text()).toBe("6789");
 	});
 
 	it("rejects invalid generated_output XLSX source chat files before download", async () => {

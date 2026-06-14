@@ -51,8 +51,17 @@ async function buildMinimalXlsxBuffer(): Promise<Buffer> {
 describe("GET /api/knowledge/[id]/preview", () => {
 	const mockUser = { id: "user-123", email: "test@example.com" };
 
-	function makePreviewEvent(artifactId = "artifact-123"): PreviewRouteEvent {
+	function makePreviewEvent(
+		artifactId = "artifact-123",
+		headers?: HeadersInit,
+	): PreviewRouteEvent {
 		return {
+			request: new Request(
+				`http://localhost/api/knowledge/${artifactId}/preview`,
+				{
+					headers,
+				},
+			),
 			locals: { user: mockUser },
 			params: { id: artifactId },
 		} as unknown as PreviewRouteEvent;
@@ -185,6 +194,27 @@ describe("GET /api/knowledge/[id]/preview", () => {
 
 		const body = await response.arrayBuffer();
 		expect(Buffer.from(body).toString()).toBe("PDF content");
+	});
+
+	it("propagates unsatisfiable range responses for stored previews", async () => {
+		const fileBuffer = Buffer.from("PDF content");
+		await writePreviewFile("data/knowledge/user-123/ranged.pdf", fileBuffer);
+		mockGetArtifactForUser.mockResolvedValue({
+			id: "artifact-ranged",
+			name: "ranged.pdf",
+			storagePath: "data/knowledge/user-123/ranged.pdf",
+			mimeType: "application/pdf",
+			extension: "pdf",
+		});
+
+		const response = await GET(
+			makePreviewEvent("artifact-ranged", { Range: "bytes=99-120" }),
+		);
+
+		expect(response.status).toBe(416);
+		expect(response.headers.get("Content-Length")).toBe("0");
+		expect(response.headers.get("Content-Range")).toBe("bytes */11");
+		expect(await response.text()).toBe("");
 	});
 
 	it("returns file content with inferred mime type from extension", async () => {
