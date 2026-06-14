@@ -19,6 +19,11 @@ import { adminConfig } from "./db/schema";
 import type { ModelConfig } from "./env";
 import { config as envConfig } from "./env";
 import { getSystemPrompt, normalizeSystemPromptReference } from "./prompts";
+import {
+	getAvailableModelsWithProvidersForSettings,
+	projectBuiltInAvailableModels,
+	modelIconUrl as projectedModelIconUrl,
+} from "./services/available-models";
 
 export type { ModelConfig } from "./env";
 
@@ -283,7 +288,6 @@ function parseIntOverride(value: string): number | undefined {
 	const parsed = parseInt(value, 10);
 	return Number.isNaN(parsed) ? undefined : parsed;
 }
-
 
 function normalizeWebResearchExtractorMode(
 	value: string,
@@ -1097,9 +1101,7 @@ export async function normalizeModelSelectionWithProviders(
 export function modelIconUrl(
 	iconAssetId: string | null | undefined,
 ): string | null {
-	return iconAssetId
-		? `/api/campaign-assets/${encodeURIComponent(iconAssetId)}/content`
-		: null;
+	return projectedModelIconUrl(iconAssetId);
 }
 
 export function getAvailableModels(
@@ -1110,36 +1112,7 @@ export function getAvailableModels(
 	iconAssetId: string | null;
 	iconUrl: string | null;
 }> {
-	const models: Array<{
-		id: ModelId;
-		displayName: string;
-		iconAssetId: string | null;
-		iconUrl: string | null;
-	}> = [];
-
-	if (config.model1.baseUrl && config.model1.modelName) {
-		models.push({
-			id: "model1",
-			displayName: config.model1.displayName,
-			iconAssetId: config.model1IconAssetId,
-			iconUrl: modelIconUrl(config.model1IconAssetId),
-		});
-	}
-
-	if (
-		config.model2Enabled !== false &&
-		config.model2.baseUrl &&
-		config.model2.modelName
-	) {
-		models.push({
-			id: "model2",
-			displayName: config.model2.displayName,
-			iconAssetId: config.model2IconAssetId,
-			iconUrl: modelIconUrl(config.model2IconAssetId),
-		});
-	}
-
-	return models;
+	return projectBuiltInAvailableModels(config);
 }
 
 export function getResolvedAdminConfigValues(
@@ -1338,49 +1311,5 @@ export async function getAvailableModelsWithProviders(): Promise<
 		iconUrl: string | null;
 	}>
 > {
-	const [builtIn, newProviders] = await Promise.all([
-		Promise.resolve(getAvailableModels()),
-		(async () => {
-			try {
-				const { listEnabledProviders } = await import(
-					"$lib/server/services/providers"
-				);
-				return listEnabledProviders();
-			} catch {
-				return [];
-			}
-		})(),
-	]);
-
-	const models = builtIn.map((m) => ({ ...m, isThirdParty: false }));
-
-	for (const provider of newProviders) {
-		try {
-			const { listEnabledProviderModels: listModels } = await import(
-				"$lib/server/services/provider-models"
-			);
-			const providerModels = await listModels(provider.id);
-			for (const model of providerModels) {
-				if (model.enabled) {
-					models.push({
-						id: `provider:${provider.id}:${model.id}` as ModelId,
-						displayName: `${provider.displayName} - ${model.displayName}`,
-						isThirdParty: true,
-						iconAssetId: model.iconAssetId,
-						iconUrl: modelIconUrl(model.iconAssetId),
-					});
-				}
-			}
-		} catch {
-			models.push({
-				id: `provider:${provider.id}` as ModelId,
-				displayName: provider.displayName,
-				isThirdParty: true,
-				iconAssetId: provider.iconAssetId,
-				iconUrl: modelIconUrl(provider.iconAssetId),
-			});
-		}
-	}
-
-	return models;
+	return getAvailableModelsWithProvidersForSettings(runtimeConfig);
 }

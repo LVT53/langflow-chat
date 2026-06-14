@@ -6,6 +6,22 @@ let providerRows: Array<{
 	maxModelContext: number | null;
 	maxMessageLength: number | null;
 }> = [];
+let enabledProviderRows: Array<{
+	id: string;
+	name: string;
+	displayName: string;
+	iconAssetId: string | null;
+	enabled: boolean;
+}> = [];
+let enabledProviderModelRowsByProvider = new Map<
+	string,
+	Array<{
+		id: string;
+		displayName: string;
+		iconAssetId: string | null;
+		enabled: boolean;
+	}>
+>();
 
 // Mock must be defined before imports
 vi.mock("../db", () => ({
@@ -173,6 +189,18 @@ vi.mock("../env", () => ({
 	},
 }));
 
+vi.mock("./providers", () => ({
+	listEnabledProviders: vi.fn(async () => enabledProviderRows),
+}));
+
+vi.mock("./provider-models", () => ({
+	listEnabledProviderModels: vi.fn(async (providerId?: string) =>
+		providerId
+			? (enabledProviderModelRowsByProvider.get(providerId) ?? [])
+			: Array.from(enabledProviderModelRowsByProvider.values()).flat(),
+	),
+}));
+
 // Import after mocks are defined
 const {
 	getDocumentTokenBudget,
@@ -181,12 +209,17 @@ const {
 	refreshConfig,
 	getConfig,
 	getResolvedAdminConfigValues,
+	getAvailableModels,
+	getAvailableModelsWithProviders,
+	modelIconUrl,
 } = await import("../config-store");
 
 describe("Knowledge Store Config", () => {
 	beforeEach(async () => {
 		adminConfigRows = [];
 		providerRows = [];
+		enabledProviderRows = [];
+		enabledProviderModelRowsByProvider = new Map();
 		await refreshConfig();
 	});
 
@@ -208,6 +241,88 @@ describe("Knowledge Store Config", () => {
 		it("getSmallFileThreshold() should return 5000 by default", () => {
 			const threshold = getSmallFileThreshold();
 			expect(threshold).toBe(5000);
+		});
+	});
+
+	describe("Available model projection", () => {
+		it("projects built-ins and enabled provider models for settings/default options", async () => {
+			adminConfigRows = [
+				{ key: "MODEL_1_ICON_ASSET_ID", value: "model-1-icon" },
+				{ key: "MODEL_2_BASEURL", value: "http://localhost:30002/v1" },
+				{ key: "MODEL_2_NAME", value: "model-2" },
+				{ key: "MODEL_2_DISPLAY_NAME", value: "Model 2 Custom" },
+			];
+			enabledProviderRows = [
+				{
+					id: "provider-1",
+					name: "openrouter",
+					displayName: "OpenRouter",
+					iconAssetId: "provider-icon",
+					enabled: true,
+				},
+			];
+			enabledProviderModelRowsByProvider = new Map([
+				[
+					"provider-1",
+					[
+						{
+							id: "model-a",
+							displayName: "Model A",
+							iconAssetId: "model-a-icon",
+							enabled: true,
+						},
+						{
+							id: "model-b",
+							displayName: "Model B",
+							iconAssetId: null,
+							enabled: false,
+						},
+					],
+				],
+			]);
+
+			await refreshConfig();
+
+			expect(modelIconUrl("asset with spaces")).toBe(
+				"/api/campaign-assets/asset%20with%20spaces/content",
+			);
+			expect(getAvailableModels()).toEqual([
+				{
+					id: "model1",
+					displayName: "Model 1",
+					iconAssetId: "model-1-icon",
+					iconUrl: "/api/campaign-assets/model-1-icon/content",
+				},
+				{
+					id: "model2",
+					displayName: "Model 2 Custom",
+					iconAssetId: null,
+					iconUrl: null,
+				},
+			]);
+			await expect(getAvailableModelsWithProviders()).resolves.toEqual([
+				{
+					id: "model1",
+					displayName: "Model 1",
+					isThirdParty: false,
+					iconAssetId: "model-1-icon",
+					iconUrl: "/api/campaign-assets/model-1-icon/content",
+				},
+				{
+					id: "model2",
+					displayName: "Model 2 Custom",
+					isThirdParty: false,
+					iconAssetId: null,
+					iconUrl: null,
+				},
+				{
+					id: "provider:provider-1:model-a",
+					displayName: "OpenRouter - Model A",
+					isThirdParty: true,
+					iconAssetId: "model-a-icon",
+					iconUrl: "/api/campaign-assets/model-a-icon/content",
+				},
+			]);
 		});
 	});
 
@@ -375,9 +490,9 @@ describe("Knowledge Store Config", () => {
 
 		it("getConfig() should persist the optional Reasoning Depth classifier model", async () => {
 			expect(getConfig().reasoningDepthClassifierModel).toBeNull();
-			expect(getResolvedAdminConfigValues().REASONING_DEPTH_CLASSIFIER_MODEL).toBe(
-				"",
-			);
+			expect(
+				getResolvedAdminConfigValues().REASONING_DEPTH_CLASSIFIER_MODEL,
+			).toBe("");
 
 			adminConfigRows = [
 				{
@@ -391,9 +506,9 @@ describe("Knowledge Store Config", () => {
 			expect(getConfig().reasoningDepthClassifierModel).toBe(
 				"provider:classifier:model-a",
 			);
-			expect(getResolvedAdminConfigValues().REASONING_DEPTH_CLASSIFIER_MODEL).toBe(
-				"provider:classifier:model-a",
-			);
+			expect(
+				getResolvedAdminConfigValues().REASONING_DEPTH_CLASSIFIER_MODEL,
+			).toBe("provider:classifier:model-a");
 		});
 
 		it("getConfig() should clear invalid reasoning depth classifier model admin overrides", async () => {

@@ -2,9 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("$lib/server/config-store", () => ({
 	getConfig: vi.fn(),
-	getAvailableModels: vi.fn(),
-	getEnabledProviders: vi.fn(),
-	modelIconUrl: vi.fn((id: string | null) => (id ? `/icon/${id}` : null)),
 }));
 
 vi.mock("$lib/server/services/providers", () => ({
@@ -15,18 +12,12 @@ vi.mock("$lib/server/services/provider-models", () => ({
 	listEnabledProviderModels: vi.fn(),
 }));
 
-import {
-	getAvailableModels,
-	getConfig,
-	getEnabledProviders,
-} from "$lib/server/config-store";
+import { getConfig } from "$lib/server/config-store";
 import { listEnabledProviderModels } from "$lib/server/services/provider-models";
 import { listEnabledProviders } from "$lib/server/services/providers";
 import { GET } from "./+server";
 
 const mockGetConfig = getConfig as ReturnType<typeof vi.fn>;
-const mockGetAvailableModels = getAvailableModels as ReturnType<typeof vi.fn>;
-const mockGetEnabledProviders = getEnabledProviders as ReturnType<typeof vi.fn>;
 const mockListEnabledProviders = listEnabledProviders as ReturnType<
 	typeof vi.fn
 >;
@@ -34,35 +25,34 @@ const mockListEnabledProviderModels = listEnabledProviderModels as ReturnType<
 	typeof vi.fn
 >;
 
+function routeEvent(): Parameters<typeof GET>[0] {
+	return {} as Parameters<typeof GET>[0];
+}
+
 describe("GET /api/models", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mockGetConfig.mockReturnValue({
-			model1: { displayName: "Test Model 1" },
-			model2: { displayName: "Test Model 2" },
+			model1: {
+				baseUrl: "http://localhost:3001/v1",
+				modelName: "model-1",
+				displayName: "Test Model 1",
+			},
+			model2: {
+				baseUrl: "http://localhost:3002/v1",
+				modelName: "model-2",
+				displayName: "Test Model 2",
+			},
+			model1IconAssetId: null,
+			model2IconAssetId: null,
 			model2Enabled: true,
 		});
-		mockGetAvailableModels.mockReturnValue([
-			{
-				id: "model1",
-				displayName: "Test Model 1",
-				iconAssetId: null,
-				iconUrl: null,
-			},
-			{
-				id: "model2",
-				displayName: "Test Model 2",
-				iconAssetId: null,
-				iconUrl: null,
-			},
-		]);
-		mockGetEnabledProviders.mockResolvedValue([]);
 		mockListEnabledProviders.mockResolvedValue([]);
 		mockListEnabledProviderModels.mockResolvedValue([]);
 	});
 
 	it("returns 200 with grouped providers", async () => {
-		const response = await GET({} as any);
+		const response = await GET(routeEvent());
 		const data = await response.json();
 
 		expect(response.status).toBe(200);
@@ -71,7 +61,7 @@ describe("GET /api/models", () => {
 	});
 
 	it("returns built-in provider with model1 and model2", async () => {
-		const response = await GET({} as any);
+		const response = await GET(routeEvent());
 		const data = await response.json();
 
 		const builtIn = data.providers[0];
@@ -85,20 +75,22 @@ describe("GET /api/models", () => {
 
 	it("hides model2 when model2 is disabled", async () => {
 		mockGetConfig.mockReturnValue({
-			model1: { displayName: "Test Model 1" },
-			model2: { displayName: "Test Model 2" },
+			model1: {
+				baseUrl: "http://localhost:3001/v1",
+				modelName: "model-1",
+				displayName: "Test Model 1",
+			},
+			model2: {
+				baseUrl: "http://localhost:3002/v1",
+				modelName: "model-2",
+				displayName: "Test Model 2",
+			},
+			model1IconAssetId: null,
+			model2IconAssetId: null,
 			model2Enabled: false,
 		});
-		mockGetAvailableModels.mockReturnValue([
-			{
-				id: "model1",
-				displayName: "Test Model 1",
-				iconAssetId: null,
-				iconUrl: null,
-			},
-		]);
 
-		const response = await GET({} as any);
+		const response = await GET(routeEvent());
 		const data = await response.json();
 
 		expect(data.providers[0].models).toEqual([
@@ -121,7 +113,7 @@ describe("GET /api/models", () => {
 			{ id: "m2", name: "gpt-3.5", displayName: "GPT-3.5", enabled: false },
 		]);
 
-		const response = await GET({} as any);
+		const response = await GET(routeEvent());
 		const data = await response.json();
 
 		const newProvider = data.providers.find(
