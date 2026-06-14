@@ -1,6 +1,14 @@
 import { recordMessageAnalytics } from "$lib/server/services/analytics";
+import {
+	getChatFilesForAssistantMessage,
+	syncGeneratedFilesToMemory,
+} from "$lib/server/services/chat-files";
 import { clearConversationDraft } from "$lib/server/services/conversation-drafts";
 import { refreshConversationSummary } from "$lib/server/services/conversation-summaries";
+import {
+	assignFileProductionJobsToAssistantMessage,
+	listConversationFileProductionJobs,
+} from "$lib/server/services/file-production";
 import {
 	mirrorMessage,
 	mirrorWorkCapsuleConclusion,
@@ -39,6 +47,7 @@ import { buildWebCitationAudit } from "$lib/server/services/web-citation-audit";
 import { resolveWorkingDocumentSelection } from "$lib/server/services/working-document-selection";
 import type {
 	ArtifactSummary,
+	ChatGeneratedFile,
 	ContextDebugState,
 	ContextSourcesState,
 	ConversationContextStatus,
@@ -107,6 +116,27 @@ type CreateMessageFn = (
 	metadata?: Record<string, unknown>,
 ) => Promise<{ id: string } | undefined>;
 
+type FileProductionJobSummary = {
+	id: string;
+	files?: Array<{ id: string }>;
+};
+
+export type GeneratedOutputReconciliationParams = {
+	fileProductionJobIdsAtStart: Set<string>;
+	getFileProductionJobs?: (
+		userId: string,
+		conversationId: string,
+	) => Promise<FileProductionJobSummary[]>;
+	assignFileProductionJobsToAssistantMessage?: (
+		userId: string,
+		conversationId: string,
+		assistantMessageId: string,
+		jobIds: string[],
+	) => Promise<void>;
+	syncGeneratedFilesToMemory?: typeof syncGeneratedFilesToMemory;
+	getChatFilesForAssistantMessage?: typeof getChatFilesForAssistantMessage;
+};
+
 export type FinalizeChatTurnParams = {
 	logPrefix: "[SEND]" | "[STREAM]";
 	streamId?: string | null;
@@ -150,6 +180,7 @@ export type FinalizeChatTurnParams = {
 	buildCompletionContextSources?: typeof buildChatTurnCompletionContextSources;
 	persistUserAttachmentsBeforeAssistantMessage?: boolean;
 	waitForEvidenceBeforePostTurnTasks?: boolean;
+	generatedOutputReconciliation?: GeneratedOutputReconciliationParams;
 };
 
 function buildSkillControlLogContext(params: {
@@ -176,6 +207,7 @@ export type FinalizeChatTurnResult = {
 	createPostTurnTask: () => Promise<void>;
 	attachmentTask: Promise<WorkingSetItem[] | undefined>;
 	attachedArtifacts?: WorkingSetItem[];
+	generatedFiles: ChatGeneratedFile[];
 };
 
 export type BuildChatTurnCompletionContextSourcesParams = {
@@ -257,6 +289,127 @@ async function createTurnMessage(
 				);
 
 	return mode === "best_effort" ? create.catch(() => undefined) : create;
+}
+
+async function reconcileGeneratedOutputsForAssistantMessage(params: {
+	logPrefix: "[SEND]" | "[STREAM]";
+	userId: string;
+	conversationId: string;
+	assistantMessageId: string;
+	assistantResponse: string;
+	reconciliation: GeneratedOutputReconciliationParams;
+}): Promise<ChatGeneratedFile[]> {
+	const getFileProductionJobsImpl =
+		params.reconciliation.getFileProductionJobs ??
+		listConversationFileProductionJobs;
+	const assignFileProductionJobsImpl =
+		params.reconciliation.assignFileProductionJobsToAssistantMessage ??
+		assignFileProductionJobsToAssistantMessage;
+	const syncGeneratedFilesToMemoryImpl =
+		params.reconciliation.syncGeneratedFilesToMemory ??
+		syncGeneratedFilesToMemory;
+	const getChatFilesForAssistantMessageImpl =
+		params.reconciliation.getChatFilesForAssistantMessage ??
+		getChatFilesForAssistantMessage;
+
+	try {
+		const fileProductionJobs = await getFileProductionJobsImpl(
+			params.userId,
+			params.conversationId,
+		);
+		const newFileProductionJobs = fileProductionJobs.filter(
+			(job) => !params.reconciliation.fileProductionJobIdsAtStart.has(job.id),
+		);
+		const newFileProductionJobIds = newFileProductionJobs.map((job) => job.id);
+
+		if (newFileProductionJobIds.length > 0) {
+			await assignFileProductionJobsImpl(
+				params.userId,
+				params.conversationId,
+				params.assistantMessageId,
+				newFileProductionJobIds,
+			);
+		}
+
+		const initialGeneratedFileIds = getUniqueGeneratedFileIds(
+			newFileProductionJobs,
+		);
+		const refreshedJobs = await getFileProductionJobsImpl(
+			params.userId,
+			params.conversationId,
+		);
+		const refreshedGeneratedFileIds = getUniqueGeneratedFileIds(
+			refreshedJobs.filter(
+				(job) => !params.reconciliation.fileProductionJobIdsAtStart.has(job.id),
+			),
+		);
+		const newGeneratedFileIds = Array.from(
+			new Set([...initialGeneratedFileIds, ...refreshedGeneratedFileIds]),
+		);
+
+		if (newGeneratedFileIds.length > 0) {
+			void syncGeneratedFilesToMemoryImpl({
+				userId: params.userId,
+				conversationId: params.conversationId,
+				assistantMessageId: params.assistantMessageId,
+				fileIds: newGeneratedFileIds,
+				assistantResponse: params.assistantResponse,
+			}).catch((error) => {
+				console.error(
+					`${params.logPrefix} Background generated-file memory sync failed`,
+					{
+						conversationId: params.conversationId,
+						assistantMessageId: params.assistantMessageId,
+						fileIds: newGeneratedFileIds,
+						error,
+					},
+				);
+			});
+		}
+
+		return (
+			await getChatFilesForAssistantMessageImpl(
+				params.conversationId,
+				params.assistantMessageId,
+			)
+		).map(toPublicGeneratedFile);
+	} catch (error) {
+		console.error(`${params.logPrefix} Failed to reconcile generated outputs`, {
+			conversationId: params.conversationId,
+			assistantMessageId: params.assistantMessageId,
+			error,
+		});
+		return [];
+	}
+}
+
+function getUniqueGeneratedFileIds(
+	jobs: FileProductionJobSummary[],
+): string[] {
+	return Array.from(
+		new Set(jobs.flatMap((job) => (job.files ?? []).map((file) => file.id))),
+	);
+}
+
+function toPublicGeneratedFile(file: ChatGeneratedFile): ChatGeneratedFile {
+	return {
+		id: file.id,
+		conversationId: file.conversationId,
+		assistantMessageId: file.assistantMessageId ?? null,
+		artifactId: file.artifactId ?? null,
+		documentFamilyId: file.documentFamilyId ?? null,
+		documentFamilyStatus: file.documentFamilyStatus ?? null,
+		documentLabel: file.documentLabel ?? null,
+		documentRole: file.documentRole ?? null,
+		versionNumber: file.versionNumber ?? null,
+		originConversationId: file.originConversationId ?? null,
+		originAssistantMessageId: file.originAssistantMessageId ?? null,
+		sourceChatFileId: file.sourceChatFileId ?? null,
+		filename: file.filename,
+		mimeType: file.mimeType,
+		sizeBytes: file.sizeBytes,
+		createdAt: file.createdAt,
+	};
 }
 
 export async function finalizeChatTurn(
@@ -500,6 +653,17 @@ export async function finalizeChatTurn(
 		contextTraceSections: params.contextTraceSections,
 		toolCalls: params.toolCalls,
 	});
+	const generatedFiles =
+		assistantMessage && params.generatedOutputReconciliation
+			? await reconcileGeneratedOutputsForAssistantMessage({
+					logPrefix: params.logPrefix,
+					userId: params.userId,
+					conversationId: params.conversationId,
+					assistantMessageId: assistantMessage.id,
+					assistantResponse: params.assistantResponse,
+					reconciliation: params.generatedOutputReconciliation,
+				})
+			: [];
 
 	return {
 		userMessage,
@@ -510,6 +674,7 @@ export async function finalizeChatTurn(
 		createPostTurnTask,
 		attachmentTask,
 		attachedArtifacts: resolvedAttachedArtifacts,
+		generatedFiles,
 	};
 }
 

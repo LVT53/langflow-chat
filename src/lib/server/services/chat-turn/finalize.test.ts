@@ -165,6 +165,109 @@ describe('finalizeChatTurn', () => {
 		vi.clearAllMocks();
 	});
 
+	it('reconciles new generated outputs during turn completion', async () => {
+		const createMessage = vi.fn(
+			async (
+				_conversationId: string,
+				role: "user" | "assistant",
+			): Promise<{ id: string }> => ({ id: `${role}-message` }),
+		);
+		const persistAssistantTurnState = vi.fn(async () => ({
+			activeWorkingSet: [],
+			taskState: null,
+			contextDebug: null,
+			workCapsule: {} as unknown as undefined,
+		}));
+		const assignGeneratedOutputJobs = vi.fn(async () => undefined);
+		const syncGeneratedFilesToMemory = vi.fn(async () => undefined);
+		const getGeneratedFilesForAssistantMessage = vi.fn(async () => [
+			{
+				id: 'file-new',
+				conversationId: 'conv-1',
+				assistantMessageId: 'assistant-message',
+				artifactId: 'artifact-generated',
+				documentFamilyId: null,
+				documentFamilyStatus: null,
+				documentLabel: null,
+				documentRole: null,
+				versionNumber: null,
+				originConversationId: null,
+				originAssistantMessageId: null,
+				sourceChatFileId: null,
+				filename: 'report.pdf',
+				mimeType: 'application/pdf',
+				sizeBytes: 456,
+				createdAt: 1_777_140_200,
+			},
+		]);
+		const { finalizeChatTurn } = await import('./finalize');
+
+		const completion = await finalizeChatTurn({
+			logPrefix: '[SEND]',
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			userMessageContent: 'Create a report',
+			persistUserMessage: true,
+			normalizedMessage: 'Create a report',
+			upstreamMessage: 'Create a report',
+			assistantResponse: 'Done.',
+			assistantMetadata: { evidenceStatus: 'pending' },
+			skillControlOperations: [],
+			skillControlSessionId: null,
+			attachmentIds: [],
+			activeDocumentArtifactId: null,
+			contextStatus: null,
+			initialTaskState: null,
+			initialContextDebug: null,
+			analytics: {
+				model: 'model-1',
+				modelDisplayName: 'Model One',
+				promptTokens: 8,
+				completionTokens: 2,
+				generationTimeMs: undefined,
+				providerUsage: null,
+			},
+			continuitySource: 'send',
+			honchoContext: null,
+			honchoSnapshot: null,
+			assistantMirrorContent: 'Done.',
+			maintenanceReason: 'chat_send',
+			createMessage,
+			persistAssistantTurnState,
+			generatedOutputReconciliation: {
+				fileProductionJobIdsAtStart: new Set(['job-existing']),
+				getFileProductionJobs: vi.fn(async () => [
+					{ id: 'job-existing', files: [{ id: 'file-existing' }] },
+					{ id: 'job-new', files: [{ id: 'file-new' }] },
+				]),
+				assignFileProductionJobsToAssistantMessage: assignGeneratedOutputJobs,
+				syncGeneratedFilesToMemory,
+				getChatFilesForAssistantMessage: getGeneratedFilesForAssistantMessage,
+			},
+		});
+
+		expect(assignGeneratedOutputJobs).toHaveBeenCalledWith(
+			'user-1',
+			'conv-1',
+			'assistant-message',
+			['job-new'],
+		);
+		expect(syncGeneratedFilesToMemory).toHaveBeenCalledWith({
+			userId: 'user-1',
+			conversationId: 'conv-1',
+			assistantMessageId: 'assistant-message',
+			fileIds: ['file-new'],
+			assistantResponse: 'Done.',
+		});
+		expect(completion.generatedFiles).toEqual([
+			expect.objectContaining({
+				id: 'file-new',
+				assistantMessageId: 'assistant-message',
+				filename: 'report.pdf',
+			}),
+		]);
+	});
+
 	it('persists completed control-only turns with empty visible assistant text', async () => {
 		const createMessage = vi.fn(
 			async (

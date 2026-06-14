@@ -326,6 +326,7 @@ export async function completeStreamTurn(
 	);
 	let persistedTurnState: PersistedStreamTurnState | null = null;
 	let persistedContextSources: ContextSourcesState | null = null;
+	let persistedGeneratedFiles: ChatGeneratedFile[] = [];
 
 	if (getConfig().contextDiagnosticsDebug) {
 		console.info("[CHAT_STREAM] Tool-call summary", {
@@ -355,93 +356,6 @@ export async function completeStreamTurn(
 		userMsgId?: string,
 		assistantMsgId?: string,
 	) => {
-		let generatedFiles: ChatGeneratedFile[] = [];
-		try {
-			if (assistantMsgId && hadFileProductionToolCall) {
-				const fileProductionJobs = await getFileProductionJobs(
-					userId,
-					conversationId,
-				);
-				const newFileProductionJobs = fileProductionJobs.filter(
-					(job) => !fileProductionJobIdsAtStart.has(job.id),
-				);
-				const newFileProductionJobIds = newFileProductionJobs.map(
-					(job) => job.id,
-				);
-
-				if (newFileProductionJobIds.length > 0) {
-					await assignFileProductionJobsToAssistantMessage(
-						userId,
-						conversationId,
-						assistantMsgId,
-						newFileProductionJobIds,
-					);
-				}
-
-				const initialGeneratedFileIds = Array.from(
-					new Set(
-						newFileProductionJobs.flatMap((job) =>
-							(job.files ?? []).map((file) => file.id),
-						),
-					),
-				);
-
-				const refreshedJobs = await getFileProductionJobs(
-					userId,
-					conversationId,
-				);
-				const refreshedFileIds = Array.from(
-					new Set(
-						refreshedJobs
-							.filter(
-								(job) => !fileProductionJobIdsAtStart.has(job.id),
-							)
-							.flatMap((job) =>
-								(job.files ?? []).map((file) => file.id),
-							),
-					),
-				);
-
-				const newGeneratedFileIds = Array.from(
-					new Set([...initialGeneratedFileIds, ...refreshedFileIds]),
-				);
-
-				if (newGeneratedFileIds.length > 0) {
-					void syncGeneratedFilesToMemory({
-						userId,
-						conversationId,
-						assistantMessageId: assistantMsgId,
-						fileIds: newGeneratedFileIds,
-						assistantResponse: finalResponse,
-					}).catch((error) => {
-						console.error(
-							"[CHAT_STREAM] Background generated-file memory sync failed",
-							{
-								conversationId,
-								streamId,
-								assistantMessageId: assistantMsgId,
-								fileIds: newGeneratedFileIds,
-								error,
-							},
-						);
-					});
-				}
-
-				generatedFiles = (
-					await getChatFilesForAssistantMessage(conversationId, assistantMsgId)
-				).map(toPublicGeneratedFile);
-			}
-		} catch (error) {
-			console.error(
-				"[CHAT_STREAM] Failed to load generated files for end event",
-				{
-					conversationId,
-					streamId,
-					error,
-				},
-			);
-		}
-
 		const contextSources =
 			persistedContextSources ??
 			(await buildChatTurnCompletionContextSources({
@@ -519,7 +433,7 @@ export async function completeStreamTurn(
 				activeWorkingSet,
 				taskState,
 				contextDebug,
-				generatedFiles,
+				generatedFiles: persistedGeneratedFiles,
 				contextCompressionSnapshots,
 				generationDurationMs: genTimeMs,
 			}),
@@ -605,7 +519,17 @@ export async function completeStreamTurn(
 			persistAssistantEvidence,
 			runPostTurnTasks,
 			persistUserAttachmentsBeforeAssistantMessage: false,
+			generatedOutputReconciliation: hadFileProductionToolCall
+				? {
+						fileProductionJobIdsAtStart,
+						getFileProductionJobs,
+						assignFileProductionJobsToAssistantMessage,
+						syncGeneratedFilesToMemory,
+						getChatFilesForAssistantMessage,
+					}
+				: undefined,
 		});
+		persistedGeneratedFiles = completion.generatedFiles;
 		persistedTurnState = completion.turnState
 			? {
 					activeWorkingSet: completion.turnState.activeWorkingSet,
@@ -667,25 +591,4 @@ function buildCompletionWarning(params: {
 		default:
 			return null;
 	}
-}
-
-function toPublicGeneratedFile(file: ChatGeneratedFile): ChatGeneratedFile {
-	return {
-		id: file.id,
-		conversationId: file.conversationId,
-		assistantMessageId: file.assistantMessageId ?? null,
-		artifactId: file.artifactId ?? null,
-		documentFamilyId: file.documentFamilyId ?? null,
-		documentFamilyStatus: file.documentFamilyStatus ?? null,
-		documentLabel: file.documentLabel ?? null,
-		documentRole: file.documentRole ?? null,
-		versionNumber: file.versionNumber ?? null,
-		originConversationId: file.originConversationId ?? null,
-		originAssistantMessageId: file.originAssistantMessageId ?? null,
-		sourceChatFileId: file.sourceChatFileId ?? null,
-		filename: file.filename,
-		mimeType: file.mimeType,
-		sizeBytes: file.sizeBytes,
-		createdAt: file.createdAt,
-	};
 }
