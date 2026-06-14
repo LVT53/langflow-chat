@@ -70,6 +70,9 @@ vi.mock("drizzle-orm", () => ({
 }));
 
 const { load } = await import("./+layout.server");
+const { listConversations } = await import(
+	"$lib/server/services/conversations"
+);
 
 function createAuthenticatedLoadEvent() {
 	return {
@@ -85,6 +88,46 @@ function createAuthenticatedLoadEvent() {
 }
 
 describe("(app) layout load", () => {
+	it("streams sidebar conversations without blocking the critical app shell payload", async () => {
+		let resolveConversations:
+			| ((value: Array<{ id: string; title: string; updatedAt: number }>) => void)
+			| null = null;
+		const conversationsPromise = new Promise<
+			Array<{ id: string; title: string; updatedAt: number }>
+		>((resolve) => {
+			resolveConversations = resolve;
+		});
+		vi.mocked(listConversations).mockReturnValueOnce(
+			conversationsPromise as ReturnType<typeof listConversations>,
+		);
+
+		const loadPromise = load(createAuthenticatedLoadEvent());
+		const earlyResult = await Promise.race([
+			loadPromise.then((result) => ({ status: "resolved" as const, result })),
+			new Promise<{ status: "pending" }>((resolve) =>
+				setTimeout(() => resolve({ status: "pending" }), 0),
+			),
+		]);
+
+		expect(earlyResult.status).toBe("resolved");
+		if (earlyResult.status !== "resolved") {
+			throw new Error("Expected app shell load to resolve before conversations");
+		}
+		expect(earlyResult.result).toEqual(
+			expect.objectContaining({
+				maxMessageLength: 12000,
+				userModel: "model2",
+			}),
+		);
+
+		resolveConversations?.([
+			{ id: "conv-1", title: "Sidebar chat", updatedAt: 1 },
+		]);
+		await expect(earlyResult.result.conversations).resolves.toEqual([
+			{ id: "conv-1", title: "Sidebar chat", updatedAt: 1 },
+		]);
+	});
+
 	it("registers app shell dependencies for targeted reloads", async () => {
 		const event = createAuthenticatedLoadEvent();
 
@@ -129,13 +172,9 @@ describe("(app) layout load", () => {
 	it("exposes resolved app version metadata to the sidebar", async () => {
 		const result = await load(createAuthenticatedLoadEvent());
 
-		expect(result).toEqual(
-			expect.objectContaining({
-				appVersion: {
-					compact: "v1.0.1",
-					full: "1.0.1",
-				},
-			}),
-		);
+		await expect(result.appVersion).resolves.toEqual({
+			compact: "v1.0.1",
+			full: "1.0.1",
+		});
 	});
 });

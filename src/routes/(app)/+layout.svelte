@@ -56,10 +56,24 @@ import {
 } from "$lib/stores/settings";
 import { initTheme, setThemeAndSync, type Theme } from "$lib/stores/theme";
 import { initAvatar } from "$lib/stores/avatar";
-import type { ModelId, UserModelPreference } from "$lib/types";
+import type {
+	ConversationListItem,
+	ModelId,
+	Project,
+	UserModelPreference,
+} from "$lib/types";
 import type { LayoutProps } from "./$types";
 
 let { data, children }: LayoutProps = $props();
+
+type AppVersionMetadata = { compact: string; full: string };
+type LayoutAvailableModel = {
+	id: ModelId;
+	displayName: string;
+	isThirdParty?: boolean;
+	iconAssetId?: string | null;
+	iconUrl?: string | null;
+};
 
 // Debounce state for conversation list refresh
 let lastRefreshTime = $state(0);
@@ -92,13 +106,58 @@ let campaignPersonalityProfiles = $state<
 		isBuiltIn?: boolean | number | null;
 	}>
 >([]);
+let shellConversations = $state<ConversationListItem[]>([]);
+let shellProjects = $state<Project[]>([]);
+let shellAppVersion = $state<AppVersionMetadata | null>(null);
+let shellAvailableModels = $state<LayoutAvailableModel[]>([]);
+let shellPayloadSequence = 0;
+
+$effect(() => {
+	const sequence = ++shellPayloadSequence;
+	Promise.resolve(data?.conversations ?? [])
+		.then((items) => {
+			if (sequence === shellPayloadSequence) {
+				shellConversations = items;
+			}
+		})
+		.catch((error) => {
+			console.warn("Failed to resolve shell conversations:", error);
+		});
+	Promise.resolve(data?.projects ?? [])
+		.then((items) => {
+			if (sequence === shellPayloadSequence) {
+				shellProjects = items;
+			}
+		})
+		.catch((error) => {
+			console.warn("Failed to resolve shell projects:", error);
+		});
+	Promise.resolve(data?.appVersion ?? null)
+		.then((appVersion) => {
+			if (sequence === shellPayloadSequence) {
+				shellAppVersion = appVersion;
+			}
+		})
+		.catch((error) => {
+			console.warn("Failed to resolve shell app version:", error);
+		});
+	Promise.resolve(data?.availableModels ?? [])
+		.then((models) => {
+			if (sequence === shellPayloadSequence) {
+				shellAvailableModels = models;
+			}
+		})
+		.catch((error) => {
+			console.warn("Failed to resolve shell available models:", error);
+		});
+});
 
 $effect(() => {
 	const nextUserId = data.user?.id ?? null;
 	const resetLocalState =
 		previousConversationUserId !== null &&
 		previousConversationUserId !== nextUserId;
-	reconcileConversationSnapshot(data?.conversations ?? [], {
+	reconcileConversationSnapshot(shellConversations, {
 		resetLocalState,
 		userId: nextUserId,
 	});
@@ -106,7 +165,7 @@ $effect(() => {
 });
 
 $effect(() => {
-	reconcileProjectSnapshot(data?.projects ?? [], {
+	reconcileProjectSnapshot(shellProjects, {
 		userId: data.user?.id ?? null,
 	});
 });
@@ -475,10 +534,10 @@ onDestroy(() => {
 	<div class="flex h-full flex-1 overflow-hidden">
 		<Sidebar
 			open={$sidebarOpen}
-			conversationsData={data?.conversations ?? []}
-			projectsData={data?.projects ?? []}
+			conversationsData={shellConversations}
+			projectsData={shellProjects}
 			user={data?.user}
-			appVersion={data?.appVersion}
+			appVersion={shellAppVersion}
 			onAppVersionClick={handleAppVersionClick}
 		/>
 
@@ -505,7 +564,7 @@ onDestroy(() => {
 		onFinish={() => finishActiveCampaign('completed')}
 		onInternalAction={handleCampaignInternalAction}
 		setupPreferences={{
-			availableModels: data.availableModels ?? [],
+			availableModels: shellAvailableModels,
 			effectiveModel: effectiveCampaignModel,
 			systemDefaultModel: campaignSystemDefaultModel,
 			selectedModel: selectedCampaignModel,
@@ -525,7 +584,7 @@ onDestroy(() => {
 	<ImportChatGPTModalComponent
 		bind:show={showChatGPTImportModal}
 		onClose={() => (showChatGPTImportModal = false)}
-		projects={data.projects ?? []}
+		projects={shellProjects}
 	/>
 {/if}
 
