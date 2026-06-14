@@ -42,14 +42,10 @@ export async function logout(page: Page) {
 
 export async function openConversationComposer(
 	page: Page,
-	options: { skipIfAlreadyOpen?: boolean } = {},
+	_options: { skipIfAlreadyOpen?: boolean } = {},
 ) {
 	const composer = page.getByTestId("message-input");
-	if (
-		options.skipIfAlreadyOpen === true &&
-		new URL(page.url()).pathname === "/" &&
-		(await composer.isVisible())
-	) {
+	if (new URL(page.url()).pathname === "/" && (await composer.isVisible())) {
 		return;
 	}
 
@@ -87,7 +83,9 @@ export async function sendMessage(page: Page, text: string) {
 	const input = page.getByTestId("message-input");
 	await input.waitFor({ state: "visible" });
 	await input.fill(text);
-	await page.click('[data-testid="send-button"]');
+	const sendButton = page.getByTestId("send-button");
+	await expect(sendButton).toBeEnabled({ timeout: 10000 });
+	await sendButton.click();
 }
 
 export async function waitForAssistantResponse(page: Page, timeout = 30000) {

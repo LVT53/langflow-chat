@@ -9,18 +9,11 @@ import { login, openConversationComposer, sendMessage } from "./helpers";
 
 const provider = createOpenAICompatibleProviderHarness();
 
-const MODEL_CONFIG_KEYS = [
-	"MODEL_1_BASEURL",
-	"MODEL_1_API_KEY",
-	"MODEL_1_NAME",
-	"MODEL_1_DISPLAY_NAME",
-	"MODEL_1_MAX_TOKENS",
-	"HONCHO_ENABLED",
-	"DEFAULT_NEW_USER_MODEL",
-] as const;
-
-type ModelConfigKey = (typeof MODEL_CONFIG_KEYS)[number];
-type ConfigSnapshot = Record<ModelConfigKey, string>;
+type TemporaryProviderModel = {
+	providerId: string;
+	modelId: string;
+	selectedModel: `provider:${string}:${string}`;
+};
 
 test.describe("fake OpenAI-compatible provider app journey", () => {
 	test.beforeAll(async () => {
@@ -39,22 +32,14 @@ test.describe("fake OpenAI-compatible provider app journey", () => {
 		page,
 	}) => {
 		await login(page);
-		const previousConfig = await snapshotAdminConfig(page);
 		const previousModelPreference = await snapshotUserModelPreference(page);
 		const previousSelectedModel = await snapshotBrowserSelectedModel(page);
+		let temporaryProvider: TemporaryProviderModel | null = null;
 
 		try {
-			await updateAdminConfig(page, {
-				MODEL_1_BASEURL: provider.baseURL,
-				MODEL_1_API_KEY: AI_SMOKE_API_KEY,
-				MODEL_1_NAME: AI_SMOKE_MODEL_ID,
-				MODEL_1_DISPLAY_NAME: "Fake Provider",
-				MODEL_1_MAX_TOKENS: "256",
-				HONCHO_ENABLED: "false",
-				DEFAULT_NEW_USER_MODEL: "model1",
-			});
-			await updateUserModelPreference(page, "model1");
-			await setBrowserSelectedModel(page, "model1");
+			temporaryProvider = await createTemporaryFakeProviderModel(page);
+			await updateUserModelPreference(page, temporaryProvider.selectedModel);
+			await setBrowserSelectedModel(page, temporaryProvider.selectedModel);
 
 			await page.goto("/", { waitUntil: "domcontentloaded" });
 			await openConversationComposer(page);
@@ -96,50 +81,117 @@ test.describe("fake OpenAI-compatible provider app journey", () => {
 				},
 			});
 		} finally {
-			await updateAdminConfig(page, previousConfig);
 			await updateUserModelPreference(page, previousModelPreference);
 			await setBrowserSelectedModel(page, previousSelectedModel);
+			if (temporaryProvider) {
+				await deleteTemporaryProvider(page, temporaryProvider.providerId);
+			}
 		}
 	});
 });
-
-async function snapshotAdminConfig(page: Page): Promise<ConfigSnapshot> {
-	return page.evaluate(async (keys) => {
-		const response = await fetch("/api/admin/config");
-		if (!response.ok) {
-			throw new Error(`Failed to snapshot admin config: ${response.status}`);
-		}
-		const data = (await response.json()) as {
-			overrides?: Record<string, string>;
-		};
-		return Object.fromEntries(
-			keys.map((key) => [key, data.overrides?.[key] ?? ""]),
-		) as ConfigSnapshot;
-	}, MODEL_CONFIG_KEYS);
-}
-
-async function updateAdminConfig(
-	page: Page,
-	values: Partial<Record<ModelConfigKey, string>>,
-): Promise<void> {
-	const result = await page.evaluate(async (nextValues) => {
-		const response = await fetch("/api/admin/config", {
-			method: "PUT",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify(nextValues),
-		});
-		return { ok: response.ok, status: response.status };
-	}, values);
-
-	expect(result.ok, `Admin config update failed with ${result.status}`).toBe(
-		true,
-	);
-}
 
 function isOpenAIChatCompletionBody(
 	body: unknown,
 ): body is { stream?: unknown } {
 	return body != null && typeof body === "object";
+}
+
+async function createTemporaryFakeProviderModel(
+	page: Page,
+): Promise<TemporaryProviderModel> {
+	const result = await page.evaluate(
+		async ({ apiKey, baseUrl, modelName }) => {
+			const unique = Date.now();
+			const providerResponse = await fetch("/api/admin/providers", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					name: `fake_provider_${unique}`,
+					displayName: `Fake Provider ${unique}`,
+					baseUrl,
+					apiKey,
+				}),
+			});
+			const providerBody = (await providerResponse.json()) as {
+				provider?: { id: string };
+				error?: string;
+			};
+			if (!providerResponse.ok || !providerBody.provider?.id) {
+				return {
+					ok: false,
+					status: providerResponse.status,
+					error: providerBody.error ?? "Provider creation failed",
+				};
+			}
+
+			const modelResponse = await fetch(
+				`/api/admin/providers/${providerBody.provider.id}/models/batch`,
+				{
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						models: [
+							{
+								name: modelName,
+								displayName: "Fake Provider Chat Model",
+								contextLength: 8192,
+								supportsChat: true,
+								supportsTools: true,
+							},
+						],
+					}),
+				},
+			);
+			const modelBody = (await modelResponse.json()) as {
+				models?: Array<{ id: string }>;
+				error?: string;
+			};
+			const modelId = modelBody.models?.[0]?.id;
+			if (!modelResponse.ok || !modelId) {
+				return {
+					ok: false,
+					status: modelResponse.status,
+					error: modelBody.error ?? "Provider model creation failed",
+					providerId: providerBody.provider.id,
+				};
+			}
+
+			return {
+				ok: true,
+				providerId: providerBody.provider.id,
+				modelId,
+			};
+		},
+		{
+			apiKey: AI_SMOKE_API_KEY,
+			baseUrl: provider.baseURL,
+			modelName: AI_SMOKE_MODEL_ID,
+		},
+	);
+
+	expect(
+		result.ok,
+		`fake provider setup failed with ${"status" in result ? result.status : "unknown"}: ${"error" in result ? result.error : ""}`,
+	).toBe(true);
+	if (!("providerId" in result) || !("modelId" in result)) {
+		throw new Error(
+			"Fake provider setup did not return provider and model ids",
+		);
+	}
+	return {
+		providerId: result.providerId,
+		modelId: result.modelId,
+		selectedModel: `provider:${result.providerId}:${result.modelId}`,
+	};
+}
+
+async function deleteTemporaryProvider(
+	page: Page,
+	providerId: string,
+): Promise<void> {
+	await page.evaluate(async (id) => {
+		await fetch(`/api/admin/providers/${id}`, { method: "DELETE" });
+	}, providerId);
 }
 
 async function snapshotUserModelPreference(page: Page): Promise<string | null> {

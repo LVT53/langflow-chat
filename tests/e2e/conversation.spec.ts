@@ -30,6 +30,29 @@ function requireConversationId(
 	return conversationId;
 }
 
+async function openProjectCreator(page: Page) {
+	await ensureSidebarExpanded(page);
+
+	const expandProjectsButton = page.getByRole("button", {
+		name: "Expand Projects section",
+	});
+	if (await expandProjectsButton.isVisible().catch(() => false)) {
+		await expandProjectsButton.click();
+	}
+
+	await expect(
+		page.getByRole("button", { name: "Collapse Projects section" }),
+	).toBeVisible({ timeout: 5000 });
+
+	await page
+		.getByRole("button", { name: "Create new project" })
+		.first()
+		.click();
+	const projectInput = page.getByPlaceholder("Project name");
+	await expect(projectInput).toBeVisible();
+	return projectInput;
+}
+
 test.describe("Conversation CRUD operations", () => {
 	test.beforeEach(async ({ page }) => {
 		await login(page);
@@ -162,14 +185,8 @@ test.describe("Conversation CRUD operations", () => {
 		);
 		await ensureSidebarExpanded(page);
 
-		const createProjectButton = page
-			.getByRole("button", { name: "Create new project" })
-			.first();
-		await createProjectButton.click();
-
 		const projectName = `Project Drag Target ${Date.now()}`;
-		const projectInput = page.getByPlaceholder("Project name");
-		await expect(projectInput).toBeVisible();
+		const projectInput = await openProjectCreator(page);
 		await projectInput.fill(projectName);
 		await projectInput.press("Enter");
 
@@ -213,19 +230,16 @@ test.describe("Conversation CRUD operations", () => {
 		);
 		await ensureSidebarExpanded(page);
 
-		const createProjectButton = page
-			.getByRole("button", { name: "Create new project" })
-			.first();
-		await createProjectButton.click();
-
 		const uniqueSuffix = Date.now();
 		const firstProjectName = `First Drag Project ${uniqueSuffix}`;
-		const projectInput = page.getByPlaceholder("Project name");
-		await expect(projectInput).toBeVisible();
+		const projectInput = await openProjectCreator(page);
 		await projectInput.fill(firstProjectName);
 		await projectInput.press("Enter");
 
-		await createProjectButton.click();
+		await page
+			.getByRole("button", { name: "Create new project" })
+			.first()
+			.click();
 		await expect(projectInput).toBeVisible();
 		const secondProjectName = `Second Drag Project ${uniqueSuffix}`;
 		await projectInput.fill(secondProjectName);
@@ -317,14 +331,8 @@ test.describe("Conversation CRUD operations", () => {
 		);
 		await ensureSidebarExpanded(page);
 
-		const createProjectButton = page
-			.getByRole("button", { name: "Create new project" })
-			.first();
-		await createProjectButton.click();
-
 		const projectName = `Temporary Project ${Date.now()}`;
-		const projectInput = page.getByPlaceholder("Project name");
-		await expect(projectInput).toBeVisible();
+		const projectInput = await openProjectCreator(page);
 		await projectInput.fill(projectName);
 		await projectInput.press("Enter");
 
@@ -401,14 +409,8 @@ test.describe("Conversation CRUD operations", () => {
 		await createConversation(page, "Single menu conversation");
 		await ensureSidebarExpanded(page);
 
-		const createProjectButton = page
-			.getByRole("button", { name: "Create new project" })
-			.first();
-		await createProjectButton.click();
-
 		const projectName = "Single Menu Project";
-		const projectInput = page.getByPlaceholder("Project name");
-		await expect(projectInput).toBeVisible();
+		const projectInput = await openProjectCreator(page);
 		await projectInput.fill(projectName);
 		await projectInput.press("Enter");
 

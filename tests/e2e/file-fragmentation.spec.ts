@@ -1,15 +1,9 @@
-import { join } from "node:path";
 import { expect, type Page, test } from "@playwright/test";
 import {
 	buildAiSdkUiStreamBody,
 	login,
 	openConversationComposer,
 } from "./helpers";
-
-// Test asset paths
-const TEST_ASSETS_DIR = join(process.cwd(), "test-assets");
-const SMALL_FILE_PATH = join(TEST_ASSETS_DIR, "small-document.txt");
-const LARGE_FILE_PATH = join(TEST_ASSETS_DIR, "large-document.txt");
 
 // Unique phrases that the model should be able to reference
 const SMALL_FILE_ENDING_PHRASE =
@@ -18,6 +12,43 @@ const LARGE_FILE_MIDDLE_PHRASE =
 	"The silver moon rises over the calm ocean waters at midnight";
 const LARGE_FILE_ENDING_PHRASE =
 	"The golden eagle soars high above the mountain peaks at dawn";
+
+type TestUploadFile = {
+	name: string;
+	mimeType: string;
+	buffer: Buffer;
+};
+
+const SMALL_FILE: TestUploadFile = {
+	name: "small-document.txt",
+	mimeType: "text/plain",
+	buffer: Buffer.from(
+		[
+			"Project Requirements Document",
+			"Performance targets require sub-second response times.",
+			"Security requirements include TLS 1.3.",
+			`${SMALL_FILE_ENDING_PHRASE}.`,
+		].join("\n"),
+	),
+};
+
+const LARGE_FILE: TestUploadFile = {
+	name: "large-document.txt",
+	mimeType: "text/plain",
+	buffer: Buffer.from(
+		Array.from({ length: 16 }, (_, index) => {
+			if (index === 10) {
+				return `Section 11: ${LARGE_FILE_MIDDLE_PHRASE}.`;
+			}
+			if (index === 15) {
+				return `Section 16: ${LARGE_FILE_ENDING_PHRASE}.`;
+			}
+			return `Section ${index + 1}: Comprehensive Technical Specification content about architecture, APIs, database schema, integration patterns, testing strategy, deployment, and operations. `.repeat(
+				55,
+			);
+		}).join("\n\n"),
+	),
+};
 
 /**
  * Helper to mock the chat stream route with a custom response
@@ -36,28 +67,90 @@ function mockStreamRoute(page: Page, responseText: string) {
 	});
 }
 
+function artifactIdForFileName(fileName: string): string {
+	return `e2e-${fileName.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`;
+}
+
+async function mockSuccessfulKnowledgeUploads(page: Page) {
+	await page.route("**/api/knowledge/upload/intent", async (route) => {
+		await route.fulfill({
+			status: 200,
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				traceId: `trace-${Date.now()}`,
+				rawUploadLimit: 10 * 1024 * 1024,
+				chunkBodyLimit: 256 * 1024,
+			}),
+		});
+	});
+
+	await page.route("**/api/knowledge/upload/raw", async (route) => {
+		const headers = route.request().headers();
+		const fileName = decodeURIComponent(
+			headers["x-alfyai-upload-name"] ?? "uploaded-file.txt",
+		);
+		const fileSize = Number(headers["x-alfyai-upload-size"] ?? 0);
+		const mimeType = headers["content-type"] ?? "text/plain";
+		const artifact = {
+			id: artifactIdForFileName(fileName),
+			type: "source_document",
+			retrievalClass: "durable",
+			name: fileName,
+			mimeType,
+			sizeBytes: fileSize,
+			conversationId: headers["x-alfyai-conversation-id"] ?? null,
+			summary: null,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		};
+
+		await route.fulfill({
+			status: 200,
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				artifact,
+				normalizedArtifact: null,
+				reusedExistingArtifact: false,
+				honcho: { uploaded: false, mode: "none" },
+				promptReady: true,
+				promptArtifactId: artifact.id,
+				readinessError: null,
+			}),
+		});
+	});
+}
+
+/**
+ * The landing composer is server-rendered before Svelte wires up its file input
+ * listener. Prove the composer is hydrated before selecting files.
+ */
+async function waitForComposerHydration(page: Page): Promise<void> {
+	const toolsButton = page.getByRole("button", { name: "Open composer tools" });
+	const toolsMenu = page.getByRole("menu", { name: "Composer tools" });
+	await expect(toolsButton).toBeVisible();
+	await expect(async () => {
+		if (await toolsMenu.isVisible().catch(() => false)) return;
+		await toolsButton.click();
+		await expect(toolsMenu).toBeVisible({ timeout: 1000 });
+	}).toPass({ timeout: 15000 });
+	await page.keyboard.press("Escape");
+	await expect(toolsMenu).not.toBeVisible();
+}
+
 /**
  * Helper to upload a file in the chat composer
  */
-async function uploadFileInChat(page: Page, filePath: string): Promise<void> {
-	// Open the tools menu
-	const toolsButton = page.getByRole("button", { name: "Open composer tools" });
-	await expect(toolsButton).toBeVisible();
-	await toolsButton.click();
-
-	// Click the attach file button
-	const attachButton = page.getByRole("menuitem", { name: "Attach file" });
-	await expect(attachButton).toBeVisible();
-	await attachButton.click();
-
-	// Upload the file using the hidden file input
+async function uploadFileInChat(
+	page: Page,
+	file: TestUploadFile,
+): Promise<void> {
+	await waitForComposerHydration(page);
 	const fileInput = page.locator('input[type="file"]').first();
 	await expect(fileInput).toBeHidden();
-	await fileInput.setInputFiles(filePath);
+	await fileInput.setInputFiles(file);
 
 	// Wait for the file to be uploaded and appear as an attachment
-	const fileName = filePath.split("/").pop() || "";
-	await expect(page.getByText(fileName)).toBeVisible({ timeout: 15000 });
+	await expect(page.getByText(file.name)).toBeVisible({ timeout: 15000 });
 }
 
 /**
@@ -70,7 +163,9 @@ async function sendMessageWithAttachments(
 	const input = page.getByTestId("message-input");
 	await input.waitFor({ state: "visible" });
 	await input.fill(message);
-	await page.getByTestId("send-button").click();
+	const sendButton = page.getByTestId("send-button");
+	await expect(sendButton).toBeEnabled({ timeout: 10000 });
+	await sendButton.click();
 }
 
 /**
@@ -96,6 +191,7 @@ async function getAssistantResponseText(
 test.describe("File Fragmentation E2E Tests", () => {
 	test.beforeEach(async ({ page }) => {
 		await login(page);
+		await mockSuccessfulKnowledgeUploads(page);
 	});
 
 	test.describe("Small File Handling (under 5K chars)", () => {
@@ -110,7 +206,7 @@ test.describe("File Fragmentation E2E Tests", () => {
 			await openConversationComposer(page);
 
 			// Upload the small file
-			await uploadFileInChat(page, SMALL_FILE_PATH);
+			await uploadFileInChat(page, SMALL_FILE);
 
 			// Send a message asking about the last sentence
 			await sendMessageWithAttachments(
@@ -135,7 +231,7 @@ test.describe("File Fragmentation E2E Tests", () => {
 			await mockStreamRoute(page, mockResponse);
 
 			await openConversationComposer(page);
-			await uploadFileInChat(page, SMALL_FILE_PATH);
+			await uploadFileInChat(page, SMALL_FILE);
 
 			await sendMessageWithAttachments(
 				page,
@@ -159,7 +255,7 @@ test.describe("File Fragmentation E2E Tests", () => {
 			await mockStreamRoute(page, mockResponse);
 
 			await openConversationComposer(page);
-			await uploadFileInChat(page, LARGE_FILE_PATH);
+			await uploadFileInChat(page, LARGE_FILE);
 
 			await sendMessageWithAttachments(
 				page,
@@ -181,7 +277,7 @@ test.describe("File Fragmentation E2E Tests", () => {
 			await mockStreamRoute(page, mockResponse);
 
 			await openConversationComposer(page);
-			await uploadFileInChat(page, LARGE_FILE_PATH);
+			await uploadFileInChat(page, LARGE_FILE);
 
 			await sendMessageWithAttachments(
 				page,
@@ -204,7 +300,7 @@ test.describe("File Fragmentation E2E Tests", () => {
 			await mockStreamRoute(page, mockResponse);
 
 			await openConversationComposer(page);
-			await uploadFileInChat(page, LARGE_FILE_PATH);
+			await uploadFileInChat(page, LARGE_FILE);
 
 			await sendMessageWithAttachments(
 				page,
@@ -230,8 +326,8 @@ test.describe("File Fragmentation E2E Tests", () => {
 			await openConversationComposer(page);
 
 			// Upload both files
-			await uploadFileInChat(page, SMALL_FILE_PATH);
-			await uploadFileInChat(page, LARGE_FILE_PATH);
+			await uploadFileInChat(page, SMALL_FILE);
+			await uploadFileInChat(page, LARGE_FILE);
 
 			// Verify both files are attached
 			await expect(page.getByText("small-document.txt")).toBeVisible();
@@ -261,8 +357,8 @@ From the large document (Technical Specification): It covers system architecture
 			await mockStreamRoute(page, mockResponse);
 
 			await openConversationComposer(page);
-			await uploadFileInChat(page, SMALL_FILE_PATH);
-			await uploadFileInChat(page, LARGE_FILE_PATH);
+			await uploadFileInChat(page, SMALL_FILE);
+			await uploadFileInChat(page, LARGE_FILE);
 
 			await sendMessageWithAttachments(page, "What do both documents contain?");
 
@@ -282,7 +378,8 @@ From the large document (Technical Specification): It covers system architecture
 			page,
 		}) => {
 			// Mock the upload endpoint to fail
-			await page.route("**/api/knowledge/upload", async (route) => {
+			await page.unroute("**/api/knowledge/upload/raw");
+			await page.route("**/api/knowledge/upload/raw", async (route) => {
 				await route.fulfill({
 					status: 503,
 					headers: { "Content-Type": "application/json" },
@@ -294,16 +391,10 @@ From the large document (Technical Specification): It covers system architecture
 
 			await openConversationComposer(page);
 
-			// Try to upload a file
-			const toolsButton = page.getByRole("button", {
-				name: "Open composer tools",
-			});
-			await toolsButton.click();
-			const attachButton = page.getByRole("menuitem", { name: "Attach file" });
-			await attachButton.click();
-
 			const fileInput = page.locator('input[type="file"]').first();
-			await fileInput.setInputFiles(SMALL_FILE_PATH);
+			await waitForComposerHydration(page);
+			await expect(fileInput).toBeHidden();
+			await fileInput.setInputFiles(SMALL_FILE);
 
 			// Should show an error message
 			await expect(
@@ -317,19 +408,17 @@ From the large document (Technical Specification): It covers system architecture
 			await openConversationComposer(page);
 
 			// Upload the small file
-			await uploadFileInChat(page, SMALL_FILE_PATH);
+			await uploadFileInChat(page, SMALL_FILE);
 
 			// Verify file name is displayed
 			await expect(page.getByText("small-document.txt")).toBeVisible();
 
 			// Verify file can be removed
 			const removeButton = page
-				.getByRole("button", { name: /remove|delete|clear/i })
+				.getByRole("button", { name: "Remove small-document.txt" })
 				.first();
-			if (await removeButton.isVisible().catch(() => false)) {
-				await removeButton.click();
-				await expect(page.getByText("small-document.txt")).not.toBeVisible();
-			}
+			await removeButton.click();
+			await expect(page.getByText("small-document.txt")).not.toBeVisible();
 		});
 
 		test("multiple files can be attached and display correctly", async ({
@@ -338,8 +427,8 @@ From the large document (Technical Specification): It covers system architecture
 			await openConversationComposer(page);
 
 			// Upload both files
-			await uploadFileInChat(page, SMALL_FILE_PATH);
-			await uploadFileInChat(page, LARGE_FILE_PATH);
+			await uploadFileInChat(page, SMALL_FILE);
+			await uploadFileInChat(page, LARGE_FILE);
 
 			// Verify both file names are displayed
 			await expect(page.getByText("small-document.txt")).toBeVisible();

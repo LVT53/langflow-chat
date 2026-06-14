@@ -16,6 +16,7 @@ test.use({
 test.describe("Mobile Design Polish", () => {
 	test.beforeEach(async ({ page }) => {
 		await login(page);
+		await page.waitForLoadState("networkidle");
 	});
 
 	test("Layout and Touch Targets - iPhone SE", async ({ page }) => {
@@ -24,20 +25,37 @@ test.describe("Mobile Design Polish", () => {
 		expect(headerBox?.height).toBeGreaterThanOrEqual(48);
 
 		const hamburger = page.locator('button[aria-label="Toggle sidebar"]');
+		await expect(hamburger).toBeVisible();
 		const hamburgerBox = await hamburger.boundingBox();
 		expect(hamburgerBox?.width).toBeGreaterThanOrEqual(44);
 		expect(hamburgerBox?.height).toBeGreaterThanOrEqual(44);
 
-		const newChatBtn = page.locator('button[aria-label="New chat"]');
-		const newChatBox = await newChatBtn.boundingBox();
-		expect(newChatBox?.width).toBeGreaterThanOrEqual(44);
-		expect(newChatBox?.height).toBeGreaterThanOrEqual(44);
+		const userMenu = page.locator('button[aria-label="Open user menu"]');
+		await expect(userMenu).toBeVisible();
+		const userMenuBox = await userMenu.boundingBox();
+		expect(userMenuBox?.width).toBeGreaterThanOrEqual(44);
+		expect(userMenuBox?.height).toBeGreaterThanOrEqual(44);
+
+		await userMenu.click();
+		const headerNewChat = page
+			.locator(".header-menu")
+			.getByRole("button", { name: "New chat" });
+		await expect(headerNewChat).toBeVisible();
+		const headerNewChatBox = await headerNewChat.boundingBox();
+		expect(headerNewChatBox?.height).toBeGreaterThanOrEqual(44);
+		await page.mouse.click(1, 1);
 
 		const sidebar = page.locator("aside");
 		await expect(sidebar).toHaveClass(/.*-translate-x-\[105%\].*/);
 
 		await hamburger.click();
 		await expect(sidebar).toHaveClass(/.*translate-x-0.*/);
+
+		const sidebarNewChat = page.getByTestId("new-conversation");
+		await expect(sidebarNewChat).toBeVisible();
+		const sidebarNewChatBox = await sidebarNewChat.boundingBox();
+		expect(sidebarNewChatBox?.width).toBeGreaterThanOrEqual(44);
+		expect(sidebarNewChatBox?.height).toBeGreaterThanOrEqual(44);
 
 		const closeBtn = page.locator('button[aria-label="Close sidebar"]');
 		const closeBox = await closeBtn.boundingBox();
@@ -63,7 +81,7 @@ test.describe("Mobile Design Polish", () => {
 			await route.fulfill({ json: { title: "Mocked Title" } });
 		});
 
-		await openConversationComposer(page);
+		await openConversationComposer(page, { skipIfAlreadyOpen: true });
 
 		const textarea = page.locator('[data-testid="message-input"]');
 		await expect(textarea).toBeVisible();
@@ -75,7 +93,14 @@ test.describe("Mobile Design Polish", () => {
 		expect(sendBox?.width).toBeGreaterThanOrEqual(44);
 		expect(sendBox?.height).toBeGreaterThanOrEqual(44);
 
-		const attachBtn = page.locator('button[aria-label="Attach file"]');
+		const toolsBtn = page.locator('button[aria-label="Open composer tools"]');
+		const toolsBox = await toolsBtn.boundingBox();
+		expect(toolsBox?.width).toBeGreaterThanOrEqual(44);
+		expect(toolsBox?.height).toBeGreaterThanOrEqual(44);
+		await toolsBtn.click();
+
+		const attachBtn = page.getByRole("menuitem", { name: "Attach file" });
+		await expect(attachBtn).toBeVisible();
 		const attachBox = await attachBtn.boundingBox();
 		expect(attachBox?.width).toBeGreaterThanOrEqual(44);
 		expect(attachBox?.height).toBeGreaterThanOrEqual(44);
@@ -126,12 +151,14 @@ test.describe("Mobile Design Polish - iPhone 14", () => {
 
 	test.beforeEach(async ({ page }) => {
 		await login(page);
+		await page.waitForLoadState("networkidle");
 	});
 
 	test("Check prefers-reduced-motion", async ({ page }) => {
 		await page.emulateMedia({ reducedMotion: "reduce" });
 
 		const hamburger = page.locator('button[aria-label="Toggle sidebar"]');
+		await expect(hamburger).toBeVisible();
 		await hamburger.click();
 
 		const sidebar = page.locator("aside");
@@ -141,6 +168,9 @@ test.describe("Mobile Design Polish - iPhone 14", () => {
 			return window.getComputedStyle(node).transitionDuration;
 		});
 
-		expect(["0s", "0.00001s", "1e-05s"]).toContain(transitionDuration);
+		const durations = transitionDuration
+			.split(",")
+			.map((duration) => Number.parseFloat(duration.trim()));
+		expect(durations.every((duration) => duration <= 0.00001)).toBe(true);
 	});
 });

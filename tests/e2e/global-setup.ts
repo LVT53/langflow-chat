@@ -1,7 +1,22 @@
 import { execSync } from "node:child_process";
-import { existsSync, mkdirSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { join, resolve } from "node:path";
 import Database from "better-sqlite3";
+
+const E2E_SESSION_SECRET =
+	process.env.SESSION_SECRET ||
+	"e2e-test-session-secret-long-enough-1234567890";
+const DEFAULT_E2E_DB_PATH = join(
+	process.cwd(),
+	"data",
+	"playwright-e2e-chat.db",
+);
+
+function removeDatabaseFiles(dbPath: string) {
+	for (const path of [dbPath, `${dbPath}-shm`, `${dbPath}-wal`]) {
+		rmSync(path, { force: true });
+	}
+}
 
 function clearCampaignState(dbPath: string) {
 	const db = new Database(dbPath);
@@ -30,8 +45,13 @@ export default async function globalSetup() {
 		mkdirSync(dbDir, { recursive: true });
 	}
 
-	const dbPath =
-		process.env.DATABASE_PATH || join(process.cwd(), "data", "chat.db");
+	const dbPath = process.env.E2E_DATABASE_PATH || DEFAULT_E2E_DB_PATH;
+	if (
+		resolve(dbPath) === resolve(DEFAULT_E2E_DB_PATH) ||
+		process.env.E2E_RESET_DATABASE === "true"
+	) {
+		removeDatabaseFiles(dbPath);
+	}
 
 	try {
 		execSync("npm run db:prepare", {
@@ -39,9 +59,8 @@ export default async function globalSetup() {
 			env: {
 				...process.env,
 				DATABASE_PATH: dbPath,
-				SESSION_SECRET:
-					process.env.SESSION_SECRET ||
-					"e2e-test-session-secret-long-enough-1234567890",
+				E2E_DATABASE_PATH: dbPath,
+				SESSION_SECRET: E2E_SESSION_SECRET,
 			},
 		});
 	} catch (err) {
@@ -68,9 +87,8 @@ export default async function globalSetup() {
 				env: {
 					...process.env,
 					DATABASE_PATH: dbPath,
-					SESSION_SECRET:
-						process.env.SESSION_SECRET ||
-						"e2e-test-session-secret-long-enough-1234567890",
+					E2E_DATABASE_PATH: dbPath,
+					SESSION_SECRET: E2E_SESSION_SECRET,
 				},
 			},
 		);

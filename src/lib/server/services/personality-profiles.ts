@@ -129,12 +129,15 @@ export async function seedPersonalityProfiles(): Promise<void> {
 			}
 			continue;
 		}
-		await db.insert(personalityProfiles).values({
-			id: crypto.randomUUID(),
-			name: profile.name,
-			description: profile.description,
-			promptText: profile.promptText,
-			isBuiltIn: 1,
-		});
+		await db
+			.insert(personalityProfiles)
+			.values({
+				id: crypto.randomUUID(),
+				name: profile.name,
+				description: profile.description,
+				promptText: profile.promptText,
+				isBuiltIn: 1,
+			})
+			.onConflictDoNothing({ target: personalityProfiles.name });
 	}
 }

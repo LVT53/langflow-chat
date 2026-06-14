@@ -1,17 +1,10 @@
 import { expect, test } from "@playwright/test";
+import { login } from "./helpers";
 
 test.describe("Responsive Layout", () => {
 	test.beforeEach(async ({ page }) => {
-		await page.goto("/");
-
-		if (page.url().includes("/login")) {
-			await page.waitForLoadState("domcontentloaded");
-			await page.waitForSelector('input[name="email"]', { state: "visible" });
-			await page.fill('input[name="email"]', "admin@local");
-			await page.fill('input[name="password"]', "admin123");
-			await page.click('button[type="submit"]');
-			await page.waitForURL("**/");
-		}
+		await login(page);
+		await page.waitForLoadState("networkidle");
 	});
 
 	test.describe("Mobile Layout", () => {
@@ -45,8 +38,20 @@ test.describe("Responsive Layout", () => {
 
 			const hamburger = page.locator('button[aria-label="Toggle sidebar"]');
 			await expect(hamburger).toBeVisible();
+			const hamburgerBox = await hamburger.boundingBox();
+			expect(hamburgerBox?.width).toBeGreaterThanOrEqual(44);
+			expect(hamburgerBox?.height).toBeGreaterThanOrEqual(44);
 
-			const newChatBtn = page.locator('button[aria-label="New chat"]');
+			const userMenu = page.locator('button[aria-label="Open user menu"]');
+			await expect(userMenu).toBeVisible();
+			const userMenuBox = await userMenu.boundingBox();
+			expect(userMenuBox?.width).toBeGreaterThanOrEqual(44);
+			expect(userMenuBox?.height).toBeGreaterThanOrEqual(44);
+
+			await userMenu.click();
+			const newChatBtn = page
+				.locator(".header-menu")
+				.getByRole("button", { name: "New chat" });
 			await expect(newChatBtn).toBeVisible();
 		});
 	});

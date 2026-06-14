@@ -71,10 +71,10 @@ test.describe("Responsive Design Verification - Task 12", () => {
 					page.getByRole("heading", { name: "Documents" }),
 				).toBeVisible();
 				await expect(
-					page.getByRole("heading", { name: "Results" }),
+					page.getByRole("heading", { name: "Memory Profile" }),
 				).toBeVisible();
 				await expect(
-					page.getByRole("heading", { name: "Workflows" }),
+					page.getByRole("heading", { name: "Memory Overview" }),
 				).toBeVisible();
 
 				console.log(
@@ -96,8 +96,9 @@ test.describe("Responsive Design Verification - Task 12", () => {
 				await page.goto("/knowledge");
 				await page.waitForLoadState("networkidle");
 
-				const memoryTab = page.locator("button", { hasText: "Memory Profile" });
-				await memoryTab.click();
+				await expect(
+					page.getByRole("heading", { name: "Memory Profile" }),
+				).toBeVisible({ timeout: 10000 });
 				await expect(
 					page.getByRole("heading", { name: "Memory Overview" }),
 				).toBeVisible({ timeout: 10000 });
@@ -113,8 +114,14 @@ test.describe("Responsive Design Verification - Task 12", () => {
 					hasScrollbar,
 					`Horizontal scrollbar detected at ${viewport.name}`,
 				).toBe(false);
-				await expect(page.locator("text=What feeds this")).toBeVisible();
-				await expect(page.locator("text=How it is used")).toBeVisible();
+				await expect(
+					page.getByRole("heading", {
+						name: "Manage durable profile memories",
+					}),
+				).toBeVisible();
+				await expect(
+					page.getByRole("heading", { name: "Manage focus continuity" }),
+				).toBeVisible();
 
 				console.log(`✓ Knowledge Memory - ${viewport.name}: ${screenshotPath}`);
 			});

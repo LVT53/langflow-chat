@@ -421,6 +421,12 @@ onMount(() => {
 		user-select: none;
 	}
 
+	@media (prefers-reduced-motion: reduce) {
+		.sidebar-panel.transitions-enabled {
+			transition: none;
+		}
+	}
+
 	.sidebar-resize-handle {
 		position: absolute;
 		top: 0;

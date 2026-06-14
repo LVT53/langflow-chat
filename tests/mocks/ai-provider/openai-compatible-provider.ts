@@ -1,3 +1,10 @@
+import { once } from "node:events";
+import {
+	createServer,
+	type IncomingMessage,
+	type ServerResponse,
+} from "node:http";
+import type { AddressInfo } from "node:net";
 import {
 	AI_SMOKE_ABORT_DELAY_MS,
 	AI_SMOKE_MODEL_ID,
@@ -91,6 +98,54 @@ function noContentResponse(): Response {
 		status: 204,
 		headers: CORS_HEADERS,
 	});
+}
+
+async function readRequestBody(request: IncomingMessage): Promise<string> {
+	const chunks: Buffer[] = [];
+	for await (const chunk of request) {
+		chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+	}
+	return Buffer.concat(chunks).toString("utf8");
+}
+
+function toRequestHeaders(request: IncomingMessage): Headers {
+	const headers = new Headers();
+	for (let index = 0; index < request.rawHeaders.length; index += 2) {
+		const name = request.rawHeaders[index];
+		const value = request.rawHeaders[index + 1];
+		if (name && value !== undefined) {
+			headers.append(name, value);
+		}
+	}
+	return headers;
+}
+
+async function writeResponse(
+	serverResponse: ServerResponse,
+	response: Response,
+): Promise<void> {
+	serverResponse.writeHead(
+		response.status,
+		Object.fromEntries(response.headers.entries()),
+	);
+
+	if (!response.body) {
+		serverResponse.end();
+		return;
+	}
+
+	try {
+		for await (const chunk of response.body) {
+			if (!serverResponse.write(Buffer.from(chunk))) {
+				await once(serverResponse, "drain");
+			}
+		}
+		serverResponse.end();
+	} catch (error) {
+		if (!serverResponse.destroyed) {
+			serverResponse.destroy(error instanceof Error ? error : undefined);
+		}
+	}
 }
 
 function streamResponse(frames: unknown[]): Response {
@@ -472,9 +527,178 @@ export function createOpenAICompatibleProviderHarness(
 	let active = false;
 	let nextRequestId = 1;
 	const requests: CapturedOpenAICompatibleRequest[] = [];
-	let originalFetch: typeof fetch | null = null;
+	let server: ReturnType<typeof createServer> | null = null;
 
-	function startMock(): void {
+	async function handleRequest(request: Request): Promise<Response> {
+		if (!origin) {
+			return jsonResponse({ error: "Fake provider is not running" }, 503);
+		}
+
+		if (request.signal?.aborted) {
+			throw (
+				request.signal.reason ??
+				new DOMException("The operation was aborted.", "AbortError")
+			);
+		}
+
+		const requestUrl = new URL(request.url);
+		const method = request.method.toUpperCase();
+		const path = requestUrl.pathname;
+		const scenario = request.headers.get("x-ai-smoke-scenario") ?? undefined;
+		const rawBody = request.body ? await request.text() : "";
+		let body: unknown;
+		if (rawBody) {
+			body = JSON.parse(rawBody);
+		}
+
+		const captureRequest = (): CapturedOpenAICompatibleRequest => {
+			const captured: CapturedOpenAICompatibleRequest = {
+				id: nextRequestId++,
+				method,
+				path,
+				authorization: request.headers.get("authorization")
+					? "Bearer [redacted]"
+					: undefined,
+				scenario,
+				body,
+				aborted: false,
+			};
+			if (request.signal) {
+				request.signal.addEventListener(
+					"abort",
+					() => {
+						captured.aborted = true;
+					},
+					{ once: true },
+				);
+			}
+			requests.push(captured);
+			return captured;
+		};
+
+		if (method === "OPTIONS") {
+			return noContentResponse();
+		}
+
+		if (method === "GET" && path === "/v1/models") {
+			captureRequest();
+			return jsonResponse({
+				object: "list",
+				data: [
+					{
+						id: AI_SMOKE_MODEL_ID,
+						object: "model",
+						created: 1_700_000_000,
+						owned_by: "alfyai-smoke",
+					},
+				],
+			});
+		}
+
+		if (method === "POST" && path === "/v1/chat/completions") {
+			const captured = captureRequest();
+			if (scenario === AI_SMOKE_SCENARIOS.rateLimit) {
+				return jsonResponse(
+					{
+						error: {
+							message: "Fake provider rate limit exceeded.",
+							type: "rate_limit_error",
+							code: "rate_limit_exceeded",
+						},
+					},
+					429,
+				);
+			}
+
+			if (scenario === AI_SMOKE_SCENARIOS.serverError) {
+				return jsonResponse(
+					{
+						error: {
+							message: "Fake provider internal server error.",
+							type: "server_error",
+							code: "internal_server_error",
+						},
+					},
+					500,
+				);
+			}
+
+			if (isJsonObject(body) && body.stream === true) {
+				if (scenario === AI_SMOKE_SCENARIOS.reasoning) {
+					return buildReasoningStreamResponse();
+				}
+				if (scenario === AI_SMOKE_SCENARIOS.toolRoundtrip) {
+					if (hasToolResultMessage(body)) {
+						return buildToolFinalStreamResponse();
+					}
+					return buildToolCallStreamResponse();
+				}
+				if (scenario === AI_SMOKE_SCENARIOS.toolRoundtripMissingToolCallId) {
+					if (hasToolResultMessage(body)) {
+						return buildToolFinalStreamResponse();
+					}
+					return buildToolCallWithoutIdStreamResponse();
+				}
+				if (scenario === AI_SMOKE_SCENARIOS.slowChunks) {
+					return slowStreamResponse(
+						request.signal ?? new AbortController().signal,
+					);
+				}
+				if (scenario === AI_SMOKE_SCENARIOS.emptyOutput) {
+					return buildEmptyStreamResponse();
+				}
+				if (scenario === AI_SMOKE_SCENARIOS.timeoutAbort) {
+					return timeoutAbortStreamResponse(
+						captured,
+						request.signal ?? new AbortController().signal,
+					);
+				}
+
+				return buildTextStreamResponse();
+			}
+
+			return jsonResponse({
+				id: "chatcmpl_fake_plain",
+				object: "chat.completion",
+				created: 1_700_000_001,
+				model: AI_SMOKE_MODEL_ID,
+				choices: [
+					{
+						index: 0,
+						message: {
+							role: "assistant",
+							content:
+								scenario === AI_SMOKE_SCENARIOS.emptyOutput
+									? ""
+									: AI_SMOKE_PLAIN_TEXT,
+							...(scenario === AI_SMOKE_SCENARIOS.reasoning
+								? { reasoning_content: AI_SMOKE_REASONING_TEXT }
+								: {}),
+						},
+						finish_reason: "stop",
+					},
+				],
+				usage: {
+					prompt_tokens: 12,
+					completion_tokens: 5,
+					total_tokens: 17,
+				},
+			});
+		}
+
+		if (method === "GET" && path === "/__ai-smoke/requests") {
+			return jsonResponse({ requests });
+		}
+
+		if (method === "POST" && path === "/__ai-smoke/reset") {
+			await reset();
+			return noContentResponse();
+		}
+
+		return jsonResponse({ error: "Not found" }, 404);
+	}
+
+	async function startMock(): Promise<void> {
 		if (options.host && host !== "127.0.0.1" && host !== "localhost") {
 			throw new Error(
 				`Fake OpenAI-compatible provider failed to listen: listen EPERM: operation not permitted ${host}`,
@@ -485,192 +709,90 @@ export function createOpenAICompatibleProviderHarness(
 			return;
 		}
 
-		origin = `http://${host}${typeof port === "number" && port > 0 ? `:${port}` : ""}`;
-		originalFetch = globalThis.fetch;
-		(globalThis as unknown as { fetch: typeof fetch }).fetch = async (
-			input: string | URL | globalThis.Request,
-			init?: RequestInit,
-		): Promise<Response> => {
-			if (!origin) {
-				return originalFetch(input as RequestInfo, init);
-			}
-
-			const request =
-				input instanceof globalThis.Request ? input : new Request(input, init);
-			const requestUrl = new URL(request.url);
-			if (requestUrl.origin !== origin) {
-				return originalFetch(input as RequestInfo, init);
-			}
-
-			if (request.signal?.aborted) {
-				throw (
-					request.signal.reason ??
-					new DOMException("The operation was aborted.", "AbortError")
+		server = createServer(async (incomingRequest, serverResponse) => {
+			const abortController = new AbortController();
+			incomingRequest.on("aborted", () => {
+				abortController.abort(
+					new DOMException("The operation was aborted.", "AbortError"),
 				);
-			}
-
-			const method = request.method.toUpperCase();
-			const path = requestUrl.pathname;
-			const scenario = request.headers.get("x-ai-smoke-scenario") ?? undefined;
-			const rawBody = request.body ? await request.text() : "";
-			let body: unknown;
-			if (rawBody) {
-				body = JSON.parse(rawBody);
-			}
-
-			const captureRequest = (): CapturedOpenAICompatibleRequest => {
-				const captured: CapturedOpenAICompatibleRequest = {
-					id: nextRequestId++,
-					method,
-					path,
-					authorization: request.headers.get("authorization")
-						? "Bearer [redacted]"
-						: undefined,
-					scenario,
-					body,
-					aborted: false,
-				};
-				if (request.signal) {
-					request.signal.addEventListener(
-						"abort",
-						() => {
-							captured.aborted = true;
-						},
-						{ once: true },
+			});
+			serverResponse.on("close", () => {
+				if (!serverResponse.writableEnded && !abortController.signal.aborted) {
+					abortController.abort(
+						new DOMException("The operation was aborted.", "AbortError"),
 					);
 				}
-				requests.push(captured);
-				return captured;
+			});
+
+			try {
+				if (!incomingRequest.url || !incomingRequest.method) {
+					await writeResponse(
+						serverResponse,
+						jsonResponse({ error: "Bad request" }, 400),
+					);
+					return;
+				}
+
+				const rawBody = await readRequestBody(incomingRequest);
+				const request = new Request(`${origin}${incomingRequest.url}`, {
+					method: incomingRequest.method,
+					headers: toRequestHeaders(incomingRequest),
+					body:
+						incomingRequest.method === "GET" ||
+						incomingRequest.method === "HEAD"
+							? undefined
+							: rawBody,
+					signal: abortController.signal,
+				});
+				await writeResponse(serverResponse, await handleRequest(request));
+			} catch (error) {
+				if (!serverResponse.headersSent) {
+					await writeResponse(
+						serverResponse,
+						jsonResponse(
+							{
+								error:
+									error instanceof Error
+										? error.message
+										: "Internal server error",
+							},
+							500,
+						),
+					);
+					return;
+				}
+				if (!serverResponse.destroyed) {
+					serverResponse.destroy(error instanceof Error ? error : undefined);
+				}
+			}
+		});
+
+		await new Promise<void>((resolve, reject) => {
+			const fail = (error: Error) => {
+				server = null;
+				reject(error);
 			};
-
-			if (method === "OPTIONS") {
-				return noContentResponse();
-			}
-
-			if (method === "GET" && path === "/v1/models") {
-				captureRequest();
-				return jsonResponse({
-					object: "list",
-					data: [
-						{
-							id: AI_SMOKE_MODEL_ID,
-							object: "model",
-							created: 1_700_000_000,
-							owned_by: "alfyai-smoke",
-						},
-					],
-				});
-			}
-
-			if (method === "POST" && path === "/v1/chat/completions") {
-				const captured = captureRequest();
-				if (scenario === AI_SMOKE_SCENARIOS.rateLimit) {
-					return jsonResponse(
-						{
-							error: {
-								message: "Fake provider rate limit exceeded.",
-								type: "rate_limit_error",
-								code: "rate_limit_exceeded",
-							},
-						},
-						429,
+			server?.once("error", fail);
+			server?.listen(port ?? 0, host, () => {
+				server?.off("error", fail);
+				const address = server?.address();
+				if (!address || typeof address === "string") {
+					reject(
+						new Error("Fake OpenAI-compatible provider failed to resolve port"),
 					);
+					return;
 				}
-
-				if (scenario === AI_SMOKE_SCENARIOS.serverError) {
-					return jsonResponse(
-						{
-							error: {
-								message: "Fake provider internal server error.",
-								type: "server_error",
-								code: "internal_server_error",
-							},
-						},
-						500,
-					);
-				}
-
-				if (isJsonObject(body) && body.stream === true) {
-					if (scenario === AI_SMOKE_SCENARIOS.reasoning) {
-						return buildReasoningStreamResponse();
-					}
-					if (scenario === AI_SMOKE_SCENARIOS.toolRoundtrip) {
-						if (hasToolResultMessage(body)) {
-							return buildToolFinalStreamResponse();
-						}
-						return buildToolCallStreamResponse();
-					}
-					if (scenario === AI_SMOKE_SCENARIOS.toolRoundtripMissingToolCallId) {
-						if (hasToolResultMessage(body)) {
-							return buildToolFinalStreamResponse();
-						}
-						return buildToolCallWithoutIdStreamResponse();
-					}
-					if (scenario === AI_SMOKE_SCENARIOS.slowChunks) {
-						return slowStreamResponse(
-							request.signal ?? new AbortController().signal,
-						);
-					}
-					if (scenario === AI_SMOKE_SCENARIOS.emptyOutput) {
-						return buildEmptyStreamResponse();
-					}
-					if (scenario === AI_SMOKE_SCENARIOS.timeoutAbort) {
-						return timeoutAbortStreamResponse(
-							captured,
-							request.signal ?? new AbortController().signal,
-						);
-					}
-
-					return buildTextStreamResponse();
-				}
-
-				return jsonResponse({
-					id: "chatcmpl_fake_plain",
-					object: "chat.completion",
-					created: 1_700_000_001,
-					model: AI_SMOKE_MODEL_ID,
-					choices: [
-						{
-							index: 0,
-							message: {
-								role: "assistant",
-								content:
-									scenario === AI_SMOKE_SCENARIOS.emptyOutput
-										? ""
-										: AI_SMOKE_PLAIN_TEXT,
-								...(scenario === AI_SMOKE_SCENARIOS.reasoning
-									? { reasoning_content: AI_SMOKE_REASONING_TEXT }
-									: {}),
-							},
-							finish_reason: "stop",
-						},
-					],
-					usage: {
-						prompt_tokens: 12,
-						completion_tokens: 5,
-						total_tokens: 17,
-					},
-				});
-			}
-
-			if (method === "GET" && path === "/__ai-smoke/requests") {
-				return jsonResponse({ requests });
-			}
-
-			if (method === "POST" && path === "/__ai-smoke/reset") {
-				await reset();
-				return noContentResponse();
-			}
-
-			return jsonResponse({ error: "Not found" }, 404);
-		};
+				origin = `http://${host}:${(address as AddressInfo).port}`;
+				resolve();
+			});
+		});
 	}
 
 	async function start(): Promise<void> {
 		if (active) return;
 
 		try {
-			startMock();
+			await startMock();
 		} catch (error) {
 			origin = "";
 			throw error instanceof Error
@@ -686,10 +808,18 @@ export function createOpenAICompatibleProviderHarness(
 
 	async function stop(): Promise<void> {
 		if (!active) return;
-		if (originalFetch) {
-			(globalThis as unknown as { fetch: typeof fetch }).fetch = originalFetch;
+		if (server) {
+			await new Promise<void>((resolve, reject) => {
+				server?.close((error) => {
+					if (error) {
+						reject(error);
+						return;
+					}
+					resolve();
+				});
+			});
 		}
-		originalFetch = null;
+		server = null;
 		active = false;
 		origin = "";
 	}

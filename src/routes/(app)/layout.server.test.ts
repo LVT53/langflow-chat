@@ -93,7 +93,9 @@ function createAuthenticatedLoadEvent() {
 describe("(app) layout load", () => {
 	it("streams sidebar conversations without blocking the critical app shell payload", async () => {
 		let resolveConversations:
-			| ((value: Array<{ id: string; title: string; updatedAt: number }>) => void)
+			| ((
+					value: Array<{ id: string; title: string; updatedAt: number }>,
+			  ) => void)
 			| null = null;
 		const conversationsPromise = new Promise<
 			Array<{ id: string; title: string; updatedAt: number }>
@@ -114,7 +116,9 @@ describe("(app) layout load", () => {
 
 		expect(earlyResult.status).toBe("resolved");
 		if (earlyResult.status !== "resolved") {
-			throw new Error("Expected app shell load to resolve before conversations");
+			throw new Error(
+				"Expected app shell load to resolve before conversations",
+			);
 		}
 		expect(earlyResult.result).toEqual(
 			expect.objectContaining({

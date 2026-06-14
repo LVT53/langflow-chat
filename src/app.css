@@ -356,8 +356,8 @@ body {
 		flex-shrink: 0;
 		align-items: center;
 		justify-content: center;
-		min-height: 40px;
-		min-width: 40px;
+		min-height: 44px;
+		min-width: 44px;
 		padding: 0.45rem;
 		background-color: transparent;
 		border: none;
@@ -466,6 +466,16 @@ body {
 	.composer-actions button {
 		min-height: 48px !important;
 		min-width: 48px !important;
+	}
+
+	/* Mobile icon controls in the header and sidebar should meet the 44px target. */
+	.btn-icon-bare,
+	.compose-btn,
+	.header-option,
+	.mobile-sidebar-toggle,
+	.mobile-user-trigger {
+		min-height: 44px !important;
+		min-width: 44px !important;
 	}
 }
 

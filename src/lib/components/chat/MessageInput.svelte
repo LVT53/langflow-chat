@@ -2446,6 +2446,12 @@ async function emitDraftChange(force = false) {
 	}
 
 	@media (max-width: 767px) {
+		.animate-in {
+			animation: none;
+			opacity: 1;
+			transform: none;
+		}
+
 		.command-tray {
 			position: fixed;
 			left: max(0.75rem, env(safe-area-inset-left));
