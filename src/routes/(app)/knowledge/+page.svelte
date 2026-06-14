@@ -32,7 +32,6 @@ import type {
 } from "$lib/types";
 import {
 	getDefaultPersonaMemoryFilter,
-	getFocusContinuityItemCount,
 	toWorkspaceDocument,
 	type FocusContinuityView,
 	type MemoryModal,
@@ -125,6 +124,8 @@ function handleConfirmationCancel() {
 	pendingConfirmation = null;
 }
 let memoryLoaded = $state(false);
+let memoryOverviewLoaded = $state(false);
+let memoryOverviewLoading = $state(false);
 let memoryLoading = $state(false);
 let memoryLoadError = $state("");
 let liveOverviewRefreshing = $state(false);
@@ -177,8 +178,9 @@ let personaMemoryStateCounts = $derived.by(() => ({
 	archived: personaMemories.filter((memory) => memory.state === "archived")
 		.length,
 }));
+let personaMemoryCount = $derived(memorySummary.personaCount ?? 0);
 let focusContinuityItemCount = $derived(
-	getFocusContinuityItemCount({ taskMemories, focusContinuities }),
+	(memorySummary.taskCount ?? 0) + (memorySummary.focusContinuityCount ?? 0),
 );
 
 let overviewBullets = $derived(memorySummary.overviewBullets ?? []);
@@ -465,6 +467,7 @@ function applyMemoryPayload(payload: KnowledgeMemoryPayload) {
 		personaMemoryFilter = getDefaultPersonaMemoryFilter(personaMemories);
 	}
 	memoryLoaded = true;
+	memoryOverviewLoaded = true;
 	memoryLoadError = "";
 }
 
@@ -472,6 +475,9 @@ function applyMemoryOverviewSummary(summary: KnowledgeMemorySummary) {
 	memorySummary = {
 		...memorySummary,
 		personaCount: summary.personaCount ?? memorySummary.personaCount,
+		taskCount: summary.taskCount ?? memorySummary.taskCount,
+		focusContinuityCount:
+			summary.focusContinuityCount ?? memorySummary.focusContinuityCount,
 		activeConstraintCount:
 			summary.activeConstraintCount ?? memorySummary.activeConstraintCount,
 		currentProjectContextCount:
@@ -488,6 +494,28 @@ function applyMemoryOverviewSummary(summary: KnowledgeMemorySummary) {
 		durablePersonaCount:
 			summary.durablePersonaCount ?? memorySummary.durablePersonaCount,
 	};
+	memoryOverviewLoaded = true;
+}
+
+async function ensureMemoryOverviewLoaded(force = false) {
+	if (memoryOverviewLoading) return;
+	if (memoryOverviewLoaded && !force) return;
+	if (memoryLoaded && !force) return;
+
+	memoryOverviewLoading = true;
+	memoryLoadError = "";
+
+	try {
+		const payload = force
+			? await fetchKnowledgeMemoryOverview({ force: true })
+			: await fetchKnowledgeMemoryOverview();
+		applyMemoryOverviewSummary(payload.summary);
+	} catch (error) {
+		memoryLoadError =
+			error instanceof Error ? error.message : $t("knowledge.failedLoadMemory");
+	} finally {
+		memoryOverviewLoading = false;
+	}
 }
 
 async function ensureMemoryLoaded(force = false) {
@@ -509,7 +537,8 @@ async function ensureMemoryLoaded(force = false) {
 }
 
 function shouldPollLiveOverview(): boolean {
-	if (!honchoEnabled || !memoryLoaded || memoryLoading) return false;
+	if (!honchoEnabled || !memoryOverviewLoaded || memoryLoading) return false;
+	if (memoryOverviewLoading) return false;
 	if (!memoryTabVisible) return false;
 	if (overviewSource === "honcho_live" || overviewSource === "honcho_scoped")
 		return false;
@@ -523,7 +552,7 @@ function shouldPollLiveOverview(): boolean {
 }
 
 async function refreshLiveOverview(force = false) {
-	if (liveOverviewRefreshing || !honchoEnabled || !memoryLoaded) return;
+	if (liveOverviewRefreshing || !honchoEnabled || !memoryOverviewLoaded) return;
 	if (!force && liveOverviewPollAttempts >= OVERVIEW_POLL_MAX_ATTEMPTS) return;
 
 	liveOverviewRefreshing = true;
@@ -961,7 +990,7 @@ $effect(() => {
 });
 
 $effect(() => {
-	void ensureMemoryLoaded();
+	void ensureMemoryOverviewLoaded();
 });
 </script>
 
@@ -1022,10 +1051,10 @@ $effect(() => {
 		</div>
 
 		<KnowledgeMemoryView
-			{memoryLoading}
-			{memoryLoaded}
+			memoryLoading={memoryLoading || memoryOverviewLoading}
+			memoryLoaded={memoryLoaded || memoryOverviewLoaded}
 			{memoryLoadError}
-			personaMemoryCount={personaMemories.length}
+			{personaMemoryCount}
 			{focusContinuityItemCount}
 			{honchoEnabled}
 			{overviewBullets}

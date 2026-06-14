@@ -177,6 +177,41 @@ describe("knowledge memory service", () => {
 		}
 	});
 
+	it("returns overview summary counts without full management rows", async () => {
+		mockListPersonaMemories.mockResolvedValue([
+			{
+				id: "conclusion-1",
+				content: "Prefers concise responses.",
+				scope: "assistant_about_user",
+				sessionId: "session-1",
+				createdAt: 1234,
+			},
+		]);
+		mockListTaskMemoryItems.mockResolvedValue([
+			{
+				taskId: "task-1",
+			},
+			{
+				taskId: "task-2",
+			},
+		]);
+		mockListFocusContinuityItems.mockResolvedValue([
+			{
+				continuityId: "continuity-1",
+			},
+		]);
+
+		const { getKnowledgeMemoryOverview } = await import("./memory");
+		const payload = await getKnowledgeMemoryOverview("user-1", "Test User");
+
+		expect(payload).not.toHaveProperty("personaMemories");
+		expect(payload).not.toHaveProperty("taskMemories");
+		expect(payload).not.toHaveProperty("focusContinuities");
+		expect(payload.summary.personaCount).toBe(1);
+		expect(payload.summary.taskCount).toBe(2);
+		expect(payload.summary.focusContinuityCount).toBe(1);
+	});
+
 	it("passes force refresh through to the Honcho overview lookup", async () => {
 		mockGetPeerContext.mockResolvedValue(
 			"## Memory Overview\n- Freshly refreshed scoped memory.",

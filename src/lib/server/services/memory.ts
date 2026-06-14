@@ -188,12 +188,15 @@ export async function getKnowledgeMemoryOverview(
 	userDisplayName: string,
 	options: { awaitLive?: boolean; force?: boolean } = {},
 ): Promise<KnowledgeMemoryOverviewPayload> {
-	const [peerOverview, personaRecords] = await Promise.all([
-		loadPeerContextOverview(userId, userDisplayName, {
-			force: options.force,
-		}),
-		listPersonaMemories(userId),
-	]);
+	const [peerOverview, personaRecords, taskMemories, focusContinuities] =
+		await Promise.all([
+			loadPeerContextOverview(userId, userDisplayName, {
+				force: options.force,
+			}),
+			listPersonaMemories(userId),
+			listTaskMemoryItems(userId),
+			listFocusContinuityItems(userId),
+		]);
 
 	return {
 		summary: buildKnowledgeMemorySummary(
@@ -202,8 +205,8 @@ export async function getKnowledgeMemoryOverview(
 			personaRecords.length,
 			0,
 			0,
-			0,
-			0,
+			taskMemories.length,
+			focusContinuities.length,
 			peerOverview.unavailable,
 		),
 	};
