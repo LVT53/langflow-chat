@@ -98,6 +98,9 @@ const DOCUMENT_ANSWER_INTENT_RE =
 	/\b(according to|based on|from the|from this|from that|what|when|where|who|why|how|which)\b|(?:mire|miért|hogyan|mikor|hol|kit|kinek)\b/iu;
 const DOCUMENT_REFERENCE_RE =
 	/\b(attachment|attached|source|document|doc|file|pdf|policy|report|brief|workspace|this|that|it)\b|(?:dokumentum[\p{L}]*|doksi[\p{L}]*|fájl[\p{L}]*|fajl[\p{L}]*|csatolmány[\p{L}]*|csatolmany[\p{L}]*|melléklet[\p{L}]*|melleklet[\p{L}]*|forrás[\p{L}]*|forras[\p{L}]*|ez|ezt|ebből|ebbol|abban|benne|itt|ott)|\/document\b/iu;
+const DEEP_CONTEXT_INTENT_RE =
+	/\b(attachment|attached|source|sources|document|doc|file|pdf|policy|report|brief|workspace|evidence|cite|citation|according to|based on|summarize|summarise|summary|compare|extract|review|check|rewrite|revise|edit|analyze|analyse|translate|convert|outline|project|task|plan|decision|decisions|remember|memory|earlier|previous|before|continue)\b|(?:dokumentum[\p{L}]*|doksi[\p{L}]*|fájl[\p{L}]*|fajl[\p{L}]*|csatolmány[\p{L}]*|csatolmany[\p{L}]*|melléklet[\p{L}]*|melleklet[\p{L}]*|forrás[\p{L}]*|forras[\p{L}]*|bizonyíték[\p{L}]*|bizonyitek[\p{L}]*|idéz[\p{L}]*|idez[\p{L}]*|összefoglal[\p{L}]*|foglal[\p{L}]*\s+össze|összegez[\p{L}]*|hasonlíts[\p{L}]*|hasonlits[\p{L}]*|elemez[\p{L}]*|ellenőriz[\p{L}]*|ellenoriz[\p{L}]*|javíts[\p{L}]*|javits[\p{L}]*|írd\s+át|ird\s+at|fordíts[\p{L}]*|fordits[\p{L}]*|projekt[\p{L}]*|feladat[\p{L}]*|terv[\p{L}]*|döntés[\p{L}]*|dontes[\p{L}]*|emléksz[\p{L}]*|emleksz[\p{L}]*|korábbi|korabbi|előző|elozo|folytasd)/iu;
+const SHALLOW_CONTEXT_MAX_MESSAGE_CHARS = 280;
 
 export type ContextSelectionCandidate = {
 	title: string;
@@ -125,6 +128,13 @@ export type ConstructedContextReuseData = {
 	relevantArtifacts: Artifact[];
 	preparedContext: Awaited<ReturnType<typeof prepareTaskContext>>;
 	artifactSnippets: Map<string, string>;
+};
+
+type ContextLatencyTier = "shallow" | "deep";
+
+type ContextLatencyTierResolution = {
+	tier: ContextLatencyTier;
+	reasons: string[];
 };
 
 export function deriveRelevantKnowledgeArtifactLimit(
@@ -510,6 +520,7 @@ export function selectPromptContext(params: {
 	message: string;
 	candidates: ContextSelectionCandidate[];
 	targetTokens: number;
+	traceSignalReasons?: string[];
 	initialCompactionMode?: Parameters<
 		typeof compactContextSections
 	>[0]["initialCompactionMode"];
@@ -563,7 +574,10 @@ export function selectPromptContext(params: {
 			source: "user",
 			body: params.message,
 			inclusionLevel: "legacy_full",
-			signalReasons: ["current_user_message"],
+			signalReasons: [
+				"current_user_message",
+				...(params.traceSignalReasons ?? []),
+			],
 			trimmed: false,
 			protected: false,
 		},
@@ -646,6 +660,176 @@ function summarizeForkContextProvenance(params: {
 	};
 }
 
+function resolveContextLatencyTier(params: {
+	message: string;
+	attachmentIds: string[];
+	activeDocumentArtifactId?: string;
+	reuseFrom?: ConstructedContextReuseData;
+}): ContextLatencyTierResolution {
+	const reasons: string[] = [];
+	if (params.reuseFrom) reasons.push("reuse_context");
+	if (params.attachmentIds.length > 0) reasons.push("current_attachment");
+	if (params.activeDocumentArtifactId) reasons.push("active_document");
+	const trimmedMessage = params.message.trim();
+	if (trimmedMessage.length > SHALLOW_CONTEXT_MAX_MESSAGE_CHARS) {
+		reasons.push("long_message");
+	}
+	if (DEEP_CONTEXT_INTENT_RE.test(trimmedMessage)) {
+		reasons.push("context_sensitive_intent");
+	}
+
+	if (reasons.length > 0) {
+		return { tier: "deep", reasons };
+	}
+	return { tier: "shallow", reasons: ["simple_turn"] };
+}
+
+function buildMinimalContextDebugState(params: {
+	honchoContext: HonchoContextInfo | null;
+	forkProvenance?: ForkContextProvenanceSummary | null;
+}): ContextDebugState {
+	return {
+		activeTaskId: null,
+		activeTaskObjective: null,
+		taskLocked: false,
+		routingStage: "deterministic",
+		routingConfidence: 0,
+		verificationStatus: "skipped",
+		selectedEvidence: [],
+		selectedEvidenceBySource: [],
+		pinnedEvidence: [],
+		excludedEvidence: [],
+		honcho: params.honchoContext,
+		forkProvenance: params.forkProvenance ?? null,
+	};
+}
+
+async function buildShallowConstructedContext(params: {
+	userId: string;
+	conversationId: string;
+	message: string;
+	modelContextBudget: ReturnType<typeof deriveModelContextBudget>;
+	sessionHistoryBudget: ReturnType<typeof deriveSessionHistoryBudget>;
+	targetBudget: number;
+	compactionThreshold: number;
+	maxModelContext: number;
+}): Promise<{
+	inputValue: string;
+	contextStatus: ConversationContextStatus;
+	taskState: import("$lib/types").TaskState | null;
+	contextDebug: ContextDebugState | null;
+	honchoContext: HonchoContextInfo | null;
+	honchoSnapshot: HonchoContextSnapshot | null;
+	contextTraceSections: LegacyContextTraceSectionInput[];
+	_reuseData?: ConstructedContextReuseData;
+}> {
+	const sessionContext = await loadHonchoPromptContext({
+		userId: params.userId,
+		conversationId: params.conversationId,
+		message: params.message,
+		liveContextTokens: params.sessionHistoryBudget.totalBudget,
+	});
+	const {
+		sessionMessages,
+		summary: sessionSummary,
+		peerContext,
+		honchoContext,
+		honchoSnapshot,
+	} = sessionContext;
+	const allTurns = selectRecentRoleTurns(
+		sessionMessages,
+		(message) => message.role,
+		sessionMessages.length,
+	);
+	const sessionTurnContext = serializeBudgetedRoleTurns({
+		turns: allTurns,
+		resolveRole: (message) => message.role,
+		resolveContent: (message) => message.content,
+		maxTokens: params.sessionHistoryBudget.totalBudget,
+	});
+	const sections: PromptContextSection[] = [];
+
+	if (sessionSummary?.trim()) {
+		sections.push({
+			title: "Session Summary",
+			body: truncateToTokenBudget(sessionSummary, 1600),
+			layer: "session",
+			llmCompactible: true,
+		});
+	}
+	if (sessionTurnContext.body) {
+		sections.push({
+			title: "Honcho Session Context",
+			body: sessionTurnContext.body,
+			layer: "session",
+			protected: true,
+			llmCompactible: true,
+		});
+	}
+	if (peerContext.trim()) {
+		const baselineMemoryProfileBudget = deriveBaselineMemoryProfileBudget({
+			contextBudget: params.modelContextBudget,
+		});
+		sections.push({
+			title: "Baseline Memory Profile",
+			body: truncateToTokenBudget(
+				peerContext,
+				baselineMemoryProfileBudget.totalBudget,
+			),
+			layer: "session",
+			protected: true,
+			llmCompactible: true,
+		});
+	}
+
+	const selectedPromptContext = selectPromptContext({
+		intro: "Context from your recent conversation:",
+		message: params.message,
+		candidates: buildContextSelectionCandidates({ sections }),
+		targetTokens: params.targetBudget,
+		initialCompactionMode: "none",
+		traceSignalReasons: [
+			"context_latency_tier:shallow",
+			"context_latency_reason:simple_turn",
+		],
+	});
+	const status = await updateConversationContextStatus({
+		conversationId: params.conversationId,
+		userId: params.userId,
+		estimatedTokens: selectedPromptContext.estimatedTokens,
+		compactionApplied:
+			selectedPromptContext.compactionApplied ||
+			selectedPromptContext.compactionMode !== "none",
+		contextLimits: {
+			maxModelContext: params.maxModelContext,
+			compactionUiThreshold: params.compactionThreshold,
+			targetConstructedContext: params.targetBudget,
+		},
+		compactionMode: selectedPromptContext.compactionMode,
+		routingStage: "deterministic",
+		routingConfidence: 0,
+		verificationStatus: "skipped",
+		layersUsed: selectedPromptContext.layersUsed,
+		workingSetCount: 0,
+		workingSetArtifactIds: [],
+		workingSetApplied: false,
+		taskStateApplied: false,
+		promptArtifactCount: 0,
+		recentTurnCount: sessionTurnContext.includedTurnCount,
+		summary: sessionSummary || null,
+	});
+
+	return {
+		inputValue: selectedPromptContext.inputValue,
+		contextStatus: status,
+		taskState: null,
+		contextDebug: buildMinimalContextDebugState({ honchoContext }),
+		honchoContext,
+		honchoSnapshot,
+		contextTraceSections: selectedPromptContext.contextTraceSections,
+	};
+}
+
 export async function buildConstructedContext(params: {
 	userId: string;
 	conversationId: string;
@@ -689,6 +873,24 @@ export async function buildConstructedContext(params: {
 		minTotalBudget: HONCHO_LIVE_CONTEXT_TOKENS,
 		minRecentTurnCount: RECENT_TURN_COUNT,
 	});
+	const latencyTier = resolveContextLatencyTier({
+		message: params.message,
+		attachmentIds,
+		activeDocumentArtifactId: params.activeDocumentArtifactId,
+		reuseFrom: params.reuseFrom,
+	});
+	if (latencyTier.tier === "shallow") {
+		return buildShallowConstructedContext({
+			userId: params.userId,
+			conversationId: params.conversationId,
+			message: params.message,
+			modelContextBudget,
+			sessionHistoryBudget,
+			targetBudget,
+			compactionThreshold,
+			maxModelContext,
+		});
+	}
 	const [
 		sessionContext,
 		resolvedAttachments,
@@ -1303,6 +1505,12 @@ export async function buildConstructedContext(params: {
 		}),
 		targetTokens: targetBudget,
 		initialCompactionMode: "none",
+		traceSignalReasons: [
+			"context_latency_tier:deep",
+			...latencyTier.reasons.map(
+				(reason) => `context_latency_reason:${reason}`,
+			),
+		],
 	});
 
 	const status = await updateConversationContextStatus({

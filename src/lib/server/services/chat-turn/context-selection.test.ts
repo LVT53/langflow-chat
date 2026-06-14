@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { estimateTokenCount } from "$lib/utils/tokens";
 import {
 	buildConstructedContext,
@@ -365,6 +365,65 @@ describe("selectPromptContext", () => {
 });
 
 describe("buildConstructedContext", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("uses a shallow latency tier for simple turns and skips deep retrieval work", async () => {
+		resetConstructedContextMocks();
+
+		const constructed = await buildConstructedContext({
+			userId: "user-1",
+			conversationId: "conversation-1",
+			message: "Thanks, that helps.",
+			modelId: "local-model",
+			contextLimits: {
+				maxModelContext: 16_000,
+				compactionUiThreshold: 12_000,
+				targetConstructedContext: 8_000,
+			},
+		});
+
+		expect(constructed.inputValue).toContain("## Honcho Session Context");
+		expect(constructed.inputValue).toContain(
+			"Earlier question about the launch plan.",
+		);
+		expect(constructed.inputValue).toContain("## Baseline Memory Profile");
+		expect(constructed.taskState).toBeNull();
+		expect(constructed.contextTraceSections).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					name: "Current User Message",
+					signalReasons: expect.arrayContaining([
+						"context_latency_tier:shallow",
+					]),
+				}),
+			]),
+		);
+		expect(mocks.resolvePromptAttachmentArtifacts).not.toHaveBeenCalled();
+		expect(mocks.listConversationSourceArtifactIds).not.toHaveBeenCalled();
+		expect(mocks.listConversationLinkedContextSources).not.toHaveBeenCalled();
+		expect(mocks.selectWorkingSetArtifactsForPrompt).not.toHaveBeenCalled();
+		expect(mocks.findRelevantKnowledgeArtifacts).not.toHaveBeenCalled();
+		expect(mocks.prepareTaskContext).not.toHaveBeenCalled();
+		expect(mocks.getPromptArtifactSnippets).not.toHaveBeenCalled();
+		expect(mocks.resolveWorkingDocumentSelection).not.toHaveBeenCalled();
+		expect(mocks.canUseTeiReranker).not.toHaveBeenCalled();
+		expect(mocks.rerankItems).not.toHaveBeenCalled();
+		expect(mocks.updateConversationContextStatus).toHaveBeenCalledWith(
+			expect.objectContaining({
+				conversationId: "conversation-1",
+				userId: "user-1",
+				routingStage: "deterministic",
+				verificationStatus: "skipped",
+				taskStateApplied: false,
+				workingSetApplied: false,
+				workingSetArtifactIds: [],
+				promptArtifactCount: 0,
+			}),
+		);
+	});
+
 	it("combines Honcho, task, attachment, and evidence candidates from the chat-turn boundary", async () => {
 		resetConstructedContextMocks();
 
@@ -424,8 +483,25 @@ describe("buildConstructedContext", () => {
 					name: "Baseline Memory Profile",
 					source: "memory",
 				}),
+				expect.objectContaining({
+					name: "Current User Message",
+					signalReasons: expect.arrayContaining([
+						"context_latency_tier:deep",
+						"context_latency_reason:current_attachment",
+						"context_latency_reason:context_sensitive_intent",
+					]),
+				}),
 			]),
 		);
+		expect(mocks.resolvePromptAttachmentArtifacts).toHaveBeenCalled();
+		expect(mocks.listConversationSourceArtifactIds).toHaveBeenCalled();
+		expect(mocks.listConversationLinkedContextSources).toHaveBeenCalled();
+		expect(mocks.selectWorkingSetArtifactsForPrompt).toHaveBeenCalled();
+		expect(mocks.findRelevantKnowledgeArtifacts).toHaveBeenCalled();
+		expect(mocks.prepareTaskContext).toHaveBeenCalled();
+		expect(mocks.getPromptArtifactSnippets).toHaveBeenCalled();
+		expect(mocks.resolveWorkingDocumentSelection).toHaveBeenCalled();
+		expect(mocks.canUseTeiReranker).toHaveBeenCalled();
 		expect(mocks.updateConversationContextStatus).toHaveBeenCalledWith(
 			expect.objectContaining({
 				conversationId: "conversation-1",
