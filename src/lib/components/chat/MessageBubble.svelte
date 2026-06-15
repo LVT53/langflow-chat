@@ -8,6 +8,7 @@ import {
 import { tokenizeTextLinks } from "$lib/services/linkify";
 import type {
 	ArtifactSummary,
+	ChatAttachment,
 	ChatMessage,
 	DepthAppliedProfile,
 	DocumentWorkspaceItem,
@@ -113,7 +114,7 @@ let copied = $state(false);
 let copyTimeout: ReturnType<typeof setTimeout> | undefined;
 let isEditing = $state(false);
 let editText = $state("");
-let editTextarea = $state<HTMLTextAreaElement | null>(null);
+let editTextarea: HTMLTextAreaElement | null = $state(null);
 let showTimestampTooltip = $state(false);
 let showForkDetails = $state(false);
 let dedupedFileProductionJobs = $derived(
@@ -138,17 +139,38 @@ let liveResponseActivityEntries = $derived(
 	!isUser && isStreaming ? (message.responseActivity ?? []) : [],
 );
 let thinkingSegmentsForDisplay = $derived(message.thinkingSegments ?? []);
+type DeliberationThinkingStatus = Extract<ThinkingSegment, { type: "status" }>;
+type DeliberationActivityEntry = Extract<
+	ResponseActivityEntry,
+	{ kind: "deliberation" }
+>;
+type DeliberationStatusEntry =
+	| DeliberationThinkingStatus
+	| DeliberationActivityEntry;
+type AttachmentArtifactSummary = ArtifactSummary & { artifactId: string };
+
+function isDeliberationThinkingStatus(
+	segment: ThinkingSegment,
+): segment is DeliberationThinkingStatus {
+	return (
+		segment.type === "status" &&
+		segment.id.startsWith("deliberation-pass-") &&
+		segment.label?.trim().length > 0
+	);
+}
+
+function isDeliberationActivityEntry(
+	entry: ResponseActivityEntry | undefined,
+): entry is DeliberationActivityEntry {
+	return entry?.kind === "deliberation" && Boolean(entry.label?.trim());
+}
+
 let visibleThinkingSegmentsForDisplay = $derived(
 	isStreaming
 		? (() => {
 				const latestDeliberationStatus = [...thinkingSegmentsForDisplay]
 					.reverse()
-					.find(
-						(segment) =>
-							segment.type === "status" &&
-							segment.id.startsWith("deliberation-pass-") &&
-							segment.label?.trim(),
-					);
+					.find(isDeliberationThinkingStatus);
 				if (!latestDeliberationStatus) {
 					return thinkingSegmentsForDisplay;
 				}
@@ -163,14 +185,7 @@ let visibleThinkingSegmentsForDisplay = $derived(
 		: thinkingSegmentsForDisplay,
 );
 let deliberationThinkingStatus = $derived(
-	[...thinkingSegmentsForDisplay]
-		.reverse()
-		.find(
-			(segment) =>
-				segment.type === "status" &&
-				segment.id.startsWith("deliberation-pass-") &&
-				segment.label?.trim(),
-		),
+	[...thinkingSegmentsForDisplay].reverse().find(isDeliberationThinkingStatus),
 );
 let hasVisibleThinkingSegments = $derived(
 	thinkingSegmentsForDisplay.some(isVisibleThinkingSegment),
@@ -216,9 +231,7 @@ let liveDeliberationStatus = $derived(
 	isStreaming
 		? ([...liveResponseActivityEntries]
 				.reverse()
-				.find(
-					(entry) => entry.kind === "deliberation" && entry.label?.trim(),
-				) ?? deliberationThinkingStatus)
+				.find(isDeliberationActivityEntry) ?? deliberationThinkingStatus)
 		: undefined,
 );
 let liveDeliberationStatusLabel = $derived(
@@ -247,10 +260,7 @@ const liveDeliberationStatusIconType = $derived.by(() => {
 });
 
 function deliberationPassIndex(
-	status:
-		| ResponseActivityEntry
-		| Extract<ThinkingSegment, { type: "status" }>
-		| undefined,
+	status: DeliberationStatusEntry | undefined,
 ): number | null {
 	if (!status) return null;
 	if (
@@ -479,8 +489,12 @@ onDestroy(() => {
 
 function handleViewAttachment(attachment: ArtifactSummary) {
 	if (!onOpenDocument) return;
+	const artifactId =
+		"artifactId" in attachment && attachment.artifactId
+			? attachment.artifactId
+			: attachment.id;
 	onOpenDocument({
-		id: `artifact:${attachment.id}`,
+		id: `artifact:${artifactId}`,
 		source: "knowledge_artifact",
 		filename: attachment.name,
 		title: attachment.name,
@@ -488,6 +502,25 @@ function handleViewAttachment(attachment: ArtifactSummary) {
 		artifactId: attachment.id,
 		conversationId: attachment.conversationId,
 	});
+}
+
+function toArtifactSummary(
+	attachment: ChatAttachment,
+): AttachmentArtifactSummary {
+	const artifactId = attachment.artifactId ?? attachment.id;
+	return {
+		id: artifactId,
+		artifactId,
+		type: attachment.type,
+		retrievalClass: "durable",
+		name: attachment.name,
+		mimeType: attachment.mimeType,
+		sizeBytes: attachment.sizeBytes,
+		conversationId: attachment.conversationId,
+		summary: null,
+		createdAt: attachment.createdAt,
+		updatedAt: attachment.createdAt,
+	};
 }
 
 function skillDraftPayload(draftId: string) {
@@ -611,7 +644,7 @@ function toggleForkDetails() {
 					<div class="mb-3 flex flex-wrap gap-2">
 						{#each message.attachments ?? [] as attachment (attachment.id)}
 							<FileAttachment
-								{attachment}
+								attachment={toArtifactSummary(attachment)}
 								variant="compact"
 								viewable={Boolean(onOpenDocument)}
 								onView={handleViewAttachment}

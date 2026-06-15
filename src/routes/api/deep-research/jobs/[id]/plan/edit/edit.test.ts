@@ -18,19 +18,21 @@ import { POST } from "./+server";
 
 type EditRouteEvent = Parameters<typeof POST>[0];
 
-const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
-const mockEditDeepResearchPlan = editDeepResearchPlan as ReturnType<
-	typeof vi.fn
->;
-const mockIsDeepResearchPlanActionError =
-	isDeepResearchPlanActionError as ReturnType<typeof vi.fn>;
+const mockRequireAuth = vi.mocked(requireAuth);
+const mockEditDeepResearchPlan = vi.mocked(editDeepResearchPlan);
+const mockIsDeepResearchPlanActionError = vi.mocked(
+	isDeepResearchPlanActionError,
+);
 
 function makeEvent(
 	body: unknown = {
 		editInstruction: "Focus more on startup compliance risks.",
 	},
 	jobId = "research-job-1",
-	user = { id: "user-1", email: "test@example.com" },
+	user: { id: string; email: string } | null = {
+		id: "user-1",
+		email: "test@example.com",
+	},
 ) {
 	return {
 		request: new Request(
@@ -63,6 +65,7 @@ describe("POST /api/deep-research/jobs/[id]/plan/edit", () => {
 			currentPlan: {
 				version: 2,
 				status: "awaiting_approval",
+				rawPlan: {} as never,
 				renderedPlan: "# Research Plan",
 				effortEstimate: {
 					selectedDepth: "standard",

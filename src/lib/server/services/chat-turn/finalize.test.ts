@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ChatFile } from "$lib/server/services/chat-files";
 import { getArtifactsForUser } from "$lib/server/services/knowledge";
 import { recordMemoryEvent } from "$lib/server/services/memory-events";
 import { buildAssistantEvidenceSummary } from "$lib/server/services/message-evidence";
@@ -6,6 +7,7 @@ import { commitSkillNoteOperationsAfterAssistantMessage } from "$lib/server/serv
 import { applySkillControlOperations } from "$lib/server/services/skills/sessions";
 import { getProjectReferenceContext } from "$lib/server/services/task-state";
 import { resolveWorkingDocumentSelection } from "$lib/server/services/working-document-selection";
+import type { ChatMessage } from "$lib/types";
 
 const {
 	mockMirrorMessage,
@@ -121,6 +123,44 @@ vi.mock("$lib/server/services/working-document-selection", () => ({
 	resolveWorkingDocumentSelection: mockResolveWorkingDocumentSelection,
 }));
 
+function makeChatMessage(
+	id: string,
+	role: ChatMessage["role"],
+	content: string,
+): ChatMessage {
+	return {
+		id,
+		role,
+		content,
+		timestamp: 1_777_140_000_000,
+	};
+}
+
+function makeChatFile(params: {
+	id: string;
+	conversationId: string;
+	assistantMessageId: string;
+	artifactId: string;
+	filename: string;
+	mimeType: string;
+	sizeBytes: number;
+	createdAt: number;
+}): ChatFile {
+	return {
+		...params,
+		userId: "user-1",
+		storagePath: "/tmp/generated/report.pdf",
+		documentFamilyId: null,
+		documentFamilyStatus: null,
+		documentLabel: null,
+		documentRole: null,
+		versionNumber: null,
+		originConversationId: null,
+		originAssistantMessageId: null,
+		sourceChatFileId: null,
+	};
+}
+
 describe("runPostTurnTasks", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -177,7 +217,12 @@ describe("finalizeChatTurn", () => {
 			async (
 				_conversationId: string,
 				role: "user" | "assistant",
-			): Promise<{ id: string }> => ({ id: `${role}-message` }),
+			): Promise<ChatMessage> =>
+				makeChatMessage(
+					`${role}-message`,
+					role,
+					role === "user" ? "user message" : "assistant response",
+				),
 		);
 		const persistAssistantTurnState = vi.fn(async () => ({
 			activeWorkingSet: [],
@@ -188,24 +233,16 @@ describe("finalizeChatTurn", () => {
 		const assignGeneratedOutputJobs = vi.fn(async () => undefined);
 		const syncGeneratedFilesToMemory = vi.fn(async () => undefined);
 		const getGeneratedFilesForAssistantMessage = vi.fn(async () => [
-			{
+			makeChatFile({
 				id: "file-new",
 				conversationId: "conv-1",
 				assistantMessageId: "assistant-message",
 				artifactId: "artifact-generated",
-				documentFamilyId: null,
-				documentFamilyStatus: null,
-				documentLabel: null,
-				documentRole: null,
-				versionNumber: null,
-				originConversationId: null,
-				originAssistantMessageId: null,
-				sourceChatFileId: null,
 				filename: "report.pdf",
 				mimeType: "application/pdf",
 				sizeBytes: 456,
 				createdAt: 1_777_140_200,
-			},
+			}),
 		]);
 		const { finalizeChatTurn } = await import("./finalize");
 
@@ -280,7 +317,12 @@ describe("finalizeChatTurn", () => {
 			async (
 				_conversationId: string,
 				role: "user" | "assistant",
-			): Promise<{ id: string }> => ({ id: `${role}-message` }),
+			): Promise<ChatMessage> =>
+				makeChatMessage(
+					`${role}-message`,
+					role,
+					role === "user" ? "normalized user message" : "",
+				),
 		);
 		const persistAssistantTurnState = vi.fn(async () => ({
 			activeWorkingSet: [],
@@ -335,7 +377,13 @@ describe("finalizeChatTurn", () => {
 			persistAssistantTurnState,
 		});
 
-		expect(completion.assistantMessage).toEqual({ id: "assistant-message" });
+		expect(completion.assistantMessage).toEqual(
+			expect.objectContaining({
+				id: "assistant-message",
+				role: "assistant",
+				content: "",
+			}),
+		);
 		expect(createMessage).toHaveBeenCalledWith(
 			"conv-1",
 			"assistant",
@@ -436,9 +484,15 @@ describe("finalizeChatTurn", () => {
 			async (
 				_conversationId: string,
 				role: "user" | "assistant",
-			): Promise<{ id: string }> => {
+			): Promise<ChatMessage> => {
 				callOrder.push(`${role}:create`);
-				return { id: `${role}-message` };
+				return makeChatMessage(
+					`${role}-message`,
+					role,
+					role === "user"
+						? "normalized user message"
+						: "visible assistant response",
+				);
 			},
 		);
 		const persistUserTurnAttachments = vi.fn(async () => {
@@ -502,7 +556,14 @@ describe("finalizeChatTurn", () => {
 			async (
 				_conversationId: string,
 				role: "user" | "assistant",
-			): Promise<{ id: string }> => ({ id: `${role}-message` }),
+			): Promise<ChatMessage> =>
+				makeChatMessage(
+					`${role}-message`,
+					role,
+					role === "user"
+						? "normalized user message"
+						: "visible assistant response",
+				),
 		);
 		const persistAssistantTurnState = vi.fn(async () => ({
 			activeWorkingSet: [],
@@ -573,7 +634,14 @@ describe("finalizeChatTurn", () => {
 			async (
 				_conversationId: string,
 				role: "user" | "assistant",
-			): Promise<{ id: string }> => ({ id: `${role}-message` }),
+			): Promise<ChatMessage> =>
+				makeChatMessage(
+					`${role}-message`,
+					role,
+					role === "user"
+						? "normalized user message"
+						: "visible assistant response",
+				),
 		);
 		const persistAssistantTurnState = vi.fn(async () => ({
 			activeWorkingSet: [],
@@ -655,7 +723,14 @@ describe("finalizeChatTurn", () => {
 			async (
 				_conversationId: string,
 				role: "user" | "assistant",
-			): Promise<{ id: string }> => ({ id: `${role}-message` }),
+			): Promise<ChatMessage> =>
+				makeChatMessage(
+					`${role}-message`,
+					role,
+					role === "user"
+						? "normalized user message"
+						: "visible assistant response",
+				),
 		);
 		const persistUserTurnAttachments = vi.fn(async () => {
 			throw new Error("attachment offline");

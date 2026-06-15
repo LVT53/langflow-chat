@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createFirstResearchPlanDraft } from "./planning";
+import { createFirstResearchPlanDraft, type ResearchPlan } from "./planning";
 
 describe("createFirstResearchPlanDraft", () => {
 	it("plans abstract architecture recommendations as candidate discovery instead of fake entity comparison", async () => {
@@ -93,29 +93,31 @@ describe("createFirstResearchPlanDraft", () => {
 			},
 			{
 				structuredPlanner: {
-					draftPlan: vi.fn(async (_, context) => ({
-						goal: "Compare at least three architecture patterns and recommend one design.",
-						depth: "standard",
-						researchLanguage: "en",
-						reportIntent: "comparison",
-						comparedEntities: [
-							"at least three architecture patterns",
-							"identify failure modes",
-							"recommend one design",
-						],
-						comparisonAxes: ["reliability"],
-						researchBudget: context.selectedBudget,
-						keyQuestions: [
-							"Which exact variants, trim differences, model years, dealer listings, and rider use cases matter?",
-						],
-						sourceScope: {
-							includePublicWeb: true,
-							planningContextDisclosure: null,
-						},
-						reportShape: ["Executive summary"],
-						constraints: [],
-						deliverables: ["Cited Research Report"],
-					})),
+					draftPlan: vi.fn(
+						async (_, context): Promise<ResearchPlan | null> => ({
+							goal: "Compare at least three architecture patterns and recommend one design.",
+							depth: "standard",
+							researchLanguage: "en",
+							reportIntent: "comparison",
+							comparedEntities: [
+								"at least three architecture patterns",
+								"identify failure modes",
+								"recommend one design",
+							],
+							comparisonAxes: ["reliability"],
+							researchBudget: context.selectedBudget,
+							keyQuestions: [
+								"Which exact variants, trim differences, model years, dealer listings, and rider use cases matter?",
+							],
+							sourceScope: {
+								includePublicWeb: true,
+								planningContextDisclosure: null,
+							},
+							reportShape: ["Executive summary"],
+							constraints: [],
+							deliverables: ["Cited Research Report"],
+						}),
+					),
 				},
 			},
 		);
@@ -248,23 +250,25 @@ describe("createFirstResearchPlanDraft", () => {
 			},
 			{
 				structuredPlanner: {
-					draftPlan: vi.fn(async (_, context) => ({
-						goal: "Compare GitHub Copilot and Cursor for privacy and pricing.",
-						depth: "focused",
-						researchLanguage: "en",
-						reportIntent: "comparison",
-						comparedEntities: ["string"],
-						comparisonAxes: ["string"],
-						researchBudget: context.selectedBudget,
-						keyQuestions: ["string"],
-						sourceScope: {
-							includePublicWeb: true,
-							planningContextDisclosure: null,
-						},
-						reportShape: ["string"],
-						constraints: ["string"],
-						deliverables: ["string"],
-					})),
+					draftPlan: vi.fn(
+						async (_, context): Promise<ResearchPlan | null> => ({
+							goal: "Compare GitHub Copilot and Cursor for privacy and pricing.",
+							depth: "focused",
+							researchLanguage: "en",
+							reportIntent: "comparison",
+							comparedEntities: ["string"],
+							comparisonAxes: ["string"],
+							researchBudget: context.selectedBudget,
+							keyQuestions: ["string"],
+							sourceScope: {
+								includePublicWeb: true,
+								planningContextDisclosure: null,
+							},
+							reportShape: ["string"],
+							constraints: ["string"],
+							deliverables: ["string"],
+						}),
+					),
 				},
 			},
 		);
@@ -348,31 +352,33 @@ describe("createFirstResearchPlanDraft", () => {
 			},
 			{
 				structuredPlanner: {
-					draftPlan: vi.fn(async (_, context) => ({
-						goal: "Compare Cube Nulane 400X and Kathmando SLX, focusing on pricing, availability in Europe, and Medium frame size.",
-						depth: "standard",
-						researchLanguage: "en",
-						reportIntent: "comparison",
-						comparedEntities: [
-							"Cube Nulane 400X",
-							"Kathmando SLX",
-							"focusing",
-							"pricing",
-							"availability",
-							"Europe",
-							"Medium frame size",
-						],
-						comparisonAxes: ["pricing"],
-						researchBudget: context.selectedBudget,
-						keyQuestions: ["How do the models compare?"],
-						sourceScope: {
-							includePublicWeb: true,
-							planningContextDisclosure: null,
-						},
-						reportShape: ["Executive summary"],
-						constraints: [],
-						deliverables: ["Cited Research Report"],
-					})),
+					draftPlan: vi.fn(
+						async (_, context): Promise<ResearchPlan | null> => ({
+							goal: "Compare Cube Nulane 400X and Kathmando SLX, focusing on pricing, availability in Europe, and Medium frame size.",
+							depth: "standard",
+							researchLanguage: "en",
+							reportIntent: "comparison",
+							comparedEntities: [
+								"Cube Nulane 400X",
+								"Kathmando SLX",
+								"focusing",
+								"pricing",
+								"availability",
+								"Europe",
+								"Medium frame size",
+							],
+							comparisonAxes: ["pricing"],
+							researchBudget: context.selectedBudget,
+							keyQuestions: ["How do the models compare?"],
+							sourceScope: {
+								includePublicWeb: true,
+								planningContextDisclosure: null,
+							},
+							reportShape: ["Executive summary"],
+							constraints: [],
+							deliverables: ["Cited Research Report"],
+						}),
+					),
 				},
 			},
 		);
@@ -399,34 +405,36 @@ describe("createFirstResearchPlanDraft", () => {
 			},
 			{
 				structuredPlanner: {
-					draftPlan: vi.fn(async (_, context) => ({
-						goal: "Compare Acme Analytics Pro and Acme Analytics Enterprise, focusing on pricing, SOC 2, data residency, SSO, audit logs, retention, and API limits.",
-						depth: "standard",
-						researchLanguage: "en",
-						reportIntent: "comparison",
-						comparedEntities: [
-							"Acme Analytics Pro",
-							"Acme Analytics Enterprise",
-							"focusing",
-							"pricing",
-							"SOC 2",
-							"data residency",
-							"SSO",
-							"audit logs",
-							"retention",
-							"API limits",
-						],
-						comparisonAxes: ["pricing"],
-						researchBudget: context.selectedBudget,
-						keyQuestions: ["How do the Acme Analytics tiers compare?"],
-						sourceScope: {
-							includePublicWeb: true,
-							planningContextDisclosure: null,
-						},
-						reportShape: ["Executive summary"],
-						constraints: [],
-						deliverables: ["Cited Research Report"],
-					})),
+					draftPlan: vi.fn(
+						async (_, context): Promise<ResearchPlan | null> => ({
+							goal: "Compare Acme Analytics Pro and Acme Analytics Enterprise, focusing on pricing, SOC 2, data residency, SSO, audit logs, retention, and API limits.",
+							depth: "standard",
+							researchLanguage: "en",
+							reportIntent: "comparison",
+							comparedEntities: [
+								"Acme Analytics Pro",
+								"Acme Analytics Enterprise",
+								"focusing",
+								"pricing",
+								"SOC 2",
+								"data residency",
+								"SSO",
+								"audit logs",
+								"retention",
+								"API limits",
+							],
+							comparisonAxes: ["pricing"],
+							researchBudget: context.selectedBudget,
+							keyQuestions: ["How do the Acme Analytics tiers compare?"],
+							sourceScope: {
+								includePublicWeb: true,
+								planningContextDisclosure: null,
+							},
+							reportShape: ["Executive summary"],
+							constraints: [],
+							deliverables: ["Cited Research Report"],
+						}),
+					),
 				},
 			},
 		);
@@ -462,29 +470,31 @@ describe("createFirstResearchPlanDraft", () => {
 			},
 			{
 				structuredPlanner: {
-					draftPlan: vi.fn(async (_, context) => ({
-						goal: "Compare Acme Analytics Pro and Acme Analytics Enterprise for European customers. Pay attention to pricing, SOC 2, data residency, SSO, audit logs, retention, and API limits.",
-						depth: "standard",
-						researchLanguage: "en",
-						reportIntent: "comparison",
-						comparedEntities: [
-							"Acme Analytics Pro",
-							"Acme Analytics Enterprise for European customers. Pay attention to pricing",
-							"SOC 2 and data residency",
-							"SSO",
-							"audit logs",
-						],
-						comparisonAxes: ["pricing"],
-						researchBudget: context.selectedBudget,
-						keyQuestions: ["How do the Acme Analytics tiers compare?"],
-						sourceScope: {
-							includePublicWeb: true,
-							planningContextDisclosure: null,
-						},
-						reportShape: ["Executive summary"],
-						constraints: [],
-						deliverables: ["Cited Research Report"],
-					})),
+					draftPlan: vi.fn(
+						async (_, context): Promise<ResearchPlan | null> => ({
+							goal: "Compare Acme Analytics Pro and Acme Analytics Enterprise for European customers. Pay attention to pricing, SOC 2, data residency, SSO, audit logs, retention, and API limits.",
+							depth: "standard",
+							researchLanguage: "en",
+							reportIntent: "comparison",
+							comparedEntities: [
+								"Acme Analytics Pro",
+								"Acme Analytics Enterprise for European customers. Pay attention to pricing",
+								"SOC 2 and data residency",
+								"SSO",
+								"audit logs",
+							],
+							comparisonAxes: ["pricing"],
+							researchBudget: context.selectedBudget,
+							keyQuestions: ["How do the Acme Analytics tiers compare?"],
+							sourceScope: {
+								includePublicWeb: true,
+								planningContextDisclosure: null,
+							},
+							reportShape: ["Executive summary"],
+							constraints: [],
+							deliverables: ["Cited Research Report"],
+						}),
+					),
 				},
 			},
 		);
@@ -520,27 +530,29 @@ describe("createFirstResearchPlanDraft", () => {
 			},
 			{
 				structuredPlanner: {
-					draftPlan: vi.fn(async (_, context) => ({
-						goal: "Compare Nulane 400X and Kathmandu Cube 2025 edition bicycles in Europe markets. Pay attention to pricing, and availability in Medium frame sizes.",
-						depth: "standard",
-						researchLanguage: "en",
-						reportIntent: "comparison",
-						comparedEntities: [
-							"Nulane 400X",
-							"Kathmandu Cube 2025 edition bicycles in Europe markets. Pay attention to pricing",
-							"availability in Medium frame sizes",
-						],
-						comparisonAxes: ["pricing"],
-						researchBudget: context.selectedBudget,
-						keyQuestions: ["How do the models compare?"],
-						sourceScope: {
-							includePublicWeb: true,
-							planningContextDisclosure: null,
-						},
-						reportShape: ["Executive summary"],
-						constraints: [],
-						deliverables: ["Cited Research Report"],
-					})),
+					draftPlan: vi.fn(
+						async (_, context): Promise<ResearchPlan | null> => ({
+							goal: "Compare Nulane 400X and Kathmandu Cube 2025 edition bicycles in Europe markets. Pay attention to pricing, and availability in Medium frame sizes.",
+							depth: "standard",
+							researchLanguage: "en",
+							reportIntent: "comparison",
+							comparedEntities: [
+								"Nulane 400X",
+								"Kathmandu Cube 2025 edition bicycles in Europe markets. Pay attention to pricing",
+								"availability in Medium frame sizes",
+							],
+							comparisonAxes: ["pricing"],
+							researchBudget: context.selectedBudget,
+							keyQuestions: ["How do the models compare?"],
+							sourceScope: {
+								includePublicWeb: true,
+								planningContextDisclosure: null,
+							},
+							reportShape: ["Executive summary"],
+							constraints: [],
+							deliverables: ["Cited Research Report"],
+						}),
+					),
 				},
 			},
 		);
@@ -959,27 +971,30 @@ describe("createFirstResearchPlanDraft", () => {
 			saveResearchPlanDraft: vi.fn(),
 		};
 		const structuredPlanner = {
-			draftPlan: vi.fn(async () => ({
-				goal: "Map the tradeoffs of open-source vector databases.",
-				depth: "focused",
-				researchBudget: {
-					sourceReviewCeiling: 40,
-					synthesisPassCeiling: 3,
-					meaningfulPassFloor: 2,
-					meaningfulPassCeiling: 3,
-					repairPassCeiling: 1,
-					sourceProcessingConcurrency: 6,
-					modelReasoningConcurrency: 2,
-				},
-				keyQuestions: ["Which databases should be compared?"],
-				sourceScope: {
-					includePublicWeb: true,
-					planningContextDisclosure: null,
-				},
-				reportShape: ["Executive summary"],
-				constraints: [],
-				deliverables: ["Cited Research Report"],
-			})),
+			draftPlan: vi.fn(
+				async (): Promise<ResearchPlan | null> => ({
+					goal: "Map the tradeoffs of open-source vector databases.",
+					depth: "focused",
+					reportIntent: "comparison",
+					researchBudget: {
+						sourceReviewCeiling: 40,
+						synthesisPassCeiling: 3,
+						meaningfulPassFloor: 2,
+						meaningfulPassCeiling: 3,
+						repairPassCeiling: 1,
+						sourceProcessingConcurrency: 6,
+						modelReasoningConcurrency: 2,
+					},
+					keyQuestions: ["Which databases should be compared?"],
+					sourceScope: {
+						includePublicWeb: true,
+						planningContextDisclosure: null,
+					},
+					reportShape: ["Executive summary"],
+					constraints: [],
+					deliverables: ["Cited Research Report"],
+				}),
+			),
 		};
 
 		await expect(
@@ -1005,6 +1020,7 @@ describe("createFirstResearchPlanDraft", () => {
 		const basePlan = {
 			goal: "Map the tradeoffs of open-source vector databases.",
 			depth: "focused" as const,
+			reportIntent: "comparison" as const,
 			researchBudget: {
 				sourceReviewCeiling: 24,
 				synthesisPassCeiling: 3,
@@ -1035,13 +1051,15 @@ describe("createFirstResearchPlanDraft", () => {
 				{
 					repository,
 					structuredPlanner: {
-						draftPlan: vi.fn(async () => ({
-							...basePlan,
-							researchBudget: {
-								...basePlan.researchBudget,
-								meaningfulPassFloor: 1,
-							},
-						})),
+						draftPlan: vi.fn(
+							async (): Promise<ResearchPlan | null> => ({
+								...basePlan,
+								researchBudget: {
+									...basePlan.researchBudget,
+									meaningfulPassFloor: 1,
+								},
+							}),
+						),
 					},
 				},
 			),
@@ -1060,13 +1078,15 @@ describe("createFirstResearchPlanDraft", () => {
 				{
 					repository,
 					structuredPlanner: {
-						draftPlan: vi.fn(async () => ({
-							...basePlan,
-							researchBudget: {
-								...basePlan.researchBudget,
-								sourceProcessingConcurrency: 7,
-							},
-						})),
+						draftPlan: vi.fn(
+							async (): Promise<ResearchPlan | null> => ({
+								...basePlan,
+								researchBudget: {
+									...basePlan.researchBudget,
+									sourceProcessingConcurrency: 7,
+								},
+							}),
+						),
 					},
 				},
 			),

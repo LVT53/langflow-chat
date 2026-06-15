@@ -36,9 +36,9 @@ export function initSettings(serverPrefs?: {
 		selectedModel.set(serverPrefs.model);
 		persist(SELECTED_MODEL_KEY, serverPrefs.model);
 	} else {
-		const storedModel = read<ModelId>(
+		const storedModel = read<ModelId | null>(
 			SELECTED_MODEL_KEY,
-			null as ModelId | null,
+			null,
 			(v): v is ModelId =>
 				v === "model1" ||
 				v === "model2" ||
@@ -53,9 +53,9 @@ export function initSettings(serverPrefs?: {
 		titleLanguage.set(serverPrefs.titleLanguage);
 		persist(TITLE_LANGUAGE_KEY, serverPrefs.titleLanguage);
 	} else {
-		const storedTitleLang = read<TitleLanguage>(
+		const storedTitleLang = read<TitleLanguage | null>(
 			TITLE_LANGUAGE_KEY,
-			null as TitleLanguage | null,
+			null,
 			(v): v is TitleLanguage => v === "auto" || v === "en" || v === "hu",
 		);
 		if (storedTitleLang) {
@@ -67,9 +67,9 @@ export function initSettings(serverPrefs?: {
 		uiLanguage.set(serverPrefs.uiLanguage);
 		persist(UI_LANGUAGE_KEY, serverPrefs.uiLanguage);
 	} else {
-		const storedUiLanguage = read<UiLanguage>(
+		const storedUiLanguage = read<UiLanguage | null>(
 			UI_LANGUAGE_KEY,
-			null as UiLanguage | null,
+			null,
 			(v): v is UiLanguage => v === "en" || v === "hu",
 		);
 		if (storedUiLanguage) {
@@ -77,9 +77,9 @@ export function initSettings(serverPrefs?: {
 		}
 	}
 
-	const storedReasoningDepth = read<ReasoningDepth>(
+	const storedReasoningDepth = read<ReasoningDepth | null>(
 		REASONING_DEPTH_KEY,
-		null as ReasoningDepth | null,
+		null,
 		(v): v is ReasoningDepth => v === "auto" || v === "max" || v === "off",
 	);
 	if (storedReasoningDepth) {

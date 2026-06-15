@@ -14,6 +14,7 @@ import type {
 	ChatMessage,
 	ConversationContextStatus,
 	ModelId,
+	ReasoningDepth,
 } from "$lib/types";
 
 type StreamInvocation = {
@@ -23,6 +24,31 @@ type StreamInvocation = {
 	options?: StreamChatOptions;
 	handle: StreamHandle;
 };
+
+function conversationContextStatusFixture(): ConversationContextStatus {
+	return {
+		conversationId: "conv-1",
+		userId: "user-1",
+		estimatedTokens: 5_000,
+		maxContextTokens: 10_000,
+		thresholdTokens: 12_000,
+		targetTokens: 10_000,
+		compactionApplied: false,
+		compactionMode: "none",
+		routingStage: "deterministic",
+		routingConfidence: 100,
+		verificationStatus: "skipped",
+		layersUsed: [],
+		workingSetCount: 0,
+		workingSetArtifactIds: [],
+		workingSetApplied: false,
+		taskStateApplied: false,
+		promptArtifactCount: 0,
+		recentTurnCount: 0,
+		summary: null,
+		updatedAt: 1,
+	};
+}
 
 function makeAdapters(
 	overrides: Partial<NormalChatClientTurnRuntimeAdapters> = {},
@@ -51,7 +77,7 @@ function makeAdapters(
 		getStreamBufferInfo: vi.fn(async () => null),
 		getConversationId: vi.fn(() => "conv-1"),
 		getSelectedModel: vi.fn(() => "model1" as ModelId),
-		getReasoningDepth: vi.fn(() => "auto"),
+		getReasoningDepth: vi.fn((): ReasoningDepth => "auto"),
 		getPersonalityProfileId: vi.fn(() => null),
 		getActiveDocumentArtifactId: vi.fn(() => undefined),
 		getMessages: vi.fn(() => messages),
@@ -70,7 +96,11 @@ function makeAdapters(
 		clearDraft: vi.fn(),
 		clearAttachedArtifacts: vi.fn(() => []),
 		recordConversationActivity: vi.fn(),
-		startPendingSkillSession: vi.fn(async () => ({ ok: true })),
+		startPendingSkillSession: vi.fn(
+			async (): Promise<{ ok: true }> => ({
+				ok: true,
+			}),
+		),
 		shouldStartDeepResearchJob: vi.fn(() => false),
 		startDeepResearchTurn: vi.fn(),
 		appendUserMessage: vi.fn((message) => {
@@ -185,7 +215,7 @@ describe("Normal Chat Client Turn Runtime", () => {
 		const metadata: StreamMetadata = {
 			assistantMessageId: "assistant-1",
 			userMessageId: "user-1",
-			contextStatus: { mode: "available" } as ConversationContextStatus,
+			contextStatus: conversationContextStatusFixture(),
 		};
 		streamInvocations[0].callbacks.onToken("Hi");
 		streamInvocations[0].callbacks.onEnd("Hi", metadata);
@@ -256,7 +286,7 @@ describe("Normal Chat Client Turn Runtime", () => {
 		};
 		const { adapters, streamInvocations } = makeAdapters({
 			getSelectedModel: vi.fn(() => "fallback-model" as ModelId),
-			getReasoningDepth: vi.fn(() => "off"),
+			getReasoningDepth: vi.fn((): ReasoningDepth => "off"),
 			getPersonalityProfileId: vi.fn(() => "persona-from-adapter"),
 			getActiveDocumentArtifactId: vi.fn(() => "active-doc-1"),
 		});
@@ -652,7 +682,7 @@ describe("Normal Chat Client Turn Runtime", () => {
 	it("keeps generic stream errors retryable and retries against the previous assistant message", async () => {
 		const { adapters, streamInvocations, messages } = makeAdapters({
 			getSelectedModel: vi.fn(() => "fallback-model" as ModelId),
-			getReasoningDepth: vi.fn(() => "off"),
+			getReasoningDepth: vi.fn((): ReasoningDepth => "off"),
 			getPersonalityProfileId: vi.fn(() => "persona-retry"),
 			getActiveDocumentArtifactId: vi.fn(() => "active-doc-retry"),
 		});
@@ -755,12 +785,12 @@ describe("Normal Chat Client Turn Runtime", () => {
 
 	it("reconnects with the original stream Reasoning depth from the buffer snapshot", async () => {
 		const { adapters, streamInvocations } = makeAdapters({
-			getReasoningDepth: vi.fn(() => "off"),
+			getReasoningDepth: vi.fn((): ReasoningDepth => "off"),
 			checkForOrphanedStream: vi.fn(async () => "stream-1"),
 			getStreamBufferInfo: vi.fn(async () => ({
 				exists: true,
 				userMessage: "Resume me",
-				reasoningDepth: "max",
+				reasoningDepth: "max" as ReasoningDepth,
 			})),
 		});
 		const runtime = createNormalChatClientTurnRuntime(adapters);
@@ -813,12 +843,12 @@ describe("Normal Chat Client Turn Runtime", () => {
 		let composerDepth: "off" | "max" = "max";
 		const { adapters, streamInvocations, messages } = makeAdapters({
 			isBrowserHidden: vi.fn(() => browserHidden),
-			getReasoningDepth: vi.fn(() => composerDepth),
+			getReasoningDepth: vi.fn((): ReasoningDepth => composerDepth),
 			checkForOrphanedStream: vi.fn(async () => "stream-1"),
 			getStreamBufferInfo: vi.fn(async () => ({
 				exists: true,
 				userMessage: "Resume me",
-				reasoningDepth: "max",
+				reasoningDepth: "max" as ReasoningDepth,
 			})),
 		});
 		const runtime = createNormalChatClientTurnRuntime(adapters);

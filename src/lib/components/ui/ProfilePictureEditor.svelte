@@ -21,18 +21,18 @@ let {
 
 // ── State ──────────────────────────────────────────────────────────────────
 type Step = "drop" | "edit" | "uploading";
-let step = $state<Step>("drop");
+let step: Step = $state("drop");
 
-let fileInput = $state<HTMLInputElement | null>(null);
-let canvasEl = $state<HTMLCanvasElement | null>(null);
-let dialogRef = $state<HTMLDivElement | null>(null);
+let fileInput: HTMLInputElement | null = $state(null);
+let canvasEl: HTMLCanvasElement | null = $state(null);
+let dialogRef: HTMLDivElement | null = $state(null);
 let previousFocus: HTMLElement | null = null;
 
 let isDraggingOver = $state(false);
 let uploadError = $state("");
 
 // Image source
-let img = $state<HTMLImageElement | null>(null);
+let img: HTMLImageElement | null = $state(null);
 
 // Editor state
 let rotation = $state(0); // 0–360 degrees, arbitrary precision
@@ -52,7 +52,7 @@ let dragStartPanX = 0;
 let dragStartPanY = 0;
 
 // Preview canvas
-let previewCanvas = $state<HTMLCanvasElement | null>(null);
+let previewCanvas: HTMLCanvasElement | null = $state(null);
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function loadFile(file: File) {
@@ -150,7 +150,7 @@ function drawCanvas() {
 }
 
 function drawPreview() {
-	if (!previewCanvas || !img) return;
+	if (!previewCanvas || !img || !canvasEl) return;
 	const pctx = previewCanvas.getContext("2d");
 	if (!pctx) return;
 

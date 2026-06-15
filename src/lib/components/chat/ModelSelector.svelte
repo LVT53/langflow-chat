@@ -24,13 +24,13 @@ let {
 	onOpenChange?: ((open: boolean) => void) | undefined;
 } = $props();
 
-let providers = $state<ModelProvider[]>([]);
+let providers: ModelProvider[] = $state([]);
 let internalOpen = $state(false);
 let isLoading = $state(true);
-let error = $state<string | null>(null);
-let dropdownRef = $state<HTMLDivElement | undefined>(undefined);
-let expandedProviders = $state<Set<string>>(new Set());
-let focusedModelId = $state<string | null>(null);
+let error: string | null = $state(null);
+let dropdownRef: HTMLDivElement | null = $state(null);
+let expandedProviders: Set<string> = $state(new Set());
+let focusedModelId: string | null = $state(null);
 let isMobile = $state(false);
 let isOpen = $derived(open ?? internalOpen);
 
@@ -48,31 +48,9 @@ function checkMobile() {
 	isMobile = typeof window !== "undefined" && window.innerWidth <= 768;
 }
 
-onMount(async () => {
+onMount(() => {
 	checkMobile();
 	window.addEventListener("resize", checkMobile);
-
-	try {
-		const response = await fetchAvailableModels();
-		providers = response.providers;
-
-		const currentModelId = $selectedModel;
-		const modelExists = providers.some((p) =>
-			p.models.some((m) => m.id === currentModelId),
-		);
-		if (!modelExists && providers.length > 0) {
-			const firstProvider = providers[0];
-			const firstModel = firstProvider.models[0];
-			if (firstModel) {
-				setSelectedModel(firstModel.id as ModelId);
-			}
-		}
-	} catch (err) {
-		error = err instanceof Error ? err.message : "Failed to load models";
-		providers = [];
-	} finally {
-		isLoading = false;
-	}
 
 	const handleClickOutside = (event: MouseEvent) => {
 		if (!dropdownRef || dropdownRef.contains(event.target as Node)) return;
@@ -82,13 +60,36 @@ onMount(async () => {
 	};
 
 	document.addEventListener("click", handleClickOutside);
+	void (async () => {
+		try {
+			const response = await fetchAvailableModels();
+			providers = response.providers;
+
+			const currentModelId = $selectedModel;
+			const modelExists = providers.some((p) =>
+				p.models.some((m) => m.id === currentModelId),
+			);
+			if (!modelExists && providers.length > 0) {
+				const firstProvider = providers[0];
+				const firstModel = firstProvider?.models[0];
+				if (firstModel) {
+					setSelectedModel(firstModel.id as ModelId);
+				}
+			}
+		} catch (err) {
+			error = err instanceof Error ? err.message : "Failed to load models";
+			providers = [];
+		} finally {
+			isLoading = false;
+		}
+	})();
 	return () => {
 		document.removeEventListener("click", handleClickOutside);
 		window.removeEventListener("resize", checkMobile);
 	};
 });
 
-const activeProvider = $derived(() => {
+const activeProvider = $derived.by(() => {
 	const currentModelId = $selectedModel;
 	for (const provider of providers) {
 		const model = provider.models.find((m) => m.id === currentModelId);
@@ -199,8 +200,8 @@ function autoExpandProviders() {
 	>
 		{#if isLoading}
 			<span class="model-selector__text">Loading...</span>
-		{:else if activeProvider()}
-			{@const active = activeProvider()}
+		{:else if activeProvider}
+			{@const active = activeProvider}
 			<ModelIcon
 				iconUrl={active.model.iconUrl ?? active.provider.iconUrl ?? null}
 				displayName={active.model.displayName}

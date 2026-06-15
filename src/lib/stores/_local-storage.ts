@@ -30,7 +30,7 @@ export function persist(key: string, value: string): void {
 export function read<T>(
 	key: string,
 	fallback: T,
-	isValid?: (value: string) => value is T,
+	isValid?: (value: string) => value is Extract<T, string>,
 ): T {
 	if (!canUseStorage()) return fallback;
 

@@ -1,4 +1,4 @@
-import type { ResponseActivityEntry } from "$lib/types";
+import type { ModelId, ResponseActivityEntry } from "$lib/types";
 import {
 	type AiSdkUiStreamFrame,
 	consumeAiSdkUiStreamFrames,
@@ -80,7 +80,7 @@ export interface StreamCallbacks {
 	onResponseActivity?: (entry: ResponseActivityEntry) => void;
 }
 
-export type { ModelId } from "$lib/types";
+export type { ModelId };
 
 export interface StreamHandle {
 	stop: () => void;

@@ -26,7 +26,7 @@ export const GET: RequestHandler = async (event) => {
 		return json({ error: resolved.error }, { status: resolved.status });
 	}
 
-	return new Response(resolved.body, {
+	return new Response(Buffer.from(resolved.body), {
 		status: resolved.status,
 		headers: resolved.headers,
 	});

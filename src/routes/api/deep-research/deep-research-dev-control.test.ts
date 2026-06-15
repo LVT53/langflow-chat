@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { unlinkSync } from "node:fs";
-import type { RequestEvent } from "@sveltejs/kit";
 import Database from "better-sqlite3";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
@@ -73,13 +72,81 @@ import { buildDeepResearchPlanningContext } from "$lib/server/services/deep-rese
 
 let dbPath: string;
 let previousDeepResearchEnabled: string | undefined;
-const mockBuildDeepResearchPlanningContext =
-	buildDeepResearchPlanningContext as ReturnType<typeof vi.fn>;
+const mockBuildDeepResearchPlanningContext = vi.mocked(
+	buildDeepResearchPlanningContext,
+);
 
 const signedInUser = {
 	id: "user-1",
 	email: "user@example.com",
 	displayName: "Test User",
+};
+
+type DeepResearchJobSnapshot = {
+	id: string;
+	status?: string;
+	stage?: string;
+	depth?: string;
+	reportArtifactId?: string;
+	currentPlan?: {
+		version?: number;
+		status?: string;
+		renderedPlan?: string | null;
+	};
+};
+
+type DeepResearchStartResponse = {
+	response: null;
+	conversationId: string;
+	deepResearchJob: DeepResearchJobSnapshot & {
+		status: "awaiting_approval";
+		stage: "plan_drafted";
+		currentPlan: {
+			version: number;
+			status: "awaiting_approval";
+			renderedPlan?: string | null;
+		};
+	};
+};
+
+type DeepResearchApprovalResponse = {
+	job: {
+		id: string;
+		status: "approved";
+		stage: "plan_approved";
+	};
+};
+
+type DeepResearchAdvanceSnapshot = {
+	advanced?: boolean;
+	outcome?: string;
+	job?: DeepResearchJobSnapshot;
+};
+
+type DeepResearchCompletionSnapshot = DeepResearchAdvanceSnapshot & {
+	job: DeepResearchJobSnapshot;
+};
+
+type DeepResearchConversationResponse = {
+	id: string;
+	title?: string;
+	status?: string;
+	sealedAt?: number | null;
+};
+
+type DeepResearchDiscussResponse = {
+	sourceJobId: string;
+	reportArtifactId: string;
+	conversation: DeepResearchConversationResponse;
+};
+
+type DeepResearchResearchFurtherResponse = DeepResearchDiscussResponse & {
+	messageId: string;
+	job: {
+		status: "awaiting_approval";
+		stage: "plan_drafted";
+		depth: "standard";
+	};
 };
 
 async function seedConversation() {
@@ -164,11 +231,11 @@ async function seedPromptReadyAttachment() {
 	sqlite.close();
 }
 
-function makeJsonEvent(
+function makeJsonEvent<TEvent = never>(
 	path: string,
 	body?: unknown,
 	params: Record<string, string> = {},
-): RequestEvent {
+): TEvent {
 	return {
 		request: new Request(`http://localhost${path}`, {
 			method: "POST",
@@ -180,11 +247,11 @@ function makeJsonEvent(
 		params,
 		url: new URL(`http://localhost${path}`),
 		route: { id: path },
-	} as unknown as RequestEvent;
+	} as TEvent;
 }
 
-async function readJson(response: Response) {
-	return (await response.json()) as Record<string, unknown>;
+async function readJson<T>(response: Response): Promise<T> {
+	return (await response.json()) as T;
 }
 
 async function loadConversationStatus(conversationId: string) {
@@ -216,18 +283,19 @@ async function startApproveAndCompleteThroughDevRoutes() {
 			deepResearch: { depth: "focused" },
 		}),
 	);
-	const started = await readJson(startResponse);
-	const jobId = started.deepResearchJob.id as string;
+	const started = await readJson<DeepResearchStartResponse>(startResponse);
+	const jobId = started.deepResearchJob.id;
 
 	const approvalResponse = await approvePlan(
 		makeJsonEvent(`/api/deep-research/jobs/${jobId}/plan/approve`, undefined, {
 			id: jobId,
 		}),
 	);
-	const approved = await readJson(approvalResponse);
+	const approved =
+		await readJson<DeepResearchApprovalResponse>(approvalResponse);
 
-	const advanceSnapshots: Array<Record<string, unknown>> = [];
-	let completed: Record<string, unknown> | null = null;
+	const advanceSnapshots: DeepResearchAdvanceSnapshot[] = [];
+	let completed: DeepResearchAdvanceSnapshot | null = null;
 	let completionResponse: Response | null = null;
 	const maxAdvances = 12;
 	for (let index = 0; index < maxAdvances; index += 1) {
@@ -238,7 +306,7 @@ async function startApproveAndCompleteThroughDevRoutes() {
 				{ id: jobId },
 			),
 		);
-		const snapshot = await readJson(response);
+		const snapshot = await readJson<DeepResearchAdvanceSnapshot>(response);
 		advanceSnapshots.push(snapshot);
 		if (response.status !== 200) {
 			completionResponse = response;
@@ -266,7 +334,7 @@ async function startApproveAndCompleteThroughDevRoutes() {
 		approved,
 		advanceSnapshots,
 		completionResponse: completionResponse as Response,
-		completed,
+		completed: completed as DeepResearchCompletionSnapshot,
 	};
 }
 
@@ -394,8 +462,8 @@ describe("Deep Research dev-control acceptance path", () => {
 				deepResearch: { depth: "focused" },
 			}),
 		);
-		const started = await readJson(startResponse);
-		const jobId = started.deepResearchJob.id as string;
+		const started = await readJson<DeepResearchStartResponse>(startResponse);
+		const jobId = started.deepResearchJob.id;
 		const renderedPlan = started.deepResearchJob.currentPlan
 			.renderedPlan as string;
 
@@ -454,7 +522,8 @@ describe("Deep Research dev-control acceptance path", () => {
 				{ id: jobId },
 			),
 		);
-		const discuss = await readJson(discussResponse);
+		const discuss =
+			await readJson<DeepResearchDiscussResponse>(discussResponse);
 		const researchFurtherResponse = await researchFurther(
 			makeJsonEvent(
 				`/api/deep-research/jobs/${jobId}/report-actions/research-further`,
@@ -462,14 +531,16 @@ describe("Deep Research dev-control acceptance path", () => {
 				{ id: jobId },
 			),
 		);
-		const further = await readJson(researchFurtherResponse);
+		const further = await readJson<DeepResearchResearchFurtherResponse>(
+			researchFurtherResponse,
+		);
 
 		const sourceConversation = await loadConversationStatus("conv-1");
 		const discussConversation = await loadConversationStatus(
-			discuss.conversation.id as string,
+			discuss.conversation.id,
 		);
 		const furtherConversation = await loadConversationStatus(
-			further.conversation.id as string,
+			further.conversation.id,
 		);
 
 		expect(discussResponse.status).toBe(201);

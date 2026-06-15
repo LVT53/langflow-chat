@@ -72,12 +72,12 @@ let {
 	onSaveAdminConfig: () => void | Promise<void>;
 } = $props();
 
-let providerConfigs = $state<Provider[]>([]);
+let providerConfigs: Provider[] = $state([]);
 let providerConfigsLoading = $state(false);
 let providerConfigsError = $state("");
 let providerConfigsMessage = $state("");
 let showProviderForm = $state(false);
-let providerFormProvider = $state<Provider | null>(null);
+let providerFormProvider: Provider | null = $state(null);
 let providerFormIsCreate = $state(false);
 let providerFormSaving = $state(false);
 let providerFormError = $state("");
@@ -87,16 +87,16 @@ let providerFormTestMessage = $state("");
 let showModelList = $state(false);
 let modelListProviderId = $state("");
 let modelListKey = $state(0);
-let adminPersonalities = $state<PersonalityProfileSummary[]>([]);
-let systemSkills = $state<AdminSystemSkill[]>([]);
+let adminPersonalities: PersonalityProfileSummary[] = $state([]);
+let systemSkills: AdminSystemSkill[] = $state([]);
 let systemSkillsLoading = $state(false);
 let systemSkillsError = $state("");
 let systemSkillsMessage = $state("");
-let editingSystemSkillId = $state<string | null>(null);
+let editingSystemSkillId: string | null = $state(null);
 let systemSkillSaving = $state(false);
-let systemSkillDraft = $state<
-	AdminSystemSkillDraft & { activationExamplesText: string }
->({
+let systemSkillDraft: AdminSystemSkillDraft & {
+	activationExamplesText: string;
+} = $state({
 	displayName: "",
 	description: "",
 	instructions: "",
@@ -117,7 +117,7 @@ $effect(() => {
 		.catch(() => {});
 });
 let providersMessage = $state("");
-let iconUploading = $state<string | null>(null);
+let iconUploading: string | null = $state(null);
 let providersMessageTimer: ReturnType<typeof setTimeout> | undefined;
 let systemSkillsMessageTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -133,10 +133,9 @@ type ModelIconCropJob = {
 	sourceUpload: Promise<CampaignAsset>;
 };
 
-let modelIconCropJob = $state<ModelIconCropJob | null>(null);
-let modelIconAssetSaved = $state<{ modelId: string; assetId: string } | null>(
-	null,
-);
+let modelIconCropJob: ModelIconCropJob | null = $state(null);
+let modelIconAssetSaved: { modelId: string; assetId: string } | null =
+	$state(null);
 
 function showProvidersMessage(text: string) {
 	clearTimeout(providersMessageTimer);
@@ -346,13 +345,13 @@ async function handleProviderFormSave(data: Record<string, unknown>) {
 	try {
 		if (providerFormIsCreate) {
 			await createProviderEntry(
-				data as Parameters<typeof createProviderEntry>[0],
+				data as unknown as Parameters<typeof createProviderEntry>[0],
 			);
 			showProvidersMessage($t("admin.providerAdded"));
 		} else if (providerFormProvider) {
 			await updateProviderEntry(
 				providerFormProvider.id,
-				data as Parameters<typeof updateProviderEntry>[1],
+				data as unknown as Parameters<typeof updateProviderEntry>[1],
 			);
 			showProvidersMessage($t("admin.providerUpdated"));
 		}
@@ -659,7 +658,7 @@ $effect(() => {
 	void loadSystemSkills();
 });
 
-function configLabelKey(key: string): string {
+function configLabelKey(key: string): I18nKey {
 	const map: Record<string, string> = {
 		MODEL_1_BASEURL: "admin.model1BaseUrl",
 		MODEL_1_API_KEY: "admin.model1ApiKey",
@@ -745,7 +744,7 @@ function configLabelKey(key: string): string {
 		DEFAULT_NEW_USER_MODEL: "admin.defaultNewUserModel",
 		REASONING_DEPTH_CLASSIFIER_MODEL: "admin.reasoningDepthClassifierModel",
 	};
-	return map[key] ?? key;
+	return (map[key] ?? key) as I18nKey;
 }
 
 const NUMBER_KEYS = new Set([

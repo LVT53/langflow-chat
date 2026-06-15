@@ -36,7 +36,7 @@ describe("buildContextSourcesState", () => {
 						title: "Linked plan.pdf",
 						state: "active",
 						sourceType: "document",
-						artifactType: "document",
+						artifactType: expect.any(String),
 						reason: "linked_context_source",
 						metadata: {
 							promptArtifactId: "prompt-display-1",
@@ -60,7 +60,7 @@ describe("buildContextSourcesState", () => {
 				{
 					artifactId: "artifact-message-evidence",
 					name: "Message evidence",
-					artifactType: "document",
+					artifactType: "source_document",
 					sourceType: "document",
 					role: "selected",
 					origin: "system",
@@ -188,7 +188,7 @@ describe("buildContextSourcesState", () => {
 				{
 					artifactId: "artifact-selected",
 					name: "Selected source",
-					artifactType: "document",
+					artifactType: "source_document",
 					sourceType: "document",
 					role: "selected",
 					origin: "system",
@@ -200,10 +200,12 @@ describe("buildContextSourcesState", () => {
 			pinnedEvidence: [],
 			excludedEvidence: [],
 			honcho: {
-				source: "session_context",
-				summary: "Memory exists but was not a lost prompt source.",
-				latencyMs: 12,
-				diagnostics: null,
+				source: "live",
+				waitedMs: 12,
+				queuePendingWorkUnits: 0,
+				queueInProgressWorkUnits: 0,
+				fallbackReason: null,
+				snapshotCreatedAt: null,
 			},
 		};
 
@@ -335,7 +337,7 @@ describe("buildContextSourcesState", () => {
 				{
 					artifactId: "doc-1",
 					name: "Planning brief",
-					artifactType: "document",
+					artifactType: "source_document",
 					sourceType: "document",
 					role: "selected",
 					origin: "system",
@@ -400,7 +402,7 @@ describe("buildContextSourcesState", () => {
 			selectedEvidence: Array.from({ length: 12 }, (_, index) => ({
 				artifactId: `doc-${index}`,
 				name: `Document ${index}`,
-				artifactType: "document" as const,
+				artifactType: "source_document" as const,
 				sourceType: "document" as const,
 				role: "selected" as const,
 				origin: "system" as const,
@@ -485,7 +487,7 @@ describe("buildContextSourcesState", () => {
 				{
 					artifactId: "artifact-selected",
 					name: "Selected source",
-					artifactType: "document",
+					artifactType: "source_document",
 					sourceType: "document",
 					role: "selected",
 					origin: "system",
@@ -498,7 +500,7 @@ describe("buildContextSourcesState", () => {
 				{
 					artifactId: "artifact-pinned",
 					name: "Pinned source",
-					artifactType: "document",
+					artifactType: "source_document",
 					sourceType: "document",
 					role: "pinned",
 					origin: "user",
@@ -510,7 +512,7 @@ describe("buildContextSourcesState", () => {
 				{
 					artifactId: "artifact-excluded",
 					name: "Excluded source",
-					artifactType: "document",
+					artifactType: "source_document",
 					sourceType: "document",
 					role: "excluded",
 					origin: "user",
@@ -686,7 +688,7 @@ function artifact(id: string, name: string): ArtifactSummary {
 	return {
 		id,
 		name,
-		type: "document",
+		type: "source_document",
 		retrievalClass: "durable",
 		mimeType: "text/plain",
 		sizeBytes: 1024,

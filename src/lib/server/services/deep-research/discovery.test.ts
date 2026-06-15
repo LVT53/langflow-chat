@@ -1,15 +1,42 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+	ResearchRequest,
+	ResearchResult,
+	ResearchSource,
+} from "$lib/server/services/web-research";
+import type {
+	DiscoveredResearchSourceCandidate,
+	SavedDiscoveredResearchSource,
+} from "./discovery";
 import { runPublicWebDiscoveryPass } from "./discovery";
 import type { ResearchPlan } from "./planning";
+import type { SaveDiscoveredResearchSourceInput } from "./sources";
+import type { ResearchTimelineEvent } from "./timeline";
 
 const {
 	mockResearchWeb,
 	mockSaveDiscoveredResearchSource,
 	mockSaveResearchTimelineEvent,
 } = vi.hoisted(() => ({
-	mockResearchWeb: vi.fn(),
-	mockSaveDiscoveredResearchSource: vi.fn(),
-	mockSaveResearchTimelineEvent: vi.fn(),
+	mockResearchWeb:
+		vi.fn<
+			(request: ResearchRequest) => Promise<Pick<ResearchResult, "sources">>
+		>(),
+	mockSaveDiscoveredResearchSource:
+		vi.fn<
+			(
+				source: SaveDiscoveredResearchSourceInput,
+			) => Promise<SavedDiscoveredResearchSource>
+		>(),
+	mockSaveResearchTimelineEvent: vi.fn<
+		(
+			event: ResearchTimelineEvent,
+		) => Promise<ResearchTimelineEvent & { id: string; createdAt: string }>
+	>(async (event) => ({
+		...event,
+		id: "event-1",
+		createdAt: event.occurredAt,
+	})),
 }));
 
 vi.mock("$lib/server/config-store", () => ({
@@ -51,6 +78,11 @@ const approvedPlan: ResearchPlan = {
 	researchBudget: {
 		sourceReviewCeiling: 40,
 		synthesisPassCeiling: 2,
+		meaningfulPassFloor: 1,
+		meaningfulPassCeiling: 2,
+		repairPassCeiling: 1,
+		sourceProcessingConcurrency: 2,
+		modelReasoningConcurrency: 1,
 	},
 	keyQuestions: [
 		"What does the EU AI Act require for training data transparency?",
@@ -65,6 +97,75 @@ const approvedPlan: ResearchPlan = {
 	deliverables: ["Cited Research Report"],
 };
 
+function makeResearchSource(
+	overrides: Partial<ResearchSource> = {},
+): ResearchSource {
+	return {
+		id: "source-1",
+		provider: "searxng",
+		title: "Default discovery source",
+		url: "https://example.com/default-discovery",
+		canonicalUrl: "https://example.com/default-discovery",
+		snippet: "A default dependency result.",
+		highlights: [],
+		text: null,
+		score: 1,
+		providerRank: 1,
+		query: "Compare EU and US AI copyright training data rules",
+		publishedAt: null,
+		updatedAt: null,
+		retrievedAt: "2026-05-05T12:00:00.000Z",
+		authorityClass: "standard",
+		authorityScore: 55,
+		...overrides,
+	};
+}
+
+function makeSavedDiscoveredSource(
+	source: DiscoveredResearchSourceCandidate,
+	index = 1,
+): SavedDiscoveredResearchSource {
+	return {
+		id: `source-${index}`,
+		jobId: source.jobId,
+		conversationId: source.conversationId,
+		userId: source.userId,
+		status: "discovered",
+		url: source.url,
+		title: source.title,
+		provider: source.provider,
+		snippet: source.metadata.snippet,
+		sourceText: source.metadata.text,
+		intendedComparedEntity: source.metadata.intendedComparedEntity,
+		intendedComparisonAxis: source.metadata.intendedComparisonAxis,
+		discoveredAt: source.discoveredAt,
+		reviewedAt: null,
+		citedAt: null,
+		metadata: source.metadata,
+	};
+}
+
+function makeSavedDiscoveredSourceFromInput(
+	source: SaveDiscoveredResearchSourceInput,
+): SavedDiscoveredResearchSource {
+	const discoveredAt = (source.discoveredAt ?? new Date()).toISOString();
+	return {
+		id: "source-1",
+		jobId: source.jobId,
+		conversationId: source.conversationId,
+		userId: source.userId,
+		status: "discovered",
+		url: source.url,
+		title: source.title ?? null,
+		provider: source.provider,
+		snippet: source.snippet ?? null,
+		sourceText: source.sourceText ?? null,
+		discoveredAt,
+		reviewedAt: null,
+		citedAt: null,
+	};
+}
+
 describe("public web discovery", () => {
 	beforeEach(() => {
 		vi.resetAllMocks();
@@ -72,33 +173,12 @@ describe("public web discovery", () => {
 
 	it("uses default discovery dependencies when none are injected", async () => {
 		mockResearchWeb.mockResolvedValue({
-			sources: [
-				{
-					url: "https://example.com/default-discovery",
-					canonicalUrl: "https://example.com/default-discovery",
-					title: "Default discovery source",
-					provider: "searxng",
-					snippet: "A default dependency result.",
-					publishedAt: null,
-					authorityClass: "standard",
-					authorityScore: 55,
-				},
-			],
-			diagnostics: {
-				providerCalls: [],
-			},
+			sources: [makeResearchSource()],
 		});
-		mockSaveDiscoveredResearchSource.mockImplementation(async (source) => ({
-			...source,
-			id: "source-1",
-			status: "discovered",
-		}));
-		mockSaveResearchTimelineEvent.mockImplementation(async (event) => ({
-			...event,
-			id: "event-1",
-			createdAt: event.occurredAt,
-		}));
-
+		mockSaveDiscoveredResearchSource.mockImplementation(
+			async (source: SaveDiscoveredResearchSourceInput) =>
+				makeSavedDiscoveredSourceFromInput(source),
+		);
 		const result = await runPublicWebDiscoveryPass({
 			jobId: "job-1",
 			conversationId: "conversation-1",
@@ -143,33 +223,24 @@ describe("public web discovery", () => {
 	it("discovers public web candidates from an approved Research Plan", async () => {
 		const researchWeb = vi.fn().mockResolvedValue({
 			sources: [
-				{
+				makeResearchSource({
+					id: "source-2",
 					url: "https://example.eu/ai-act",
 					canonicalUrl: "https://example.eu/ai-act",
 					title: "EU AI Act training data guidance",
-					provider: "searxng",
 					snippet: "Transparency obligations for general-purpose AI.",
 					publishedAt: "2026-04-30T00:00:00.000Z",
 					authorityClass: "authoritative",
 					authorityScore: 80,
-				},
+				}),
 			],
-			diagnostics: {
-				providerCalls: [],
-			},
 		});
-		const saveDiscoveredSources = vi.fn(async (sources) =>
-			sources.map((source, index) => ({
-				...source,
-				id: `source-${index + 1}`,
-				status: "discovered",
-			})),
+		const saveDiscoveredSources = vi.fn(
+			async (sources: DiscoveredResearchSourceCandidate[]) =>
+				sources.map((source, index) =>
+					makeSavedDiscoveredSource(source, index + 1),
+				),
 		);
-		const saveTimelineEvent = vi.fn(async (event) => ({
-			...event,
-			id: "event-1",
-			createdAt: event.occurredAt,
-		}));
 
 		const result = await runPublicWebDiscoveryPass(
 			{
@@ -182,7 +253,9 @@ describe("public web discovery", () => {
 			{
 				researchWeb,
 				sourceRepository: { saveDiscoveredSources },
-				timelineRepository: { saveTimelineEvent },
+				timelineRepository: {
+					saveTimelineEvent: mockSaveResearchTimelineEvent,
+				},
 			},
 		);
 
@@ -212,7 +285,7 @@ describe("public web discovery", () => {
 				}),
 			}),
 		]);
-		expect(saveTimelineEvent).toHaveBeenCalledWith(
+		expect(mockSaveResearchTimelineEvent).toHaveBeenCalledWith(
 			expect.objectContaining({
 				jobId: "job-1",
 				conversationId: "conversation-1",
@@ -234,11 +307,11 @@ describe("public web discovery", () => {
 	it("persists extracted Markdown source text for Deep Research review", async () => {
 		const researchWeb = vi.fn().mockResolvedValue({
 			sources: [
-				{
+				makeResearchSource({
+					id: "source-3",
 					url: "https://example.eu/ai-act-markdown",
 					canonicalUrl: "https://example.eu/ai-act-markdown",
 					title: "EU AI Act training data guidance",
-					provider: "searxng",
 					snippet: "Transparency obligations for general-purpose AI.",
 					text: "Plain extraction text without tables.",
 					markdown:
@@ -247,18 +320,15 @@ describe("public web discovery", () => {
 					publishedAt: "2026-04-30T00:00:00.000Z",
 					authorityClass: "authoritative",
 					authorityScore: 80,
-				},
+				}),
 			],
-			diagnostics: {
-				providerCalls: [],
-			},
 		});
-		const saveDiscoveredSources = vi.fn(async (sources) => sources);
-		const saveTimelineEvent = vi.fn(async (event) => ({
-			...event,
-			id: "event-1",
-			createdAt: event.occurredAt,
-		}));
+		const saveDiscoveredSources = vi.fn(
+			async (sources: DiscoveredResearchSourceCandidate[]) =>
+				sources.map((source, index) =>
+					makeSavedDiscoveredSource(source, index + 1),
+				),
+		);
 
 		await runPublicWebDiscoveryPass(
 			{
@@ -271,7 +341,9 @@ describe("public web discovery", () => {
 			{
 				researchWeb,
 				sourceRepository: { saveDiscoveredSources },
-				timelineRepository: { saveTimelineEvent },
+				timelineRepository: {
+					saveTimelineEvent: mockSaveResearchTimelineEvent,
+				},
 			},
 		);
 
@@ -295,6 +367,7 @@ describe("public web discovery", () => {
 			depth: "focused",
 			reportIntent: "product_scan",
 			researchBudget: {
+				...approvedPlan.researchBudget,
 				sourceReviewCeiling: 12,
 				synthesisPassCeiling: 1,
 			},
@@ -302,16 +375,13 @@ describe("public web discovery", () => {
 		};
 		const researchWeb = vi.fn().mockResolvedValue({
 			sources: [],
-			diagnostics: {
-				providerCalls: [],
-			},
 		});
-		const saveDiscoveredSources = vi.fn(async (sources) => sources);
-		const saveTimelineEvent = vi.fn(async (event) => ({
-			...event,
-			id: "event-1",
-			createdAt: event.occurredAt,
-		}));
+		const saveDiscoveredSources = vi.fn(
+			async (sources: DiscoveredResearchSourceCandidate[]) =>
+				sources.map((source, index) =>
+					makeSavedDiscoveredSource(source, index + 1),
+				),
+		);
 
 		await runPublicWebDiscoveryPass(
 			{
@@ -324,7 +394,9 @@ describe("public web discovery", () => {
 			{
 				researchWeb,
 				sourceRepository: { saveDiscoveredSources },
-				timelineRepository: { saveTimelineEvent },
+				timelineRepository: {
+					saveTimelineEvent: mockSaveResearchTimelineEvent,
+				},
 			},
 		);
 
@@ -349,38 +421,31 @@ describe("public web discovery", () => {
 	it("normalizes and deduplicates equivalent source URLs before saving", async () => {
 		const researchWeb = vi.fn().mockResolvedValue({
 			sources: [
-				{
+				makeResearchSource({
+					id: "source-4",
 					url: "https://Example.com/report?utm_source=newsletter#findings",
 					canonicalUrl:
 						"https://Example.com/report?utm_source=newsletter#findings",
 					title: " Market report ",
-					provider: "searxng",
 					snippet: "Original result.",
-					publishedAt: null,
-					authorityClass: "standard",
 					authorityScore: 50,
-				},
-				{
+				}),
+				makeResearchSource({
+					id: "source-5",
 					url: "https://example.com/report/",
 					canonicalUrl: "https://example.com/report/",
 					title: "Market report duplicate",
-					provider: "searxng",
 					snippet: "Duplicate result.",
-					publishedAt: null,
-					authorityClass: "standard",
 					authorityScore: 50,
-				},
+				}),
 			],
-			diagnostics: {
-				providerCalls: [],
-			},
 		});
-		const saveDiscoveredSources = vi.fn(async (sources) => sources);
-		const saveTimelineEvent = vi.fn(async (event) => ({
-			...event,
-			id: "event-1",
-			createdAt: event.occurredAt,
-		}));
+		const saveDiscoveredSources = vi.fn(
+			async (sources: DiscoveredResearchSourceCandidate[]) =>
+				sources.map((source, index) =>
+					makeSavedDiscoveredSource(source, index + 1),
+				),
+		);
 
 		await runPublicWebDiscoveryPass(
 			{
@@ -393,7 +458,9 @@ describe("public web discovery", () => {
 			{
 				researchWeb,
 				sourceRepository: { saveDiscoveredSources },
-				timelineRepository: { saveTimelineEvent },
+				timelineRepository: {
+					saveTimelineEvent: mockSaveResearchTimelineEvent,
+				},
 			},
 		);
 
@@ -407,7 +474,7 @@ describe("public web discovery", () => {
 				}),
 			}),
 		]);
-		expect(saveTimelineEvent).toHaveBeenCalledWith(
+		expect(mockSaveResearchTimelineEvent).toHaveBeenCalledWith(
 			expect.objectContaining({
 				sourceCounts: {
 					discovered: 1,
@@ -422,12 +489,12 @@ describe("public web discovery", () => {
 		const researchWeb = vi
 			.fn()
 			.mockRejectedValue(new Error("provider unavailable"));
-		const saveDiscoveredSources = vi.fn(async (sources) => sources);
-		const saveTimelineEvent = vi.fn(async (event) => ({
-			...event,
-			id: "event-1",
-			createdAt: event.occurredAt,
-		}));
+		const saveDiscoveredSources = vi.fn(
+			async (sources: DiscoveredResearchSourceCandidate[]) =>
+				sources.map((source, index) =>
+					makeSavedDiscoveredSource(source, index + 1),
+				),
+		);
 
 		const result = await runPublicWebDiscoveryPass(
 			{
@@ -440,12 +507,14 @@ describe("public web discovery", () => {
 			{
 				researchWeb,
 				sourceRepository: { saveDiscoveredSources },
-				timelineRepository: { saveTimelineEvent },
+				timelineRepository: {
+					saveTimelineEvent: mockSaveResearchTimelineEvent,
+				},
 			},
 		);
 
 		expect(saveDiscoveredSources).not.toHaveBeenCalled();
-		expect(saveTimelineEvent).toHaveBeenCalledWith(
+		expect(mockSaveResearchTimelineEvent).toHaveBeenCalledWith(
 			expect.objectContaining({
 				stage: "source_discovery",
 				kind: "warning",
@@ -469,6 +538,7 @@ describe("public web discovery", () => {
 			...approvedPlan,
 			depth: "focused",
 			researchBudget: {
+				...approvedPlan.researchBudget,
 				sourceReviewCeiling: 12,
 				synthesisPassCeiling: 1,
 			},
@@ -478,18 +548,13 @@ describe("public web discovery", () => {
 				"Which litigation risk matters?",
 			],
 		};
-		const researchWeb = vi.fn().mockResolvedValue({
-			sources: [],
-			diagnostics: {
-				providerCalls: [],
-			},
-		});
-		const saveDiscoveredSources = vi.fn(async (sources) => sources);
-		const saveTimelineEvent = vi.fn(async (event) => ({
-			...event,
-			id: "event-1",
-			createdAt: event.occurredAt,
-		}));
+		const researchWeb = vi.fn().mockResolvedValue({ sources: [] });
+		const saveDiscoveredSources = vi.fn(
+			async (sources: DiscoveredResearchSourceCandidate[]) =>
+				sources.map((source, index) =>
+					makeSavedDiscoveredSource(source, index + 1),
+				),
+		);
 
 		const result = await runPublicWebDiscoveryPass(
 			{
@@ -502,7 +567,9 @@ describe("public web discovery", () => {
 			{
 				researchWeb,
 				sourceRepository: { saveDiscoveredSources },
-				timelineRepository: { saveTimelineEvent },
+				timelineRepository: {
+					saveTimelineEvent: mockSaveResearchTimelineEvent,
+				},
 			},
 		);
 
@@ -546,18 +613,21 @@ describe("public web discovery", () => {
 			comparisonAxes: ["privacy", "pricing", "security", "roadmap"],
 			goal: "Compare six entities across four axes",
 			researchBudget: {
+				...approvedPlan.researchBudget,
 				sourceReviewCeiling: 240,
 				synthesisPassCeiling: 2,
 			},
 		};
 		const researchWeb = vi.fn().mockResolvedValue({
 			sources: [],
-			diagnostics: {
-				providerCalls: [],
-			},
 		});
-		const saveDiscoveredSources = vi.fn(async (sources) => sources);
-		const saveTimelineEvent = vi.fn(async (event) => ({
+		const saveDiscoveredSources = vi.fn(
+			async (sources: DiscoveredResearchSourceCandidate[]) =>
+				sources.map((source, index) =>
+					makeSavedDiscoveredSource(source, index + 1),
+				),
+		);
+		const saveTimelineEvent = vi.fn(async (event: ResearchTimelineEvent) => ({
 			...event,
 			id: "event-1",
 			createdAt: event.occurredAt,
@@ -597,25 +667,26 @@ describe("public web discovery", () => {
 			comparisonAxes: ["privacy", "pricing"],
 			goal: "Compare GitHub Copilot and Cursor for privacy and pricing",
 		};
-		const researchWeb = vi.fn(async (request) => ({
+		const researchWeb = vi.fn(async (request: ResearchRequest) => ({
 			sources: [
-				{
+				makeResearchSource({
+					id: "source-6",
 					url: `https://example.com/${request.query.replace(/\s+/g, "-").toLowerCase()}`,
 					canonicalUrl: `https://example.com/${request.query.replace(/\s+/g, "-").toLowerCase()}`,
 					title: `Source for ${request.query}`,
-					provider: "searxng",
 					snippet: "Comparison source.",
-					publishedAt: null,
 					authorityClass: "standard",
 					authorityScore: 50,
-				},
+				}),
 			],
-			diagnostics: {
-				providerCalls: [],
-			},
 		}));
-		const saveDiscoveredSources = vi.fn(async (sources) => sources);
-		const saveTimelineEvent = vi.fn(async (event) => ({
+		const saveDiscoveredSources = vi.fn(
+			async (sources: DiscoveredResearchSourceCandidate[]) =>
+				sources.map((source, index) =>
+					makeSavedDiscoveredSource(source, index + 1),
+				),
+		);
+		const saveTimelineEvent = vi.fn(async (event: ResearchTimelineEvent) => ({
 			...event,
 			id: "event-1",
 			createdAt: event.occurredAt,
@@ -675,18 +746,21 @@ describe("public web discovery", () => {
 				"Medium frame size",
 			],
 			researchBudget: {
+				...approvedPlan.researchBudget,
 				sourceReviewCeiling: 80,
 				synthesisPassCeiling: 2,
 			},
 		};
 		const researchWeb = vi.fn().mockResolvedValue({
 			sources: [],
-			diagnostics: {
-				providerCalls: [],
-			},
 		});
-		const saveDiscoveredSources = vi.fn(async (sources) => sources);
-		const saveTimelineEvent = vi.fn(async (event) => ({
+		const saveDiscoveredSources = vi.fn(
+			async (sources: DiscoveredResearchSourceCandidate[]) =>
+				sources.map((source, index) =>
+					makeSavedDiscoveredSource(source, index + 1),
+				),
+		);
+		const saveTimelineEvent = vi.fn(async (event: ResearchTimelineEvent) => ({
 			...event,
 			id: "event-1",
 			createdAt: event.occurredAt,
@@ -731,18 +805,21 @@ describe("public web discovery", () => {
 			comparedEntities: ["Acme Analytics Pro", "Acme Analytics Enterprise"],
 			comparisonAxes: ["SOC 2", "data residency", "SSO", "audit logs"],
 			researchBudget: {
+				...approvedPlan.researchBudget,
 				sourceReviewCeiling: 80,
 				synthesisPassCeiling: 2,
 			},
 		};
 		const researchWeb = vi.fn().mockResolvedValue({
 			sources: [],
-			diagnostics: {
-				providerCalls: [],
-			},
 		});
-		const saveDiscoveredSources = vi.fn(async (sources) => sources);
-		const saveTimelineEvent = vi.fn(async (event) => ({
+		const saveDiscoveredSources = vi.fn(
+			async (sources: DiscoveredResearchSourceCandidate[]) =>
+				sources.map((source, index) =>
+					makeSavedDiscoveredSource(source, index + 1),
+				),
+		);
+		const saveTimelineEvent = vi.fn(async (event: ResearchTimelineEvent) => ({
 			...event,
 			id: "event-1",
 			createdAt: event.occurredAt,

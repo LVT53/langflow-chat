@@ -6,8 +6,27 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as schema from "$lib/server/db/schema";
+import type { DeepResearchJob } from "$lib/types";
 
 let dbPath: string;
+
+function makeDeepResearchJob(
+	overrides: Partial<DeepResearchJob> & Pick<DeepResearchJob, "id">,
+): DeepResearchJob {
+	const { id, ...rest } = overrides;
+	return {
+		conversationId: "conv-1",
+		triggerMessageId: "user-msg-1",
+		depth: "standard",
+		status: "running",
+		stage: "source_review",
+		title: "Deep Research job",
+		createdAt: 1,
+		updatedAt: 1,
+		...rest,
+		id,
+	};
+}
 
 async function seedConversation() {
 	const sqlite = new Database(dbPath);
@@ -175,8 +194,8 @@ describe("Deep Research worker tick and scheduler", () => {
 
 	it("recovers stale jobs before advancing at most one real workflow step", async () => {
 		const now = new Date("2026-05-05T10:00:00.000Z");
-		const recoveredJob = { id: "recovered-job" };
-		const advancedJob = { id: "advanced-job" };
+		const recoveredJob = makeDeepResearchJob({ id: "recovered-job" });
+		const advancedJob = makeDeepResearchJob({ id: "advanced-job" });
 		const recoverStaleJobs = vi.fn(async () => ({
 			recoveredJobs: [recoveredJob],
 		}));
@@ -227,12 +246,14 @@ describe("Deep Research worker tick and scheduler", () => {
 
 	it("starts one idempotent scheduler, unrefs its timer, and can stop it", async () => {
 		const intervalCallbacks: Array<() => void> = [];
-		const timer = { unref: vi.fn() };
+		const timer = setTimeout(() => undefined, 0);
+		clearTimeout(timer);
+		const unrefSpy = vi.spyOn(timer, "unref");
 		const setIntervalSpy = vi
 			.spyOn(global, "setInterval")
 			.mockImplementation((callback: TimerHandler, _intervalMs?: number) => {
 				intervalCallbacks.push(callback as () => void);
-				return timer as ReturnType<typeof setInterval>;
+				return timer;
 			});
 		const clearIntervalSpy = vi
 			.spyOn(global, "clearInterval")
@@ -262,7 +283,7 @@ describe("Deep Research worker tick and scheduler", () => {
 
 		expect(setIntervalSpy).toHaveBeenCalledOnce();
 		expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 5_000);
-		expect(timer.unref).toHaveBeenCalledOnce();
+		expect(unrefSpy).toHaveBeenCalledOnce();
 
 		intervalCallbacks[0]?.();
 		await Promise.resolve();
@@ -277,12 +298,14 @@ describe("Deep Research worker tick and scheduler", () => {
 
 	it("installs a safe scheduler while disabled and starts work after runtime enablement", async () => {
 		const intervalCallbacks: Array<() => void> = [];
-		const timer = { unref: vi.fn() };
+		const timer = setTimeout(() => undefined, 0);
+		clearTimeout(timer);
+		const unrefSpy = vi.spyOn(timer, "unref");
 		const setIntervalSpy = vi
 			.spyOn(global, "setInterval")
 			.mockImplementation((callback: TimerHandler, _intervalMs?: number) => {
 				intervalCallbacks.push(callback as () => void);
-				return timer as ReturnType<typeof setInterval>;
+				return timer;
 			});
 		let enabled = false;
 		const recoverStaleJobs = vi.fn(async () => ({ recoveredJobs: [] }));
@@ -300,7 +323,7 @@ describe("Deep Research worker tick and scheduler", () => {
 
 		expect(setIntervalSpy).toHaveBeenCalledOnce();
 		expect(setIntervalSpy).toHaveBeenCalledWith(expect.any(Function), 5_000);
-		expect(timer.unref).toHaveBeenCalledOnce();
+		expect(unrefSpy).toHaveBeenCalledOnce();
 
 		intervalCallbacks[0]?.();
 		await Promise.resolve();
@@ -476,7 +499,7 @@ describe("Deep Research worker cleanup and recovery", () => {
 					id: "cancel-gap",
 					keyQuestion: "Which source still needs review?",
 					summary: "A running task should be cancelled with the job.",
-					severity: "major",
+					severity: "important",
 				},
 			],
 			now: new Date("2026-05-05T10:07:10.000Z"),

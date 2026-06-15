@@ -14,13 +14,15 @@ import { POST } from "./+server";
 
 type WorkflowAdvanceRouteEvent = Parameters<typeof POST>[0];
 
-const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
-const mockRunDeepResearchWorkflowStep =
-	runDeepResearchWorkflowStep as ReturnType<typeof vi.fn>;
+const mockRequireAuth = vi.mocked(requireAuth);
+const mockRunDeepResearchWorkflowStep = vi.mocked(runDeepResearchWorkflowStep);
 
 function makeEvent(
 	jobId = "research-job-1",
-	user = { id: "user-1", email: "test@example.com" },
+	user: { id: string; email: string } | null = {
+		id: "user-1",
+		email: "test@example.com",
+	},
 ) {
 	return {
 		request: new Request(

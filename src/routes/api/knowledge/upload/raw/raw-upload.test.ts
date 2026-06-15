@@ -38,13 +38,16 @@ import {
 } from "$lib/server/services/knowledge/upload-intake";
 import { POST } from "./+server";
 
-const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
-const mockCompleteKnowledgeUploadFromStoredFile =
-	completeKnowledgeUploadFromStoredFile as ReturnType<typeof vi.fn>;
-const mockIsKnowledgeUploadConversationError =
-	isKnowledgeUploadConversationError as ReturnType<typeof vi.fn>;
-const mockValidateKnowledgeUploadConversation =
-	validateKnowledgeUploadConversation as ReturnType<typeof vi.fn>;
+const mockRequireAuth = vi.mocked(requireAuth);
+const mockCompleteKnowledgeUploadFromStoredFile = vi.mocked(
+	completeKnowledgeUploadFromStoredFile,
+);
+const mockIsKnowledgeUploadConversationError = vi.mocked(
+	isKnowledgeUploadConversationError,
+);
+const mockValidateKnowledgeUploadConversation = vi.mocked(
+	validateKnowledgeUploadConversation,
+);
 let consoleInfoSpy: ReturnType<typeof vi.spyOn> | null = null;
 let consoleWarnSpy: ReturnType<typeof vi.spyOn> | null = null;
 type RawUploadEvent = Parameters<typeof POST>[0];
@@ -63,7 +66,7 @@ function makeRawUploadEvent(
 		params: {},
 		url: new URL("http://localhost/api/knowledge/upload/raw"),
 		route: { id: "/api/knowledge/upload/raw" },
-	} as RawUploadEvent;
+	} as unknown as RawUploadEvent;
 }
 
 describe("POST /api/knowledge/upload/raw", () => {
@@ -91,7 +94,6 @@ describe("POST /api/knowledge/upload/raw", () => {
 				sizeBytes: 5,
 				conversationId: "conv-1",
 				summary: "scan.pdf",
-				storagePath: "data/knowledge/user-1/artifact-1.pdf",
 				createdAt: Date.now(),
 				updatedAt: Date.now(),
 			},

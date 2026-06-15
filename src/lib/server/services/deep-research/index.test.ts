@@ -947,6 +947,9 @@ describe("deep research job shell service", () => {
 			reportIntent: "recommendation",
 			now: new Date("2026-05-05T10:05:00.000Z"),
 		});
+		if (!edited) {
+			throw new Error("Expected edited Research Plan");
+		}
 		const [reloaded] = await listConversationDeepResearchJobs(
 			"user-1",
 			"conv-1",

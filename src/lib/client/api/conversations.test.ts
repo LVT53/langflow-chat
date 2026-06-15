@@ -88,7 +88,9 @@ describe("deleteConversationMessages", () => {
 			}),
 		).resolves.toBe(2);
 
-		const request = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined;
+		const request = (
+			fetchMock.mock.calls[0] as unknown as [unknown, RequestInit?] | undefined
+		)?.[1];
 		expect(request?.body).toBe(
 			JSON.stringify({
 				messageIds: ["user-1", "assistant-1"],

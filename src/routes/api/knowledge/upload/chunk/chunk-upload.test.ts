@@ -37,13 +37,16 @@ import {
 } from "$lib/server/services/knowledge/upload-intake";
 import { POST } from "./+server";
 
-const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
-const mockCompleteKnowledgeUploadFromStoredFile =
-	completeKnowledgeUploadFromStoredFile as ReturnType<typeof vi.fn>;
-const mockIsKnowledgeUploadConversationError =
-	isKnowledgeUploadConversationError as ReturnType<typeof vi.fn>;
-const mockValidateKnowledgeUploadConversation =
-	validateKnowledgeUploadConversation as ReturnType<typeof vi.fn>;
+const mockRequireAuth = vi.mocked(requireAuth);
+const mockCompleteKnowledgeUploadFromStoredFile = vi.mocked(
+	completeKnowledgeUploadFromStoredFile,
+);
+const mockIsKnowledgeUploadConversationError = vi.mocked(
+	isKnowledgeUploadConversationError,
+);
+const mockValidateKnowledgeUploadConversation = vi.mocked(
+	validateKnowledgeUploadConversation,
+);
 let consoleInfoSpy: ReturnType<typeof vi.spyOn> | null = null;
 let consoleWarnSpy: ReturnType<typeof vi.spyOn> | null = null;
 type ChunkUploadEvent = Parameters<typeof POST>[0];
@@ -62,7 +65,7 @@ function makeChunkEvent(
 		params: {},
 		url: new URL("http://localhost/api/knowledge/upload/chunk"),
 		route: { id: "/api/knowledge/upload/chunk" },
-	} as ChunkUploadEvent;
+	} as unknown as ChunkUploadEvent;
 }
 
 function chunkHeaders(overrides: Record<string, string> = {}) {
@@ -93,7 +96,18 @@ describe("POST /api/knowledge/upload/chunk", () => {
 				params.conversationId?.trim() || null,
 		);
 		mockCompleteKnowledgeUploadFromStoredFile.mockResolvedValue({
-			artifact: { id: "artifact-1" },
+			artifact: {
+				id: "artifact-1",
+				type: "source_document",
+				retrievalClass: "durable",
+				name: "scan.pdf",
+				mimeType: "application/pdf",
+				sizeBytes: 5,
+				conversationId: "conv-1",
+				summary: "scan.pdf",
+				createdAt: Date.now(),
+				updatedAt: Date.now(),
+			},
 			normalizedArtifact: null,
 			reusedExistingArtifact: false,
 			honcho: { uploaded: false, mode: "none" },

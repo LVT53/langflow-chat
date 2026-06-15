@@ -70,6 +70,7 @@ function sortConversationsForSidebar(
 	items: ConversationListItem[],
 ): ConversationListItem[] {
 	return items
+		.map(normalizeConversationListItem)
 		.map((item, index) => ({ item, index }))
 		.sort((left, right) => {
 			const leftPinned = getSidebarPinned(left.item);
@@ -117,6 +118,17 @@ function getConversationSidebarState(item: ConversationListItem): {
 	};
 }
 
+function normalizeConversationListItem(
+	item: ConversationListItem,
+): ConversationListItem {
+	return {
+		...item,
+		projectId: item.projectId ?? null,
+		sidebarPinned: getSidebarPinned(item),
+		sidebarSortOrder: getSidebarSortOrder(item),
+	};
+}
+
 function conversationSidebarStateMatches(
 	item: ConversationListItem,
 	state: { sidebarPinned: boolean; sidebarSortOrder: number | null },
@@ -140,7 +152,8 @@ function applyConversationSidebarState(
 
 function applyConversationMutationResults(items: ConversationListItem[]): void {
 	if (items.length === 0) return;
-	const incomingById = new Map(items.map((item) => [item.id, item]));
+	const normalizedItems = items.map(normalizeConversationListItem);
+	const incomingById = new Map(normalizedItems.map((item) => [item.id, item]));
 	conversations.update((current) => {
 		const seenIds = new Set<string>();
 		const merged = current.map((conversation) => {
@@ -150,7 +163,7 @@ function applyConversationMutationResults(items: ConversationListItem[]): void {
 			return { ...conversation, ...incoming };
 		});
 
-		for (const item of items) {
+		for (const item of normalizedItems) {
 			if (!seenIds.has(item.id)) merged.push(item);
 		}
 
@@ -302,7 +315,9 @@ export function upsertConversationLocal(
 					id,
 					title,
 					updatedAt,
-					...(projectId !== undefined ? { projectId } : {}),
+					projectId: projectId ?? null,
+					sidebarPinned: false,
+					sidebarSortOrder: null,
 				},
 				...items,
 			];
@@ -433,11 +448,12 @@ export async function toggleConversationSidebarPin(
 				localConversationSidebarStates.delete(id);
 			}
 		}
-		if (previousConversation) {
+		const restoredConversation = previousConversation;
+		if (restoredConversation) {
 			conversations.update((items) =>
 				sortConversationsForSidebar(
 					items.map((conversation) =>
-						conversation.id === id ? previousConversation : conversation,
+						conversation.id === id ? restoredConversation : conversation,
 					),
 				),
 			);

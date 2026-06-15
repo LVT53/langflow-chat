@@ -34,28 +34,32 @@ let {
 	projects?: Project[];
 } = $props();
 
-let state = $state<
-	"upload" | "preview" | "config" | "importing" | "complete" | "error"
->("upload");
-let file = $state<File | null>(null);
-let parsedChats = $state<ParsedChat[]>([]);
-let filteredChats = $state<ParsedChat[]>([]);
+let importState:
+	| "upload"
+	| "preview"
+	| "config"
+	| "importing"
+	| "complete"
+	| "error" = $state("upload");
+let file: File | null = $state(null);
+let parsedChats: ParsedChat[] = $state([]);
+let filteredChats: ParsedChat[] = $state([]);
 let searchQuery = $state("");
-let selectedProjectId = $state<string | null>(null);
+let selectedProjectId: string | null = $state(null);
 let importProgress = $state({ current: 0, total: 0 });
-let importResult = $state<{
+let importResult: {
 	conversationIds: string[];
 	errors: { conversationTitle?: string; reason: string }[];
-} | null>(null);
+} | null = $state(null);
 let errorMessage = $state("");
 let isDragging = $state(false);
-let fileInputRef = $state<HTMLInputElement | undefined>(undefined);
+let fileInputRef: HTMLInputElement | null = $state(null);
 
 $effect(() => {
 	if (!show) {
 		// Reset state when modal closes
 		tick().then(() => {
-			state = "upload";
+			importState = "upload";
 			file = null;
 			parsedChats = [];
 			filteredChats = [];
@@ -121,18 +125,18 @@ async function parseZip(uploadedFile: File): Promise<void> {
 			selected: true,
 		}));
 		filteredChats = parsedChats;
-		state = "preview";
+		importState = "preview";
 	} catch (err) {
 		errorMessage =
 			err instanceof Error ? err.message : $t("chatgptImport.parseError");
-		state = "error";
+		importState = "error";
 	}
 }
 
 function handleFileSelect(uploadedFile: File): void {
 	if (!uploadedFile.name.toLowerCase().endsWith(".zip")) {
 		errorMessage = $t("chatgptImport.invalidFile");
-		state = "error";
+		importState = "error";
 		return;
 	}
 	file = uploadedFile;
@@ -187,16 +191,16 @@ function toggleChat(index: number): void {
 
 function goToConfig(): void {
 	if (selectedCount === 0) return;
-	state = "config";
+	importState = "config";
 }
 
 function goBackToPreview(): void {
-	state = "preview";
+	importState = "preview";
 }
 
 async function startImport(): Promise<void> {
 	if (!file || selectedCount === 0) return;
-	state = "importing";
+	importState = "importing";
 	importProgress = { current: 0, total: selectedCount };
 
 	try {
@@ -206,11 +210,11 @@ async function startImport(): Promise<void> {
 			errors: result.errors,
 		};
 		importProgress = { current: selectedCount, total: selectedCount };
-		state = "complete";
+		importState = "complete";
 	} catch (err) {
 		errorMessage =
 			err instanceof Error ? err.message : $t("chatgptImport.importError");
-		state = "error";
+		importState = "error";
 	}
 }
 
@@ -229,30 +233,30 @@ function handleClose(): void {
 
 function handleRetry(): void {
 	errorMessage = "";
-	state = "upload";
+	importState = "upload";
 }
 </script>
 
 {#if show}
 	<DialogShell
-		title={state === "upload"
+		title={importState === "upload"
 			? $t("chatgptImport.title")
-			: state === "preview"
+			: importState === "preview"
 				? $t("chatgptImport.previewTitle")
-				: state === "config"
+				: importState === "config"
 					? $t("chatgptImport.configTitle")
-					: state === "importing"
+					: importState === "importing"
 						? $t("chatgptImport.importingTitle")
-						: state === "complete"
+						: importState === "complete"
 							? $t("chatgptImport.importComplete")
 							: $t("chatgptImport.importError")}
-		description={state === "upload" ? $t("chatgptImport.description") : undefined}
+		description={importState === "upload" ? $t("chatgptImport.description") : undefined}
 		onClose={handleClose}
-		maxWidthClass={state === "preview" || state === "config" ? "max-w-[640px]" : "max-w-[480px]"}
+		maxWidthClass={importState === "preview" || importState === "config" ? "max-w-[640px]" : "max-w-[480px]"}
 		zIndexClass="z-50"
 	>
 		<div class="flex flex-col gap-4">
-			{#if state === "upload"}
+			{#if importState === "upload"}
 				<div
 					role="button"
 					tabindex="0"
@@ -287,7 +291,7 @@ function handleRetry(): void {
 					class="hidden"
 					onchange={handleInputChange}
 				/>
-			{:else if state === "preview"}
+			{:else if importState === "preview"}
 				<div class="flex flex-col gap-3">
 					<div class="flex items-center gap-2">
 						<input
@@ -346,7 +350,7 @@ function handleRetry(): void {
 						{/if}
 					</div>
 				</div>
-			{:else if state === "config"}
+			{:else if importState === "config"}
 				<div class="flex flex-col gap-4">
 					<div class="flex flex-col gap-2">
 						<label for="project-select" class="text-sm font-medium text-text-primary">
@@ -370,7 +374,7 @@ function handleRetry(): void {
 						</p>
 					</div>
 				</div>
-			{:else if state === "importing"}
+			{:else if importState === "importing"}
 				<div class="flex flex-col items-center gap-4 py-4">
 					<div class="h-2 w-full overflow-hidden rounded-full bg-surface-elevated">
 						<div
@@ -385,7 +389,7 @@ function handleRetry(): void {
 						})}
 					</p>
 				</div>
-			{:else if state === "complete"}
+			{:else if importState === "complete"}
 				<div class="flex flex-col items-center gap-3 py-4">
 					<div class="flex h-12 w-12 items-center justify-center rounded-full bg-success/10">
 						<Check class="h-6 w-6 text-success" size={24} strokeWidth={2} aria-hidden="true" />
@@ -399,7 +403,7 @@ function handleRetry(): void {
 						</p>
 					{/if}
 				</div>
-			{:else if state === "error"}
+			{:else if importState === "error"}
 				<div class="flex flex-col items-center gap-3 py-4">
 					<div class="flex h-12 w-12 items-center justify-center rounded-full bg-danger/10">
 						<AlertCircle class="h-6 w-6 text-danger" size={24} strokeWidth={2} aria-hidden="true" />
@@ -409,16 +413,16 @@ function handleRetry(): void {
 			{/if}
 
 			<div class="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-				{#if state === "upload" || state === "error"}
+				{#if importState === "upload" || importState === "error"}
 					<button type="button" class="btn-secondary w-full sm:w-auto" onclick={handleClose}>
 						{$t("chatgptImport.cancel")}
 					</button>
-					{#if state === "error"}
+					{#if importState === "error"}
 						<button type="button" class="btn-primary w-full sm:w-auto" onclick={handleRetry}>
 							{$t("common.retry")}
 						</button>
 					{/if}
-				{:else if state === "preview"}
+				{:else if importState === "preview"}
 					<button type="button" class="btn-secondary w-full sm:w-auto" onclick={handleClose}>
 						{$t("chatgptImport.cancel")}
 					</button>
@@ -430,7 +434,7 @@ function handleRetry(): void {
 					>
 						{$t("chatgptImport.next")}
 					</button>
-				{:else if state === "config"}
+				{:else if importState === "config"}
 					<button type="button" class="btn-secondary w-full sm:w-auto" onclick={goBackToPreview}>
 						{$t("chatgptImport.back")}
 					</button>
@@ -442,7 +446,7 @@ function handleRetry(): void {
 					>
 						{$t("chatgptImport.importSelected", { count: selectedCount })}
 					</button>
-				{:else if state === "importing"}
+				{:else if importState === "importing"}
 					<button
 						type="button"
 						class="btn-secondary w-full sm:w-auto"
@@ -450,7 +454,7 @@ function handleRetry(): void {
 					>
 						{$t("common.loading")}
 					</button>
-				{:else if state === "complete"}
+				{:else if importState === "complete"}
 					<button type="button" class="btn-primary w-full sm:w-auto" onclick={handleClose}>
 						{$t("chatgptImport.close")}
 					</button>

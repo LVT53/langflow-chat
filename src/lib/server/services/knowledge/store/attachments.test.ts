@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock fs/promises
-vi.mock(import("node:fs/promises"), async (importOriginal) => {
-	const actual = await importOriginal<typeof import("fs/promises")>();
+vi.mock("node:fs/promises", async () => {
+	const actual =
+		await vi.importActual<typeof import("node:fs/promises")>(
+			"node:fs/promises",
+		);
 	return {
 		...actual,
 		mkdir: vi.fn(() => Promise.resolve(undefined)),
@@ -12,8 +15,9 @@ vi.mock(import("node:fs/promises"), async (importOriginal) => {
 });
 
 // Mock crypto
-vi.mock(import("node:crypto"), async (importOriginal) => {
-	const actual = await importOriginal<typeof import("crypto")>();
+vi.mock("node:crypto", async () => {
+	const actual =
+		await vi.importActual<typeof import("node:crypto")>("node:crypto");
 	return {
 		...actual,
 		createHash: vi.fn(() => ({
@@ -30,7 +34,15 @@ vi.mock("../../task-state", () => ({
 	syncArtifactChunks: vi.fn(() => Promise.resolve()),
 }));
 
-const mockDb = {
+type MockDb = {
+	insert: ReturnType<typeof vi.fn>;
+	select: ReturnType<typeof vi.fn>;
+	update: ReturnType<typeof vi.fn>;
+	delete: ReturnType<typeof vi.fn>;
+	transaction: ReturnType<typeof vi.fn>;
+};
+
+const mockDb: MockDb = {
 	insert: vi.fn(() => ({
 		values: vi.fn(() => ({
 			returning: vi.fn(),
@@ -336,34 +348,36 @@ describe("Attachments - Auto-Rename on Conflict", () => {
 				};
 			});
 
-			const insertValues = vi.fn(() => ({
-				returning: vi.fn(() =>
-					Promise.resolve([
-						{
-							id: "artifact-uuid-123",
-							userId: "user-1",
-							conversationId: "conv-1",
-							type: "source_document",
-							name: "report_3.pdf",
-							mimeType: "application/pdf",
-							extension: "pdf",
-							sizeBytes: 1024,
-							binaryHash: "mock-hash-123",
-							storagePath: "data/knowledge/user-1/artifact-uuid-123.pdf",
-							contentText: null,
-							summary: "report_3.pdf",
-							metadataJson: JSON.stringify({
-								uploadSource: "chat",
-								originalName: "report.pdf",
-								renamed: true,
-							}),
-							retrievalClass: "durable",
-							createdAt: new Date("2024-01-01"),
-							updatedAt: new Date("2024-01-01"),
-						},
-					]),
-				),
-			}));
+			const insertValues = vi.fn(
+				(insertedArtifact: {
+					name: string;
+					summary: string;
+					metadataJson: string;
+				}) => ({
+					returning: vi.fn(() =>
+						Promise.resolve([
+							{
+								id: "artifact-uuid-123",
+								userId: "user-1",
+								conversationId: "conv-1",
+								type: "source_document",
+								name: insertedArtifact.name,
+								mimeType: "application/pdf",
+								extension: "pdf",
+								sizeBytes: 1024,
+								binaryHash: "mock-hash-123",
+								storagePath: "data/knowledge/user-1/artifact-uuid-123.pdf",
+								contentText: null,
+								summary: insertedArtifact.summary,
+								metadataJson: insertedArtifact.metadataJson,
+								retrievalClass: "durable",
+								createdAt: new Date("2024-01-01"),
+								updatedAt: new Date("2024-01-01"),
+							},
+						]),
+					),
+				}),
+			);
 
 			mockDb.insert.mockReturnValue({
 				values: insertValues,
@@ -379,7 +393,9 @@ describe("Attachments - Auto-Rename on Conflict", () => {
 			expect(result.renameInfo?.wasRenamed).toBe(true);
 			expect(result.renameInfo?.originalName).toBe("report.pdf");
 
-			const insertedArtifact = insertValues.mock.calls[0]?.[0];
+			const firstInsertCall = insertValues.mock.calls[0];
+			if (!firstInsertCall) throw new Error("Expected artifact insert call");
+			const insertedArtifact = firstInsertCall[0];
 			expect(insertedArtifact).toMatchObject({
 				name: "report_3.pdf",
 				summary: "report_3.pdf",

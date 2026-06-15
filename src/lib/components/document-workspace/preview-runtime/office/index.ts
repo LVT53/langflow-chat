@@ -1,11 +1,11 @@
 import { escapeHtml, sanitizeHtml } from "$lib/utils/html-sanitizer";
-import type { PreviewRuntimeAdapter } from "../index";
 
 export type OfficePreviewKind = "docx" | "xlsx" | "pptx" | "odt";
-type OfficeRuntimeAdapter = Extract<
-	PreviewRuntimeAdapter,
-	{ kind: OfficePreviewKind }
->;
+type OfficeRuntimeAdapter =
+	| { kind: "docx"; blob: Blob }
+	| { kind: "xlsx"; blob: Blob }
+	| { kind: "pptx"; blob: Blob }
+	| { kind: "odt"; blob: Blob };
 
 export type OfficePreviewRenderResult =
 	| {
@@ -33,6 +33,10 @@ export async function renderOfficePreview(
 			return renderPptxPreview(adapter.blob);
 		case "odt":
 			return renderOdtPreview(adapter.blob);
+		default:
+			throw new Error(
+				`Unsupported office preview kind: ${(adapter as { kind: string }).kind}`,
+			);
 	}
 }
 

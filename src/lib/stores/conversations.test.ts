@@ -5,6 +5,7 @@ import {
 	setConversationSidebarPinned,
 } from "$lib/client/api/conversations";
 import { WORKSPACE_CONVERSATION_DELETED_EVENT } from "$lib/client/document-workspace-state";
+import type { Conversation, ConversationListItem } from "$lib/types";
 import {
 	clearConversationStore,
 	conversations,
@@ -36,6 +37,23 @@ function jsonResponse(body: unknown, init?: ResponseInit): Response {
 	});
 }
 
+function conversationItem(
+	id: string,
+	title: string,
+	updatedAt: number,
+	overrides: Partial<ConversationListItem> = {},
+): ConversationListItem {
+	return {
+		id,
+		title,
+		updatedAt,
+		projectId: null,
+		sidebarPinned: false,
+		sidebarSortOrder: null,
+		...overrides,
+	};
+}
+
 describe("conversations store", () => {
 	beforeEach(() => {
 		clearConversationStore();
@@ -62,9 +80,7 @@ describe("conversations store", () => {
 	it("loads conversations from the API", async () => {
 		vi.mocked(fetch).mockResolvedValueOnce(
 			jsonResponse({
-				conversations: [
-					{ id: "conv-1", title: "One", updatedAt: 123, projectId: null },
-				],
+				conversations: [conversationItem("conv-1", "One", 123)],
 			}),
 		);
 
@@ -72,16 +88,14 @@ describe("conversations store", () => {
 
 		expect(result).toEqual({ refreshed: true });
 		expect(get(conversations)).toEqual([
-			{ id: "conv-1", title: "One", updatedAt: 123, projectId: null },
+			conversationItem("conv-1", "One", 123),
 		]);
 	});
 
 	it("uses a fresh reconciled snapshot instead of immediately re-fetching conversations", async () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(1_000);
-		reconcileConversationSnapshot([
-			{ id: "conv-1", title: "One", updatedAt: 123, projectId: null },
-		]);
+		reconcileConversationSnapshot([conversationItem("conv-1", "One", 123)]);
 		vi.setSystemTime(1_500);
 
 		const result = await loadConversations({ minIntervalMs: 1_000 });
@@ -89,7 +103,7 @@ describe("conversations store", () => {
 		expect(fetch).not.toHaveBeenCalled();
 		expect(result).toEqual({ refreshed: false });
 		expect(get(conversations)).toEqual([
-			{ id: "conv-1", title: "One", updatedAt: 123, projectId: null },
+			conversationItem("conv-1", "One", 123),
 		]);
 	});
 
@@ -97,13 +111,11 @@ describe("conversations store", () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(1_000);
 		reconcileConversationSnapshot([
-			{ id: "conv-stale", title: "Stale", updatedAt: 123, projectId: null },
+			conversationItem("conv-stale", "Stale", 123),
 		]);
 		vi.mocked(fetch).mockResolvedValueOnce(
 			jsonResponse({
-				conversations: [
-					{ id: "conv-fresh", title: "Fresh", updatedAt: 456, projectId: null },
-				],
+				conversations: [conversationItem("conv-fresh", "Fresh", 456)],
 			}),
 		);
 
@@ -111,7 +123,7 @@ describe("conversations store", () => {
 
 		expect(fetch).toHaveBeenCalledWith("/api/conversations");
 		expect(get(conversations)).toEqual([
-			{ id: "conv-fresh", title: "Fresh", updatedAt: 456, projectId: null },
+			conversationItem("conv-fresh", "Fresh", 456),
 		]);
 	});
 
@@ -119,14 +131,12 @@ describe("conversations store", () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(1_000);
 		reconcileConversationSnapshot([
-			{ id: "conv-stale", title: "Stale", updatedAt: 123, projectId: null },
+			conversationItem("conv-stale", "Stale", 123),
 		]);
 		vi.setSystemTime(1_500);
 		vi.mocked(fetch).mockResolvedValueOnce(
 			jsonResponse({
-				conversations: [
-					{ id: "conv-fresh", title: "Fresh", updatedAt: 456, projectId: null },
-				],
+				conversations: [conversationItem("conv-fresh", "Fresh", 456)],
 			}),
 		);
 
@@ -134,22 +144,20 @@ describe("conversations store", () => {
 
 		expect(fetch).toHaveBeenCalledWith("/api/conversations");
 		expect(get(conversations)).toEqual([
-			{ id: "conv-fresh", title: "Fresh", updatedAt: 456, projectId: null },
+			conversationItem("conv-fresh", "Fresh", 456),
 		]);
 	});
 
 	it("preserves stale conversations without console noise when a refresh times out", async () => {
 		const errorSpy = vi.mocked(console.error);
 		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-		conversations.set([
-			{ id: "conv-stale", title: "Stale", updatedAt: 123, projectId: null },
-		]);
+		conversations.set([conversationItem("conv-stale", "Stale", 123)]);
 		vi.mocked(fetch).mockRejectedValueOnce(new TypeError("Failed to fetch"));
 
 		const result = await loadConversations();
 
 		expect(get(conversations)).toEqual([
-			{ id: "conv-stale", title: "Stale", updatedAt: 123, projectId: null },
+			conversationItem("conv-stale", "Stale", 123),
 		]);
 		expect(result).toEqual({ refreshed: false });
 		expect(errorSpy).not.toHaveBeenCalled();
@@ -160,12 +168,12 @@ describe("conversations store", () => {
 		upsertConversationLocal("conv-local", "Draft", 500);
 
 		reconcileConversationSnapshot([
-			{ id: "conv-remote", title: "Remote", updatedAt: 100, projectId: null },
+			conversationItem("conv-remote", "Remote", 100),
 		]);
 
 		expect(get(conversations)).toEqual([
-			{ id: "conv-local", title: "Draft", updatedAt: 500 },
-			{ id: "conv-remote", title: "Remote", updatedAt: 100, projectId: null },
+			conversationItem("conv-local", "Draft", 500),
+			conversationItem("conv-remote", "Remote", 100),
 		]);
 	});
 
@@ -173,19 +181,19 @@ describe("conversations store", () => {
 		upsertConversationLocal("conv-local", "Draft", 500, "proj-1");
 
 		expect(get(conversations)).toEqual([
-			{ id: "conv-local", title: "Draft", updatedAt: 500, projectId: "proj-1" },
+			conversationItem("conv-local", "Draft", 500, { projectId: "proj-1" }),
 		]);
 	});
 
 	it("drops locally preserved conversations when the snapshot owner changes", () => {
 		reconcileConversationSnapshot(
-			[{ id: "user-1-conv", title: "User 1 chat", updatedAt: 2 }],
+			[conversationItem("user-1-conv", "User 1 chat", 2)],
 			{ resetLocalState: true, userId: "user-1" },
 		);
 		upsertConversationLocal("user-1-optimistic", "User 1 draft", 3);
 
 		reconcileConversationSnapshot(
-			[{ id: "user-2-conv", title: "User 2 chat", updatedAt: 4 }],
+			[conversationItem("user-2-conv", "User 2 chat", 4)],
 			{ userId: "user-2" },
 		);
 
@@ -196,14 +204,14 @@ describe("conversations store", () => {
 
 	it("clears stored conversations and local preservation state", () => {
 		reconcileConversationSnapshot(
-			[{ id: "user-1-conv", title: "User 1 chat", updatedAt: 2 }],
+			[conversationItem("user-1-conv", "User 1 chat", 2)],
 			{ resetLocalState: true, userId: "user-1" },
 		);
 		upsertConversationLocal("user-1-optimistic", "User 1 draft", 3);
 
 		clearConversationStore();
 		reconcileConversationSnapshot(
-			[{ id: "user-2-conv", title: "User 2 chat", updatedAt: 4 }],
+			[conversationItem("user-2-conv", "User 2 chat", 4)],
 			{ userId: "user-2" },
 		);
 
@@ -213,15 +221,11 @@ describe("conversations store", () => {
 	});
 
 	it("does not reintroduce deleted conversations from a stale snapshot", async () => {
-		conversations.set([
-			{ id: "conv-1", title: "Chat", updatedAt: 123, projectId: null },
-		]);
+		conversations.set([conversationItem("conv-1", "Chat", 123)]);
 		vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ success: true }));
 
 		await deleteConversationById("conv-1");
-		reconcileConversationSnapshot([
-			{ id: "conv-1", title: "Chat", updatedAt: 124, projectId: null },
-		]);
+		reconcileConversationSnapshot([conversationItem("conv-1", "Chat", 124)]);
 
 		expect(get(conversations)).toEqual([]);
 	});
@@ -272,9 +276,7 @@ describe("conversations store", () => {
 	});
 
 	it("renames a conversation and updates the store locally", async () => {
-		conversations.set([
-			{ id: "conv-1", title: "Old", updatedAt: 123, projectId: null },
-		]);
+		conversations.set([conversationItem("conv-1", "Old", 123)]);
 		vi.mocked(fetch).mockResolvedValueOnce(
 			jsonResponse({
 				id: "conv-1",
@@ -287,14 +289,12 @@ describe("conversations store", () => {
 		await renameConversation("conv-1", "New");
 
 		expect(get(conversations)).toEqual([
-			{ id: "conv-1", title: "New", updatedAt: 123, projectId: null },
+			conversationItem("conv-1", "New", 123),
 		]);
 	});
 
 	it("moves a conversation to a project and updates the store locally", async () => {
-		conversations.set([
-			{ id: "conv-1", title: "Chat", updatedAt: 123, projectId: null },
-		]);
+		conversations.set([conversationItem("conv-1", "Chat", 123)]);
 		vi.mocked(fetch).mockResolvedValueOnce(
 			jsonResponse({
 				id: "conv-1",
@@ -307,38 +307,17 @@ describe("conversations store", () => {
 		await moveConversationToProject("conv-1", "proj-1");
 
 		expect(get(conversations)).toEqual([
-			{ id: "conv-1", title: "Chat", updatedAt: 123, projectId: "proj-1" },
+			conversationItem("conv-1", "Chat", 123, { projectId: "proj-1" }),
 		]);
 	});
 
 	it("pins a conversation optimistically at the top of the sidebar", async () => {
 		conversations.set([
-			{
-				id: "conv-recent",
-				title: "Recent",
-				updatedAt: 300,
-				projectId: null,
-				sidebarPinned: false,
-				sidebarSortOrder: null,
-			},
-			{
-				id: "conv-older",
-				title: "Older",
-				updatedAt: 100,
-				projectId: null,
-				sidebarPinned: false,
-				sidebarSortOrder: null,
-			},
+			conversationItem("conv-recent", "Recent", 300),
+			conversationItem("conv-older", "Older", 100),
 		]);
 		let resolvePin:
-			| ((conversation: {
-					id: string;
-					title: string;
-					updatedAt: number;
-					projectId: string | null;
-					sidebarPinned: boolean;
-					sidebarSortOrder: number | null;
-			  }) => void)
+			| ((conversation: Conversation | PromiseLike<Conversation>) => void)
 			| undefined;
 		vi.mocked(setConversationSidebarPinned).mockReturnValueOnce(
 			new Promise((resolve) => {
@@ -373,38 +352,18 @@ describe("conversations store", () => {
 			projectId: null,
 			sidebarPinned: true,
 			sidebarSortOrder: 0,
+			createdAt: 100,
 		});
 		await pin;
 	});
 
 	it("keeps a pending conversation pin when a stale snapshot arrives", async () => {
 		conversations.set([
-			{
-				id: "conv-recent",
-				title: "Recent",
-				updatedAt: 300,
-				projectId: null,
-				sidebarPinned: false,
-				sidebarSortOrder: null,
-			},
-			{
-				id: "conv-older",
-				title: "Older",
-				updatedAt: 100,
-				projectId: null,
-				sidebarPinned: false,
-				sidebarSortOrder: null,
-			},
+			conversationItem("conv-recent", "Recent", 300),
+			conversationItem("conv-older", "Older", 100),
 		]);
 		let resolvePin:
-			| ((conversation: {
-					id: string;
-					title: string;
-					updatedAt: number;
-					projectId: string | null;
-					sidebarPinned: boolean;
-					sidebarSortOrder: number | null;
-			  }) => void)
+			| ((conversation: Conversation | PromiseLike<Conversation>) => void)
 			| undefined;
 		vi.mocked(setConversationSidebarPinned).mockReturnValueOnce(
 			new Promise((resolve) => {
@@ -450,6 +409,7 @@ describe("conversations store", () => {
 			projectId: null,
 			sidebarPinned: true,
 			sidebarSortOrder: 0,
+			createdAt: 120,
 		});
 		await pin;
 	});
@@ -638,9 +598,7 @@ describe("conversations store", () => {
 	});
 
 	it("moves a conversation locally before the project move request finishes", async () => {
-		conversations.set([
-			{ id: "conv-1", title: "Chat", updatedAt: 123, projectId: null },
-		]);
+		conversations.set([conversationItem("conv-1", "Chat", 123)]);
 		let resolveMove: ((response: Response) => void) | undefined;
 		vi.mocked(fetch).mockReturnValueOnce(
 			new Promise<Response>((resolve) => {
@@ -651,7 +609,7 @@ describe("conversations store", () => {
 		const move = moveConversationToProject("conv-1", "proj-1");
 
 		expect(get(conversations)).toEqual([
-			{ id: "conv-1", title: "Chat", updatedAt: 123, projectId: "proj-1" },
+			conversationItem("conv-1", "Chat", 123, { projectId: "proj-1" }),
 		]);
 
 		expect(resolveMove).toBeDefined();
@@ -668,9 +626,7 @@ describe("conversations store", () => {
 	});
 
 	it("rolls back a local project move when the request fails", async () => {
-		conversations.set([
-			{ id: "conv-1", title: "Chat", updatedAt: 123, projectId: null },
-		]);
+		conversations.set([conversationItem("conv-1", "Chat", 123)]);
 		vi.mocked(fetch).mockRejectedValueOnce(new TypeError("Failed to fetch"));
 
 		await expect(moveConversationToProject("conv-1", "proj-1")).rejects.toThrow(
@@ -678,7 +634,7 @@ describe("conversations store", () => {
 		);
 
 		expect(get(conversations)).toEqual([
-			{ id: "conv-1", title: "Chat", updatedAt: 123, projectId: null },
+			conversationItem("conv-1", "Chat", 123),
 		]);
 	});
 
@@ -689,28 +645,16 @@ describe("conversations store", () => {
 			moveConversationToProject("conv-missing", "proj-1"),
 		).rejects.toThrow("Failed to fetch");
 		reconcileConversationSnapshot([
-			{
-				id: "conv-missing",
-				title: "Hidden chat",
-				updatedAt: 124,
-				projectId: null,
-			},
+			conversationItem("conv-missing", "Hidden chat", 124),
 		]);
 
 		expect(get(conversations)).toEqual([
-			{
-				id: "conv-missing",
-				title: "Hidden chat",
-				updatedAt: 124,
-				projectId: null,
-			},
+			conversationItem("conv-missing", "Hidden chat", 124),
 		]);
 	});
 
 	it("preserves a local project move when a stale snapshot arrives", async () => {
-		conversations.set([
-			{ id: "conv-1", title: "Chat", updatedAt: 123, projectId: null },
-		]);
+		conversations.set([conversationItem("conv-1", "Chat", 123)]);
 		vi.mocked(fetch).mockResolvedValueOnce(
 			jsonResponse({
 				id: "conv-1",
@@ -721,19 +665,15 @@ describe("conversations store", () => {
 		);
 
 		await moveConversationToProject("conv-1", "proj-1");
-		reconcileConversationSnapshot([
-			{ id: "conv-1", title: "Chat", updatedAt: 124, projectId: null },
-		]);
+		reconcileConversationSnapshot([conversationItem("conv-1", "Chat", 124)]);
 
 		expect(get(conversations)).toEqual([
-			{ id: "conv-1", title: "Chat", updatedAt: 124, projectId: "proj-1" },
+			conversationItem("conv-1", "Chat", 124, { projectId: "proj-1" }),
 		]);
 	});
 
 	it("deletes a conversation and removes it from the store", async () => {
-		conversations.set([
-			{ id: "conv-1", title: "Chat", updatedAt: 123, projectId: null },
-		]);
+		conversations.set([conversationItem("conv-1", "Chat", 123)]);
 		vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ success: true }));
 
 		await deleteConversationById("conv-1");

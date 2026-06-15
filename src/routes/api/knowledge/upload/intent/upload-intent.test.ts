@@ -33,13 +33,16 @@ import {
 } from "$lib/server/services/knowledge/upload-intake";
 import { POST } from "./+server";
 
-const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
-const mockIsKnowledgeUploadConversationError =
-	isKnowledgeUploadConversationError as ReturnType<typeof vi.fn>;
-const mockResolveKnowledgeUploadLimits =
-	resolveKnowledgeUploadLimits as ReturnType<typeof vi.fn>;
-const mockValidateKnowledgeUploadConversation =
-	validateKnowledgeUploadConversation as ReturnType<typeof vi.fn>;
+const mockRequireAuth = vi.mocked(requireAuth);
+const mockIsKnowledgeUploadConversationError = vi.mocked(
+	isKnowledgeUploadConversationError,
+);
+const mockResolveKnowledgeUploadLimits = vi.mocked(
+	resolveKnowledgeUploadLimits,
+);
+const mockValidateKnowledgeUploadConversation = vi.mocked(
+	validateKnowledgeUploadConversation,
+);
 let consoleInfoSpy: ReturnType<typeof vi.spyOn> | null = null;
 type UploadIntentEvent = Parameters<typeof POST>[0];
 
@@ -52,7 +55,7 @@ function makeEvent(payload: unknown): UploadIntentEvent {
 		params: {},
 		url: new URL("http://localhost/api/knowledge/upload/intent"),
 		route: { id: "/api/knowledge/upload/intent" },
-	} as UploadIntentEvent;
+	} as unknown as UploadIntentEvent;
 }
 
 describe("POST /api/knowledge/upload/intent", () => {

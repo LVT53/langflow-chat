@@ -5,6 +5,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as schema from "$lib/server/db/schema";
+import type { HistoryMemoryContextResult } from "./memory-context";
 
 const mockGetProjectContext = vi.fn();
 const mockRecallPersonaMemory = vi.fn();
@@ -374,25 +375,22 @@ describe("memory context service", () => {
 			query: "bike",
 			maxHistoryConversations: 10,
 		});
+		const historyResult = result as HistoryMemoryContextResult;
 
-		expect(result).toMatchObject({
+		expect(historyResult).toMatchObject({
 			success: true,
 			mode: "history",
 			status: "available",
 			source: "conversation_summaries",
 			omittedConversationCount: 0,
 		});
-		expect(result.conversations.map((item) => item.conversationId)).toEqual([
-			"bike-5",
-			"bike-4",
-			"bike-3",
-			"bike-2",
-			"bike-1",
-		]);
-		expect(result.conversations).toHaveLength(5);
-		expect(JSON.stringify(result)).not.toContain("bike-project");
-		expect(JSON.stringify(result)).not.toContain("bike-other-user");
-		expect(result.evidenceCandidates).toHaveLength(5);
+		expect(
+			historyResult.conversations.map((item) => item.conversationId),
+		).toEqual(["bike-5", "bike-4", "bike-3", "bike-2", "bike-1"]);
+		expect(historyResult.conversations).toHaveLength(5);
+		expect(JSON.stringify(historyResult)).not.toContain("bike-project");
+		expect(JSON.stringify(historyResult)).not.toContain("bike-other-user");
+		expect(historyResult.evidenceCandidates).toHaveLength(5);
 	});
 
 	it("finds older matching history summaries beyond recent nonmatching chats and counts only matching omissions", async () => {
@@ -480,12 +478,13 @@ describe("memory context service", () => {
 			query: "bike",
 			maxHistoryConversations: 1,
 		});
+		const historyResult = result as HistoryMemoryContextResult;
 
-		expect(result.conversations.map((item) => item.conversationId)).toEqual([
-			"bike-old-2",
-		]);
-		expect(result.omittedConversationCount).toBe(1);
-		expect(JSON.stringify(result)).not.toContain("recent-nonmatch");
+		expect(
+			historyResult.conversations.map((item) => item.conversationId),
+		).toEqual(["bike-old-2"]);
+		expect(historyResult.omittedConversationCount).toBe(1);
+		expect(JSON.stringify(historyResult)).not.toContain("recent-nonmatch");
 	});
 
 	it("ranks topic history ahead of generic stopword-heavy chats", async () => {
@@ -557,13 +556,12 @@ describe("memory context service", () => {
 			query: "what do you know about my bike",
 			maxHistoryConversations: 4,
 		});
+		const historyResult = result as HistoryMemoryContextResult;
 
-		expect(result.conversations.map((item) => item.conversationId)).toEqual([
-			"bike-topic-3",
-			"bike-topic-2",
-			"bike-topic-1",
-		]);
-		expect(JSON.stringify(result)).not.toContain("generic-");
+		expect(
+			historyResult.conversations.map((item) => item.conversationId),
+		).toEqual(["bike-topic-3", "bike-topic-2", "bike-topic-1"]);
+		expect(JSON.stringify(historyResult)).not.toContain("generic-");
 	});
 
 	it("treats SQL LIKE wildcard characters in history queries as literal text", async () => {
@@ -667,11 +665,12 @@ describe("memory context service", () => {
 			query: "bike_%",
 			maxHistoryConversations: 10,
 		});
+		const historyResult = result as HistoryMemoryContextResult;
 
-		expect(result.conversations.map((item) => item.conversationId)).toEqual([
-			"literal-token",
-		]);
-		expect(JSON.stringify(result)).not.toContain("wildcard-shaped");
+		expect(
+			historyResult.conversations.map((item) => item.conversationId),
+		).toEqual(["literal-token"]);
+		expect(JSON.stringify(historyResult)).not.toContain("wildcard-shaped");
 
 		const backslashResult = await getMemoryContext({
 			userId: "user-1",
@@ -680,11 +679,15 @@ describe("memory context service", () => {
 			query: "bike\\bag",
 			maxHistoryConversations: 10,
 		});
+		const backslashHistoryResult =
+			backslashResult as HistoryMemoryContextResult;
 
 		expect(
-			backslashResult.conversations.map((item) => item.conversationId),
+			backslashHistoryResult.conversations.map((item) => item.conversationId),
 		).toEqual(["literal-backslash"]);
-		expect(JSON.stringify(backslashResult)).not.toContain("backslash-shaped");
+		expect(JSON.stringify(backslashHistoryResult)).not.toContain(
+			"backslash-shaped",
+		);
 	});
 
 	it("returns empty history instead of broad recall when a query has no salient terms", async () => {
@@ -738,8 +741,9 @@ describe("memory context service", () => {
 			query: "what do you know about my % _ \\",
 			maxHistoryConversations: 10,
 		});
+		const historyResult = result as HistoryMemoryContextResult;
 
-		expect(result).toMatchObject({
+		expect(historyResult).toMatchObject({
 			success: true,
 			mode: "history",
 			status: "empty",
@@ -812,8 +816,9 @@ describe("memory context service", () => {
 			historyConversationId: "bike-selected",
 			maxMessages: 4,
 		});
+		const historyResult = result as HistoryMemoryContextResult;
 
-		expect(result).toMatchObject({
+		expect(historyResult).toMatchObject({
 			success: true,
 			mode: "history",
 			status: "available",
@@ -828,9 +833,11 @@ describe("memory context service", () => {
 				appliedMaxMessages: 4,
 			},
 		});
-		expect(result.selectedConversation?.messages).toHaveLength(4);
+		expect(historyResult.selectedConversation?.messages).toHaveLength(4);
 		expect(
-			result.selectedConversation?.messages.map((message) => message.content),
+			historyResult.selectedConversation?.messages.map(
+				(message) => message.content,
+			),
 		).toEqual([
 			"Bike selected message 8",
 			"Bike selected message 9",

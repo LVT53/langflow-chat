@@ -20,16 +20,11 @@ export const POST: RequestHandler = async (event) => {
 
 	const user = event.locals.user;
 	const body = await event.request.json().catch(() => null);
+	const payload =
+		body && typeof body === "object" ? (body as Record<string, unknown>) : null;
 	const artifactId =
-		body &&
-		typeof body === "object" &&
-		typeof (body as Record<string, unknown>).artifactId === "string"
-			? (body as Record<string, unknown>).artifactId.trim()
-			: "";
-	const action =
-		body && typeof body === "object"
-			? (body as Record<string, unknown>).action
-			: null;
+		typeof payload?.artifactId === "string" ? payload.artifactId.trim() : "";
+	const action = payload?.action ?? null;
 
 	if (!isValidAction(action) || !artifactId) {
 		return json(

@@ -18,11 +18,41 @@ const {
 	mockDbUpdate,
 	mockDbUpdateSet,
 } = vi.hoisted(() => {
-	const mockFindRelevantArtifactsByTypesDetailed = vi.fn(async () => []);
-	const mockGetArtifactsForUser = vi.fn(async () => []);
-	const mockGetArtifactOwnershipScope = vi.fn(async () => ({}));
-	const mockIsArtifactCanonicallyOwned = vi.fn(() => true);
-	const mockIsGeneratedDocumentPromptEligible = vi.fn(() => true);
+	type RankedArtifactMatchStub = {
+		artifact: Record<string, unknown>;
+		lexicalScore: number;
+		semanticScore: number;
+		rerankScore: number;
+		finalScore: number;
+	};
+	const mockFindRelevantArtifactsByTypesDetailed = vi.fn(
+		async (_params: {
+			userId: string;
+			query: string;
+			types: string[];
+			limit: number;
+			excludeConversationId?: string;
+			queryEmbedding?: number[];
+		}): Promise<RankedArtifactMatchStub[]> => [],
+	);
+	const mockGetArtifactsForUser = vi.fn(
+		async (_userId: string, _artifactIds: string[]): Promise<unknown[]> => [],
+	);
+	const mockGetArtifactOwnershipScope = vi.fn(async (_userId: string) => ({}));
+	const mockIsArtifactCanonicallyOwned = vi.fn(
+		(_params: {
+			userId: string;
+			ownershipScope: { conversationIds: Set<string> };
+			artifact: {
+				userId: string;
+				type: string;
+				conversationId?: string | null;
+			};
+		}) => true,
+	);
+	const mockIsGeneratedDocumentPromptEligible = vi.fn(
+		(_params: { reasonCodes: string[] }) => true,
+	);
 	const mockMapArtifact = vi.fn((artifact) => artifact);
 	const mockMapArtifactSummary = vi.fn((artifact) => artifact);
 	const mockResolveCurrentGeneratedDocumentSelection = vi.fn(() => ({

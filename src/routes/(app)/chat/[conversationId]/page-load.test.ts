@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import type { AppShellData } from "$lib/server/services/app-shell";
+import type { Conversation, ModelId } from "$lib/types";
 
 vi.mock("$app/environment", () => ({
 	browser: false,
@@ -13,38 +15,117 @@ vi.mock("$lib/client/conversation-session", () => ({
 
 import { load } from "./+page";
 
+type LoadedPageData = Exclude<Awaited<ReturnType<typeof load>>, void>;
+
+function conversationFixture(
+	id: string,
+	overrides: Partial<Conversation> = {},
+): Conversation {
+	return {
+		id,
+		title: "Chat",
+		projectId: null,
+		status: "open",
+		sidebarPinned: false,
+		sidebarSortOrder: null,
+		createdAt: 1,
+		updatedAt: 1,
+		...overrides,
+	};
+}
+
+function appShellDataFixture(
+	overrides: Partial<AppShellData> = {},
+): AppShellData {
+	return {
+		user: {
+			id: "user-1",
+			email: "user@example.com",
+			displayName: "User",
+			role: "admin",
+			avatarId: null,
+			profilePicture: null,
+			titleLanguage: "auto",
+			uiLanguage: "en",
+		},
+		conversations: Promise.resolve([]),
+		projects: Promise.resolve([]),
+		maxMessageLength: 12_000,
+		deepResearchEnabled: true,
+		composerCommandRegistryEnabled: false,
+		userTheme: "system",
+		userModel: "model1",
+		systemDefaultModel: "model1",
+		userModelPreference: "model1",
+		userTitleLanguage: "auto",
+		userUiLanguage: "en",
+		userPersonality: null,
+		userAvatarId: null,
+		userSidebarProjectsExpanded: true,
+		userSidebarChatsExpanded: true,
+		modelNames: { model1: "Model 1" },
+		availableModels: [
+			{
+				id: "model1" as ModelId,
+				displayName: "Model 1",
+				isThirdParty: false,
+				iconAssetId: null,
+				iconUrl: null,
+			},
+		],
+		appVersion: Promise.resolve({ compact: "test", full: "test" }),
+		...overrides,
+	};
+}
+
+function makeLoadEvent(
+	fetch: typeof globalThis.fetch,
+	parent: () => Promise<AppShellData>,
+	url: string,
+	depends = vi.fn(),
+) {
+	return {
+		params: { conversationId: "conv-1" },
+		fetch,
+		parent,
+		url: new URL(url),
+		depends,
+		data: null,
+		setHeaders: vi.fn(),
+		untrack: ((callback: () => unknown) => callback()) as never,
+		tracing: undefined as never,
+		route: { id: "/(app)/chat/[conversationId]" } as never,
+	} as Parameters<typeof load>[0];
+}
+
 describe("chat conversation page load", () => {
 	it("starts first-render detail loading before waiting for parent layout data", async () => {
-		let resolveParent: (data: Record<string, unknown>) => void = () => {};
+		let resolveParent: (
+			data: AppShellData | PromiseLike<AppShellData>,
+		) => void = () => {};
 		const parent = vi.fn(
 			() =>
-				new Promise<Record<string, unknown>>((resolve) => {
+				new Promise<AppShellData>((resolve) => {
 					resolveParent = resolve;
 				}),
 		);
 		const fetch = vi.fn(async () => {
 			return new Response(
 				JSON.stringify({
-					conversation: {
-						id: "conv-1",
+					conversation: conversationFixture("conv-1", {
 						title: "Fast first render",
-						projectId: null,
-						createdAt: 1,
-						updatedAt: 1,
-					},
+					}),
 					messages: [],
 				}),
 				{ status: 200 },
 			);
 		});
 
-		const event = {
-			params: { conversationId: "conv-1" },
-			fetch: fetch as unknown as typeof globalThis.fetch,
+		const event = makeLoadEvent(
+			fetch as unknown as typeof globalThis.fetch,
 			parent,
-			url: new URL("http://localhost/chat/conv-1"),
-			depends: vi.fn(),
-		} as Parameters<typeof load>[0];
+			"http://localhost/chat/conv-1",
+		);
 		const loadPromise = load(event);
 		await Promise.resolve();
 
@@ -53,8 +134,8 @@ describe("chat conversation page load", () => {
 		);
 		expect(parent).toHaveBeenCalledOnce();
 
-		resolveParent({ deepResearchEnabled: true });
-		const data = await loadPromise;
+		resolveParent(appShellDataFixture({ deepResearchEnabled: true }));
+		const data = (await loadPromise) as LoadedPageData;
 		expect(data.conversation.title).toBe("Fast first render");
 		expect(data.deepResearchEnabled).toBe(true);
 	});
@@ -63,13 +144,9 @@ describe("chat conversation page load", () => {
 		const fetch = vi.fn(async () => {
 			return new Response(
 				JSON.stringify({
-					conversation: {
-						id: "conv-1",
+					conversation: conversationFixture("conv-1", {
 						title: "Targeted invalidation",
-						projectId: null,
-						createdAt: 1,
-						updatedAt: 1,
-					},
+					}),
 					messages: [],
 				}),
 				{ status: 200 },
@@ -77,13 +154,12 @@ describe("chat conversation page load", () => {
 		});
 		const depends = vi.fn();
 
-		const event = {
-			params: { conversationId: "conv-1" },
-			fetch: fetch as unknown as typeof globalThis.fetch,
-			parent: vi.fn(async () => ({})),
-			url: new URL("http://localhost/chat/conv-1"),
+		const event = makeLoadEvent(
+			fetch as unknown as typeof globalThis.fetch,
+			vi.fn(async () => appShellDataFixture()),
+			"http://localhost/chat/conv-1",
 			depends,
-		} as Parameters<typeof load>[0];
+		);
 		await load(event);
 
 		expect(depends).toHaveBeenCalledWith("app:conversation-detail:conv-1");
@@ -109,13 +185,7 @@ describe("chat conversation page load", () => {
 		const fetch = vi.fn(async () => {
 			return new Response(
 				JSON.stringify({
-					conversation: {
-						id: "conv-1",
-						title: "Research",
-						projectId: null,
-						createdAt: 1,
-						updatedAt: 1,
-					},
+					conversation: conversationFixture("conv-1", { title: "Research" }),
 					messages: [],
 					deepResearchJobs,
 				}),
@@ -123,14 +193,12 @@ describe("chat conversation page load", () => {
 			);
 		});
 
-		const event = {
-			params: { conversationId: "conv-1" },
-			fetch: fetch as unknown as typeof globalThis.fetch,
-			parent: vi.fn(async () => ({})),
-			url: new URL("http://localhost/chat/conv-1"),
-			depends: vi.fn(),
-		} as Parameters<typeof load>[0];
-		const data = await load(event);
+		const event = makeLoadEvent(
+			fetch as unknown as typeof globalThis.fetch,
+			vi.fn(async () => appShellDataFixture()),
+			"http://localhost/chat/conv-1",
+		);
+		const data = (await load(event)) as LoadedPageData;
 
 		expect(fetch).toHaveBeenCalledWith(
 			"/api/conversations/conv-1?view=first-render",
@@ -142,13 +210,7 @@ describe("chat conversation page load", () => {
 		const fetch = vi.fn(async () => {
 			return new Response(
 				JSON.stringify({
-					conversation: {
-						id: "conv-1",
-						title: "Bootstrap",
-						projectId: null,
-						createdAt: 1,
-						updatedAt: 1,
-					},
+					conversation: conversationFixture("conv-1", { title: "Bootstrap" }),
 					messages: [],
 					bootstrap: true,
 				}),
@@ -156,14 +218,12 @@ describe("chat conversation page load", () => {
 			);
 		});
 
-		const event = {
-			params: { conversationId: "conv-1" },
-			fetch: fetch as unknown as typeof globalThis.fetch,
-			parent: vi.fn(async () => ({})),
-			url: new URL("http://localhost/chat/conv-1?view=bootstrap"),
-			depends: vi.fn(),
-		} as Parameters<typeof load>[0];
-		const data = await load(event);
+		const event = makeLoadEvent(
+			fetch as unknown as typeof globalThis.fetch,
+			vi.fn(async () => appShellDataFixture()),
+			"http://localhost/chat/conv-1?view=bootstrap",
+		);
+		const data = (await load(event)) as LoadedPageData;
 
 		expect(fetch).toHaveBeenCalledWith(
 			"/api/conversations/conv-1?view=bootstrap",
@@ -175,27 +235,21 @@ describe("chat conversation page load", () => {
 		const fetch = vi.fn(async () => {
 			return new Response(
 				JSON.stringify({
-					conversation: {
-						id: "conv-1",
+					conversation: conversationFixture("conv-1", {
 						title: "Sparse detail",
-						projectId: null,
-						createdAt: 1,
-						updatedAt: 1,
-					},
+					}),
 					messages: [],
 				}),
 				{ status: 200 },
 			);
 		});
 
-		const event = {
-			params: { conversationId: "conv-1" },
-			fetch: fetch as unknown as typeof globalThis.fetch,
-			parent: vi.fn(async () => ({})),
-			url: new URL("http://localhost/chat/conv-1"),
-			depends: vi.fn(),
-		} as Parameters<typeof load>[0];
-		const data = await load(event);
+		const event = makeLoadEvent(
+			fetch as unknown as typeof globalThis.fetch,
+			vi.fn(async () => appShellDataFixture()),
+			"http://localhost/chat/conv-1",
+		);
+		const data = (await load(event)) as LoadedPageData;
 
 		expect(data).toMatchObject({
 			attachedArtifacts: [],
@@ -221,32 +275,28 @@ describe("chat conversation page load", () => {
 		const fetch = vi.fn(async () => {
 			return new Response(
 				JSON.stringify({
-					conversation: {
-						id: "conv-1",
+					conversation: conversationFixture("conv-1", {
 						title: "Composer commands",
-						projectId: null,
-						createdAt: 1,
-						updatedAt: 1,
-					},
+					}),
 					messages: [],
 				}),
 				{ status: 200 },
 			);
 		});
-		const parent = vi.fn(async () => ({
-			composerCommandRegistryEnabled: true,
-			deepResearchEnabled: true,
-			maxMessageLength: 12000,
-		}));
+		const parent = vi.fn(async () =>
+			appShellDataFixture({
+				composerCommandRegistryEnabled: true,
+				deepResearchEnabled: true,
+				maxMessageLength: 12000,
+			}),
+		);
 
-		const event = {
-			params: { conversationId: "conv-1" },
-			fetch: fetch as unknown as typeof globalThis.fetch,
+		const event = makeLoadEvent(
+			fetch as unknown as typeof globalThis.fetch,
 			parent,
-			url: new URL("http://localhost/chat/conv-1"),
-			depends: vi.fn(),
-		} as Parameters<typeof load>[0];
-		const data = await load(event);
+			"http://localhost/chat/conv-1",
+		);
+		const data = (await load(event)) as LoadedPageData;
 
 		expect(parent).toHaveBeenCalledOnce();
 		expect(data.composerCommandRegistryEnabled).toBe(true);

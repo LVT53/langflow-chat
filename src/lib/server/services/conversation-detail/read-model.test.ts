@@ -199,7 +199,7 @@ describe("Conversation Detail Read Model", () => {
 		mockGetConversationTaskState.mockResolvedValue(null);
 		mockGetContextDebugState.mockResolvedValue(null);
 		mockAttachContinuityToTaskState.mockImplementation(
-			async (_userId: string, taskState: unknown) => taskState,
+			async (_userId, taskState) => taskState,
 		);
 		mockGetProjectReferenceContext.mockResolvedValue(null);
 		mockListConversationGeneratedFiles.mockResolvedValue([]);
@@ -371,7 +371,7 @@ describe("Conversation Detail Read Model", () => {
 		mockListConversationArtifacts.mockResolvedValue([
 			{
 				id: "artifact-attached-1",
-				type: "document",
+				type: "source_document",
 				retrievalClass: "durable",
 				name: "Attached source",
 				mimeType: "text/plain",
@@ -385,7 +385,7 @@ describe("Conversation Detail Read Model", () => {
 		mockGetConversationWorkingSet.mockResolvedValue([
 			{
 				id: "artifact-working-1",
-				type: "document",
+				type: "source_document",
 				retrievalClass: "durable",
 				name: "Working source",
 				mimeType: "text/plain",
@@ -626,7 +626,7 @@ describe("Conversation Detail Read Model", () => {
 		mockListConversationArtifacts.mockResolvedValue([
 			{
 				id: "artifact-attached-1",
-				type: "document",
+				type: "source_document",
 				retrievalClass: "durable",
 				name: "Attached source",
 				mimeType: "text/plain",
@@ -640,7 +640,7 @@ describe("Conversation Detail Read Model", () => {
 		mockGetConversationWorkingSet.mockResolvedValue([
 			{
 				id: "artifact-working-1",
-				type: "document",
+				type: "source_document",
 				retrievalClass: "durable",
 				name: "Working source",
 				mimeType: "text/plain",
@@ -664,7 +664,7 @@ describe("Conversation Detail Read Model", () => {
 				{
 					artifactId: "artifact-pinned-1",
 					name: "Pinned source",
-					artifactType: "document",
+					artifactType: "source_document",
 					sourceType: "document",
 					role: "pinned",
 					origin: "user",

@@ -96,15 +96,15 @@ type MessageInputDraftPayload = {
 
 let hasStarted = $state(false);
 let creating = $state(false);
-let error = $state<string | null>(null);
+let error: string | null = $state(null);
 let isFromChat = $state(false);
 let animateIn = $state(false);
 let pendingMessagePreview = $state("");
 let greetingIndex = $state(0);
-let preparedConversationId = $state<string | null>(null);
+let preparedConversationId: string | null = $state(null);
 let preparedConversationPromise: Promise<string> | null = null;
 let preparedConversationValidationPromise: Promise<void> | null = null;
-let conversationDraft = $state<ConversationDraft | null>(null);
+let conversationDraft: ConversationDraft | null = $state(null);
 const draftPersistence = createDraftPersistence();
 
 const greetingName = $derived(
@@ -140,10 +140,12 @@ const activeGreeting = $derived(
 );
 let fileDragActive = $state(false);
 let fileDragRejected = $state(false);
-let personalityProfiles = $state<
-	Array<{ id: string; name: string; description: string }>
->([]);
-let selectedPersonalityId = $state<string | null>(
+let personalityProfiles: Array<{
+	id: string;
+	name: string;
+	description: string;
+}> = $state([]);
+let selectedPersonalityId: string | null = $state(
 	untrack(() => data.userPersonality) ?? null,
 );
 let dragEnterCount = 0;
@@ -544,10 +546,6 @@ function handleDraftChange(payload: MessageInputDraftPayload) {
 		.composer-layer-animate {
 			top: calc(50% - 26px);
 		}
-	}
-
-	.intro-copy {
-		/* Uses Svelte transitions instead of CSS classes */
 	}
 
 	.creating-indicator {

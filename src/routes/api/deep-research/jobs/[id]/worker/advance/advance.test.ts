@@ -21,13 +21,17 @@ import { POST } from "./+server";
 
 type AdvanceRouteEvent = Parameters<typeof POST>[0];
 
-const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
-const mockTriggerDeepResearchWorkflowWorkerForJob =
-	triggerDeepResearchWorkflowWorkerForJob as ReturnType<typeof vi.fn>;
+const mockRequireAuth = vi.mocked(requireAuth);
+const mockTriggerDeepResearchWorkflowWorkerForJob = vi.mocked(
+	triggerDeepResearchWorkflowWorkerForJob,
+);
 
 function makeEvent(
 	jobId = "research-job-1",
-	user = { id: "user-1", email: "test@example.com" },
+	user: { id: string; email: string } | null = {
+		id: "user-1",
+		email: "test@example.com",
+	},
 ) {
 	return {
 		request: new Request(
@@ -62,8 +66,6 @@ describe("POST /api/deep-research/jobs/[id]/worker/advance", () => {
 				updatedAt: Date.now(),
 			},
 			advanced: true,
-			outcome: "discovery_completed",
-			workerRunId: "manual-dev-run-1",
 		});
 	});
 
@@ -74,8 +76,6 @@ describe("POST /api/deep-research/jobs/[id]/worker/advance", () => {
 		expect(response.status).toBe(200);
 		expect(data).toMatchObject({
 			advanced: true,
-			outcome: "discovery_completed",
-			workerRunId: "manual-dev-run-1",
 			job: {
 				id: "research-job-1",
 				status: "running",

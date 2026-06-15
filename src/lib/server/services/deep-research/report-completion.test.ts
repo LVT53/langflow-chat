@@ -6,6 +6,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as schema from "$lib/server/db/schema";
+import type { DeepResearchSynthesisClaim } from "$lib/types";
 import { evaluateDeepResearchRun } from "./evaluation";
 import type { SynthesisNotes } from "./synthesis";
 
@@ -622,7 +623,6 @@ describe("audited Deep Research report completion", () => {
 			passCheckpointId: checkpoint.id,
 			notes: [
 				{
-					sourceId: reviewedSource.id,
 					findingText:
 						"Private AI coding assistants vary by repository index freshness and permission controls.",
 					supportedKeyQuestion:
@@ -1157,7 +1157,7 @@ describe("audited Deep Research report completion", () => {
 				...actual,
 				buildClaimGraphCitationReviewerWithLlm:
 					async () =>
-					({ claim }) => ({
+					({ claim }: { claim: DeepResearchSynthesisClaim }) => ({
 						claimId: claim.id,
 						verdict: "supported",
 						evidenceNoteIds: [supportedEvidenceNoteId],
@@ -1306,7 +1306,7 @@ describe("audited Deep Research report completion", () => {
 				...actual,
 				buildClaimGraphCitationReviewerWithLlm:
 					async () =>
-					({ claim }) => ({
+					({ claim }: { claim: DeepResearchSynthesisClaim }) => ({
 						claimId: claim.id,
 						verdict: "needs_repair",
 						evidenceNoteIds: [repairEvidenceNoteId],

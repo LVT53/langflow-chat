@@ -78,7 +78,7 @@ function baseConfig(): RuntimeConfig {
 			citation_audit: "provider:openrouter",
 			report_writing: "model1",
 		},
-	} as RuntimeConfig;
+	} as unknown as RuntimeConfig;
 }
 
 function providerConfig() {
@@ -144,36 +144,36 @@ describe("Deep Research model runner", () => {
 
 	it("sends provider citation audit calls as valid OpenAI-compatible requests", async () => {
 		let sentBody: Record<string, unknown> | null = null;
-		const fetchImpl = vi.fn(
-			async (_url: URL | RequestInfo, init?: RequestInit) => {
-				const body = JSON.parse(String(init?.body));
-				sentBody = body;
-				if ("chat_template_kwargs" in body || "extra_body" in body) {
-					return new Response(JSON.stringify({ error: "unknown field" }), {
-						status: 400,
-						headers: { "Content-Type": "application/json" },
-					});
-				}
-				return new Response(
-					JSON.stringify({
-						choices: [
-							{
-								message: {
-									content:
-										'{"claims":[{"claimId":"claim-1","status":"supported","reason":"Source supports it.","citationSourceIds":["source-1"]}]}',
-								},
+		const fetchImpl = vi.fn<
+			(url: URL | RequestInfo, init?: RequestInit) => Promise<Response>
+		>(async (_url, init) => {
+			const body = JSON.parse(String(init?.body));
+			sentBody = body;
+			if ("chat_template_kwargs" in body || "extra_body" in body) {
+				return new Response(JSON.stringify({ error: "unknown field" }), {
+					status: 400,
+					headers: { "Content-Type": "application/json" },
+				});
+			}
+			return new Response(
+				JSON.stringify({
+					choices: [
+						{
+							message: {
+								content:
+									'{"claims":[{"claimId":"claim-1","status":"supported","reason":"Source supports it.","citationSourceIds":["source-1"]}]}',
 							},
-						],
-						usage: {
-							prompt_tokens: 10,
-							completion_tokens: 8,
-							total_tokens: 18,
 						},
-					}),
-					{ status: 200, headers: { "Content-Type": "application/json" } },
-				);
-			},
-		);
+					],
+					usage: {
+						prompt_tokens: 10,
+						completion_tokens: 8,
+						total_tokens: 18,
+					},
+				}),
+				{ status: 200, headers: { "Content-Type": "application/json" } },
+			);
+		});
 
 		const result = await tryRunAndRecordDeepResearchModel({
 			role: "citation_audit",
@@ -277,33 +277,35 @@ describe("Deep Research model runner", () => {
 				? "fallback-secret"
 				: "provider-secret",
 		);
-		const fetchImpl = vi.fn(async (url: URL | RequestInfo) => {
-			const requestUrl = String(url);
-			if (requestUrl.startsWith("https://openrouter.ai")) {
-				return new Response(JSON.stringify({ error: "rate limited" }), {
-					status: 429,
-					headers: { "Content-Type": "application/json" },
-				});
-			}
-			return new Response(
-				JSON.stringify({
-					choices: [
-						{
-							message: {
-								content:
-									'{"claims":[{"claimId":"claim-1","status":"supported","reason":"Fallback model audited it.","citationSourceIds":["source-1"]}]}',
+		const fetchImpl = vi.fn<(url: URL | RequestInfo) => Promise<Response>>(
+			async (url) => {
+				const requestUrl = String(url);
+				if (requestUrl.startsWith("https://openrouter.ai")) {
+					return new Response(JSON.stringify({ error: "rate limited" }), {
+						status: 429,
+						headers: { "Content-Type": "application/json" },
+					});
+				}
+				return new Response(
+					JSON.stringify({
+						choices: [
+							{
+								message: {
+									content:
+										'{"claims":[{"claimId":"claim-1","status":"supported","reason":"Fallback model audited it.","citationSourceIds":["source-1"]}]}',
+								},
 							},
+						],
+						usage: {
+							prompt_tokens: 20,
+							completion_tokens: 9,
+							total_tokens: 29,
 						},
-					],
-					usage: {
-						prompt_tokens: 20,
-						completion_tokens: 9,
-						total_tokens: 29,
-					},
-				}),
-				{ status: 200, headers: { "Content-Type": "application/json" } },
-			);
-		});
+					}),
+					{ status: 200, headers: { "Content-Type": "application/json" } },
+				);
+			},
+		);
 
 		const result = await tryRunAndRecordDeepResearchModel({
 			role: "citation_audit",
@@ -321,17 +323,18 @@ describe("Deep Research model runner", () => {
 
 		expect(result?.content).toContain("Fallback model audited it.");
 		expect(fetchImpl).toHaveBeenCalledTimes(2);
-		expect(fetchImpl.mock.calls[1]?.[0]).toBe(
+		const fallbackCall = fetchImpl.mock.calls[1] as
+			| [URL | RequestInfo, RequestInit?]
+			| undefined;
+		expect(fallbackCall?.[0]).toBe(
 			"https://api.moonshot.ai/v1/chat/completions",
 		);
-		const fallbackHeaders = fetchImpl.mock.calls[1]?.[1]?.headers as Record<
+		const fallbackHeaders = fallbackCall?.[1]?.headers as Record<
 			string,
 			string
 		>;
 		expect(fallbackHeaders.Authorization).toBe("Bearer fallback-secret");
-		expect(
-			JSON.parse(String(fetchImpl.mock.calls[1]?.[1]?.body)),
-		).toMatchObject({
+		expect(JSON.parse(String(fallbackCall?.[1]?.body))).toMatchObject({
 			model: "kimi-k2.6",
 			temperature: 0.2,
 		});
@@ -360,33 +363,35 @@ describe("Deep Research model runner", () => {
 			rateLimitFallbackApiKeyEncrypted: null,
 			rateLimitFallbackApiKeyIv: null,
 		});
-		const fetchImpl = vi.fn(async (url: URL | RequestInfo) => {
-			const requestUrl = String(url);
-			if (requestUrl.startsWith("https://openrouter.ai")) {
-				return new Response(JSON.stringify({ error: "rate limited" }), {
-					status: 429,
-					headers: { "Content-Type": "application/json" },
-				});
-			}
-			return new Response(
-				JSON.stringify({
-					choices: [
-						{
-							message: {
-								content:
-									'{"claims":[{"claimId":"claim-1","status":"supported"}]}',
+		const fetchImpl = vi.fn<(url: URL | RequestInfo) => Promise<Response>>(
+			async (url) => {
+				const requestUrl = String(url);
+				if (requestUrl.startsWith("https://openrouter.ai")) {
+					return new Response(JSON.stringify({ error: "rate limited" }), {
+						status: 429,
+						headers: { "Content-Type": "application/json" },
+					});
+				}
+				return new Response(
+					JSON.stringify({
+						choices: [
+							{
+								message: {
+									content:
+										'{"claims":[{"claimId":"claim-1","status":"supported"}]}',
+								},
 							},
+						],
+						usage: {
+							prompt_tokens: 12,
+							completion_tokens: 4,
+							total_tokens: 16,
 						},
-					],
-					usage: {
-						prompt_tokens: 12,
-						completion_tokens: 4,
-						total_tokens: 16,
-					},
-				}),
-				{ status: 200, headers: { "Content-Type": "application/json" } },
-			);
-		});
+					}),
+					{ status: 200, headers: { "Content-Type": "application/json" } },
+				);
+			},
+		);
 
 		const result = await tryRunAndRecordDeepResearchModel({
 			role: "citation_audit",
@@ -407,12 +412,13 @@ describe("Deep Research model runner", () => {
 			modelDisplayName: "Model Two",
 		});
 		expect(fetchImpl).toHaveBeenCalledTimes(2);
-		expect(fetchImpl.mock.calls[1]?.[0]).toBe(
+		const retryCall = fetchImpl.mock.calls[1] as
+			| [URL | RequestInfo, RequestInit?]
+			| undefined;
+		expect(retryCall?.[0]).toBe(
 			"https://model-two.example/v1/chat/completions",
 		);
-		expect(
-			JSON.parse(String(fetchImpl.mock.calls[1]?.[1]?.body)),
-		).toMatchObject({
+		expect(JSON.parse(String(retryCall?.[1]?.body))).toMatchObject({
 			model: "model-two",
 		});
 		expect(mocks.warn).toHaveBeenCalledWith(

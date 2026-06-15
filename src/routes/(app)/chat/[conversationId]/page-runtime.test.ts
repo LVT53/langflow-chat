@@ -1,7 +1,16 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { AppShellData } from "$lib/server/services/app-shell";
 import type { StreamMetadata } from "$lib/services/streaming";
-import type { DeepResearchJob } from "$lib/types";
+import type {
+	ContextDebugEvidenceItem,
+	ContextDebugState,
+	Conversation,
+	ConversationContextStatus,
+	ConversationDetail,
+	DeepResearchJob,
+	ModelId,
+} from "$lib/types";
 
 const runtimeHarness = vi.hoisted(() => ({
 	streamInvocations: [] as Array<{
@@ -14,6 +23,156 @@ const runtimeHarness = vi.hoisted(() => ({
 		};
 	}>,
 }));
+
+function conversationFixture(
+	id: string,
+	overrides: Partial<Conversation> = {},
+): Conversation {
+	return {
+		id,
+		title: "Chat",
+		projectId: null,
+		status: "open",
+		sidebarPinned: false,
+		sidebarSortOrder: null,
+		createdAt: 1,
+		updatedAt: 1,
+		...overrides,
+	};
+}
+
+function conversationContextStatusFixture(
+	overrides: Partial<ConversationContextStatus> = {},
+): ConversationContextStatus {
+	return {
+		conversationId: "conv-1",
+		userId: "user-1",
+		estimatedTokens: 5_000,
+		maxContextTokens: 10_000,
+		thresholdTokens: 12_000,
+		targetTokens: 10_000,
+		compactionApplied: false,
+		compactionMode: "none",
+		routingStage: "deterministic",
+		routingConfidence: 100,
+		verificationStatus: "skipped",
+		layersUsed: [],
+		workingSetCount: 0,
+		workingSetArtifactIds: [],
+		workingSetApplied: false,
+		taskStateApplied: false,
+		promptArtifactCount: 0,
+		recentTurnCount: 0,
+		summary: null,
+		updatedAt: 1,
+		...overrides,
+	};
+}
+
+function contextDebugEvidenceFixture(
+	overrides: Partial<ContextDebugEvidenceItem> = {},
+): ContextDebugEvidenceItem {
+	return {
+		artifactId: "artifact-1",
+		name: "Recovered evidence",
+		artifactType: "source_document",
+		sourceType: "document",
+		role: "selected",
+		origin: "system",
+		confidence: 0.9,
+		reason: "polling recovery",
+		...overrides,
+	};
+}
+
+function contextDebugFixture(
+	overrides: Partial<ContextDebugState> = {},
+): ContextDebugState {
+	return {
+		activeTaskId: null,
+		activeTaskObjective: null,
+		taskLocked: false,
+		routingStage: "deterministic",
+		routingConfidence: 100,
+		verificationStatus: "skipped",
+		selectedEvidence: [contextDebugEvidenceFixture()],
+		selectedEvidenceBySource: [],
+		pinnedEvidence: [],
+		excludedEvidence: [],
+		...overrides,
+	};
+}
+
+function appShellDataFixture(
+	overrides: Partial<AppShellData> = {},
+): AppShellData {
+	return {
+		user: {
+			id: "user-1",
+			email: "user@example.com",
+			displayName: "User",
+			role: "admin",
+			avatarId: null,
+			profilePicture: null,
+			titleLanguage: "auto",
+			uiLanguage: "en",
+		},
+		conversations: Promise.resolve([]),
+		projects: Promise.resolve([]),
+		maxMessageLength: 12_000,
+		deepResearchEnabled: true,
+		composerCommandRegistryEnabled: false,
+		userTheme: "system",
+		userModel: "model1",
+		systemDefaultModel: "model1",
+		userModelPreference: "model1",
+		userTitleLanguage: "auto",
+		userUiLanguage: "en",
+		userPersonality: null,
+		userAvatarId: null,
+		userSidebarProjectsExpanded: true,
+		userSidebarChatsExpanded: true,
+		modelNames: { model1: "Model 1" },
+		availableModels: [
+			{
+				id: "model1" as ModelId,
+				displayName: "Model 1",
+				isThirdParty: false,
+				iconAssetId: null,
+				iconUrl: null,
+			},
+		],
+		appVersion: Promise.resolve({ compact: "test", full: "test" }),
+		...overrides,
+	};
+}
+
+function conversationDetailFixture(
+	overrides: Partial<ConversationDetail> = {},
+): ConversationDetail {
+	return {
+		conversation: conversationFixture("conv-1"),
+		messages: [],
+		attachedArtifacts: [],
+		activeWorkingSet: [],
+		contextStatus: null,
+		contextSources: null,
+		taskState: null,
+		contextDebug: null,
+		draft: null,
+		forkOrigin: null,
+		bootstrap: false,
+		generatedFiles: [],
+		fileProductionJobs: [],
+		deepResearchJobs: [],
+		contextCompressionSnapshots: [],
+		activeSkillSession: null,
+		totalCostUsdMicros: 0,
+		totalTokens: 0,
+		sidecarPending: false,
+		...overrides,
+	};
+}
 
 vi.mock("$app/environment", () => ({
 	browser: true,
@@ -48,10 +207,7 @@ vi.mock("$lib/client/api/conversations", () => ({
 	deleteConversationDraft: vi.fn(),
 	deleteConversationMessages: vi.fn(),
 	endConversationSkillSession: vi.fn(),
-	fetchConversationDetail: vi.fn(async () => ({
-		conversation: { id: "conv-1", title: "Chat", status: "open" },
-		messages: [],
-	})),
+	fetchConversationDetail: vi.fn(async () => conversationDetailFixture()),
 	fetchMessageEvidence: vi.fn(),
 	generateConversationTitle: vi.fn(),
 	runConversationContextCompression: vi.fn(),
@@ -129,14 +285,8 @@ import Page from "./+page.svelte";
 
 function pageData(overrides: Record<string, unknown> = {}) {
 	return {
-		conversation: {
-			id: "conv-1",
-			title: "Chat",
-			projectId: null,
-			status: "open" as const,
-			createdAt: 1,
-			updatedAt: 1,
-		},
+		...appShellDataFixture(),
+		conversation: conversationFixture("conv-1"),
 		messages: [],
 		contextStatus: null,
 		totalCostUsdMicros: 0,
@@ -154,14 +304,30 @@ function pageData(overrides: Record<string, unknown> = {}) {
 		deepResearchJobs: [],
 		contextCompressionSnapshots: [],
 		activeSkillSession: null,
+		sidecarPending: false,
 		userPersonality: null,
 		userModel: "model1" as const,
-		availableModels: [{ id: "model1", name: "Model 1", iconUrl: null }],
+		availableModels: [
+			{
+				id: "model1" as ModelId,
+				displayName: "Model 1",
+				isThirdParty: false,
+				iconAssetId: null,
+				iconUrl: null,
+			},
+		],
 		maxMessageLength: 12000,
 		deepResearchEnabled: true,
 		composerCommandRegistryEnabled: false,
 		...overrides,
 	};
+}
+
+function renderPage(data = pageData()) {
+	return render(Page, {
+		data,
+		params: { conversationId: data.conversation.id },
+	});
 }
 
 describe("chat page runtime integration", () => {
@@ -171,10 +337,9 @@ describe("chat page runtime integration", () => {
 
 	beforeEach(() => {
 		runtimeHarness.streamInvocations.length = 0;
-		vi.mocked(fetchConversationDetail).mockResolvedValue({
-			conversation: { id: "conv-1", title: "Chat", status: "open" },
-			messages: [],
-		});
+		vi.mocked(fetchConversationDetail).mockResolvedValue(
+			conversationDetailFixture(),
+		);
 		window.sessionStorage.clear();
 		Object.defineProperty(window, "matchMedia", {
 			writable: true,
@@ -200,23 +365,23 @@ describe("chat page runtime integration", () => {
 	});
 
 	it("renders while layout model metadata is still resolving", async () => {
-		render(Page, {
-			data: pageData({
+		renderPage(
+			pageData({
 				availableModels: Promise.resolve([
 					{
-						id: "model1",
+						id: "model1" as ModelId,
 						displayName: "Model 1",
 						iconUrl: "/api/campaign-assets/model-1-icon/content",
 					},
 				]),
 			}),
-		});
+		);
 
 		expect(screen.getByTestId("message-input")).toBeInTheDocument();
 	});
 
 	it("keeps Deep Research handoff sends visible to the runtime queue adapter", async () => {
-		render(Page, { data: pageData() });
+		renderPage();
 
 		await fireEvent.click(
 			screen.getByRole("button", { name: "Deep Research" }),
@@ -241,14 +406,16 @@ describe("chat page runtime integration", () => {
 
 	it("drains a queued follow-up after polling reconciles a waiting stream completion", async () => {
 		let resolveDetail: (
-			value: Awaited<ReturnType<typeof fetchConversationDetail>>,
+			value:
+				| Awaited<ReturnType<typeof fetchConversationDetail>>
+				| PromiseLike<Awaited<ReturnType<typeof fetchConversationDetail>>>,
 		) => void = () => {};
 		vi.mocked(fetchConversationDetail).mockReturnValueOnce(
 			new Promise((resolve) => {
 				resolveDetail = resolve;
 			}),
 		);
-		render(Page, { data: pageData() });
+		renderPage();
 
 		await fireEvent.input(screen.getByTestId("message-input"), {
 			target: { value: "First turn" },
@@ -264,7 +431,8 @@ describe("chat page runtime integration", () => {
 		await fireEvent.click(screen.getByTestId("queue-button"));
 
 		resolveDetail({
-			conversation: { id: "conv-1", title: "Chat", status: "open" },
+			...conversationDetailFixture(),
+			conversation: conversationFixture("conv-1"),
 			messages: [
 				{
 					id: "server-user-1",
@@ -298,15 +466,17 @@ describe("chat page runtime integration", () => {
 
 	it("applies full detail metadata when polling recovers a completed stream", async () => {
 		let resolveDetail: (
-			value: Awaited<ReturnType<typeof fetchConversationDetail>>,
+			value:
+				| Awaited<ReturnType<typeof fetchConversationDetail>>
+				| PromiseLike<Awaited<ReturnType<typeof fetchConversationDetail>>>,
 		) => void = () => {};
 		vi.mocked(fetchConversationDetail).mockReturnValueOnce(
 			new Promise((resolve) => {
 				resolveDetail = resolve;
 			}),
 		);
-		render(Page, {
-			data: pageData({
+		renderPage(
+			pageData({
 				messages: [
 					{
 						id: "assistant-previous",
@@ -316,7 +486,7 @@ describe("chat page runtime integration", () => {
 					},
 				],
 			}),
-		});
+		);
 
 		await fireEvent.input(screen.getByTestId("message-input"), {
 			target: { value: "First turn" },
@@ -327,7 +497,8 @@ describe("chat page runtime integration", () => {
 		runtimeHarness.streamInvocations[0].callbacks.onWaiting?.();
 
 		resolveDetail({
-			conversation: { id: "conv-1", title: "Chat", status: "open" },
+			...conversationDetailFixture(),
+			conversation: conversationFixture("conv-1"),
 			messages: [
 				{
 					id: "assistant-previous",
@@ -348,40 +519,8 @@ describe("chat page runtime integration", () => {
 					timestamp: 3,
 				},
 			],
-			contextStatus: {
-				estimatedTokens: 5000,
-				targetTokens: 10000,
-				thresholdTokens: 12000,
-				compactionMode: "none",
-				routingStage: "deterministic",
-				routingConfidence: 100,
-				verificationStatus: "skipped",
-				layersUsed: [],
-				recentTurnCount: 2,
-				workingSetCount: 0,
-				workingSetArtifactIds: [],
-				workingSetApplied: false,
-				taskStateApplied: false,
-				promptArtifactCount: 0,
-			},
-			contextDebug: {
-				routingStage: "deterministic",
-				routingConfidence: 100,
-				verificationStatus: "skipped",
-				activeTaskObjective: null,
-				taskLocked: false,
-				selectedEvidence: [
-					{
-						artifactId: "artifact-1",
-						title: "Recovered evidence",
-						source: "document",
-						relevance: 0.9,
-						reason: "polling recovery",
-					},
-				],
-				pinnedEvidence: [],
-				excludedEvidence: [],
-			},
+			contextStatus: conversationContextStatusFixture({ recentTurnCount: 2 }),
+			contextDebug: contextDebugFixture(),
 			contextCompressionSnapshots: [
 				{
 					id: "snapshot-1",
@@ -411,7 +550,7 @@ describe("chat page runtime integration", () => {
 	});
 
 	it("applies normal stream completion deltas without hydrating conversation detail", async () => {
-		render(Page, { data: pageData() });
+		renderPage();
 
 		await fireEvent.input(screen.getByTestId("message-input"), {
 			target: { value: "Make a report" },
@@ -487,35 +626,34 @@ describe("chat page runtime integration", () => {
 
 	it("ignores stale first-render sidecar detail after navigating to another conversation", async () => {
 		let resolveFirstDetail: (
-			value: Awaited<ReturnType<typeof fetchConversationDetail>>,
+			value:
+				| Awaited<ReturnType<typeof fetchConversationDetail>>
+				| PromiseLike<Awaited<ReturnType<typeof fetchConversationDetail>>>,
 		) => void = () => {};
 		vi.mocked(fetchConversationDetail).mockReturnValueOnce(
 			new Promise((resolve) => {
 				resolveFirstDetail = resolve;
 			}),
 		);
-		const view = render(Page, {
-			data: pageData({ sidecarPending: true }),
-		});
+		const view = renderPage(pageData({ sidecarPending: true }));
 		await waitFor(() => {
 			expect(fetchConversationDetail).toHaveBeenCalledWith("conv-1");
 		});
 
 		await view.rerender({
 			data: pageData({
-				conversation: {
-					id: "conv-2",
+				conversation: conversationFixture("conv-2", {
 					title: "Second chat",
-					projectId: null,
-					status: "open" as const,
 					createdAt: 2,
 					updatedAt: 2,
-				},
+				}),
 				sidecarPending: false,
 			}),
+			params: { conversationId: "conv-2" },
 		});
 		resolveFirstDetail({
-			conversation: { id: "conv-1", title: "Chat", status: "open" },
+			...conversationDetailFixture(),
+			conversation: conversationFixture("conv-1"),
 			messages: [
 				{
 					id: "wrong-assistant",
@@ -539,18 +677,19 @@ describe("chat page runtime integration", () => {
 
 	it("updates cost and token totals from first-render sidecar detail", async () => {
 		vi.mocked(fetchConversationDetail).mockResolvedValueOnce({
-			conversation: { id: "conv-1", title: "Chat", status: "open" },
+			...conversationDetailFixture(),
+			conversation: conversationFixture("conv-1"),
 			messages: [],
 			totalCostUsdMicros: 420_000,
 			totalTokens: 42,
 		});
-		render(Page, {
-			data: pageData({
+		renderPage(
+			pageData({
 				sidecarPending: true,
 				totalCostUsdMicros: 0,
 				totalTokens: 0,
 			}),
-		});
+		);
 
 		await waitFor(() => {
 			expect(fetchConversationDetail).toHaveBeenCalledWith("conv-1");
@@ -566,15 +705,17 @@ describe("chat page runtime integration", () => {
 
 	it("does not let a slow same-conversation sidecar overwrite newer stream metadata", async () => {
 		let resolveSidecarDetail: (
-			value: Awaited<ReturnType<typeof fetchConversationDetail>>,
+			value:
+				| Awaited<ReturnType<typeof fetchConversationDetail>>
+				| PromiseLike<Awaited<ReturnType<typeof fetchConversationDetail>>>,
 		) => void = () => {};
 		vi.mocked(fetchConversationDetail).mockReturnValueOnce(
 			new Promise((resolve) => {
 				resolveSidecarDetail = resolve;
 			}),
 		);
-		render(Page, {
-			data: pageData({
+		renderPage(
+			pageData({
 				sidecarPending: true,
 				messages: [
 					{
@@ -585,7 +726,7 @@ describe("chat page runtime integration", () => {
 					},
 				],
 			}),
-		});
+		);
 		await waitFor(() => {
 			expect(fetchConversationDetail).toHaveBeenCalledWith("conv-1");
 		});
@@ -667,7 +808,8 @@ describe("chat page runtime integration", () => {
 		).toBeInTheDocument();
 
 		resolveSidecarDetail({
-			conversation: { id: "conv-1", title: "Chat", status: "open" },
+			...conversationDetailFixture(),
+			conversation: conversationFixture("conv-1"),
 			messages: [
 				{
 					id: "assistant-1",
@@ -695,7 +837,8 @@ describe("chat page runtime integration", () => {
 
 	it("preserves a restored queued draft when background recovery falls back to persisted detail", async () => {
 		vi.mocked(fetchConversationDetail).mockResolvedValue({
-			conversation: { id: "conv-1", title: "Chat", status: "open" },
+			...conversationDetailFixture(),
+			conversation: conversationFixture("conv-1"),
 			messages: [
 				{
 					id: "server-user-1",
@@ -711,7 +854,7 @@ describe("chat page runtime integration", () => {
 				},
 			],
 		});
-		render(Page, { data: pageData() });
+		renderPage();
 
 		await fireEvent.input(screen.getByTestId("message-input"), {
 			target: { value: "First turn" },
@@ -752,7 +895,8 @@ describe("chat page runtime integration", () => {
 
 	it("applies full detail metadata when persisted recovery loads a completed stream", async () => {
 		vi.mocked(fetchConversationDetail).mockResolvedValue({
-			conversation: { id: "conv-1", title: "Chat", status: "open" },
+			...conversationDetailFixture(),
+			conversation: conversationFixture("conv-1"),
 			messages: [
 				{
 					id: "assistant-previous",
@@ -773,40 +917,12 @@ describe("chat page runtime integration", () => {
 					timestamp: 3,
 				},
 			],
-			contextStatus: {
-				estimatedTokens: 5000,
-				targetTokens: 10000,
-				thresholdTokens: 12000,
-				compactionMode: "none",
-				routingStage: "deterministic",
-				routingConfidence: 100,
-				verificationStatus: "skipped",
-				layersUsed: [],
-				recentTurnCount: 2,
-				workingSetCount: 0,
-				workingSetArtifactIds: [],
-				workingSetApplied: false,
-				taskStateApplied: false,
-				promptArtifactCount: 0,
-			},
-			contextDebug: {
-				routingStage: "deterministic",
-				routingConfidence: 100,
-				verificationStatus: "skipped",
-				activeTaskObjective: null,
-				taskLocked: false,
+			contextStatus: conversationContextStatusFixture({ recentTurnCount: 2 }),
+			contextDebug: contextDebugFixture({
 				selectedEvidence: [
-					{
-						artifactId: "artifact-1",
-						title: "Recovered evidence",
-						source: "document",
-						relevance: 0.9,
-						reason: "persisted recovery",
-					},
+					contextDebugEvidenceFixture({ reason: "persisted recovery" }),
 				],
-				pinnedEvidence: [],
-				excludedEvidence: [],
-			},
+			}),
 			contextCompressionSnapshots: [
 				{
 					id: "snapshot-1",
@@ -820,8 +936,8 @@ describe("chat page runtime integration", () => {
 			totalCostUsdMicros: 420_000,
 			totalTokens: 42,
 		});
-		render(Page, {
-			data: pageData({
+		renderPage(
+			pageData({
 				messages: [
 					{
 						id: "assistant-previous",
@@ -831,7 +947,7 @@ describe("chat page runtime integration", () => {
 					},
 				],
 			}),
-		});
+		);
 
 		await fireEvent.input(screen.getByTestId("message-input"), {
 			target: { value: "Background turn" },
@@ -868,7 +984,8 @@ describe("chat page runtime integration", () => {
 
 	it("recovers a backgrounded stream on mobile pageshow without requiring reload", async () => {
 		vi.mocked(fetchConversationDetail).mockResolvedValue({
-			conversation: { id: "conv-1", title: "Chat", status: "open" },
+			...conversationDetailFixture(),
+			conversation: conversationFixture("conv-1"),
 			messages: [
 				{
 					id: "server-user-1",
@@ -884,7 +1001,7 @@ describe("chat page runtime integration", () => {
 				},
 			],
 		});
-		render(Page, { data: pageData() });
+		renderPage();
 
 		await fireEvent.input(screen.getByTestId("message-input"), {
 			target: { value: "Mobile leave" },

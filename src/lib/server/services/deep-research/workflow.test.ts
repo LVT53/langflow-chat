@@ -6,6 +6,7 @@ import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as schema from "$lib/server/db/schema";
+import type { DeepResearchJob } from "$lib/types";
 
 let dbPath: string;
 
@@ -374,11 +375,13 @@ describe("real Deep Research workflow stepper", () => {
 		const { saveDeepResearchEvidenceNotes } = await import("./evidence-notes");
 		const { completeResearchTask, listResearchTasks } = await import("./tasks");
 		const { runDeepResearchWorkflowStep } = await import("./workflow");
-		const completeDeepResearchJobWithAuditedReport = vi.fn(async () => ({
-			...approved,
-			status: "completed",
-			stage: "report_ready",
-		}));
+		const completeDeepResearchJobWithAuditedReport = vi.fn(
+			async (): Promise<DeepResearchJob> => ({
+				...approved,
+				status: "completed",
+				stage: "report_ready",
+			}),
+		);
 
 		const source = await saveDiscoveredResearchSource({
 			userId: "user-1",
@@ -413,7 +416,7 @@ describe("real Deep Research workflow stepper", () => {
 		await completeResearchPassCheckpoint({
 			userId: "user-1",
 			checkpointId: checkpoint.id,
-			nextDecision: "synthesize",
+			nextDecision: "synthesize_report",
 			decisionSummary: "Reviewed evidence is ready for synthesis.",
 			now: new Date("2026-05-05T10:09:30.000Z"),
 		});
@@ -782,11 +785,13 @@ describe("real Deep Research workflow stepper", () => {
 			await import("./pass-state");
 		const { saveDeepResearchEvidenceNotes } = await import("./evidence-notes");
 		const { runDeepResearchWorkflowStep } = await import("./workflow");
-		const completeDeepResearchJobWithAuditedReport = vi.fn(async () => ({
-			...approved,
-			status: "completed",
-			stage: "limited_research_report_ready",
-		}));
+		const completeDeepResearchJobWithAuditedReport = vi.fn(
+			async (): Promise<DeepResearchJob> => ({
+				...approved,
+				status: "completed",
+				stage: "limited_research_report_ready",
+			}),
+		);
 
 		await db
 			.update(schema.deepResearchPlanVersions)
@@ -969,11 +974,13 @@ describe("real Deep Research workflow stepper", () => {
 			"$lib/server/services/knowledge/store"
 		);
 		const { runDeepResearchWorkflowStep } = await import("./workflow");
-		const completeDeepResearchJobWithAuditedReport = vi.fn(async () => ({
-			...approved,
-			status: "completed",
-			stage: "report_ready",
-		}));
+		const completeDeepResearchJobWithAuditedReport = vi.fn(
+			async (): Promise<DeepResearchJob> => ({
+				...approved,
+				status: "completed",
+				stage: "report_ready",
+			}),
+		);
 
 		await db
 			.update(schema.deepResearchPlanVersions)
@@ -1119,13 +1126,15 @@ describe("real Deep Research workflow stepper", () => {
 			await import("./pass-state");
 		const { saveDeepResearchEvidenceNotes } = await import("./evidence-notes");
 		const { runDeepResearchWorkflowStep } = await import("./workflow");
-		const completeDeepResearchJobWithAuditedReport = vi.fn(async () => ({
-			...approved,
-			status: "completed",
-			stage: "limited_research_report_ready",
-		}));
+		const completeDeepResearchJobWithAuditedReport = vi.fn(
+			async (): Promise<DeepResearchJob> => ({
+				...approved,
+				status: "completed",
+				stage: "limited_research_report_ready",
+			}),
+		);
 		const completeDeepResearchJobWithEvidenceLimitationMemo = vi.fn(
-			async () => ({
+			async (): Promise<DeepResearchJob> => ({
 				...approved,
 				status: "completed",
 				stage: "evidence_limitation_memo_ready",
@@ -1169,7 +1178,8 @@ describe("real Deep Research workflow stepper", () => {
 				finding: "Assistant B indexes repositories for coding assistance.",
 			},
 		];
-		const sources = [];
+		const sources: Awaited<ReturnType<typeof saveDiscoveredResearchSource>>[] =
+			[];
 		for (const fixture of sourceFixtures) {
 			const source = await saveDiscoveredResearchSource({
 				userId: "user-1",
@@ -2332,7 +2342,7 @@ describe("real Deep Research workflow stepper", () => {
 		await completeResearchPassCheckpoint({
 			userId: "user-1",
 			checkpointId: poisonedCheckpoint.id,
-			nextDecision: "synthesize",
+			nextDecision: "synthesize_report",
 			decisionSummary: "Poisoned synthesis was ready before recovery.",
 			now: new Date("2026-05-05T10:11:00.000Z"),
 		});
@@ -2415,7 +2425,7 @@ describe("real Deep Research workflow stepper", () => {
 		await completeResearchPassCheckpoint({
 			userId: "user-1",
 			checkpointId: correctedCheckpoint.id,
-			nextDecision: "synthesize",
+			nextDecision: "synthesize_report",
 			decisionSummary: "Corrected pass is ready for synthesis.",
 			now: new Date("2026-05-05T10:28:30.000Z"),
 		});
@@ -2448,11 +2458,13 @@ describe("real Deep Research workflow stepper", () => {
 			})
 			.where(eq(schema.deepResearchJobs.id, approved.id));
 
-		const completeDeepResearchJobWithAuditedReport = vi.fn(async () => ({
-			...correctedApproval,
-			status: "completed",
-			stage: "report_ready",
-		}));
+		const completeDeepResearchJobWithAuditedReport = vi.fn(
+			async (): Promise<DeepResearchJob> => ({
+				...correctedApproval,
+				status: "completed",
+				stage: "report_ready",
+			}),
+		);
 		const result = await runDeepResearchWorkflowStep(
 			{
 				userId: "user-1",
@@ -2960,31 +2972,31 @@ describe("real Deep Research workflow stepper", () => {
 					id: "gap-1",
 					keyQuestion: "Question one",
 					summary: "Resolve question one.",
-					severity: "major",
+					severity: "important",
 				},
 				{
 					id: "gap-2",
 					keyQuestion: "Question two",
 					summary: "Resolve question two.",
-					severity: "major",
+					severity: "important",
 				},
 				{
 					id: "gap-3",
 					keyQuestion: "Question three",
 					summary: "Resolve question three.",
-					severity: "major",
+					severity: "important",
 				},
 				{
 					id: "gap-4",
 					keyQuestion: "Question four",
 					summary: "Resolve question four.",
-					severity: "major",
+					severity: "important",
 				},
 				{
 					id: "gap-5",
 					keyQuestion: "Question five",
 					summary: "Resolve question five.",
-					severity: "major",
+					severity: "important",
 				},
 			],
 			now: new Date("2026-05-05T10:09:00.000Z"),
@@ -3072,12 +3084,14 @@ describe("real Deep Research workflow stepper", () => {
 					coverage: {
 						assessResearchCoverage: () => ({
 							jobId: approved.id,
+							conversationId: "conv-1",
 							status: "insufficient",
 							canContinue: true,
+							continuationRecommendation: null,
 							coverageGaps: [
 								{
 									keyQuestion: "What source is missing?",
-									reason: "No reviewed sources yet.",
+									reason: "insufficient_reviewed_sources",
 									reviewedSourceCount: 0,
 									recommendedNextAction: "Add authoritative sources.",
 								},
@@ -3086,9 +3100,23 @@ describe("real Deep Research workflow stepper", () => {
 								{
 									limitation:
 										"Runtime expired before enough evidence was reviewed.",
-									severity: "major",
+									keyQuestion: "What evidence is still missing?",
+									reviewedSourceCount: 0,
 								},
 							],
+							budget: {
+								selectedDepth: "focused",
+								sourceReviewCeiling: 0,
+								reviewedSourceCount: 0,
+								remainingSourceReviews: 0,
+								synthesisPassCeiling: 0,
+								remainingSynthesisPasses: 0,
+								exhausted: true,
+							},
+							remainingBudget: {
+								sourceReviews: 0,
+								synthesisPasses: 0,
+							},
 							timelineSummary: {
 								stage: "coverage_assessment",
 								kind: "warning",

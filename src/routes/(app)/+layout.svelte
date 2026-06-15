@@ -8,7 +8,6 @@ import Sidebar from "$lib/components/layout/Sidebar.svelte";
 import CampaignModal from "$lib/components/campaigns/CampaignModal.svelte";
 import ServerUpdateNotice from "./_components/ServerUpdateNotice.svelte";
 import type { Component } from "svelte";
-let ImportChatGPTModalComponent: Component | null = $state(null);
 import {
 	currentConversationId,
 	sidebarOpen,
@@ -66,6 +65,15 @@ import type { LayoutProps } from "./$types";
 
 let { data, children }: LayoutProps = $props();
 
+type ImportChatGPTModalProps = {
+	show: boolean;
+	onClose?: () => void;
+	projects?: Project[];
+};
+
+let ImportChatGPTModalComponent: Component<ImportChatGPTModalProps> | null =
+	$state(null);
+
 type AppVersionMetadata = { compact: string; full: string };
 type LayoutAvailableModel = {
 	id: ModelId;
@@ -78,38 +86,34 @@ type LayoutAvailableModel = {
 // Debounce state for conversation list refresh
 let lastRefreshTime = $state(0);
 const REFRESH_DEBOUNCE_MS = 2000; // 2 seconds minimum between refreshes
-let previousConversationUserId = $state<string | null>(null);
+let previousConversationUserId: string | null = $state(null);
 let serverUpdateAvailable = $state(false);
 let serverUpdateSuppressedUntil = $state(
 	browser ? readServerUpdateRefreshSuppressedUntil(window.sessionStorage) : 0,
 );
-let serverUpdateSuppressionTimeout: ReturnType<
-	typeof window.setTimeout
-> | null = null;
-let activeCampaign = $state<Campaign | null>(null);
-let campaignMode = $state<CampaignDisplayMode>("auto");
+let serverUpdateSuppressionTimeout: number | null = null;
+let activeCampaign: Campaign | null = $state(null);
+let campaignMode: CampaignDisplayMode = $state("auto");
 let campaignSlideIndex = $state(0);
 let campaignViewedSlideIds = new Set<string>();
 let showChatGPTImportModal = $state(false);
-let selectedCampaignModel = $state<UserModelPreference>(null);
-let effectiveCampaignModel = $state<ModelId>("model1");
-let campaignSystemDefaultModel = $state<ModelId>("model1");
+let selectedCampaignModel: UserModelPreference = $state(null);
+let effectiveCampaignModel: ModelId = $state("model1");
+let campaignSystemDefaultModel: ModelId = $state("model1");
 let layoutCampaignDefaultKey = $state("");
-let selectedCampaignTheme = $state<Theme>("system");
-let selectedCampaignUiLanguage = $state<UiLanguage>("en");
-let selectedCampaignPersonalityId = $state<string | null>(null);
-let campaignPersonalityProfiles = $state<
-	Array<{
-		id: string;
-		name: string;
-		description: string;
-		isBuiltIn?: boolean | number | null;
-	}>
->([]);
-let shellConversations = $state<ConversationListItem[]>([]);
-let shellProjects = $state<Project[]>([]);
-let shellAppVersion = $state<AppVersionMetadata | null>(null);
-let shellAvailableModels = $state<LayoutAvailableModel[]>([]);
+let selectedCampaignTheme: Theme = $state("system");
+let selectedCampaignUiLanguage: UiLanguage = $state("en");
+let selectedCampaignPersonalityId: string | null = $state(null);
+let campaignPersonalityProfiles: Array<{
+	id: string;
+	name: string;
+	description: string;
+	isBuiltIn?: boolean | number | null;
+}> = $state([]);
+let shellConversations: ConversationListItem[] = $state([]);
+let shellProjects: Project[] = $state([]);
+let shellAppVersion: AppVersionMetadata | null = $state(null);
+let shellAvailableModels: LayoutAvailableModel[] = $state([]);
 let shellPayloadSequence = 0;
 
 $effect(() => {

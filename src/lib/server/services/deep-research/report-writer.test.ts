@@ -4,7 +4,7 @@ import type {
 	DeepResearchEvidenceNote,
 	DeepResearchSynthesisClaim,
 } from "$lib/types";
-import type { ResearchPlan } from "./planning";
+import { buildResearchBudget, type ResearchPlan } from "./planning";
 import {
 	isComparisonMatrixEntirelyNotEstablished,
 	renderAuditedResearchReportMarkdown,
@@ -17,10 +17,7 @@ const basePlan: ResearchPlan = {
 	goal: "Compare private AI coding assistants for a small engineering team.",
 	depth: "standard",
 	reportIntent: "comparison",
-	researchBudget: {
-		sourceReviewCeiling: 40,
-		synthesisPassCeiling: 2,
-	},
+	researchBudget: buildResearchBudget("standard"),
 	keyQuestions: [
 		"Which products have the strongest repository-aware coding workflow?",
 		"Which pricing and compliance differences matter for a small team?",
@@ -39,6 +36,16 @@ const basePlan: ResearchPlan = {
 	constraints: ["Prefer primary vendor and documentation sources."],
 	deliverables: ["Cited Research Report"],
 };
+
+function headingTexts(markdown: string, maxDepth = 2): string[] {
+	const headings: string[] = [];
+	for (const token of marked.lexer(markdown)) {
+		if (token.type === "heading" && token.depth === maxDepth) {
+			headings.push(token.text);
+		}
+	}
+	return headings;
+}
 
 const baseSynthesisNotes: SynthesisNotes = {
 	jobId: "job-1",
@@ -139,6 +146,7 @@ const evidenceNotes: DeepResearchEvidenceNote[] = [
 		conversationId: "conv-1",
 		userId: "user-1",
 		passCheckpointId: "pass-1",
+		passNumber: 1,
 		sourceId: "source-1",
 		taskId: null,
 		supportedKeyQuestion:
@@ -162,6 +170,7 @@ const evidenceNotes: DeepResearchEvidenceNote[] = [
 		conversationId: "conv-1",
 		userId: "user-1",
 		passCheckpointId: "pass-1",
+		passNumber: 1,
 		sourceId: "source-2",
 		taskId: null,
 		supportedKeyQuestion:
@@ -564,11 +573,8 @@ describe("Deep Research report writer", () => {
 		expect(report.keyFindings).toHaveLength(7);
 		expect(report.markdown).not.toContain("Supported decision finding 7.");
 
-		const headings = marked
-			.lexer(report.markdown)
-			.filter((token) => token.type === "heading" && token.depth <= 2)
-			.map((token) => token.text);
-		expect(headings.slice(1)).toEqual([
+		const headings = headingTexts(report.markdown);
+		expect(headings).toEqual([
 			"Answer",
 			"Key Findings",
 			"Recommendation",
@@ -777,10 +783,7 @@ describe("Deep Research report writer", () => {
 			],
 		});
 
-		const headings = marked
-			.lexer(report.markdown)
-			.filter((token) => token.type === "heading" && token.depth === 2)
-			.map((token) => token.text);
+		const headings = headingTexts(report.markdown);
 		expect(headings.slice(0, 4)).toEqual([
 			"Answer",
 			"Key Findings",
@@ -1300,7 +1303,11 @@ describe("Deep Research report writer", () => {
 	it("renders Nulane/Kathmandu comparison columns from validated products and binds central axis evidence", () => {
 		const nulaneEntity = "CUBE Nulane Hybrid C:62 SLX 400X 2025";
 		const kathmanduEntity = "CUBE Kathmandu Hybrid SLX 2025";
-		const bikeEvidence = [
+		const bikeEvidence: Array<
+			DeepResearchEvidenceNote & {
+				claimType: DeepResearchSynthesisClaim["claimType"];
+			}
+		> = [
 			{
 				entity: nulaneEntity,
 				axis: "Pricing",
@@ -2031,10 +2038,7 @@ describe("Deep Research report writer", () => {
 			limitations: ["Compliance evidence is thinner than workflow evidence."],
 		});
 
-		const headings = marked
-			.lexer(report.markdown)
-			.filter((token) => token.type === "heading" && token.depth === 2)
-			.map((token) => token.text);
+		const headings = headingTexts(report.markdown);
 		expect(headings.slice(0, 7)).toEqual([
 			"Answer",
 			"Key Findings",
@@ -2144,10 +2148,7 @@ describe("Deep Research report writer", () => {
 			limitations: ["No direct user-session trace was available."],
 		});
 
-		const headings = marked
-			.lexer(report.markdown)
-			.filter((token) => token.type === "heading" && token.depth === 2)
-			.map((token) => token.text);
+		const headings = headingTexts(report.markdown);
 		expect(headings.slice(0, 6)).toEqual([
 			"Answer",
 			"Key Findings",
@@ -2264,10 +2265,7 @@ describe("Deep Research report writer", () => {
 				limitations: ["Availability evidence was regional."],
 			});
 
-			const headings = marked
-				.lexer(report.markdown)
-				.filter((token) => token.type === "heading" && token.depth === 2)
-				.map((token) => token.text);
+			const headings = headingTexts(report.markdown);
 			expect(headings.slice(0, 7)).toEqual([
 				"Answer",
 				"Key Findings",
@@ -2395,10 +2393,7 @@ describe("Deep Research report writer", () => {
 			],
 		});
 
-		const headings = marked
-			.lexer(report.markdown)
-			.filter((token) => token.type === "heading" && token.depth === 2)
-			.map((token) => token.text);
+		const headings = headingTexts(report.markdown);
 		expect(headings.slice(0, 6)).toEqual([
 			"Answer",
 			"Key Findings",

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { UiMessageStreamPart } from "$lib/services/ai-sdk-ui-stream-contract";
 import {
 	aiSdkUiStreamContractParts,
 	encodeAiSdkUiFixtureFrames,
@@ -50,6 +51,11 @@ interface ReconnectBuffer {
 		}>;
 		metadata?: Record<string, string | number | boolean | null>;
 	}>;
+	eventTimeline?: Array<{
+		seq: number;
+		type: "token" | "thinking" | "response_activity" | "tool_call";
+		index: number;
+	}>;
 }
 
 describe("doReconnect", () => {
@@ -91,14 +97,34 @@ describe("doReconnect", () => {
 		doReconnect(targetStreamId, {
 			userId: "user-1",
 			conversationId: "conversation-1",
-			enqueueChunk,
-			closeDownstream,
+			enqueueChunk: enqueueChunk as unknown as (chunk: string) => boolean,
+			closeDownstream: closeDownstream as unknown as () => void,
 			downstreamAbortSignal: abortController.signal,
-			getStreamBuffer,
-			subscribeToStream,
-			unsubscribeFromStream,
-			createSsePreludeComment,
-			createSseHeartbeatComment,
+			getStreamBuffer: getStreamBuffer as unknown as (params: {
+				streamId: string;
+				userId: string;
+				conversationId: string;
+			}) => ReconnectBuffer | undefined,
+			subscribeToStream: subscribeToStream as unknown as (
+				params: {
+					streamId: string;
+					userId: string;
+					conversationId: string;
+				},
+				listener: (chunk: string) => void,
+			) => boolean,
+			unsubscribeFromStream: unsubscribeFromStream as unknown as (
+				params: {
+					streamId: string;
+					userId: string;
+					conversationId: string;
+				},
+				listener: (chunk: string) => void,
+			) => void,
+			createSsePreludeComment:
+				createSsePreludeComment as unknown as () => string,
+			createSseHeartbeatComment:
+				createSseHeartbeatComment as unknown as () => string,
 		});
 	}
 
@@ -129,9 +155,15 @@ describe("doReconnect", () => {
 		);
 	}
 
+	function isUiMessageStreamPart(
+		event: UiMessageStreamPart | "[DONE]",
+	): event is UiMessageStreamPart {
+		return event !== "[DONE]";
+	}
+
 	function dataParts(type: string) {
 		return enqueuedProtocolEvents()
-			.filter((event): event is Record<string, unknown> => event !== "[DONE]")
+			.filter(isUiMessageStreamPart)
 			.filter((event) => event.type === type)
 			.map((event) => event.data);
 	}

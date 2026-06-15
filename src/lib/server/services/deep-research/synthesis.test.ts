@@ -1,32 +1,58 @@
 import { describe, expect, it } from "vitest";
+import type { PersistedReviewedResearchSourceNotes } from "./source-review";
 import { buildSynthesisNotes } from "./synthesis";
+
+function makeReviewedSource(
+	overrides: Partial<PersistedReviewedResearchSourceNotes>,
+): PersistedReviewedResearchSourceNotes {
+	return {
+		id: "reviewed-1",
+		jobId: "job-1",
+		discoveredSourceId: "source-1",
+		canonicalUrl: "https://agency.gov.example/report",
+		title: "Agency report",
+		duplicateSourceIds: [],
+		authorityScore: 80,
+		qualityScore: 16,
+		reviewScore: 96,
+		summary:
+			"Official data shows adoption increased across regulated providers.",
+		keyFindings: ["Adoption increased across regulated providers in 2025."],
+		extractedText:
+			"The agency report states adoption increased across regulated providers in 2025.",
+		relevanceScore: 85,
+		topicRelevant: true,
+		topicRelevanceReason: "Directly addresses the approved question.",
+		supportedKeyQuestions: [
+			"Which products have the strongest repository-aware coding workflow?",
+		],
+		extractedClaims: [],
+		sourceQualitySignals: {
+			sourceType: "official_government",
+			independence: "primary",
+			freshness: "current",
+			directness: "direct",
+			extractionConfidence: "high",
+			claimFit: "strong",
+		},
+		sourceAuthoritySummary: {
+			label: "Official",
+			score: 80,
+			reasons: ["Primary agency source"],
+		},
+		rejectedReason: null,
+		openedContentLength: 120,
+		reviewedAt: "2026-05-05T12:00:00.000Z",
+		createdAt: "2026-05-05T12:00:00.000Z",
+		...overrides,
+	};
+}
 
 describe("Deep Research synthesis notes", () => {
 	it("turns Reviewed Source notes into supported findings with citation metadata", async () => {
 		const result = await buildSynthesisNotes({
 			jobId: "job-1",
-			reviewedSources: [
-				{
-					id: "reviewed-1",
-					jobId: "job-1",
-					discoveredSourceId: "source-1",
-					canonicalUrl: "https://agency.gov.example/report",
-					title: "Agency report",
-					duplicateSourceIds: [],
-					authorityScore: 80,
-					qualityScore: 16,
-					reviewScore: 96,
-					summary:
-						"Official data shows adoption increased across regulated providers.",
-					keyFindings: [
-						"Adoption increased across regulated providers in 2025.",
-					],
-					extractedText:
-						"The agency report states adoption increased across regulated providers in 2025.",
-					reviewedAt: "2026-05-05T12:00:00.000Z",
-					createdAt: "2026-05-05T12:00:00.000Z",
-				},
-			],
+			reviewedSources: [makeReviewedSource({})],
 			completedTasks: [],
 		});
 
@@ -55,14 +81,12 @@ describe("Deep Research synthesis notes", () => {
 		const result = await buildSynthesisNotes({
 			jobId: "job-claim-types",
 			reviewedSources: [
-				{
+				makeReviewedSource({
 					id: "reviewed-specs",
 					jobId: "job-claim-types",
 					discoveredSourceId: "source-specs",
 					canonicalUrl: "https://vendor.example.com/model-x/specs",
 					title: "Model X official specifications",
-					duplicateSourceIds: [],
-					authorityScore: 80,
 					qualityScore: 80,
 					reviewScore: 160,
 					summary: "Model X official specifications.",
@@ -71,9 +95,7 @@ describe("Deep Research synthesis notes", () => {
 					],
 					extractedText:
 						"Model X officially includes 16 GB memory and 1 TB storage.",
-					reviewedAt: "2026-05-05T12:00:00.000Z",
-					createdAt: "2026-05-05T12:00:00.000Z",
-				},
+				}),
 			],
 			completedTasks: [],
 		});
@@ -91,38 +113,48 @@ describe("Deep Research synthesis notes", () => {
 		const result = await buildSynthesisNotes({
 			jobId: "job-1",
 			reviewedSources: [
-				{
+				makeReviewedSource({
 					id: "reviewed-costs-down",
 					jobId: "job-1",
 					discoveredSourceId: "source-costs-down",
 					canonicalUrl: "https://agency.gov.example/costs",
 					title: "Agency cost report",
-					duplicateSourceIds: [],
-					authorityScore: 80,
 					qualityScore: 16,
 					reviewScore: 96,
 					summary: "Official data says battery costs decreased in 2025.",
 					keyFindings: ["Battery costs decreased in 2025."],
 					extractedText: "Battery costs decreased in 2025.",
-					reviewedAt: "2026-05-05T12:00:00.000Z",
-					createdAt: "2026-05-05T12:00:00.000Z",
-				},
-				{
+				}),
+				makeReviewedSource({
 					id: "reviewed-costs-up",
 					jobId: "job-1",
 					discoveredSourceId: "source-costs-up",
 					canonicalUrl: "https://market.example.test/costs",
 					title: "Market cost tracker",
-					duplicateSourceIds: [],
 					authorityScore: 25,
 					qualityScore: 8,
 					reviewScore: 33,
 					summary: "Market tracker says battery costs increased in 2025.",
 					keyFindings: ["Battery costs increased in 2025."],
 					extractedText: "Battery costs increased in 2025.",
-					reviewedAt: "2026-05-05T12:01:00.000Z",
-					createdAt: "2026-05-05T12:01:00.000Z",
-				},
+					relevanceScore: 40,
+					topicRelevant: true,
+					topicRelevanceReason: "Secondary market tracker",
+					supportedKeyQuestions: [],
+					sourceQualitySignals: {
+						sourceType: "news",
+						independence: "independent",
+						freshness: "current",
+						directness: "direct",
+						extractionConfidence: "medium",
+						claimFit: "partial",
+					},
+					sourceAuthoritySummary: {
+						label: "Limited",
+						score: 25,
+						reasons: ["Secondary market tracker"],
+					},
+				}),
 			],
 			completedTasks: [],
 		});
@@ -200,22 +232,11 @@ describe("Deep Research synthesis notes", () => {
 		const result = await buildSynthesisNotes({
 			jobId: "job-1",
 			reviewedSources: [
-				{
-					id: "reviewed-1",
-					jobId: "job-1",
-					discoveredSourceId: "source-1",
-					canonicalUrl: "https://agency.gov.example/report",
-					title: "Agency report",
-					duplicateSourceIds: [],
-					authorityScore: 80,
-					qualityScore: 16,
-					reviewScore: 96,
+				makeReviewedSource({
 					summary: "Raw source note.",
 					keyFindings: ["Raw source-level finding."],
 					extractedText: "Raw source note.",
-					reviewedAt: "2026-05-05T12:00:00.000Z",
-					createdAt: "2026-05-05T12:00:00.000Z",
-				},
+				}),
 			],
 			completedTasks: [
 				{
@@ -245,13 +266,12 @@ describe("Deep Research synthesis notes", () => {
 		const result = await buildSynthesisNotes({
 			jobId: "job-cube",
 			reviewedSources: [
-				{
+				makeReviewedSource({
 					id: "reviewed-off-topic",
 					jobId: "job-cube",
 					discoveredSourceId: "source-off-topic",
 					canonicalUrl: "https://cars.example.test/volkswagen-ev-prices",
 					title: "Volkswagen EV prices",
-					duplicateSourceIds: [],
 					authorityScore: 80,
 					qualityScore: 80,
 					reviewScore: 160,
@@ -268,9 +288,7 @@ describe("Deep Research synthesis notes", () => {
 					extractedClaims: ["Volkswagen EV prices dropped in Hungary."],
 					rejectedReason: null,
 					openedContentLength: 740,
-					reviewedAt: "2026-05-05T12:00:00.000Z",
-					createdAt: "2026-05-05T12:00:00.000Z",
-				},
+				}),
 			],
 			completedTasks: [
 				{
@@ -297,13 +315,12 @@ describe("Deep Research synthesis notes", () => {
 		const result = await buildSynthesisNotes({
 			jobId: "job-unreviewed",
 			reviewedSources: [
-				{
+				makeReviewedSource({
 					id: "source-without-review-time",
 					jobId: "job-unreviewed",
 					discoveredSourceId: "source-without-review-time",
 					canonicalUrl: "https://agency.gov.example/report",
 					title: "Agency report",
-					duplicateSourceIds: [],
 					authorityScore: 80,
 					qualityScore: 80,
 					reviewScore: 160,
@@ -312,9 +329,9 @@ describe("Deep Research synthesis notes", () => {
 					extractedText: "Adoption increased across regulated providers.",
 					relevanceScore: 95,
 					topicRelevant: true,
+					reviewedAt: "",
 					rejectedReason: null,
-					createdAt: "2026-05-05T12:00:00.000Z",
-				},
+				}),
 			],
 			completedTasks: [],
 		});

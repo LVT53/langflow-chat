@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ArtifactSummary, KnowledgeUploadResponse } from "$lib/types";
 
 vi.mock("$lib/server/auth/hooks", () => ({
 	requireAuth: vi.fn(),
@@ -30,30 +31,35 @@ import {
 } from "$lib/server/services/knowledge/upload-intake";
 import { POST } from "./+server";
 
-const mockRequireAuth = requireAuth as ReturnType<typeof vi.fn>;
-const mockCompleteKnowledgeUploadFromFile =
-	completeKnowledgeUploadFromFile as ReturnType<typeof vi.fn>;
-const mockIsKnowledgeUploadConversationError =
-	isKnowledgeUploadConversationError as ReturnType<typeof vi.fn>;
-const mockResolveKnowledgeUploadLimits =
-	resolveKnowledgeUploadLimits as ReturnType<typeof vi.fn>;
+const mockRequireAuth = vi.mocked(requireAuth);
+const mockCompleteKnowledgeUploadFromFile = vi.mocked(
+	completeKnowledgeUploadFromFile,
+);
+const mockIsKnowledgeUploadConversationError = vi.mocked(
+	isKnowledgeUploadConversationError,
+);
+const mockResolveKnowledgeUploadLimits = vi.mocked(
+	resolveKnowledgeUploadLimits,
+);
 let consoleInfoSpy: ReturnType<typeof vi.spyOn> | null = null;
 type KnowledgeUploadEvent = Parameters<typeof POST>[0];
 
-function uploadResponse(overrides: Record<string, unknown> = {}) {
+function uploadResponse(overrides: Partial<KnowledgeUploadResponse> = {}) {
+	const artifact = {
+		id: "artifact-1",
+		type: "source_document",
+		retrievalClass: "durable",
+		name: "doc.pdf",
+		mimeType: "application/pdf",
+		sizeBytes: 1024,
+		conversationId: "conv-1",
+		summary: "Doc",
+		createdAt: Date.now(),
+		updatedAt: Date.now(),
+	} satisfies ArtifactSummary;
+
 	return {
-		artifact: {
-			id: "artifact-1",
-			type: "source_document",
-			retrievalClass: "durable",
-			name: "doc.pdf",
-			mimeType: "application/pdf",
-			sizeBytes: 1024,
-			conversationId: "conv-1",
-			summary: "Doc",
-			createdAt: Date.now(),
-			updatedAt: Date.now(),
-		},
+		artifact,
 		normalizedArtifact: null,
 		reusedExistingArtifact: false,
 		honcho: { uploaded: true, mode: "native" },
@@ -61,7 +67,7 @@ function uploadResponse(overrides: Record<string, unknown> = {}) {
 		promptArtifactId: null,
 		readinessError: null,
 		...overrides,
-	};
+	} satisfies KnowledgeUploadResponse;
 }
 
 function makeEventWithFormData(formData: FormData): KnowledgeUploadEvent {
@@ -76,7 +82,7 @@ function makeEventWithFormData(formData: FormData): KnowledgeUploadEvent {
 		params: {},
 		url: new URL("http://localhost/api/knowledge/upload"),
 		route: { id: "/api/knowledge/upload" },
-	} as KnowledgeUploadEvent;
+	} as unknown as KnowledgeUploadEvent;
 }
 
 describe("POST /api/knowledge/upload", () => {
@@ -122,7 +128,7 @@ describe("POST /api/knowledge/upload", () => {
 			summary: "Recipe",
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
-		};
+		} satisfies ArtifactSummary;
 		const normalizedArtifact = {
 			id: "normalized-1",
 			type: "normalized_document",
@@ -134,7 +140,7 @@ describe("POST /api/knowledge/upload", () => {
 			summary: "Recipe text",
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
-		};
+		} satisfies ArtifactSummary;
 		mockCompleteKnowledgeUploadFromFile.mockResolvedValue(
 			uploadResponse({
 				artifact,
@@ -173,7 +179,7 @@ describe("POST /api/knowledge/upload", () => {
 			summary: "Image OCR",
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
-		};
+		} satisfies ArtifactSummary;
 		const normalizedArtifact = {
 			id: "normalized-image-415",
 			type: "normalized_document",
@@ -185,7 +191,7 @@ describe("POST /api/knowledge/upload", () => {
 			summary: "OCR text",
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
-		};
+		} satisfies ArtifactSummary;
 
 		mockCompleteKnowledgeUploadFromFile.mockResolvedValue(
 			uploadResponse({
@@ -225,7 +231,7 @@ describe("POST /api/knowledge/upload", () => {
 			summary: "Scan",
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
-		};
+		} satisfies ArtifactSummary;
 		mockCompleteKnowledgeUploadFromFile.mockResolvedValue(
 			uploadResponse({
 				artifact,
@@ -265,7 +271,7 @@ describe("POST /api/knowledge/upload", () => {
 			summary: "Thin extraction",
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
-		};
+		} satisfies ArtifactSummary;
 		const normalizedArtifact = {
 			id: "normalized-3",
 			type: "normalized_document",
@@ -277,7 +283,7 @@ describe("POST /api/knowledge/upload", () => {
 			summary: "Thin text",
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
-		};
+		} satisfies ArtifactSummary;
 		mockCompleteKnowledgeUploadFromFile.mockResolvedValue(
 			uploadResponse({
 				artifact,
@@ -319,7 +325,7 @@ describe("POST /api/knowledge/upload", () => {
 			params: {},
 			url: new URL("http://localhost/api/knowledge/upload"),
 			route: { id: "/api/knowledge/upload" },
-		} as KnowledgeUploadEvent;
+		} as unknown as KnowledgeUploadEvent;
 
 		const response = await POST(event);
 		const data = await response.json();
@@ -345,7 +351,7 @@ describe("POST /api/knowledge/upload", () => {
 			params: {},
 			url: new URL("http://localhost/api/knowledge/upload"),
 			route: { id: "/api/knowledge/upload" },
-		} as KnowledgeUploadEvent;
+		} as unknown as KnowledgeUploadEvent;
 
 		const response = await POST(event);
 		const data = await response.json();
@@ -392,7 +398,7 @@ describe("POST /api/knowledge/upload", () => {
 			params: {},
 			url: new URL("http://localhost/api/knowledge/upload"),
 			route: { id: "/api/knowledge/upload" },
-		} as KnowledgeUploadEvent;
+		} as unknown as KnowledgeUploadEvent;
 
 		try {
 			const response = await POST(event);
@@ -431,7 +437,7 @@ describe("POST /api/knowledge/upload", () => {
 			params: {},
 			url: new URL("http://localhost/api/knowledge/upload"),
 			route: { id: "/api/knowledge/upload" },
-		} as KnowledgeUploadEvent;
+		} as unknown as KnowledgeUploadEvent;
 
 		const response = await POST(event);
 		const data = await response.json();
@@ -460,7 +466,7 @@ describe("POST /api/knowledge/upload", () => {
 			summary: "Doc",
 			createdAt: Date.now(),
 			updatedAt: Date.now(),
-		};
+		} satisfies ArtifactSummary;
 		mockCompleteKnowledgeUploadFromFile.mockResolvedValue(
 			uploadResponse({
 				artifact,

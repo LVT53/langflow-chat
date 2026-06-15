@@ -1,9 +1,16 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getConversationCostSummary } from "$lib/server/services/analytics";
 import { commitSkillNoteOperationsAfterAssistantMessage } from "$lib/server/services/skills/notes";
 import { applySkillControlOperations } from "$lib/server/services/skills/sessions";
 import { getProjectReferenceContext } from "$lib/server/services/task-state";
-import type { ArtifactSummary, ContextDebugState, TaskState } from "$lib/types";
+import type { UiMessageStreamPart } from "$lib/services/ai-sdk-ui-stream-contract";
+import type {
+	ArtifactSummary,
+	ChatMessage,
+	ContextDebugState,
+	TaskState,
+} from "$lib/types";
+import type { LegacyContextTraceSectionInput } from "./context-trace";
 import { decodeUiMessageStreamParts } from "./stream";
 import { completeStreamTurn } from "./stream-completion";
 
@@ -30,6 +37,18 @@ vi.mock("$lib/server/services/skills/sessions", () => ({
 vi.mock("$lib/server/services/skills/notes", () => ({
 	commitSkillNoteOperationsAfterAssistantMessage: vi.fn(async () => null),
 }));
+
+const defaultLatestContextTraceSections: LegacyContextTraceSectionInput[] = [
+	{
+		name: "Project Folder Sibling Context",
+		source: "memory",
+		body: "Title: Font options",
+		inclusionLevel: "legacy_full",
+		itemIds: ["conversation:conv-fonts"],
+		itemTitles: ["Font options"],
+		signalReasons: ["project_folder_sibling:query_match"],
+	},
+];
 
 describe("completeStreamTurn", () => {
 	const mockCreateMessage = vi.fn();
@@ -59,14 +78,11 @@ describe("completeStreamTurn", () => {
 	function getLatestEndPayload(): Record<string, unknown> {
 		const endEvent = mockEnqueueChunk.mock.calls
 			.flatMap((call: string[]) => decodeUiMessageStreamParts(call[0] ?? ""))
-			.find(
-				(event) => event !== "[DONE]" && event.type === "data-stream-metadata",
-			);
+			.find(isDataStreamMetadataEvent);
 
 		expect(endEvent).toBeDefined();
-		return endEvent !== "[DONE]"
-			? ((endEvent?.data ?? {}) as Record<string, unknown>)
-			: {};
+		if (!endEvent) return {};
+		return (endEvent.data ?? {}) as Record<string, unknown>;
 	}
 
 	function getLatestFinishPayload(): Record<string, unknown> {
@@ -75,9 +91,8 @@ describe("completeStreamTurn", () => {
 			.find((event) => event !== "[DONE]" && event.type === "finish");
 
 		expect(finishEvent).toBeDefined();
-		return finishEvent !== "[DONE]"
-			? (finishEvent as Record<string, unknown>)
-			: {};
+		if (!finishEvent) return {};
+		return finishEvent as Record<string, unknown>;
 	}
 
 	function getContextSourceGroups(payload: Record<string, unknown>): unknown[] {
@@ -85,6 +100,15 @@ describe("completeStreamTurn", () => {
 			| { groups?: unknown[] }
 			| undefined;
 		return contextSources?.groups ?? [];
+	}
+
+	function isDataStreamMetadataEvent(
+		event: UiMessageStreamPart | "[DONE]",
+	): event is UiMessageStreamPart & {
+		type: "data-stream-metadata";
+		data: unknown;
+	} {
+		return event !== "[DONE]" && event.type === "data-stream-metadata";
 	}
 
 	const defaultUserMsg = { id: "user-msg-1" };
@@ -142,27 +166,17 @@ describe("completeStreamTurn", () => {
 		activeDocumentArtifactId: "doc-1",
 		requestStartTime: Date.now() - 5000,
 		fileProductionJobIdsAtStart: new Set<string>(),
-		latestContextStatus: null as unknown,
-		latestActiveWorkingSet: null as unknown,
-		latestTaskState: null as unknown,
-		latestContextDebug: null as unknown,
-		latestHonchoContext: null as unknown,
-		latestHonchoSnapshot: null as unknown,
-		latestContextTraceSections: [
-			{
-				name: "Project Folder Sibling Context",
-				source: "memory",
-				body: "Title: Font options",
-				inclusionLevel: "legacy_full",
-				itemIds: ["conversation:conv-fonts"],
-				itemTitles: ["Font options"],
-				signalReasons: ["project_folder_sibling:query_match"],
-			},
-		],
-		latestProviderUsage: null as unknown,
-		initialContextStatus: null as unknown,
-		initialTaskState: null as unknown,
-		initialContextDebug: null as unknown,
+		latestContextStatus: null,
+		latestActiveWorkingSet: undefined,
+		latestTaskState: null,
+		latestContextDebug: null,
+		latestHonchoContext: null,
+		latestHonchoSnapshot: null,
+		latestContextTraceSections: defaultLatestContextTraceSections,
+		latestProviderUsage: null,
+		initialContextStatus: undefined,
+		initialTaskState: null,
+		initialContextDebug: null,
 		createMessage: mockCreateMessage,
 		persistUserTurnAttachments: mockPersistUserTurnAttachments,
 		persistAssistantTurnState: mockPersistAssistantTurnState,
@@ -192,6 +206,19 @@ describe("completeStreamTurn", () => {
 		createdAt: 1,
 		updatedAt: 2,
 	});
+
+	function makeChatMessage(
+		id: string,
+		role: ChatMessage["role"],
+		content: string,
+	): ChatMessage {
+		return {
+			id,
+			role,
+			content,
+			timestamp: 1_777_140_000_000,
+		};
+	}
 
 	const contextDebug = (
 		artifactId: string,
@@ -433,18 +460,18 @@ describe("completeStreamTurn", () => {
 			async (
 				_conversationId: string,
 				role: "user" | "assistant",
-			): Promise<{ id: string }> => {
+			): Promise<ChatMessage> => {
 				if (role === "user") {
 					return new Promise((resolve) => {
 						resolveUserMessage = () => {
 							persistedRoles.push("user");
-							resolve({ id: "user-msg-1" });
+							resolve(makeChatMessage("user-msg-1", "user", "user message"));
 						};
 					});
 				}
 
 				persistedRoles.push("assistant");
-				return { id: "asst-msg-1" };
+				return makeChatMessage("asst-msg-1", "assistant", "response text");
 			},
 		);
 
@@ -1114,7 +1141,7 @@ describe("completeStreamTurn", () => {
 			...defaultParams,
 			isReconnect: true,
 			fileProductionJobIdsAtStart: new Set(["job-existing"]),
-			toolCallRecords: [{ name: "produce_file", status: "done" }],
+			toolCallRecords: [{ name: "produce_file", input: {}, status: "done" }],
 		});
 
 		expect(mockCreateMessage).toHaveBeenCalledWith(
@@ -1188,7 +1215,7 @@ describe("completeStreamTurn", () => {
 		await completeStreamTurn({
 			...defaultParams,
 			fullResponse: "",
-			toolCallRecords: [{ name: "produce_file", status: "done" }],
+			toolCallRecords: [{ name: "produce_file", input: {}, status: "done" }],
 		});
 
 		expect(mockCreateMessage).toHaveBeenCalledWith(
@@ -1248,6 +1275,7 @@ describe("completeStreamTurn", () => {
 			toolCallRecords: [
 				{
 					name: "produce_file",
+					input: {},
 					status: "done",
 					metadata: {
 						ok: false,
@@ -1287,7 +1315,7 @@ describe("completeStreamTurn", () => {
 		await completeStreamTurn({
 			...defaultParams,
 			fileProductionJobIdsAtStart: new Set(["job-existing"]),
-			toolCallRecords: [{ name: "produce_file", status: "done" }],
+			toolCallRecords: [{ name: "produce_file", input: {}, status: "done" }],
 		});
 
 		expect(mockAssignFileProductionJobs).toHaveBeenCalledWith(
@@ -1303,7 +1331,7 @@ describe("completeStreamTurn", () => {
 
 		await completeStreamTurn({
 			...defaultParams,
-			toolCallRecords: [{ name: "File Production", status: "done" }],
+			toolCallRecords: [{ name: "File Production", input: {}, status: "done" }],
 		});
 
 		expect(mockAssignFileProductionJobs).toHaveBeenCalledWith(
@@ -1341,7 +1369,7 @@ describe("completeStreamTurn", () => {
 
 		await completeStreamTurn({
 			...defaultParams,
-			toolCallRecords: [{ name: "produce_file", status: "done" }],
+			toolCallRecords: [{ name: "produce_file", input: {}, status: "done" }],
 		});
 
 		expect(mockAssignFileProductionJobs).toHaveBeenCalledWith(

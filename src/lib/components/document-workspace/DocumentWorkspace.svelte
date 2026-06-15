@@ -24,6 +24,11 @@ import {
 type DocumentPreviewRendererModule =
 	typeof import("$lib/components/document-workspace/DocumentPreviewRenderer.svelte");
 
+type WorkspaceDocument = DocumentWorkspaceItem & {
+	currentPage?: number;
+	totalPages?: number;
+};
+
 let {
 	open = false,
 	presentation = "docked",
@@ -56,7 +61,7 @@ let {
 		| undefined;
 } = $props();
 
-let activeDocument = $derived.by(() => {
+let activeDocument: WorkspaceDocument | null = $derived.by(() => {
 	if (documents.length === 0 && availableDocuments.length === 0) return null;
 	return (
 		documents.find((document) => document.id === activeDocumentId) ??
@@ -67,22 +72,21 @@ let activeDocument = $derived.by(() => {
 });
 let compareMode = $state(false);
 let mobileDocumentsSheetOpen = $state(false);
-let compareDocumentId = $state<string | null>(null);
-let compareCurrentTextHtml = $state<string | null>(null);
-let compareOtherTextHtml = $state<string | null>(null);
-let compareSummary = $state<ReturnType<typeof summarizeTextComparison> | null>(
-	null,
-);
+let compareDocumentId: string | null = $state(null);
+let compareCurrentTextHtml: string | null = $state(null);
+let compareOtherTextHtml: string | null = $state(null);
+let compareSummary: ReturnType<typeof summarizeTextComparison> | null =
+	$state(null);
 let compareLoading = $state(false);
-let compareError = $state<string | null>(null);
+let compareError: string | null = $state(null);
 let syncScrollEnabled = $state(false);
-let leftPanelBody: HTMLDivElement | undefined = $state(undefined);
-let rightPanelBody: HTMLDivElement | undefined = $state(undefined);
+let leftPanelBody: HTMLDivElement | null = $state(null);
+let rightPanelBody: HTMLDivElement | null = $state(null);
 let isSyncingScroll = false;
 let documentPreviewRendererModulePromise: Promise<DocumentPreviewRendererModule> | null =
 	null;
-let desktopShellElement = $state<HTMLElement | null>(null);
-let mobileShellElement = $state<HTMLElement | null>(null);
+let desktopShellElement: HTMLElement | null = $state(null);
+let mobileShellElement: HTMLElement | null = $state(null);
 // Fade animation state
 let isVisible = $state(false);
 let shouldRender = $state(false);
@@ -93,7 +97,7 @@ let lastPresentation: "docked" | "expanded" | null = null;
 // Page navigation state
 let currentPage = $state(1);
 let currentTotalPages = $state(1);
-let lastDocumentId = $state<string | null>(null);
+let lastDocumentId: string | null = $state(null);
 
 // Resize state
 let isResizing = $state(false);
@@ -107,7 +111,7 @@ const WORKSPACE_WIDTH_STORAGE_KEY = "document-workspace-width";
 const DESKTOP_PREVIEW_MEDIA_QUERY = "(min-width: 768px)";
 
 let workspaceWidth = $state(getInitialWorkspaceWidth());
-let previewRendererSurface = $state<"desktop" | "mobile">(
+let previewRendererSurface: "desktop" | "mobile" = $state(
 	getInitialPreviewRendererSurface(),
 );
 let shouldRenderMobilePreview = $derived(previewRendererSurface === "mobile");
@@ -358,7 +362,7 @@ function getDocumentSourceLabel(document: DocumentWorkspaceItem): string {
 		: $t("documentWorkspace.fromKnowledgeBase");
 }
 
-let familyDocuments = $state<DocumentWorkspaceItem[]>([]);
+let familyDocuments: DocumentWorkspaceItem[] = $state([]);
 
 $effect(() => {
 	const activeDoc = activeDocument;
@@ -665,12 +669,12 @@ $effect(() => {
 });
 
 function syncScroll(
-	source: HTMLDivElement,
-	target: HTMLDivElement | undefined,
+	source: HTMLDivElement | null | undefined,
+	target: HTMLDivElement | null | undefined,
 ) {
 	if (!syncScrollEnabled || isSyncingScroll || !target) return;
 	isSyncingScroll = true;
-	target.scrollTop = source.scrollTop;
+	target.scrollTop = source?.scrollTop ?? 0;
 	requestAnimationFrame(() => {
 		isSyncingScroll = false;
 	});
@@ -1268,6 +1272,7 @@ function toggleSyncScroll() {
 
 	.workspace-shell-mobile .workspace-title span {
 		display: -webkit-box;
+		line-clamp: 2;
 		-webkit-line-clamp: 2;
 		-webkit-box-orient: vertical;
 	}

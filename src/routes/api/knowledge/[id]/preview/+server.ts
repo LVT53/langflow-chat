@@ -28,7 +28,7 @@ export const GET: RequestHandler = async (event) => {
 		return createJsonErrorResponse(resolved.error, resolved.status);
 	}
 
-	return new Response(resolved.body, {
+	return new Response(Buffer.from(resolved.body), {
 		status: resolved.status,
 		headers: resolved.headers,
 	});
