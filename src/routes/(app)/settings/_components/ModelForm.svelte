@@ -2,7 +2,6 @@
 import { untrack } from "svelte";
 import { get } from "svelte/store";
 import { t } from "$lib/i18n";
-import { deriveModelContextLimits } from "$lib/model-context-defaults";
 import type {
 	Provider,
 	ProviderModel,
@@ -59,25 +58,6 @@ $effect(() => {
 });
 let formMaxModelContext = $state(
 	untrack(() => numToString(model?.maxModelContext)),
-);
-
-let formContextPreview = $derived(
-	(() => {
-		const maxModelContext = stringToNum(formMaxModelContext);
-		return maxModelContext != null && maxModelContext > 0
-			? deriveModelContextLimits({ maxModelContext })
-			: null;
-	})(),
-);
-let formCompactionPreview = $derived(
-	formContextPreview != null
-		? String(formContextPreview.compactionUiThreshold)
-		: "",
-);
-let formTargetPreview = $derived(
-	formContextPreview != null
-		? String(formContextPreview.targetConstructedContext)
-		: "",
 );
 let formMaxMessageLength = $state(
 	untrack(() => numToString(model?.maxMessageLength)),
@@ -245,14 +225,33 @@ function handleSave() {
 				</div>
 
 				<div>
-					<label class="settings-label" for="model-form-display-name">{$t('admin.displayName')}</label>
-					<input
-						id="model-form-display-name"
-						type="text"
-						class="settings-input"
-						bind:value={formDisplayName}
-						placeholder={$t('admin.displayNamePlaceholder')}
-					/>
+					<div class="flex items-end gap-3">
+						<div class="min-w-0 flex-1">
+							<label class="settings-label" for="model-form-display-name">{$t('admin.displayName')}</label>
+							<input
+								id="model-form-display-name"
+								type="text"
+								class="settings-input"
+								bind:value={formDisplayName}
+								placeholder={$t('admin.displayNamePlaceholder')}
+							/>
+						</div>
+						<label
+							class="relative mb-2 inline-flex cursor-pointer items-center"
+							title={formEnabled ? $t('admin.enabled') : $t('admin.disabled')}
+							aria-label={formEnabled ? $t('admin.enabled') : $t('admin.disabled')}
+						>
+							<input
+								id="model-form-enabled"
+								type="checkbox"
+								class="peer sr-only"
+								bind:checked={formEnabled}
+							/>
+							<div
+								class="peer h-5 w-9 rounded-full bg-surface-secondary after:absolute after:left-[2px] after:top-[2px] after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent peer-checked:after:translate-x-full"
+							></div>
+						</label>
+					</div>
 				</div>
 
 				<div>
@@ -291,30 +290,6 @@ function handleSave() {
 								placeholder={$t('admin.maxModelContextRequired')}
 								min="0"
 							/>
-						</div>
-						<div>
-							<label class="settings-label" for="model-form-compaction">{$t('admin.compactionUiThreshold')}</label>
-							<input
-								id="model-form-compaction"
-								type="text"
-								class="settings-input text-text-muted"
-								value={formCompactionPreview}
-								disabled
-								readonly
-							/>
-							<p class="mt-1 text-xs text-text-muted">{@html $t('admin.autoCalculatedFromMaxContext')}</p>
-						</div>
-						<div>
-							<label class="settings-label" for="model-form-target">{$t('admin.targetConstructedContext')}</label>
-							<input
-								id="model-form-target"
-								type="text"
-								class="settings-input text-text-muted"
-								value={formTargetPreview}
-								disabled
-								readonly
-							/>
-							<p class="mt-1 text-xs text-text-muted">{@html $t('admin.autoCalculatedFromMaxContext')}</p>
 						</div>
 						<div>
 							<label class="settings-label" for="model-form-max-msg">{$t('admin.maxMessageLengthLabel')}</label>
@@ -405,10 +380,6 @@ function handleSave() {
 							<p class="mt-1 text-xs text-danger">
 								{$t('admin.modelFallbackNoCompatibleOptions')}
 							</p>
-						{:else}
-							<p class="mt-1 text-xs text-text-muted">
-								{$t('admin.modelFallbackDescription')}
-							</p>
 						{/if}
 					</div>
 				{/if}
@@ -476,24 +447,16 @@ function handleSave() {
 					</details>
 				</div>
 
-				<div class="mt-2 border-t border-border pt-3">
-					<div class="flex items-center gap-2">
-						<input id="model-form-enabled" type="checkbox" bind:checked={formEnabled} />
-						<label class="settings-label mb-0" for="model-form-enabled">{$t('admin.enabled')}</label>
-					</div>
-				</div>
 			</div>
-
+		</div>
+		<div class="modal-footer">
 			{#if visibleError}
-				<p class="mt-4 text-sm text-danger">{visibleError}</p>
+				<p class="text-sm text-danger">{visibleError}</p>
 			{/if}
-
-			<div class="mt-4 flex flex-wrap gap-2">
-				<button class="btn-primary flex-1" onclick={handleSave} disabled={saving}>
-					{saving ? $t('common.saving') : $t('admin.saveChanges')}
-				</button>
-				<button class="btn-secondary" onclick={onClose}>{$t('common.cancel')}</button>
-			</div>
+			<button class="btn-primary flex-1" onclick={handleSave} disabled={saving}>
+				{saving ? $t('common.saving') : $t('admin.saveChanges')}
+			</button>
+			<button class="btn-secondary" onclick={onClose}>{$t('common.cancel')}</button>
 		</div>
 	</div>
 </div>
@@ -516,7 +479,9 @@ function handleSave() {
 		box-shadow: var(--shadow-lg);
 		width: min(36rem, calc(100vw - 2rem));
 		max-height: calc(100vh - 4rem);
-		overflow-y: auto;
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
 	}
 	.modal-header {
 		display: flex;
@@ -540,5 +505,19 @@ function handleSave() {
 	}
 	.modal-body {
 		padding: 1.25rem;
+		overflow-y: auto;
+	}
+	.modal-footer {
+		position: sticky;
+		bottom: 0;
+		z-index: 1;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+		flex-shrink: 0;
+		align-items: center;
+		padding: 1rem 1.25rem;
+		border-top: 1px solid var(--border-default);
+		background: var(--surface-overlay);
 	}
 </style>

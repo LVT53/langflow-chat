@@ -340,8 +340,6 @@ const settingsDict = {
 			"e.g. accounts/fireworks/models/llama-v3-70b",
 		"admin.modelFallbackLabel": "Model-specific fallback",
 		"admin.modelFallbackNone": "No model-specific fallback",
-		"admin.modelFallbackDescription":
-			"Choose a compatible model-specific fallback. Incompatible targets are disabled.",
 		"admin.modelFallbackNoCompatibleOptions":
 			"No compatible model-specific fallback is available for this model.",
 		"admin.modelFallbackProviderWarning":
@@ -992,8 +990,6 @@ const settingsDict = {
 			"pl. accounts/fireworks/models/llama-v3-70b",
 		"admin.modelFallbackLabel": "Modellspecifikus tartalék",
 		"admin.modelFallbackNone": "Nincs modellspecifikus tartalék",
-		"admin.modelFallbackDescription":
-			"Válassz egy kompatibilis modellspecifikus tartalékot. Az inkompatibilis célok le vannak tiltva.",
 		"admin.modelFallbackNoCompatibleOptions":
 			"Ehhez a modellhez nincs elérhető kompatibilis modellspecifikus tartalék.",
 		"admin.modelFallbackProviderWarning":

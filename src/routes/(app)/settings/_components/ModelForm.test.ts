@@ -32,6 +32,45 @@ function modelFixture(overrides: Record<string, unknown> = {}) {
 }
 
 describe("ModelForm pricing fields", () => {
+	it("hides derived context previews and fallback helper copy", () => {
+		const { queryByLabelText, queryByText } = render(ModelForm, {
+			providerId: "provider-1",
+			model: modelFixture(),
+			onSave: vi.fn(),
+			onClose: vi.fn(),
+		});
+
+		expect(queryByLabelText("Compaction UI Threshold (tokens)")).toBeNull();
+		expect(queryByLabelText("Target Constructed Context (tokens)")).toBeNull();
+		expect(
+			queryByText(
+				"Choose a compatible model-specific fallback. Incompatible targets are disabled.",
+			),
+		).toBeNull();
+	});
+
+	it("renders the enabled switch without visible label text and keeps actions in the modal footer", () => {
+		const { container, getByRole } = render(ModelForm, {
+			providerId: "provider-1",
+			model: modelFixture(),
+			onSave: vi.fn(),
+			onClose: vi.fn(),
+		});
+
+		const enabledToggle = container.querySelector("#model-form-enabled");
+		expect(enabledToggle).not.toBeNull();
+		if (!enabledToggle) return;
+
+		expect(enabledToggle.classList.contains("sr-only")).toBe(true);
+		expect(enabledToggle.closest("label")?.textContent?.trim()).toBe("");
+
+		const footer = container.querySelector(".modal-footer");
+		expect(footer).toBeTruthy();
+		expect(
+			footer?.contains(getByRole("button", { name: "Save Changes" })),
+		).toBe(true);
+	});
+
 	it("shows three primary price fields and maps cached input onto the legacy cache-hit rate", async () => {
 		const onSave = vi.fn();
 		const { getByLabelText, getByRole, queryByLabelText } = render(ModelForm, {
