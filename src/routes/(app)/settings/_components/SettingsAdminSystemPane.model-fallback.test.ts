@@ -191,7 +191,7 @@ describe("SettingsAdminSystemPane model fallback UI", () => {
 	});
 
 	it("does not render provider-only timeout failover options when provider models exist", async () => {
-		const { getByRole } = render(SettingsAdminSystemPane, {
+		const { getByRole, getAllByRole } = render(SettingsAdminSystemPane, {
 			adminConfig: {
 				COMPOSER_COMMAND_REGISTRY_ENABLED: "false",
 				DEEP_RESEARCH_ENABLED: "false",
@@ -215,8 +215,19 @@ describe("SettingsAdminSystemPane model fallback UI", () => {
 		});
 
 		const select = getByRole("combobox", {
-			name: "Failover Model",
+			name: "Global fallback model",
 		}) as HTMLSelectElement;
+		await waitFor(() => {
+			expect(getAllByRole("button", { name: "Manage models" })).not.toHaveLength(
+				0,
+			);
+		});
+		const manageModelsButton = getAllByRole("button", { name: "Manage models" })[0];
+
+		expect(
+			select.compareDocumentPosition(manageModelsButton) &
+				Node.DOCUMENT_POSITION_FOLLOWING,
+		).not.toBe(0);
 
 		expect(Array.from(select.options).map((option) => option.value)).toEqual([
 			"model1",

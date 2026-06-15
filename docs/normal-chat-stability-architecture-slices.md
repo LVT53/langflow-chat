@@ -76,7 +76,7 @@ Make the Active Stream Registry the authority for active stream ownership, aged 
 **Blocked by:** Slice 1
 **Status:** Complete on 2026-06-04.
 
-**Fallback contract update, 2026-06-15:** current Normal Chat **Model Fallback** routing is Provider Model first, global fallback second, and no provider-wide fallback. The 2026-06-04 implementation evidence below records the state of the completed slice at that time; provider-level fallback language should not be used as the forward design.
+**Fallback contract update, 2026-06-15:** current Normal Chat **Model Fallback** routing is Provider Model first, global fallback second, and no provider-wide fallback. Admin fallback compatibility treats enabled Provider Models as chat-capable and treats unknown provider-discovery capability metadata as advisory unless there is explicit incompatible evidence. The global fallback selector belongs with Provider/Provider Model administration, not with generic rate and size limits. The 2026-06-04 implementation evidence below records the state of the completed slice at that time; provider-level fallback language should not be used as the forward design.
 
 ### What to build
 

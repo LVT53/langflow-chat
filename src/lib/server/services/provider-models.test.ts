@@ -389,7 +389,15 @@ describe("ProviderModel CRUD", () => {
 				providerId: provider.id,
 				name: "fallback-model",
 				displayName: "Fallback Model",
-				capabilitiesJson: compatibleCapabilities,
+				capabilitiesJson: JSON.stringify({
+					chat: "detected",
+					streaming: "detected",
+					tools: "detected",
+					structuredOutput: "detected",
+					fileMessageParts: "detected",
+					imageMessageParts: "detected",
+					reasoningControls: "not_detected",
+				}),
 			});
 
 			await expect(
@@ -982,6 +990,7 @@ describe("ProviderModel CRUD", () => {
 						structuredOutput: "detected",
 						fileMessageParts: "detected",
 						imageMessageParts: "detected",
+						reasoningControls: "not_detected",
 					}),
 				}),
 			).rejects.toThrow(

@@ -13,12 +13,8 @@ export type ProviderModelFallbackCompatibilityResult =
 	| { compatible: true }
 	| { compatible: false; reason: string };
 
-const REQUIRED_FALLBACK_CAPABILITIES: readonly ModelCapabilityKey[] = [
-	"chat",
-	"streaming",
-];
-
 const CONDITIONAL_FALLBACK_CAPABILITIES: readonly ModelCapabilityKey[] = [
+	"streaming",
 	"tools",
 	"structuredOutput",
 	"fileMessageParts",
@@ -95,12 +91,6 @@ function formatCapabilityReason(
 	return `${role} model must explicitly support ${capability}`;
 }
 
-function formatUnknownSourceCapabilityReason(
-	capability: ModelCapabilityKey,
-): string {
-	return `source model capability ${capability} is unknown; probe or override before choosing a fallback`;
-}
-
 export function canUseProviderModelFallback(
 	source: ProviderModelFallbackCompatibilityInput,
 	fallback: ProviderModelFallbackCompatibilityInput,
@@ -110,31 +100,11 @@ export function canUseProviderModelFallback(
 		fallback.capabilitiesJson,
 	);
 
-	for (const capability of REQUIRED_FALLBACK_CAPABILITIES) {
-		if (sourceCapabilities[capability] !== true) {
-			return {
-				compatible: false,
-				reason: formatCapabilityReason("source", capability),
-			};
-		}
-
-		if (fallbackCapabilities[capability] !== true) {
-			return {
-				compatible: false,
-				reason: formatCapabilityReason("fallback", capability),
-			};
-		}
-	}
-
 	for (const capability of CONDITIONAL_FALLBACK_CAPABILITIES) {
-		if (sourceCapabilities[capability] === null) {
-			return {
-				compatible: false,
-				reason: formatUnknownSourceCapabilityReason(capability),
-			};
-		}
-
-		if (sourceCapabilities[capability] === true && fallbackCapabilities[capability] !== true) {
+		if (
+			sourceCapabilities[capability] === true &&
+			fallbackCapabilities[capability] === false
+		) {
 			return {
 				compatible: false,
 				reason: formatCapabilityReason("fallback", capability),
@@ -142,7 +112,10 @@ export function canUseProviderModelFallback(
 		}
 	}
 
-	if (isReasoningControlsEnabled(source) && fallbackCapabilities.reasoningControls !== true) {
+	if (
+		isReasoningControlsEnabled(source) &&
+		fallbackCapabilities.reasoningControls === false
+	) {
 		return {
 			compatible: false,
 			reason: formatCapabilityReason("fallback", "reasoningControls"),

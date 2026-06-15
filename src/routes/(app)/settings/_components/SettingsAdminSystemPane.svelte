@@ -830,6 +830,54 @@ function placeholderFor(key: string): string {
 
 <section class="settings-card mb-4">
 	<h2 class="settings-section-title">{$t('admin.providers')}</h2>
+	<div class="mb-4 rounded-md border border-border bg-surface-page p-3">
+		<div class="flex items-center justify-between gap-3">
+			<div>
+				<label class="settings-label mb-0" for="MODEL_TIMEOUT_FAILOVER_ENABLED">{$t('admin.modelTimeoutFailoverEnabled')}</label>
+				<p class="text-xs text-text-tertiary">{$t('admin.modelTimeoutFailoverDescription')}</p>
+			</div>
+			<label class="relative inline-flex cursor-pointer items-center">
+				<input
+					id="MODEL_TIMEOUT_FAILOVER_ENABLED"
+					type="checkbox"
+					class="peer sr-only"
+					checked={adminConfig.MODEL_TIMEOUT_FAILOVER_ENABLED === 'true'}
+					onchange={(event) => {
+						adminConfig.MODEL_TIMEOUT_FAILOVER_ENABLED = event.currentTarget.checked ? 'true' : 'false';
+					}}
+				/>
+				<div class="peer h-6 w-11 rounded-full bg-surface-secondary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent peer-checked:after:translate-x-full"></div>
+			</label>
+		</div>
+		<div class="mt-3 grid gap-3 md:grid-cols-2">
+			<div>
+				<label class="settings-label" for="MODEL_TIMEOUT_FAILOVER_TIMEOUT_MS">{$t('admin.modelTimeoutFailoverTimeoutMs')}</label>
+				<input
+					id="MODEL_TIMEOUT_FAILOVER_TIMEOUT_MS"
+					type="number"
+					min="1000"
+					class="settings-input"
+					bind:value={adminConfig.MODEL_TIMEOUT_FAILOVER_TIMEOUT_MS}
+					placeholder={placeholderFor('MODEL_TIMEOUT_FAILOVER_TIMEOUT_MS')}
+				/>
+			</div>
+			<div>
+				<label class="settings-label" for="MODEL_TIMEOUT_FAILOVER_TARGET_MODEL">{$t('admin.modelTimeoutFailoverTargetModel')}</label>
+				<select
+					id="MODEL_TIMEOUT_FAILOVER_TARGET_MODEL"
+					class="settings-input"
+					value={timeoutFailoverTargetModelValue()}
+					onchange={(event) => {
+						adminConfig.MODEL_TIMEOUT_FAILOVER_TARGET_MODEL = event.currentTarget.value;
+					}}
+				>
+					{#each timeoutFailoverTargetModelOptions() as model}
+						<option value={model.id}>{model.displayName}</option>
+					{/each}
+				</select>
+			</div>
+		</div>
+	</div>
 	<ProviderList
 		providers={providerConfigs}
 		providerModels={allProviderModels}
@@ -1495,54 +1543,6 @@ function placeholderFor(key: string): string {
 				placeholder={placeholderFor('REQUEST_TIMEOUT_MS')}
 			/>
 			<p class="mt-1 text-xs text-text-muted">{$t('admin.requestTimeoutDescription')}</p>
-		</div>
-		<div class="border-t border-border pt-3">
-			<div class="flex items-center justify-between">
-				<div>
-					<label class="settings-label mb-0" for="MODEL_TIMEOUT_FAILOVER_ENABLED">{$t('admin.modelTimeoutFailoverEnabled')}</label>
-					<p class="text-xs text-text-tertiary">{$t('admin.modelTimeoutFailoverDescription')}</p>
-				</div>
-				<label class="relative inline-flex cursor-pointer items-center">
-					<input
-						id="MODEL_TIMEOUT_FAILOVER_ENABLED"
-						type="checkbox"
-						class="peer sr-only"
-						checked={adminConfig.MODEL_TIMEOUT_FAILOVER_ENABLED === 'true'}
-						onchange={(event) => {
-							adminConfig.MODEL_TIMEOUT_FAILOVER_ENABLED = event.currentTarget.checked ? 'true' : 'false';
-						}}
-					/>
-					<div class="peer h-6 w-11 rounded-full bg-surface-secondary after:absolute after:left-[2px] after:top-[2px] after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all peer-checked:bg-accent peer-checked:after:translate-x-full"></div>
-				</label>
-			</div>
-			<div class="mt-3 grid gap-3 md:grid-cols-2">
-				<div>
-					<label class="settings-label" for="MODEL_TIMEOUT_FAILOVER_TIMEOUT_MS">{$t('admin.modelTimeoutFailoverTimeoutMs')}</label>
-					<input
-						id="MODEL_TIMEOUT_FAILOVER_TIMEOUT_MS"
-						type="number"
-						min="1000"
-						class="settings-input"
-						bind:value={adminConfig.MODEL_TIMEOUT_FAILOVER_TIMEOUT_MS}
-						placeholder={placeholderFor('MODEL_TIMEOUT_FAILOVER_TIMEOUT_MS')}
-					/>
-				</div>
-				<div>
-					<label class="settings-label" for="MODEL_TIMEOUT_FAILOVER_TARGET_MODEL">{$t('admin.modelTimeoutFailoverTargetModel')}</label>
-					<select
-						id="MODEL_TIMEOUT_FAILOVER_TARGET_MODEL"
-						class="settings-input"
-						value={timeoutFailoverTargetModelValue()}
-						onchange={(event) => {
-							adminConfig.MODEL_TIMEOUT_FAILOVER_TARGET_MODEL = event.currentTarget.value;
-						}}
-					>
-						{#each timeoutFailoverTargetModelOptions() as model}
-							<option value={model.id}>{model.displayName}</option>
-						{/each}
-					</select>
-				</div>
-			</div>
 		</div>
 	</div>
 </section>
