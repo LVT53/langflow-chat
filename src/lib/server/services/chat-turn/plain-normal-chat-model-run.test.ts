@@ -1,6 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createModelCapabilitySet } from "$lib/model-capabilities";
 import type { RuntimeConfig } from "$lib/server/config-store";
+import {
+	createPlainNormalChatModelRunResult,
+	createPlainNormalChatPreparedContext,
+	createPlainNormalChatProvider,
+	createPlainNormalChatSendModelParams,
+} from "./plain-normal-chat-model-run.test-helpers";
 
 const mocks = vi.hoisted(() => ({
 	createNormalChatTools: vi.fn(),
@@ -38,6 +44,18 @@ vi.mock("$lib/server/services/normal-chat-tools", async (importOriginal) => {
 
 import { runPlainNormalChatSendModel } from "./plain-normal-chat-model-run";
 
+function runSubject(
+	overrides: Partial<
+		Omit<Parameters<typeof runPlainNormalChatSendModel>[0], "runtimeConfig">
+	> & {
+		runtimeConfig?: Partial<RuntimeConfig>;
+	} = {},
+) {
+	return runPlainNormalChatSendModel(
+		createPlainNormalChatSendModelParams(overrides),
+	);
+}
+
 describe("runPlainNormalChatSendModel", () => {
 	beforeEach(() => {
 		mocks.createNormalChatTools.mockReset();
@@ -48,73 +66,19 @@ describe("runPlainNormalChatSendModel", () => {
 			tools: { produce_file: { __testTool: true } },
 			getToolCalls: () => [],
 		});
-		mocks.resolveNormalChatModelRunProvider.mockResolvedValue({
-			id: "model1",
-			name: "model1",
-			displayName: "Model One",
-			baseUrl: "https://openai-compatible.example/v1",
-			modelName: "gpt-4.1",
-			apiKey: "model-1-secret",
-			maxOutputTokens: 2048,
-			reasoningEffort: "high",
-		});
-		mocks.prepareOutboundChatContext.mockResolvedValue({
-			inputValue: "Prepared user prompt",
-			systemPrompt: "Prepared system prompt",
-			contextStatus: undefined,
-			taskState: null,
-			contextDebug: null,
-			honchoContext: null,
-			honchoSnapshot: null,
-			contextTraceSections: [],
-		});
-		mocks.runPlainNormalChatModelRun.mockResolvedValue({
-			text: "Answer",
-			finishReason: "stop",
-			usage: {
-				inputTokens: undefined,
-				outputTokens: undefined,
-				totalTokens: undefined,
-			},
-			model: {
-				providerId: "model1",
-				providerName: "model1",
-				displayName: "Model One",
-				requestedModelName: "gpt-4.1",
-				responseModelName: "gpt-4.1",
-			},
-		});
+		mocks.resolveNormalChatModelRunProvider.mockResolvedValue(
+			createPlainNormalChatProvider(),
+		);
+		mocks.prepareOutboundChatContext.mockResolvedValue(
+			createPlainNormalChatPreparedContext(),
+		);
+		mocks.runPlainNormalChatModelRun.mockResolvedValue(
+			createPlainNormalChatModelRunResult(),
+		);
 	});
 
 	it("passes configured reasoning effort and request timeout to the model run", async () => {
-		await runPlainNormalChatSendModel({
-			userId: "user-1",
-			runtimeConfig: {
-				requestTimeoutMs: 1_500,
-				model1: {
-					baseUrl: "https://openai-compatible.example/v1",
-					apiKey: "model-1-secret",
-					modelName: "gpt-4.1",
-					displayName: "Model One",
-					systemPrompt: "",
-					maxTokens: 2048,
-					reasoningEffort: "high",
-					thinkingType: null,
-				},
-				model2: {
-					baseUrl: "https://unused.example/v1",
-					apiKey: "",
-					modelName: "unused",
-					displayName: "Unused",
-					systemPrompt: "",
-					maxTokens: null,
-					reasoningEffort: null,
-					thinkingType: null,
-				},
-			} as RuntimeConfig,
-			message: "Hello",
-			conversationId: "conv-1",
-			modelId: "model1",
+		await runSubject({
 			thinkingMode: "on",
 		});
 
@@ -149,34 +113,7 @@ describe("runPlainNormalChatSendModel", () => {
 			}),
 		});
 
-		await runPlainNormalChatSendModel({
-			userId: "user-1",
-			runtimeConfig: {
-				requestTimeoutMs: 1_500,
-				model1: {
-					baseUrl: "https://openai-compatible.example/v1",
-					apiKey: "model-1-secret",
-					modelName: "gpt-4.1",
-					displayName: "Model One",
-					systemPrompt: "",
-					maxTokens: 2048,
-					reasoningEffort: "high",
-					thinkingType: null,
-				},
-				model2: {
-					baseUrl: "https://unused.example/v1",
-					apiKey: "",
-					modelName: "unused",
-					displayName: "Unused",
-					systemPrompt: "",
-					maxTokens: null,
-					reasoningEffort: null,
-					thinkingType: null,
-				},
-			} as RuntimeConfig,
-			message: "Hello",
-			conversationId: "conv-1",
-			modelId: "model1",
+		await runSubject({
 			thinkingMode: "on",
 		});
 
@@ -203,37 +140,13 @@ describe("runPlainNormalChatSendModel", () => {
 			compactionUiThreshold: 678,
 		});
 
-		await runPlainNormalChatSendModel({
-			userId: "user-1",
+		await runSubject({
+			modelId: "provider:provider-1",
 			runtimeConfig: {
-				requestTimeoutMs: 1_500,
 				model1MaxModelContext: 1_000_000,
 				model1TargetConstructedContext: 900_000,
 				model1CompactionUiThreshold: 800_000,
-				model1: {
-					baseUrl: "https://openai-compatible.example/v1",
-					apiKey: "model-1-secret",
-					modelName: "gpt-4.1",
-					displayName: "Model One",
-					systemPrompt: "",
-					maxTokens: 2048,
-					reasoningEffort: "high",
-					thinkingType: null,
-				},
-				model2: {
-					baseUrl: "https://unused.example/v1",
-					apiKey: "",
-					modelName: "unused",
-					displayName: "Unused",
-					systemPrompt: "",
-					maxTokens: null,
-					reasoningEffort: null,
-					thinkingType: null,
-				},
-			} as RuntimeConfig,
-			message: "Hello",
-			conversationId: "conv-1",
-			modelId: "provider:provider-1",
+			},
 		});
 
 		expect(mocks.prepareOutboundChatContext).toHaveBeenCalledWith(
@@ -249,34 +162,8 @@ describe("runPlainNormalChatSendModel", () => {
 	});
 
 	it("leaves tool choice automatic for explicit file requests after removing produce_file auto-force", async () => {
-		await runPlainNormalChatSendModel({
-			userId: "user-1",
-			runtimeConfig: {
-				requestTimeoutMs: 1_500,
-				model1: {
-					baseUrl: "https://openai-compatible.example/v1",
-					apiKey: "model-1-secret",
-					modelName: "gpt-4.1",
-					displayName: "Model One",
-					systemPrompt: "",
-					maxTokens: 2048,
-					reasoningEffort: "high",
-					thinkingType: null,
-				},
-				model2: {
-					baseUrl: "https://unused.example/v1",
-					apiKey: "",
-					modelName: "unused",
-					displayName: "Unused",
-					systemPrompt: "",
-					maxTokens: null,
-					reasoningEffort: null,
-					thinkingType: null,
-				},
-			} as RuntimeConfig,
+		await runSubject({
 			message: "Please create a downloadable PDF report for me",
-			conversationId: "conv-1",
-			modelId: "model1",
 		});
 
 		expect(mocks.runPlainNormalChatModelRun).toHaveBeenCalledWith(
@@ -287,35 +174,9 @@ describe("runPlainNormalChatSendModel", () => {
 	});
 
 	it("leaves tool choice automatic when a file request needs project context first", async () => {
-		await runPlainNormalChatSendModel({
-			userId: "user-1",
-			runtimeConfig: {
-				requestTimeoutMs: 1_500,
-				model1: {
-					baseUrl: "https://openai-compatible.example/v1",
-					apiKey: "model-1-secret",
-					modelName: "gpt-4.1",
-					displayName: "Model One",
-					systemPrompt: "",
-					maxTokens: 2048,
-					reasoningEffort: "high",
-					thinkingType: null,
-				},
-				model2: {
-					baseUrl: "https://unused.example/v1",
-					apiKey: "",
-					modelName: "unused",
-					displayName: "Unused",
-					systemPrompt: "",
-					maxTokens: null,
-					reasoningEffort: null,
-					thinkingType: null,
-				},
-			} as RuntimeConfig,
+		await runSubject({
 			message:
 				"Could you please generate a pdf report with the content from AlmaLinux Server project folder? I want it to be detailed and long.",
-			conversationId: "conv-1",
-			modelId: "model1",
 		});
 
 		expect(mocks.runPlainNormalChatModelRun).toHaveBeenCalledWith(
@@ -326,35 +187,9 @@ describe("runPlainNormalChatSendModel", () => {
 	});
 
 	it("can force the produce_file tool after context-dependent file context is recovered", async () => {
-		await runPlainNormalChatSendModel({
-			userId: "user-1",
-			runtimeConfig: {
-				requestTimeoutMs: 1_500,
-				model1: {
-					baseUrl: "https://openai-compatible.example/v1",
-					apiKey: "model-1-secret",
-					modelName: "gpt-4.1",
-					displayName: "Model One",
-					systemPrompt: "",
-					maxTokens: 2048,
-					reasoningEffort: "high",
-					thinkingType: null,
-				},
-				model2: {
-					baseUrl: "https://unused.example/v1",
-					apiKey: "",
-					modelName: "unused",
-					displayName: "Unused",
-					systemPrompt: "",
-					maxTokens: null,
-					reasoningEffort: null,
-					thinkingType: null,
-				},
-			} as RuntimeConfig,
+		await runSubject({
 			message:
 				"Could you please generate a pdf report with the content from AlmaLinux Server project folder? I want it to be detailed and long.",
-			conversationId: "conv-1",
-			modelId: "model1",
 			forceProduceFileTool: true,
 		});
 
@@ -366,34 +201,8 @@ describe("runPlainNormalChatSendModel", () => {
 	});
 
 	it("leaves tool choice automatic for non-file chat requests", async () => {
-		await runPlainNormalChatSendModel({
-			userId: "user-1",
-			runtimeConfig: {
-				requestTimeoutMs: 1_500,
-				model1: {
-					baseUrl: "https://openai-compatible.example/v1",
-					apiKey: "model-1-secret",
-					modelName: "gpt-4.1",
-					displayName: "Model One",
-					systemPrompt: "",
-					maxTokens: 2048,
-					reasoningEffort: "high",
-					thinkingType: null,
-				},
-				model2: {
-					baseUrl: "https://unused.example/v1",
-					apiKey: "",
-					modelName: "unused",
-					displayName: "Unused",
-					systemPrompt: "",
-					maxTokens: null,
-					reasoningEffort: null,
-					thinkingType: null,
-				},
-			} as RuntimeConfig,
+		await runSubject({
 			message: "Explain how PDF generation works",
-			conversationId: "conv-1",
-			modelId: "model1",
 		});
 
 		expect(mocks.runPlainNormalChatModelRun).toHaveBeenCalledWith(
@@ -405,14 +214,7 @@ describe("runPlainNormalChatSendModel", () => {
 
 	it("uses the prepared output token budget as the plain model max output override", async () => {
 		mocks.prepareOutboundChatContext.mockResolvedValue({
-			inputValue: "Prepared user prompt",
-			systemPrompt: "Prepared system prompt",
-			contextStatus: undefined,
-			taskState: null,
-			contextDebug: null,
-			honchoContext: null,
-			honchoSnapshot: null,
-			contextTraceSections: [],
+			...createPlainNormalChatPreparedContext(),
 			outputTokenBudget: {
 				configuredMaxTokens: 2048,
 				effectiveMaxTokens: 777,
@@ -421,38 +223,7 @@ describe("runPlainNormalChatSendModel", () => {
 			},
 		});
 
-		await runPlainNormalChatSendModel({
-			userId: "user-1",
-			runtimeConfig: {
-				requestTimeoutMs: 1_500,
-				model1MaxModelContext: 10_000,
-				model1TargetConstructedContext: 8_000,
-				model1CompactionUiThreshold: 7_000,
-				model1: {
-					baseUrl: "https://openai-compatible.example/v1",
-					apiKey: "model-1-secret",
-					modelName: "gpt-4.1",
-					displayName: "Model One",
-					systemPrompt: "",
-					maxTokens: 2048,
-					reasoningEffort: "high",
-					thinkingType: null,
-				},
-				model2: {
-					baseUrl: "https://unused.example/v1",
-					apiKey: "",
-					modelName: "unused",
-					displayName: "Unused",
-					systemPrompt: "",
-					maxTokens: null,
-					reasoningEffort: null,
-					thinkingType: null,
-				},
-			} as RuntimeConfig,
-			message: "Hello",
-			conversationId: "conv-1",
-			modelId: "model1",
-		});
+		await runSubject();
 
 		expect(mocks.runPlainNormalChatModelRun).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -474,14 +245,7 @@ describe("runPlainNormalChatSendModel", () => {
 			},
 		};
 		mocks.prepareOutboundChatContext.mockResolvedValue({
-			inputValue: "Prepared user prompt",
-			systemPrompt: "Prepared system prompt",
-			contextStatus: undefined,
-			taskState: null,
-			contextDebug: null,
-			honchoContext: null,
-			honchoSnapshot: null,
-			contextTraceSections: [],
+			...createPlainNormalChatPreparedContext(),
 			outputTokenBudget: {
 				configuredMaxTokens: 2048,
 				effectiveMaxTokens: 1900,
@@ -490,37 +254,8 @@ describe("runPlainNormalChatSendModel", () => {
 			},
 		});
 
-		const result = await runPlainNormalChatSendModel({
-			userId: "user-1",
-			runtimeConfig: {
-				requestTimeoutMs: 1_500,
-				model1MaxModelContext: 10_000,
-				model1TargetConstructedContext: 8_000,
-				model1CompactionUiThreshold: 7_000,
-				model1: {
-					baseUrl: "https://openai-compatible.example/v1",
-					apiKey: "model-1-secret",
-					modelName: "gpt-4.1",
-					displayName: "Model One",
-					systemPrompt: "",
-					maxTokens: 2048,
-					reasoningEffort: "high",
-					thinkingType: null,
-				},
-				model2: {
-					baseUrl: "https://unused.example/v1",
-					apiKey: "",
-					modelName: "unused",
-					displayName: "Unused",
-					systemPrompt: "",
-					maxTokens: null,
-					reasoningEffort: null,
-					thinkingType: null,
-				},
-			} as RuntimeConfig,
+		const result = await runSubject({
 			message: "Compare the current options with citations.",
-			conversationId: "conv-1",
-			modelId: "model1",
 			depthMetadata,
 		});
 
@@ -572,38 +307,9 @@ describe("runPlainNormalChatSendModel", () => {
 	});
 
 	it("proceeds with broad but answerable high-cost work instead of asking unnecessarily", async () => {
-		const result = await runPlainNormalChatSendModel({
-			userId: "user-1",
-			runtimeConfig: {
-				requestTimeoutMs: 1_500,
-				model1MaxModelContext: 10_000,
-				model1TargetConstructedContext: 8_000,
-				model1CompactionUiThreshold: 7_000,
-				model1: {
-					baseUrl: "https://openai-compatible.example/v1",
-					apiKey: "model-1-secret",
-					modelName: "gpt-4.1",
-					displayName: "Model One",
-					systemPrompt: "",
-					maxTokens: 2048,
-					reasoningEffort: "high",
-					thinkingType: null,
-				},
-				model2: {
-					baseUrl: "https://unused.example/v1",
-					apiKey: "",
-					modelName: "unused",
-					displayName: "Unused",
-					systemPrompt: "",
-					maxTokens: null,
-					reasoningEffort: null,
-					thinkingType: null,
-				},
-			} as RuntimeConfig,
+		const result = await runSubject({
 			message:
 				"Research all viable platform options and build a complete migration plan.",
-			conversationId: "conv-1",
-			modelId: "model1",
 			depthMetadata: {
 				requested: "auto",
 				appliedProfile: "extended",
@@ -623,38 +329,9 @@ describe("runPlainNormalChatSendModel", () => {
 	});
 
 	it("proceeds with a visible assumption prefix when the user asks the model to assume", async () => {
-		const result = await runPlainNormalChatSendModel({
-			userId: "user-1",
-			runtimeConfig: {
-				requestTimeoutMs: 1_500,
-				model1MaxModelContext: 10_000,
-				model1TargetConstructedContext: 8_000,
-				model1CompactionUiThreshold: 7_000,
-				model1: {
-					baseUrl: "https://openai-compatible.example/v1",
-					apiKey: "model-1-secret",
-					modelName: "gpt-4.1",
-					displayName: "Model One",
-					systemPrompt: "",
-					maxTokens: 2048,
-					reasoningEffort: "high",
-					thinkingType: null,
-				},
-				model2: {
-					baseUrl: "https://unused.example/v1",
-					apiKey: "",
-					modelName: "unused",
-					displayName: "Unused",
-					systemPrompt: "",
-					maxTokens: null,
-					reasoningEffort: null,
-					thinkingType: null,
-				},
-			} as RuntimeConfig,
+		const result = await runSubject({
 			message:
 				"Research all viable platform options and build a complete migration plan. Use your best judgment.",
-			conversationId: "conv-1",
-			modelId: "model1",
 			depthMetadata: {
 				requested: "auto",
 				appliedProfile: "maximum",
@@ -703,49 +380,14 @@ describe("runPlainNormalChatSendModel", () => {
 			},
 		];
 		mocks.prepareOutboundChatContext.mockResolvedValue({
+			...createPlainNormalChatPreparedContext(),
 			inputValue:
 				"## Current Web Research\n\nEvidence\n\n## Current User Message\nWhat changed today?",
-			systemPrompt: "Prepared system prompt",
-			contextStatus: undefined,
-			taskState: null,
-			contextDebug: null,
-			honchoContext: null,
-			honchoSnapshot: null,
-			contextTraceSections: [],
 			prefetchedToolCalls,
 		});
 
-		const result = await runPlainNormalChatSendModel({
-			userId: "user-1",
-			runtimeConfig: {
-				requestTimeoutMs: 1_500,
-				model1MaxModelContext: 10_000,
-				model1TargetConstructedContext: 8_000,
-				model1CompactionUiThreshold: 7_000,
-				model1: {
-					baseUrl: "https://openai-compatible.example/v1",
-					apiKey: "model-1-secret",
-					modelName: "gpt-4.1",
-					displayName: "Model One",
-					systemPrompt: "",
-					maxTokens: 2048,
-					reasoningEffort: "high",
-					thinkingType: null,
-				},
-				model2: {
-					baseUrl: "https://unused.example/v1",
-					apiKey: "",
-					modelName: "unused",
-					displayName: "Unused",
-					systemPrompt: "",
-					maxTokens: null,
-					reasoningEffort: null,
-					thinkingType: null,
-				},
-			} as RuntimeConfig,
+		const result = await runSubject({
 			message: "What changed today?",
-			conversationId: "conv-1",
-			modelId: "model1",
 			forceWebSearch: true,
 		});
 
@@ -811,48 +453,12 @@ describe("runPlainNormalChatSendModel", () => {
 			getToolCalls: () => normalChatToolCalls,
 		});
 		mocks.prepareOutboundChatContext.mockResolvedValue({
-			inputValue: "Prepared user prompt",
-			systemPrompt: "Prepared system prompt",
-			contextStatus: undefined,
-			taskState: null,
-			contextDebug: null,
-			honchoContext: null,
-			honchoSnapshot: null,
-			contextTraceSections: [],
+			...createPlainNormalChatPreparedContext(),
 			prefetchedToolCalls,
 		});
 
-		const result = await runPlainNormalChatSendModel({
-			userId: "user-1",
-			runtimeConfig: {
-				requestTimeoutMs: 1_500,
-				model1MaxModelContext: 10_000,
-				model1TargetConstructedContext: 8_000,
-				model1CompactionUiThreshold: 7_000,
-				model1: {
-					baseUrl: "https://openai-compatible.example/v1",
-					apiKey: "model-1-secret",
-					modelName: "gpt-4.1",
-					displayName: "Model One",
-					systemPrompt: "",
-					maxTokens: 2048,
-					reasoningEffort: "high",
-					thinkingType: null,
-				},
-				model2: {
-					baseUrl: "https://unused.example/v1",
-					apiKey: "",
-					modelName: "unused",
-					displayName: "Unused",
-					systemPrompt: "",
-					maxTokens: null,
-					reasoningEffort: null,
-					thinkingType: null,
-				},
-			} as RuntimeConfig,
+		const result = await runSubject({
 			message: "Create a report",
-			conversationId: "conv-1",
-			modelId: "model1",
 			createTurnId: () => "normal-chat-turn-1",
 		});
 
@@ -877,34 +483,8 @@ describe("runPlainNormalChatSendModel", () => {
 	});
 
 	it("can disable tools for recovery-only plain model runs", async () => {
-		await runPlainNormalChatSendModel({
-			userId: "user-1",
-			runtimeConfig: {
-				requestTimeoutMs: 1_500,
-				model1: {
-					baseUrl: "https://openai-compatible.example/v1",
-					apiKey: "model-1-secret",
-					modelName: "gpt-4.1",
-					displayName: "Model One",
-					systemPrompt: "",
-					maxTokens: 2048,
-					reasoningEffort: "high",
-					thinkingType: null,
-				},
-				model2: {
-					baseUrl: "https://unused.example/v1",
-					apiKey: "",
-					modelName: "unused",
-					displayName: "Unused",
-					systemPrompt: "",
-					maxTokens: null,
-					reasoningEffort: null,
-					thinkingType: null,
-				},
-			} as RuntimeConfig,
+		await runSubject({
 			message: "Answer from already retrieved context",
-			conversationId: "conv-1",
-			modelId: "model1",
 			disableTools: true,
 		});
 
