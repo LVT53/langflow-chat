@@ -76,10 +76,7 @@ export function errorEvent(payload: {
 	})}${uiFrame({ type: "finish", finishReason: "error" })}${uiFrame("[DONE]")}`;
 }
 
-export function buildFetchResponse(
-	sseChunks: string[],
-	status = 200,
-): Response {
+function buildFetchResponse(sseChunks: string[], status = 200): Response {
 	const encoder = new TextEncoder();
 	const stream = new ReadableStream<Uint8Array>({
 		start(controller) {
