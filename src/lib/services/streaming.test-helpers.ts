@@ -1,4 +1,4 @@
-import { vi } from "vitest";
+import { type Mock, vi } from "vitest";
 import { encodeAiSdkUiFixtureFrame } from "../../../tests/fixtures/ai-sdk-ui-stream-contract";
 import type { StreamCallbacks, StreamMetadata } from "./streaming";
 import { streamChat } from "./streaming";
@@ -22,19 +22,21 @@ type ResponseBody = {
 };
 
 export type MockCallbacks = {
-	onToken: ReturnType<typeof vi.fn>;
-	onThinking: ReturnType<typeof vi.fn>;
-	onEnd: ReturnType<typeof vi.fn>;
-	onError: ReturnType<typeof vi.fn>;
+	onToken: Mock<(chunk: string) => void>;
+	onThinking: Mock<(chunk: string) => void>;
+	onEnd: Mock<(fullText: string, metadata?: StreamMetadata) => void>;
+	onError: Mock<(error: Error) => void>;
 };
 
-export type StreamHarnessOptions = {
+export type StreamHarnessOptions<
+	TCallbacks extends MockCallbacks = MockCallbacks,
+> = {
 	message?: string;
 	conversationId?: string;
 	responseChunks?: string[];
 	response?: Response;
 	responseStatus?: number;
-	callbacks?: MockCallbacks | StreamCallbacks;
+	callbacks?: TCallbacks;
 	options?: Parameters<typeof streamChat>[3];
 };
 
@@ -123,32 +125,48 @@ export function buildControlledFetchResponse(): {
 
 export function makeCallbacks(): MockCallbacks {
 	return {
-		onToken: vi.fn(),
-		onThinking: vi.fn(),
-		onEnd: vi.fn(),
-		onError: vi.fn(),
+		onToken: vi.fn<(chunk: string) => void>(),
+		onThinking: vi.fn<(chunk: string) => void>(),
+		onEnd: vi.fn<(fullText: string, metadata?: StreamMetadata) => void>(),
+		onError: vi.fn<(error: Error) => void>(),
 	};
 }
 
-export function makeEventLogCallbacks(events: string[]) {
+export function makeEventLogCallbacks(events: string[]): MockCallbacks & {
+	onWaiting: Mock<() => void>;
+} {
 	return {
 		...makeCallbacks(),
-		onToken: vi.fn((chunk: string) => events.push(`token:${chunk}`)),
-		onThinking: vi.fn((chunk: string) => events.push(`thinking:${chunk}`)),
-		onWaiting: vi.fn(() => events.push("waiting")),
-		onEnd: vi.fn((fullText: string) => events.push(`end:${fullText}`)),
+		onToken: vi.fn<(chunk: string) => void>((chunk: string) => {
+			events.push(`token:${chunk}`);
+		}),
+		onThinking: vi.fn<(chunk: string) => void>((chunk: string) => {
+			events.push(`thinking:${chunk}`);
+		}),
+		onWaiting: vi.fn<() => void>(() => {
+			events.push("waiting");
+		}),
+		onEnd: vi.fn<(fullText: string, metadata?: StreamMetadata) => void>(
+			(fullText: string, _metadata?: StreamMetadata) => {
+				events.push(`end:${fullText}`);
+			},
+		),
 	};
 }
 
-export function runStreamWithMockedResponse({
-	message = "test message",
-	conversationId = "conv-1",
-	responseChunks = [],
-	response,
-	responseStatus = 200,
-	callbacks = makeCallbacks(),
-	options,
-}: StreamHarnessOptions) {
+export function runStreamWithMockedResponse<
+	TCallbacks extends MockCallbacks = MockCallbacks,
+>(
+	{
+		message = "test message",
+		conversationId = "conv-1",
+		responseChunks = [],
+		response,
+		responseStatus = 200,
+		callbacks = makeCallbacks() as TCallbacks,
+		options,
+	}: StreamHarnessOptions<TCallbacks> = {} as StreamHarnessOptions<TCallbacks>,
+) {
 	const mockFetch = vi.mocked(fetch);
 	mockFetch.mockResolvedValue(
 		response ?? buildFetchResponse(responseChunks, responseStatus),

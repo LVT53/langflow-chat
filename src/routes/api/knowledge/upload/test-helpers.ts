@@ -1,6 +1,8 @@
 import { rm } from "node:fs/promises";
 import { join } from "node:path";
+import type { Cookies, RequestEvent } from "@sveltejs/kit";
 import { afterEach, beforeEach, vi } from "vitest";
+import type { SessionUser } from "$lib/types";
 
 vi.mock("$lib/server/auth/hooks", () => ({
 	requireAuth: vi.fn(),
@@ -66,13 +68,61 @@ export const mockValidateKnowledgeUploadConversation = vi.mocked(
 	validateKnowledgeUploadConversation,
 );
 
-export type KnowledgeUploadRouteEvent = {
-	request: Request;
-	locals: { user: { id: string; email: string } };
-	params: Record<string, never>;
-	url: URL;
-	route: { id: string };
+type KnowledgeUploadRouteEvent<RouteId extends string = string> = RequestEvent<
+	Record<string, never>,
+	RouteId
+>;
+
+const noopCookies: Cookies = {
+	get: () => undefined,
+	getAll: () => [],
+	set: () => undefined,
+	delete: () => undefined,
+	serialize: () => "",
 };
+
+function makeKnowledgeUploadRouteEvent<RouteId extends string>(params: {
+	request: Request;
+	requestUrl: string;
+	routeId: RouteId;
+	userId: string;
+	email?: string;
+	displayName?: string;
+}): KnowledgeUploadRouteEvent<RouteId> {
+	const user = {
+		id: params.userId,
+		email: params.email ?? "test@example.com",
+		displayName: params.displayName ?? "Test User",
+		role: "user",
+		avatarId: null,
+		profilePicture: null,
+		titleLanguage: "auto",
+		uiLanguage: "en",
+	} satisfies SessionUser;
+
+	const event = {
+		cookies: noopCookies,
+		fetch: globalThis.fetch,
+		getClientAddress: () => "127.0.0.1",
+		locals: { user },
+		params: {},
+		platform: undefined,
+		request: params.request,
+		route: { id: params.routeId },
+		setHeaders: () => undefined,
+		url: new URL(params.requestUrl),
+		isDataRequest: false,
+		isSubRequest: false,
+		isRemoteRequest: false,
+		tracing: {
+			enabled: false,
+			root: undefined as never,
+			current: undefined as never,
+		},
+	} satisfies KnowledgeUploadRouteEvent<RouteId>;
+
+	return event;
+}
 
 export function makeKnowledgeUploadHeaders(
 	overrides: Record<string, string> = {},
@@ -87,54 +137,50 @@ export function makeKnowledgeUploadHeaders(
 	};
 }
 
-export function makeKnowledgeUploadEvent(params: {
+export function makeKnowledgeUploadEvent<RouteId extends string>(params: {
 	body: BodyInit;
 	headers: Record<string, string>;
 	requestUrl: string;
-	routeId: string;
+	routeId: RouteId;
 	userId: string;
 	email?: string;
-}): KnowledgeUploadRouteEvent {
-	return {
+	displayName?: string;
+}): KnowledgeUploadRouteEvent<RouteId> {
+	return makeKnowledgeUploadRouteEvent({
 		request: new Request(params.requestUrl, {
 			method: "POST",
 			headers: params.headers,
 			body: params.body,
 		}),
-		locals: {
-			user: {
-				id: params.userId,
-				email: params.email ?? "test@example.com",
-			},
-		},
-		params: {},
-		url: new URL(params.requestUrl),
-		route: { id: params.routeId },
-	} as unknown as KnowledgeUploadRouteEvent;
+		requestUrl: params.requestUrl,
+		routeId: params.routeId,
+		userId: params.userId,
+		email: params.email,
+		displayName: params.displayName,
+	});
 }
 
-export function makeKnowledgeUploadRequestEvent(params: {
+export function makeKnowledgeUploadRequestEvent<
+	RouteId extends string,
+>(params: {
 	headers: Record<string, string>;
 	requestUrl: string;
-	routeId: string;
+	routeId: RouteId;
 	userId: string;
 	email?: string;
-}): KnowledgeUploadRouteEvent {
-	return {
-		request: {
-			headers: new Headers(params.headers),
-			arrayBuffer: vi.fn(),
-		},
-		locals: {
-			user: {
-				id: params.userId,
-				email: params.email ?? "test@example.com",
-			},
-		},
-		params: {},
-		url: new URL(params.requestUrl),
-		route: { id: params.routeId },
-	} as unknown as KnowledgeUploadRouteEvent;
+	displayName?: string;
+}): KnowledgeUploadRouteEvent<RouteId> {
+	return makeKnowledgeUploadRouteEvent({
+		request: new Request(params.requestUrl, {
+			method: "POST",
+			headers: params.headers,
+		}),
+		requestUrl: params.requestUrl,
+		routeId: params.routeId,
+		userId: params.userId,
+		email: params.email,
+		displayName: params.displayName,
+	});
 }
 
 export function createKnowledgeUploadRouteHarness(params: {

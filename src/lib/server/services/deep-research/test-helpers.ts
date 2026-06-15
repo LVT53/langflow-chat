@@ -172,13 +172,14 @@ export async function setDeepResearchPlanVersionRawJson(input: {
 	renderedPlan?: string;
 	updatedAt?: Date;
 }): Promise<void> {
-	if (!input.jobId && !input.planVersionId) {
+	const jobId = input.jobId ?? "";
+	if (!jobId && !input.planVersionId) {
 		throw new Error("Expected jobId or planVersionId");
 	}
 	const { db } = await import("$lib/server/db");
 	const planVersionWhere = input.planVersionId
 		? eq(schema.deepResearchPlanVersions.id, input.planVersionId)
-		: eq(schema.deepResearchPlanVersions.jobId, input.jobId);
+		: eq(schema.deepResearchPlanVersions.jobId, jobId);
 	await db
 		.update(schema.deepResearchPlanVersions)
 		.set({
@@ -631,7 +632,7 @@ export async function createApprovedDeepResearchJob(input?: {
 	return approved;
 }
 
-type ApprovedDeepResearchSourceInput = Omit<
+export type ApprovedDeepResearchSourceInput = Omit<
 	SeedDiscoveredSourceInput,
 	"userId" | "conversationId" | "jobId" | "reviewed"
 > & {

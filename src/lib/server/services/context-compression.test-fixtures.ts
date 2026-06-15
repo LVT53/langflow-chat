@@ -92,7 +92,18 @@ export function createLegacySourceMessages() {
 export function createCompressionSnapshotResponse(
 	input: ContextCompressionSnapshotResponseInput,
 ) {
-	const snapshot = {
+	const snapshot: {
+		goal: string;
+		currentState: string;
+		importantDecisions: string[];
+		importantFacts: string[];
+		openTasks: string[];
+		openQuestions: string[];
+		toolUseAndEvidenceRefs: NonNullable<
+			ContextCompressionSnapshotResponseInput["toolUseAndEvidenceRefs"]
+		>;
+		sourceCoverage?: ContextCompressionSourceCoverageInput;
+	} = {
 		goal: input.goal,
 		currentState: input.currentState,
 		importantDecisions: input.importantDecisions ?? [],

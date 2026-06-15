@@ -156,7 +156,9 @@ function extractRawResponseBody(response: unknown): unknown {
 
 function isUnsupportedStructuredOutputError(error: unknown): boolean {
 	const record =
-		error && typeof error === "object" ? (error as Record<string, unknown>) : {};
+		error && typeof error === "object"
+			? (error as Record<string, unknown>)
+			: {};
 	const message = typeof record.message === "string" ? record.message : "";
 	const responseBody =
 		typeof record.responseBody === "string" ? record.responseBody : "";
@@ -216,15 +218,38 @@ export async function sendJsonControlMessage(
 			providerOptions: buildProviderOptions({
 				provider,
 				thinkingMode: options.thinkingMode,
-				jsonSchema: params.useJsonFallbackOutput ? undefined : options.jsonSchema,
+				jsonSchema: params.useJsonFallbackOutput
+					? undefined
+					: options.jsonSchema,
 			}),
 		});
-	let result: Awaited<ReturnType<typeof generateText>>;
 	try {
-		result = await generate({ useJsonFallbackOutput: false });
+		const result = await generate({ useJsonFallbackOutput: false });
+		return {
+			text: resultText({
+				text: result.text,
+				output: result.output,
+				reasoningText: result.reasoningText,
+				allowReasoningFallback: options.allowReasoningFallback,
+			}),
+			rawResponse: result.response.body,
+			modelId: selectedModelId,
+			modelDisplayName: provider.displayName,
+		};
 	} catch (error) {
 		if (options.jsonSchema && isUnsupportedStructuredOutputError(error)) {
-			result = await generate({ useJsonFallbackOutput: true });
+			const result = await generate({ useJsonFallbackOutput: true });
+			return {
+				text: resultText({
+					text: result.text,
+					output: result.output,
+					reasoningText: result.reasoningText,
+					allowReasoningFallback: options.allowReasoningFallback,
+				}),
+				rawResponse: result.response.body,
+				modelId: selectedModelId,
+				modelDisplayName: provider.displayName,
+			};
 		} else if (
 			options.allowReasoningFallback &&
 			NoObjectGeneratedError.isInstance(error)
@@ -239,20 +264,9 @@ export async function sendJsonControlMessage(
 					modelDisplayName: provider.displayName,
 				};
 			}
+			throw error;
 		} else {
 			throw error;
 		}
 	}
-
-	return {
-		text: resultText({
-			text: result.text,
-			output: result.output,
-			reasoningText: result.reasoningText,
-			allowReasoningFallback: options.allowReasoningFallback,
-		}),
-		rawResponse: result.response.body,
-		modelId: selectedModelId,
-		modelDisplayName: provider.displayName,
-	};
 }

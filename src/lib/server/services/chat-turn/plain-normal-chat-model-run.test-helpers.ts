@@ -34,7 +34,7 @@ const baseRuntimeConfig = {
 		reasoningEffort: null,
 		thinkingType: null,
 	},
-} as const satisfies RuntimeConfig;
+} as const satisfies Partial<RuntimeConfig>;
 
 const basePreparedContext: PreparedContext = {
 	inputValue: "Prepared user prompt",
@@ -45,6 +45,11 @@ const basePreparedContext: PreparedContext = {
 	honchoContext: null,
 	honchoSnapshot: null,
 	contextTraceSections: [],
+	contextLimits: {
+		maxModelContext: 10_000,
+		compactionUiThreshold: 7_000,
+		targetConstructedContext: 8_000,
+	},
 };
 
 const baseProvider: NormalChatModelRunProvider = {
@@ -67,6 +72,7 @@ const baseModelRunResult: ModelRunResult = {
 		totalTokens: undefined,
 	},
 	model: {
+		modelId: "model1",
 		providerId: "model1",
 		providerName: "model1",
 		displayName: "Model One",

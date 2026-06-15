@@ -1,10 +1,37 @@
 import { vi } from "vitest";
 
-type RowFixture = Record<string, unknown>;
+export type RowFixture = {
+	id?: string;
+	userId?: string;
+	type?: string;
+	conversationId?: string | null;
+	storagePath?: string | null;
+	metadataJson?: string | null;
+	createdAt?: Date;
+	updatedAt?: Date;
+	name?: string;
+	summary?: string | null;
+	mimeType?: string | null;
+	extension?: string | null;
+	sizeBytes?: number | null;
+	binaryHash?: string | null;
+	retrievalClass?: string | null;
+	contentText?: string | null;
+} & Record<string, unknown>;
+
+type TransactionStub = {
+	delete: () => {
+		where: () => {
+			run: () => void;
+		};
+	};
+};
 
 const DEFAULT_DATE = new Date("2024-01-01T00:00:00Z");
 
-export function makeArtifactRow(overrides: RowFixture = {}): RowFixture {
+export function makeArtifactRow(
+	overrides: Partial<RowFixture> = {},
+): RowFixture {
 	return {
 		id: "artifact-1",
 		userId: "user-1",
@@ -61,10 +88,10 @@ export function queueMockResponses(
 }
 
 export function makeInsertChain<T extends RowFixture>(rows: Array<T>) {
-	const returning = vi.fn(() => Promise.resolve(rows));
+	const returning = vi.fn<() => Promise<Array<T>>>(() => Promise.resolve(rows));
 
 	return {
-		values: vi.fn(() => ({
+		values: vi.fn<(value: T) => { returning: typeof returning }>(() => ({
 			returning,
 		})),
 		returning,
@@ -72,7 +99,7 @@ export function makeInsertChain<T extends RowFixture>(rows: Array<T>) {
 }
 
 export function makeTransactionStub() {
-	const tx = {
+	const tx: TransactionStub = {
 		delete: vi.fn(() => ({
 			where: vi.fn(() => ({
 				run: vi.fn(),
@@ -82,9 +109,11 @@ export function makeTransactionStub() {
 
 	return {
 		tx,
-		transaction: vi.fn(async (callback: (tx: typeof tx) => Promise<void>) => {
-			await callback(tx);
-		}),
+		transaction: vi.fn(
+			async (callback: (tx: TransactionStub) => Promise<void>) => {
+				await callback(tx);
+			},
+		),
 	};
 }
 

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createChatGptImportTestHarness } from "./index.test-helpers";
+import type { ParsedMessage } from "./parser";
 
 let dbPath: string;
 
@@ -301,7 +302,7 @@ describe("importConversations", () => {
 
 	it("creates a fork conversation for each detected branch", async () => {
 		harness.seedUser();
-		const branchMessages = [
+		const branchMessages: ParsedMessage[] = [
 			{
 				role: "user",
 				content: "Hello",
@@ -347,7 +348,7 @@ describe("importConversations", () => {
 
 	it("sets fork point to the last shared message", async () => {
 		harness.seedUser();
-		const branchMessages = [
+		const branchMessages: ParsedMessage[] = [
 			{
 				role: "user",
 				content: "Hello",
@@ -397,11 +398,11 @@ describe("importConversations", () => {
 
 	it("creates multiple forks from multiple branches", async () => {
 		harness.seedUser();
-		const branch1Messages = [
+		const branch1Messages: ParsedMessage[] = [
 			{ role: "user", content: "Hello", createdAt: new Date() },
 			{ role: "assistant", content: "Branch 1 answer", createdAt: new Date() },
 		];
-		const branch2Messages = [
+		const branch2Messages: ParsedMessage[] = [
 			{ role: "user", content: "Hello", createdAt: new Date() },
 			{ role: "assistant", content: "Branch 2 answer", createdAt: new Date() },
 		];

@@ -3,14 +3,12 @@ import { vi } from "vitest";
 import type { DocumentWorkspaceItem } from "$lib/types";
 import DocumentWorkspace from "./DocumentWorkspace.svelte";
 
-type WorkspaceCallbacks = {
-	onSelectDocument: ReturnType<typeof vi.fn>;
-	onOpenDocument: ReturnType<typeof vi.fn>;
-	onCloseDocument: ReturnType<typeof vi.fn>;
-	onCloseWorkspace: ReturnType<typeof vi.fn>;
-	onJumpToSource: ReturnType<typeof vi.fn>;
-	onPresentationChange: ReturnType<typeof vi.fn>;
-};
+type SelectDocumentCallback = (documentId: string) => void;
+type OpenDocumentCallback = (document: DocumentWorkspaceItem) => void;
+type CloseDocumentCallback = (documentId: string) => void;
+type CloseWorkspaceCallback = () => void;
+type JumpToSourceCallback = (document: DocumentWorkspaceItem) => void;
+type PresentationChangeCallback = (presentation: "docked" | "expanded") => void;
 
 type WorkspaceRenderOptions = {
 	open?: boolean;
@@ -19,12 +17,12 @@ type WorkspaceRenderOptions = {
 	documents?: DocumentWorkspaceItem[];
 	availableDocuments?: DocumentWorkspaceItem[];
 	activeDocumentId?: string | null;
-	onSelectDocument?: WorkspaceCallbacks["onSelectDocument"];
-	onOpenDocument?: WorkspaceCallbacks["onOpenDocument"];
-	onCloseDocument?: WorkspaceCallbacks["onCloseDocument"];
-	onCloseWorkspace?: WorkspaceCallbacks["onCloseWorkspace"];
-	onJumpToSource?: WorkspaceCallbacks["onJumpToSource"];
-	onPresentationChange?: WorkspaceCallbacks["onPresentationChange"];
+	onSelectDocument?: SelectDocumentCallback;
+	onOpenDocument?: OpenDocumentCallback;
+	onCloseDocument?: CloseDocumentCallback;
+	onCloseWorkspace?: CloseWorkspaceCallback;
+	onJumpToSource?: JumpToSourceCallback;
+	onPresentationChange?: PresentationChangeCallback;
 };
 
 export function makeWorkspaceDocument(
@@ -42,12 +40,18 @@ export function makeWorkspaceDocument(
 }
 
 export function renderWorkspace(options: WorkspaceRenderOptions = {}) {
-	const onSelectDocument = options.onSelectDocument ?? vi.fn();
-	const onOpenDocument = options.onOpenDocument ?? vi.fn();
-	const onCloseDocument = options.onCloseDocument ?? vi.fn();
-	const onCloseWorkspace = options.onCloseWorkspace ?? vi.fn();
-	const onJumpToSource = options.onJumpToSource ?? vi.fn();
-	const onPresentationChange = options.onPresentationChange ?? vi.fn();
+	const onSelectDocument =
+		options.onSelectDocument ?? vi.fn<SelectDocumentCallback>();
+	const onOpenDocument =
+		options.onOpenDocument ?? vi.fn<OpenDocumentCallback>();
+	const onCloseDocument =
+		options.onCloseDocument ?? vi.fn<CloseDocumentCallback>();
+	const onCloseWorkspace =
+		options.onCloseWorkspace ?? vi.fn<CloseWorkspaceCallback>();
+	const onJumpToSource =
+		options.onJumpToSource ?? vi.fn<JumpToSourceCallback>();
+	const onPresentationChange =
+		options.onPresentationChange ?? vi.fn<PresentationChangeCallback>();
 
 	const result = render(DocumentWorkspace, {
 		props: {

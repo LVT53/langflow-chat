@@ -5,6 +5,7 @@ import type { DeepResearchSynthesisClaim } from "$lib/types";
 import { evaluateDeepResearchRun } from "./evaluation";
 import type { SynthesisNotes } from "./synthesis";
 import {
+	type ApprovedDeepResearchSourceInput,
 	buildSupportingFindingsForSources,
 	cleanupDeepResearchTestDb,
 	createApprovedDeepResearchJob,
@@ -45,6 +46,8 @@ async function createApprovedReportJob(input?: {
 		startPassNumber?: number;
 	};
 }) {
+	const userId = input?.userId ?? "user-1";
+	const conversationId = input?.conversationId ?? "conv-1";
 	const approved = await createApprovedDeepResearchJob({
 		...input,
 		meaningfulPassCount: 0,
@@ -52,8 +55,8 @@ async function createApprovedReportJob(input?: {
 	const meaningfulPassCount = input?.meaningfulPassCount ?? 3;
 	if (meaningfulPassCount > 0) {
 		await seedCompletedMeaningfulPasses(approved.id, meaningfulPassCount, {
-			userId: approved.userId,
-			conversationId: approved.conversationId,
+			userId,
+			conversationId,
 			...input?.meaningfulPassOptions,
 		});
 	}
@@ -68,9 +71,7 @@ async function createApprovedReportJobWithReviewedSource(input?: {
 	depth?: "focused" | "standard" | "max";
 	now?: Date;
 	meaningfulPassCount?: number;
-	source?: Parameters<
-		typeof createApprovedDeepResearchJobWithReviewedSource
-	>[0]["source"];
+	source?: ApprovedDeepResearchSourceInput;
 }) {
 	return createApprovedDeepResearchJobWithReviewedSource({
 		...input,

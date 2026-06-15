@@ -14,6 +14,23 @@ import {
 	seedContextCompressionConversation,
 } from "./context-compression.test-fixtures";
 
+const malformedToolUseAndEvidenceRefs = [
+	{
+		label: "First exchange evidence",
+		messageIds: ["message-1"],
+	},
+	{
+		kind: "tool",
+		detail: "The assistant used the first answer as source evidence.",
+		messageIds: ["message-2"],
+	},
+	{},
+] as unknown as NonNullable<
+	Parameters<
+		typeof createCompressionControlResponse
+	>[0]["toolUseAndEvidenceRefs"]
+>;
+
 let dbPath: string;
 
 const mocks = vi.hoisted(() => ({
@@ -492,18 +509,7 @@ describe("context compression snapshots", () => {
 					"The first assistant answer is useful evidence for follow-up turns.",
 				],
 				openTasks: ["Continue from the initial answer if the user follows up."],
-				toolUseAndEvidenceRefs: [
-					{
-						label: "First exchange evidence",
-						messageIds: ["message-1"],
-					},
-					{
-						kind: "tool",
-						detail: "The assistant used the first answer as source evidence.",
-						messageIds: ["message-2"],
-					},
-					{},
-				],
+				toolUseAndEvidenceRefs: malformedToolUseAndEvidenceRefs,
 				sourceCoverage: {
 					messageIds: ["message-1", "message-2"],
 				},

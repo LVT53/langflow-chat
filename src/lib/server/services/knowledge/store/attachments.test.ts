@@ -277,7 +277,11 @@ describe("Attachments - Auto-Rename on Conflict", () => {
 
 			const firstInsertCall = insertChain.values.mock.calls[0];
 			if (!firstInsertCall) throw new Error("Expected artifact insert call");
-			const insertedArtifact = firstInsertCall[0];
+			const insertedArtifact = firstInsertCall[0] as {
+				name: string;
+				summary: string | null;
+				metadataJson: string;
+			};
 			expect(insertedArtifact).toMatchObject({
 				name: "report_3.pdf",
 				summary: "report_3.pdf",
