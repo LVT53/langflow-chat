@@ -375,6 +375,11 @@ const settingsDict = {
 		"admin.pricing": "Pricing",
 		"admin.pricingMicroDollars": "Micro-dollars per 1M tokens",
 		"admin.pricingPer1m": "USD per 1M tokens",
+		"admin.advancedCachePricing": "Advanced cache pricing",
+		"admin.advancedCachePricingDescription":
+			"Use this only for providers that bill cache writes or cache misses at a different rate. Leave it empty to use the regular input price.",
+		"admin.cacheWriteMissPrice": "Cache write / miss",
+		"admin.cacheWriteMissPlaceholder": "Use input price",
 		"admin.inputPrice": "Input",
 		"admin.cachedInputPrice": "Cached Input",
 		"admin.cacheHitPrice": "Cache Hit",
@@ -1024,6 +1029,11 @@ const settingsDict = {
 		"admin.pricing": "Árazás",
 		"admin.pricingMicroDollars": "Mikrodollár 1M tokenenként",
 		"admin.pricingPer1m": "USD 1M tokenenként",
+		"admin.advancedCachePricing": "Haladó gyorsítótár-árazás",
+		"admin.advancedCachePricingDescription":
+			"Csak akkor használd, ha a szolgáltató a gyorsítótár-írást vagy a gyorsítótár-miss tokeneket eltérő áron számlázza. Hagyd üresen a normál bemeneti ár használatához.",
+		"admin.cacheWriteMissPrice": "Gyorsítótár-írás / miss",
+		"admin.cacheWriteMissPlaceholder": "Bemeneti ár használata",
 		"admin.inputPrice": "Bemenet",
 		"admin.cachedInputPrice": "Gyorsítótárazott bemenet",
 		"admin.cacheHitPrice": "Gyorsítótál találat",

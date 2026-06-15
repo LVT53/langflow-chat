@@ -94,9 +94,6 @@ let formInputUsdPer1m = $state(
 let formCachedInputUsdPer1m = $state(
 	untrack(() => microsToDollars(model?.cachedInputUsdMicrosPer1m)),
 );
-let formCacheHitUsdPer1m = $state(
-	untrack(() => microsToDollars(model?.cacheHitUsdMicrosPer1m)),
-);
 let formCacheMissUsdPer1m = $state(
 	untrack(() => microsToDollars(model?.cacheMissUsdMicrosPer1m)),
 );
@@ -166,8 +163,7 @@ function fallbackOptions() {
 function providerDisplayName(providerModel: ProviderModel): string {
 	return (
 		allProviders.find((provider) => provider.id === providerModel.providerId)
-			?.displayName ??
-		providerModel.providerId
+			?.displayName ?? providerModel.providerId
 	);
 }
 
@@ -209,7 +205,7 @@ function handleSave() {
 		capabilitiesJson: formCapabilitiesJson || null,
 		inputUsdMicrosPer1m: dollarsToMicros(formInputUsdPer1m),
 		cachedInputUsdMicrosPer1m: dollarsToMicros(formCachedInputUsdPer1m),
-		cacheHitUsdMicrosPer1m: dollarsToMicros(formCacheHitUsdPer1m),
+		cacheHitUsdMicrosPer1m: dollarsToMicros(formCachedInputUsdPer1m),
 		cacheMissUsdMicrosPer1m: dollarsToMicros(formCacheMissUsdPer1m),
 		outputUsdMicrosPer1m: dollarsToMicros(formOutputUsdPer1m),
 		enabled: formEnabled,
@@ -446,30 +442,6 @@ function handleSave() {
 							/>
 						</div>
 						<div>
-							<label class="settings-label" for="model-form-cache-hit">{$t('admin.cacheHitPrice')}</label>
-							<input
-								id="model-form-cache-hit"
-								type="number"
-								class="settings-input"
-								bind:value={formCacheHitUsdPer1m}
-								placeholder="0"
-								min="0"
-								step="0.000001"
-							/>
-						</div>
-						<div>
-							<label class="settings-label" for="model-form-cache-miss">{$t('admin.cacheMissPrice')}</label>
-							<input
-								id="model-form-cache-miss"
-								type="number"
-								class="settings-input"
-								bind:value={formCacheMissUsdPer1m}
-								placeholder="0"
-								min="0"
-								step="0.000001"
-							/>
-						</div>
-						<div>
 							<label class="settings-label" for="model-form-output-price">{$t('admin.outputPrice')}</label>
 							<input
 								id="model-form-output-price"
@@ -482,6 +454,26 @@ function handleSave() {
 							/>
 						</div>
 					</div>
+					<details class="mt-3 rounded-md border border-border bg-surface-page px-3 py-2">
+						<summary class="cursor-pointer text-xs font-medium text-text-secondary">
+							{$t('admin.advancedCachePricing')}
+						</summary>
+						<p class="mt-2 text-xs text-text-muted">
+							{$t('admin.advancedCachePricingDescription')}
+						</p>
+						<div class="mt-3">
+							<label class="settings-label" for="model-form-cache-miss">{$t('admin.cacheWriteMissPrice')}</label>
+							<input
+								id="model-form-cache-miss"
+								type="number"
+								class="settings-input"
+								bind:value={formCacheMissUsdPer1m}
+								placeholder={$t('admin.cacheWriteMissPlaceholder')}
+								min="0"
+								step="0.000001"
+							/>
+						</div>
+					</details>
 				</div>
 
 				<div class="mt-2 border-t border-border pt-3">
