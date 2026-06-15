@@ -87,6 +87,42 @@ export class ProviderModelValidationError extends Error {
 type ProviderModelBody = Record<string, unknown>;
 type ReasoningEffort = NonNullable<CreateProviderModelInput["reasoningEffort"]>;
 type ThinkingType = NonNullable<CreateProviderModelInput["thinkingType"]>;
+type ProviderModelPayloadFields = Partial<{
+	displayName: string;
+	iconAssetId: string | null;
+	fallbackProviderModelId: string | null;
+	maxModelContext: number | null;
+	compactionUiThreshold: number | null;
+	targetConstructedContext: number | null;
+	maxMessageLength: number | null;
+	maxTokens: number | null;
+	reasoningEffort: ReasoningEffort | null;
+	thinkingType: ThinkingType | null;
+	capabilitiesJson: string | null;
+	inputUsdMicrosPer1m: number;
+	cachedInputUsdMicrosPer1m: number;
+	cacheHitUsdMicrosPer1m: number;
+	cacheMissUsdMicrosPer1m: number;
+	outputUsdMicrosPer1m: number;
+	enabled: boolean;
+	sortOrder: number;
+}>;
+
+const nullableNonNegativeNumberFields = [
+	"maxModelContext",
+	"compactionUiThreshold",
+	"targetConstructedContext",
+	"maxMessageLength",
+	"maxTokens",
+] as const;
+
+const pricingFields = [
+	"inputUsdMicrosPer1m",
+	"cachedInputUsdMicrosPer1m",
+	"cacheHitUsdMicrosPer1m",
+	"cacheMissUsdMicrosPer1m",
+	"outputUsdMicrosPer1m",
+] as const;
 
 function objectBody(payload: unknown): ProviderModelBody {
 	return payload !== null &&
@@ -187,6 +223,89 @@ function readNullableString(
 	return value.trim();
 }
 
+function assignParsedValue<K extends keyof ProviderModelPayloadFields>(
+	input: ProviderModelPayloadFields,
+	key: K,
+	value: ProviderModelPayloadFields[K] | undefined,
+): void {
+	if (value !== undefined) input[key] = value;
+}
+
+function applyNullableNonNegativeNumberField(
+	input: ProviderModelPayloadFields,
+	body: ProviderModelBody,
+	key: (typeof nullableNonNegativeNumberFields)[number],
+): void {
+	assignParsedValue(input, key, readNullableNonNegativeNumber(body, key));
+}
+
+function applyNonNegativeNumberField(
+	input: ProviderModelPayloadFields,
+	body: ProviderModelBody,
+	key: (typeof pricingFields)[number],
+): void {
+	assignParsedValue(input, key, readNonNegativeNumber(body, key));
+}
+
+function applyProviderModelPayloadFields(
+	input: ProviderModelPayloadFields,
+	body: ProviderModelBody,
+	capabilitiesJsonFallback: string | null,
+	allowIconAssetId: boolean,
+): void {
+	assignParsedValue(
+		input,
+		"displayName",
+		readOptionalString(body, "displayName"),
+	);
+	if (allowIconAssetId) {
+		assignParsedValue(
+			input,
+			"iconAssetId",
+			readNullableString(body, "iconAssetId"),
+		);
+	}
+	const fallbackProviderModelId = readNullableString(
+		body,
+		"fallbackProviderModelId",
+	);
+	if (fallbackProviderModelId !== undefined) {
+		input.fallbackProviderModelId = fallbackProviderModelId || null;
+	}
+
+	for (const key of nullableNonNegativeNumberFields) {
+		applyNullableNonNegativeNumberField(input, body, key);
+	}
+
+	assignParsedValue(
+		input,
+		"reasoningEffort",
+		readOptionalRuntimeString<ReasoningEffort>(body, "reasoningEffort"),
+	);
+	assignParsedValue(
+		input,
+		"thinkingType",
+		readOptionalRuntimeString<ThinkingType>(body, "thinkingType"),
+	);
+
+	const capabilitiesJson = body.capabilitiesJson;
+	if (capabilitiesJson !== undefined) {
+		if (capabilitiesJson !== null && typeof capabilitiesJson !== "string") {
+			throw new ProviderModelValidationError(
+				"capabilitiesJson must be a string or null",
+			);
+		}
+		input.capabilitiesJson = capabilitiesJson || capabilitiesJsonFallback;
+	}
+
+	for (const key of pricingFields) {
+		applyNonNegativeNumberField(input, body, key);
+	}
+
+	assignParsedValue(input, "enabled", readOptionalBoolean(body, "enabled"));
+	assignParsedValue(input, "sortOrder", readOptionalNumber(body, "sortOrder"));
+}
+
 export function parseCreateProviderModelPayload(
 	providerId: string,
 	payload: unknown,
@@ -202,106 +321,7 @@ export function parseCreateProviderModelPayload(
 		providerId,
 		name,
 	};
-
-	const displayName = readOptionalString(body, "displayName");
-	if (displayName !== undefined) input.displayName = displayName;
-
-	const fallbackProviderModelId = readNullableString(
-		body,
-		"fallbackProviderModelId",
-	);
-	if (fallbackProviderModelId !== undefined) {
-		input.fallbackProviderModelId = fallbackProviderModelId || null;
-	}
-
-	const maxModelContext = readNullableNonNegativeNumber(
-		body,
-		"maxModelContext",
-	);
-	if (maxModelContext !== undefined) input.maxModelContext = maxModelContext;
-	const compactionUiThreshold = readNullableNonNegativeNumber(
-		body,
-		"compactionUiThreshold",
-	);
-	if (compactionUiThreshold !== undefined) {
-		input.compactionUiThreshold = compactionUiThreshold;
-	}
-	const targetConstructedContext = readNullableNonNegativeNumber(
-		body,
-		"targetConstructedContext",
-	);
-	if (targetConstructedContext !== undefined) {
-		input.targetConstructedContext = targetConstructedContext;
-	}
-	const maxMessageLength = readNullableNonNegativeNumber(
-		body,
-		"maxMessageLength",
-	);
-	if (maxMessageLength !== undefined) input.maxMessageLength = maxMessageLength;
-	const maxTokens = readNullableNonNegativeNumber(body, "maxTokens");
-	if (maxTokens !== undefined) input.maxTokens = maxTokens;
-
-	const reasoningEffort = readOptionalRuntimeString<ReasoningEffort>(
-		body,
-		"reasoningEffort",
-	);
-	if (reasoningEffort !== undefined) input.reasoningEffort = reasoningEffort;
-	const thinkingType = readOptionalRuntimeString<ThinkingType>(
-		body,
-		"thinkingType",
-	);
-	if (thinkingType !== undefined) input.thinkingType = thinkingType;
-
-	const capabilitiesJson = body.capabilitiesJson;
-	if (capabilitiesJson !== undefined) {
-		if (capabilitiesJson !== null && typeof capabilitiesJson !== "string") {
-			throw new ProviderModelValidationError(
-				"capabilitiesJson must be a string or null",
-			);
-		}
-		input.capabilitiesJson = capabilitiesJson || null;
-	}
-
-	const inputUsdMicrosPer1m = readNonNegativeNumber(
-		body,
-		"inputUsdMicrosPer1m",
-	);
-	if (inputUsdMicrosPer1m !== undefined) {
-		input.inputUsdMicrosPer1m = inputUsdMicrosPer1m;
-	}
-	const cachedInputUsdMicrosPer1m = readNonNegativeNumber(
-		body,
-		"cachedInputUsdMicrosPer1m",
-	);
-	if (cachedInputUsdMicrosPer1m !== undefined) {
-		input.cachedInputUsdMicrosPer1m = cachedInputUsdMicrosPer1m;
-	}
-	const cacheHitUsdMicrosPer1m = readNonNegativeNumber(
-		body,
-		"cacheHitUsdMicrosPer1m",
-	);
-	if (cacheHitUsdMicrosPer1m !== undefined) {
-		input.cacheHitUsdMicrosPer1m = cacheHitUsdMicrosPer1m;
-	}
-	const cacheMissUsdMicrosPer1m = readNonNegativeNumber(
-		body,
-		"cacheMissUsdMicrosPer1m",
-	);
-	if (cacheMissUsdMicrosPer1m !== undefined) {
-		input.cacheMissUsdMicrosPer1m = cacheMissUsdMicrosPer1m;
-	}
-	const outputUsdMicrosPer1m = readNonNegativeNumber(
-		body,
-		"outputUsdMicrosPer1m",
-	);
-	if (outputUsdMicrosPer1m !== undefined) {
-		input.outputUsdMicrosPer1m = outputUsdMicrosPer1m;
-	}
-
-	const enabled = readOptionalBoolean(body, "enabled");
-	if (enabled !== undefined) input.enabled = enabled;
-	const sortOrder = readOptionalNumber(body, "sortOrder");
-	if (sortOrder !== undefined) input.sortOrder = sortOrder;
+	applyProviderModelPayloadFields(input, body, null, false);
 
 	return input;
 }
@@ -311,109 +331,7 @@ export function parseUpdateProviderModelPayload(
 ): UpdateProviderModelInput {
 	const body = objectBody(payload);
 	const input: UpdateProviderModelInput = {};
-
-	const displayName = readOptionalString(body, "displayName");
-	if (displayName !== undefined) input.displayName = displayName;
-
-	const iconAssetId = readNullableString(body, "iconAssetId");
-	if (iconAssetId !== undefined) input.iconAssetId = iconAssetId;
-
-	const fallbackProviderModelId = readNullableString(
-		body,
-		"fallbackProviderModelId",
-	);
-	if (fallbackProviderModelId !== undefined) {
-		input.fallbackProviderModelId = fallbackProviderModelId || null;
-	}
-
-	const maxModelContext = readNullableNonNegativeNumber(
-		body,
-		"maxModelContext",
-	);
-	if (maxModelContext !== undefined) input.maxModelContext = maxModelContext;
-	const compactionUiThreshold = readNullableNonNegativeNumber(
-		body,
-		"compactionUiThreshold",
-	);
-	if (compactionUiThreshold !== undefined) {
-		input.compactionUiThreshold = compactionUiThreshold;
-	}
-	const targetConstructedContext = readNullableNonNegativeNumber(
-		body,
-		"targetConstructedContext",
-	);
-	if (targetConstructedContext !== undefined) {
-		input.targetConstructedContext = targetConstructedContext;
-	}
-	const maxMessageLength = readNullableNonNegativeNumber(
-		body,
-		"maxMessageLength",
-	);
-	if (maxMessageLength !== undefined) input.maxMessageLength = maxMessageLength;
-	const maxTokens = readNullableNonNegativeNumber(body, "maxTokens");
-	if (maxTokens !== undefined) input.maxTokens = maxTokens;
-
-	const reasoningEffort = readOptionalRuntimeString<ReasoningEffort>(
-		body,
-		"reasoningEffort",
-	);
-	if (reasoningEffort !== undefined) input.reasoningEffort = reasoningEffort;
-	const thinkingType = readOptionalRuntimeString<ThinkingType>(
-		body,
-		"thinkingType",
-	);
-	if (thinkingType !== undefined) input.thinkingType = thinkingType;
-
-	const capabilitiesJson = body.capabilitiesJson;
-	if (capabilitiesJson !== undefined) {
-		if (capabilitiesJson !== null && typeof capabilitiesJson !== "string") {
-			throw new ProviderModelValidationError(
-				"capabilitiesJson must be a string or null",
-			);
-		}
-		input.capabilitiesJson = capabilitiesJson || "{}";
-	}
-
-	const inputUsdMicrosPer1m = readNonNegativeNumber(
-		body,
-		"inputUsdMicrosPer1m",
-	);
-	if (inputUsdMicrosPer1m !== undefined) {
-		input.inputUsdMicrosPer1m = inputUsdMicrosPer1m;
-	}
-	const cachedInputUsdMicrosPer1m = readNonNegativeNumber(
-		body,
-		"cachedInputUsdMicrosPer1m",
-	);
-	if (cachedInputUsdMicrosPer1m !== undefined) {
-		input.cachedInputUsdMicrosPer1m = cachedInputUsdMicrosPer1m;
-	}
-	const cacheHitUsdMicrosPer1m = readNonNegativeNumber(
-		body,
-		"cacheHitUsdMicrosPer1m",
-	);
-	if (cacheHitUsdMicrosPer1m !== undefined) {
-		input.cacheHitUsdMicrosPer1m = cacheHitUsdMicrosPer1m;
-	}
-	const cacheMissUsdMicrosPer1m = readNonNegativeNumber(
-		body,
-		"cacheMissUsdMicrosPer1m",
-	);
-	if (cacheMissUsdMicrosPer1m !== undefined) {
-		input.cacheMissUsdMicrosPer1m = cacheMissUsdMicrosPer1m;
-	}
-	const outputUsdMicrosPer1m = readNonNegativeNumber(
-		body,
-		"outputUsdMicrosPer1m",
-	);
-	if (outputUsdMicrosPer1m !== undefined) {
-		input.outputUsdMicrosPer1m = outputUsdMicrosPer1m;
-	}
-
-	const enabled = readOptionalBoolean(body, "enabled");
-	if (enabled !== undefined) input.enabled = enabled;
-	const sortOrder = readOptionalNumber(body, "sortOrder");
-	if (sortOrder !== undefined) input.sortOrder = sortOrder;
+	applyProviderModelPayloadFields(input, body, "{}", true);
 
 	return input;
 }
@@ -482,7 +400,10 @@ function assertFallbackCompatibility(
 async function getProviderModelRowById(
 	id: string,
 ): Promise<ProviderModelRow | null> {
-	const [row] = await db.select().from(providerModels).where(eq(providerModels.id, id));
+	const [row] = await db
+		.select()
+		.from(providerModels)
+		.where(eq(providerModels.id, id));
 	return row ?? null;
 }
 
@@ -662,11 +583,12 @@ export async function updateProviderModel(
 		.where(eq(providerModels.id, id));
 
 	if (!existing) return null;
-	const nextEnabled = input.enabled !== undefined ? input.enabled : existing.enabled === 1;
+	const nextEnabled =
+		input.enabled !== undefined ? input.enabled : existing.enabled === 1;
 	const fallbackProviderModelId =
 		input.fallbackProviderModelId !== undefined
 			? input.fallbackProviderModelId
-			: existing.fallbackProviderModelId ?? null;
+			: (existing.fallbackProviderModelId ?? null);
 
 	const sourceCompatibility: ProviderModelCompatibilityFields = {
 		capabilitiesJson:
@@ -675,16 +597,16 @@ export async function updateProviderModel(
 				: existing.capabilitiesJson,
 		reasoningEffort:
 			input.reasoningEffort !== undefined
-				? resolveProviderModelPersistenceDefaults({
+				? (resolveProviderModelPersistenceDefaults({
 						reasoningEffort: input.reasoningEffort,
-				  }).reasoningEffort ?? null
-				: existing.reasoningEffort ?? null,
+					}).reasoningEffort ?? null)
+				: (existing.reasoningEffort ?? null),
 		thinkingType:
 			input.thinkingType !== undefined
-				? resolveProviderModelPersistenceDefaults({
+				? (resolveProviderModelPersistenceDefaults({
 						thinkingType: input.thinkingType,
-				  }).thinkingType ?? null
-				: existing.thinkingType ?? null,
+					}).thinkingType ?? null)
+				: (existing.thinkingType ?? null),
 	};
 
 	if (nextEnabled || input.fallbackProviderModelId !== undefined) {
@@ -698,8 +620,11 @@ export async function updateProviderModel(
 	}
 
 	if (existing.enabled === 1 && input.enabled === false) {
-		const dependentRows = await getProviderModelRowsReferencingFallbackModel(id);
-		const enabledDependents = dependentRows.filter((dependent) => dependent.enabled === 1);
+		const dependentRows =
+			await getProviderModelRowsReferencingFallbackModel(id);
+		const enabledDependents = dependentRows.filter(
+			(dependent) => dependent.enabled === 1,
+		);
 
 		if (enabledDependents.length > 0) {
 			throw new ProviderModelValidationError(
@@ -709,7 +634,8 @@ export async function updateProviderModel(
 	}
 
 	if (nextEnabled) {
-		const dependentRows = await getProviderModelRowsReferencingFallbackModel(id);
+		const dependentRows =
+			await getProviderModelRowsReferencingFallbackModel(id);
 		for (const dependent of dependentRows) {
 			if (dependent.enabled !== 1) continue;
 

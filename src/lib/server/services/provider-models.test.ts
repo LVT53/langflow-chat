@@ -75,6 +75,106 @@ function assertDefined<T>(value: T | undefined | null, label: string): T {
 	return value;
 }
 
+describe("ProviderModel payload parsing", () => {
+	it("normalizes create payload scalars and runtime defaults", async () => {
+		const { parseCreateProviderModelPayload } = await import(
+			"./provider-models"
+		);
+
+		expect(
+			parseCreateProviderModelPayload("provider-id", {
+				name: "  parser-model  ",
+				displayName: "  Parser Model  ",
+				iconAssetId: "  ignored-icon  ",
+				fallbackProviderModelId: "  ",
+				maxModelContext: 128000,
+				compactionUiThreshold: null,
+				targetConstructedContext: 115200,
+				maxMessageLength: 4096,
+				maxTokens: 8192,
+				reasoningEffort: "",
+				thinkingType: "enabled",
+				capabilitiesJson: "",
+				inputUsdMicrosPer1m: 10,
+				cachedInputUsdMicrosPer1m: 5,
+				cacheHitUsdMicrosPer1m: 2,
+				cacheMissUsdMicrosPer1m: 3,
+				outputUsdMicrosPer1m: 20,
+				enabled: false,
+				sortOrder: 4,
+			}),
+		).toEqual({
+			providerId: "provider-id",
+			name: "parser-model",
+			displayName: "Parser Model",
+			fallbackProviderModelId: null,
+			maxModelContext: 128000,
+			compactionUiThreshold: null,
+			targetConstructedContext: 115200,
+			maxMessageLength: 4096,
+			maxTokens: 8192,
+			reasoningEffort: null,
+			thinkingType: "enabled",
+			capabilitiesJson: null,
+			inputUsdMicrosPer1m: 10,
+			cachedInputUsdMicrosPer1m: 5,
+			cacheHitUsdMicrosPer1m: 2,
+			cacheMissUsdMicrosPer1m: 3,
+			outputUsdMicrosPer1m: 20,
+			enabled: false,
+			sortOrder: 4,
+		});
+	});
+
+	it("normalizes update payload scalars and runtime defaults", async () => {
+		const { parseUpdateProviderModelPayload } = await import(
+			"./provider-models"
+		);
+
+		expect(
+			parseUpdateProviderModelPayload({
+				displayName: "  Parser Update  ",
+				iconAssetId: "  icon-asset  ",
+				fallbackProviderModelId: "  ",
+				maxModelContext: 64000,
+				compactionUiThreshold: null,
+				targetConstructedContext: 57600,
+				maxMessageLength: 2048,
+				maxTokens: null,
+				reasoningEffort: "",
+				thinkingType: "disabled",
+				capabilitiesJson: "",
+				inputUsdMicrosPer1m: 9,
+				cachedInputUsdMicrosPer1m: 4,
+				cacheHitUsdMicrosPer1m: 1,
+				cacheMissUsdMicrosPer1m: 2,
+				outputUsdMicrosPer1m: 18,
+				enabled: true,
+				sortOrder: 7,
+			}),
+		).toEqual({
+			displayName: "Parser Update",
+			iconAssetId: "icon-asset",
+			fallbackProviderModelId: null,
+			maxModelContext: 64000,
+			compactionUiThreshold: null,
+			targetConstructedContext: 57600,
+			maxMessageLength: 2048,
+			maxTokens: null,
+			reasoningEffort: null,
+			thinkingType: "disabled",
+			capabilitiesJson: "{}",
+			inputUsdMicrosPer1m: 9,
+			cachedInputUsdMicrosPer1m: 4,
+			cacheHitUsdMicrosPer1m: 1,
+			cacheMissUsdMicrosPer1m: 2,
+			outputUsdMicrosPer1m: 18,
+			enabled: true,
+			sortOrder: 7,
+		});
+	});
+});
+
 // ─── Helpers ───────────────────────────────────────────────────
 
 async function seedProvider(
@@ -837,7 +937,9 @@ describe("ProviderModel CRUD", () => {
 				updateProviderModel(created.id, {
 					fallbackProviderModelId: created.id,
 				}),
-			).rejects.toThrow("fallbackProviderModelId cannot reference the model itself");
+			).rejects.toThrow(
+				"fallbackProviderModelId cannot reference the model itself",
+			);
 		});
 
 		it("rejects updates that would break dependent fallback compatibility", async () => {
