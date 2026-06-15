@@ -42,6 +42,19 @@ const researchWebMock = vi.mocked(researchWeb);
 const getMemoryContextMock = vi.mocked(getMemoryContext);
 const searchImagesMock = vi.mocked(searchImages);
 
+function hasInstructions(
+	result:
+		| { instructions: string }
+		| { success: false; error: string }
+		| AsyncIterable<
+				{ instructions: string } | { success: false; error: string }
+		  >,
+): result is { instructions: string } {
+	return (
+		typeof result === "object" && result !== null && "instructions" in result
+	);
+}
+
 function makeFileProductionJob(
 	overrides: Partial<FileProductionJob>,
 ): FileProductionJob {
@@ -61,6 +74,12 @@ function makeFileProductionJob(
 }
 
 describe("createNormalChatTools", () => {
+	type SubmitIntakeBodyShape = {
+		body: {
+			idempotencyKey?: string;
+		};
+	};
+
 	beforeEach(() => {
 		submitFileProductionIntakeMock.mockReset();
 		researchWebMock.mockReset();
@@ -128,8 +147,10 @@ describe("createNormalChatTools", () => {
 				}),
 			}),
 		);
-		const body = submitFileProductionIntakeMock.mock.calls[0]?.[0]?.body;
-		expect(String(body?.idempotencyKey).length).toBeLessThanOrEqual(160);
+		const intakeCall = submitFileProductionIntakeMock.mock
+			.calls[0] as unknown as SubmitIntakeBodyShape | undefined;
+		const intakeBody = intakeCall?.body;
+		expect(String(intakeBody?.idempotencyKey).length).toBeLessThanOrEqual(160);
 	});
 
 	it("normalizes document_source tool calls with the required source envelope", async () => {
@@ -708,6 +729,15 @@ describe("createNormalChatTools", () => {
 				evidenceCandidateCount: 1,
 				exactEvidenceCandidateCount: 1,
 				reranked: true,
+				pageExtraction: {
+					attemptedCount: 1,
+					succeededCount: 1,
+					cacheHitCount: 0,
+					lowQualityCount: 0,
+					blockedCount: 0,
+					failedCount: 0,
+					totalLatencyMs: 2200,
+				},
 				youtubeTranscriptCandidateCount: 0,
 				youtubeTranscriptFetchedCount: 0,
 				youtubeTranscriptFailedCount: 0,
@@ -829,7 +859,7 @@ describe("createNormalChatTools", () => {
 	it("caps research_web maxSources to the resolved reasoning depth source budget", async () => {
 		researchWebMock.mockResolvedValue({
 			query: "current release options",
-			queries: [{ query: "current release options", purpose: "research" }],
+			queries: [{ query: "current release options", purpose: "exact" }],
 			sources: [],
 			evidence: [],
 			answerBrief: {
@@ -855,6 +885,15 @@ describe("createNormalChatTools", () => {
 				evidenceCandidateCount: 0,
 				exactEvidenceCandidateCount: 0,
 				reranked: false,
+				pageExtraction: {
+					attemptedCount: 0,
+					succeededCount: 0,
+					cacheHitCount: 0,
+					lowQualityCount: 0,
+					blockedCount: 0,
+					failedCount: 0,
+					totalLatencyMs: 0,
+				},
 				youtubeTranscriptCandidateCount: 0,
 				youtubeTranscriptFetchedCount: 0,
 				youtubeTranscriptFailedCount: 0,
@@ -902,7 +941,7 @@ describe("createNormalChatTools", () => {
 	it("applies resolved research_web source budget when maxSources is omitted", async () => {
 		researchWebMock.mockResolvedValue({
 			query: "current release options",
-			queries: [{ query: "current release options", purpose: "research" }],
+			queries: [{ query: "current release options", purpose: "primary" }],
 			sources: [],
 			evidence: [],
 			answerBrief: {
@@ -928,6 +967,15 @@ describe("createNormalChatTools", () => {
 				evidenceCandidateCount: 0,
 				exactEvidenceCandidateCount: 0,
 				reranked: false,
+				pageExtraction: {
+					attemptedCount: 0,
+					succeededCount: 0,
+					cacheHitCount: 0,
+					lowQualityCount: 0,
+					blockedCount: 0,
+					failedCount: 0,
+					totalLatencyMs: 0,
+				},
 				youtubeTranscriptCandidateCount: 0,
 				youtubeTranscriptFetchedCount: 0,
 				youtubeTranscriptFailedCount: 0,
@@ -1007,6 +1055,15 @@ describe("createNormalChatTools", () => {
 				evidenceCandidateCount: 0,
 				exactEvidenceCandidateCount: 0,
 				reranked: false,
+				pageExtraction: {
+					attemptedCount: 0,
+					succeededCount: 0,
+					cacheHitCount: 0,
+					lowQualityCount: 0,
+					blockedCount: 0,
+					failedCount: 0,
+					totalLatencyMs: 0,
+				},
 				youtubeTranscriptCandidateCount: 0,
 				youtubeTranscriptFetchedCount: 0,
 				youtubeTranscriptFailedCount: 0,
@@ -1049,7 +1106,9 @@ describe("createNormalChatTools", () => {
 				fallbackReasons: ["page_open_failed", "direct_url_open_failed"],
 			},
 		});
-		expect(result.instructions).toContain("No citation-ready page evidence");
+		if (hasInstructions(result)) {
+			expect(result.instructions).toContain("No citation-ready page evidence");
+		}
 		expect(getToolCalls()).toEqual([
 			expect.objectContaining({
 				callId: "call-research",

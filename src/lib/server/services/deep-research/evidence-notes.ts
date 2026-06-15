@@ -415,7 +415,9 @@ function sourceIdsFromEvidenceSourceSupport(
 		sourceSupport.sourceId,
 		sourceSupport.reviewedSourceId,
 		...(Array.isArray(sourceSupport.sourceIds) ? sourceSupport.sourceIds : []),
-	].filter((value): value is string => typeof value === "string" && value);
+	].filter(
+		(value): value is string => typeof value === "string" && value.length > 0,
+	);
 }
 
 function uniqueValues<T>(values: Array<T | null | undefined>): T[] {

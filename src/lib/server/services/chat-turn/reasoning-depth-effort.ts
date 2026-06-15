@@ -185,8 +185,8 @@ export function resolveReasoningDepthEffort(params: {
 
 export function buildReasoningDepthProviderOptions(
 	provider: NormalChatModelRunProvider,
-	effort: Pick<ReasoningDepthEffort, "providerReasoning">,
-): Record<string, Record<string, unknown>> | undefined {
+	effort: ReasoningDepthEffort,
+): ReturnType<typeof buildNormalChatModelRunProviderOptions> {
 	const effectiveProvider = {
 		...provider,
 		...(effort.providerReasoning.reasoningEffort

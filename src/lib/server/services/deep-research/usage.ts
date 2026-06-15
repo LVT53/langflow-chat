@@ -28,6 +28,7 @@ export type ResearchUsageOperation =
 	| "source_discovery"
 	| "source_review"
 	| "coverage_assessment"
+	| "research_task"
 	| "synthesis"
 	| "citation_audit"
 	| "report_writing";

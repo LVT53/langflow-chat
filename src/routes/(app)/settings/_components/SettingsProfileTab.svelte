@@ -81,7 +81,7 @@ let {
 	cacheBuster?: number;
 	avatarColors: string[];
 	avatarCount: number;
-	selectedAvatar: number;
+	selectedAvatar: number | null;
 	showAvatarPicker: boolean;
 	removingPhoto?: boolean;
 	onOpenPictureEditor: () => void;

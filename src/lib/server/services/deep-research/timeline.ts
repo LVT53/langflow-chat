@@ -5,6 +5,7 @@ import { deepResearchTimelineEvents } from "$lib/server/db/schema";
 export type ResearchTimelineStage =
 	| "plan_generation"
 	| "plan_revision"
+	| "plan_health_check"
 	| "plan_approval"
 	| "source_discovery"
 	| "source_review"
@@ -13,6 +14,7 @@ export type ResearchTimelineStage =
 	| "synthesis"
 	| "citation_audit"
 	| "evidence_limitation_memo"
+	| "repair"
 	| "report_completion";
 
 export type ResearchTimelineKind =
@@ -41,7 +43,10 @@ export type ResearchTimelineEvent = {
 	kind: ResearchTimelineKind;
 	occurredAt: string;
 	messageKey: string;
-	messageParams: Record<string, string | number | boolean | null>;
+	messageParams: Record<
+		string,
+		string | number | boolean | null | Array<string | number | boolean | null>
+	>;
 	sourceCounts: ResearchSourceCounts;
 	assumptions: string[];
 	warnings: string[];

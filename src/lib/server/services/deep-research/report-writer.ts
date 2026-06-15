@@ -1369,7 +1369,9 @@ function sourceIdsFromEvidenceNote(note: DeepResearchEvidenceNote): string[] {
 			...(Array.isArray(note.sourceSupport.sourceIds)
 				? note.sourceSupport.sourceIds
 				: []),
-		].filter((value): value is string => typeof value === "string" && value),
+		].filter(
+			(value): value is string => typeof value === "string" && value.length > 0,
+		),
 	);
 }
 

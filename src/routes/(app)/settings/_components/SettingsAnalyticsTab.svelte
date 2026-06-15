@@ -4,39 +4,9 @@ import { onDestroy, tick } from "svelte";
 import { get } from "svelte/store";
 import ModelIcon from "$lib/components/ui/ModelIcon.svelte";
 import { t, type I18nKey } from "$lib/i18n";
+import type { AnalyticsResponse } from "$lib/client/api/settings";
 
-type MonthlyAnalyticsRow = {
-	month: string;
-	totalCostUsd: number;
-};
-
-type ModelAnalyticsRow = {
-	model: string;
-	displayName?: string | null;
-	totalCostUsd: number | string;
-};
-
-type TimelineAnalyticsRow = {
-	label: string;
-	tokens: number;
-};
-
-type UserAnalyticsRow = {
-	displayName?: string | null;
-	email: string;
-	messageCount: number;
-	conversationCount: number;
-};
-
-type SettingsAnalyticsData = {
-	availableMonths?: string[];
-	personal?: {
-		monthly?: MonthlyAnalyticsRow[];
-		byModel?: ModelAnalyticsRow[];
-	};
-	timeline?: TimelineAnalyticsRow[];
-	perUser?: UserAnalyticsRow[];
-};
+type SettingsAnalyticsData = AnalyticsResponse;
 
 let {
 	analyticsData = null,
@@ -69,6 +39,9 @@ let modelChartCanvas = $state<HTMLCanvasElement | null>(null);
 let userChartCanvas = $state<HTMLCanvasElement | null>(null);
 let timelineChartCanvas = $state<HTMLCanvasElement | null>(null);
 let timelineGranularity = $state<"weekly" | "monthly" | "yearly">("weekly");
+const timelineRows = $derived(analyticsData?.timeline ?? []);
+const perUserRows = $derived(analyticsData?.perUser ?? []);
+const hasPerUser = $derived(perUserRows.length > 0);
 
 // Palette aligned with app accent (#C15F3C), success (#15803D), and complementary tones
 const CHART_COLORS = [
@@ -187,7 +160,7 @@ async function initCharts(
 	if (modelChartCanvas) Chart.getChart(modelChartCanvas)?.destroy();
 	if (userChartCanvas) Chart.getChart(userChartCanvas)?.destroy();
 
-	if (modelChartCanvas && analyticsData.personal.byModel?.length > 0) {
+	if (modelChartCanvas && analyticsData.personal.byModel.length > 0) {
 		const byModel = analyticsData.personal.byModel;
 		modelChart = new Chart(modelChartCanvas, {
 			type: "bar",
@@ -236,9 +209,9 @@ async function initCharts(
 		});
 	}
 
-	if (timelineChartCanvas && analyticsData.timeline?.length > 0) {
+	if (timelineChartCanvas && timelineRows.length > 0) {
 		Chart.getChart(timelineChartCanvas)?.destroy();
-		const data = analyticsData.timeline;
+		const data = timelineRows;
 		timelineChart = new Chart(timelineChartCanvas, {
 			type: "line",
 			data: {
@@ -281,8 +254,8 @@ async function initCharts(
 		});
 	}
 
-	if (isAdmin && userChartCanvas && analyticsData.perUser?.length > 0) {
-		const top10 = [...analyticsData.perUser]
+	if (isAdmin && userChartCanvas && perUserRows.length > 0) {
+		const top10 = [...perUserRows]
 			.sort((left, right) => right.messageCount - left.messageCount)
 			.slice(0, 10);
 		userChart = new Chart(userChartCanvas, {
@@ -439,7 +412,7 @@ onDestroy(() => {
 			</div>
 		{/if}
 
-		{#if analyticsData.timeline?.length > 0}
+		{#if timelineRows.length > 0}
 			<div class="mt-5">
 				<div class="flex items-center justify-between mb-3">
 					<p class="settings-label">{$t('analytics.tokenUsage')}</p>
@@ -530,16 +503,16 @@ onDestroy(() => {
 			{/if}
 		</section>
 
-		{#if analyticsData.perUser?.length > 0}
+		{#if hasPerUser}
 			<section class="settings-card mb-4">
 				<h2 class="settings-section-title">{$t('analytics.userActivity')}</h2>
-				<div style={`height: ${Math.min(analyticsData.perUser.slice(0, 10).length * 36 + 60, 420)}px; position: relative;`}>
+				<div style={`height: ${Math.min(perUserRows.slice(0, 10).length * 36 + 60, 420)}px; position: relative;`}>
 					<canvas bind:this={userChartCanvas}></canvas>
 				</div>
 			</section>
 		{/if}
 
-		{#if analyticsData.perUser?.length > 0}
+		{#if hasPerUser}
 			<section class="settings-card mb-4 overflow-x-auto">
 				<h2 class="settings-section-title">{$t('analytics.perUserBreakdown')}</h2>
 				<table class="analytics-table w-full text-sm">
@@ -558,7 +531,7 @@ onDestroy(() => {
 						</tr>
 					</thead>
 					<tbody>
-						{#each analyticsData.perUser as row}
+						{#each perUserRows as row}
 							<tr class="border-b border-border last:border-0">
 								<td class="py-2 pr-3">
 									<div class="font-medium text-text-primary">{row.displayName}</div>

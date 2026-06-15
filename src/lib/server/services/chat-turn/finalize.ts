@@ -55,6 +55,7 @@ import type {
 	LinkedContextSource,
 	ReasoningDepth,
 	SkillControlOperation,
+	ThinkingSegment,
 	ToolCallEntry,
 } from "$lib/types";
 import { buildContextSourcesState } from "./context-sources";
@@ -107,14 +108,7 @@ export async function persistUserTurnAttachments(params: {
 }
 
 type MessageCreationMode = "strict" | "best_effort";
-type CreateMessageFn = (
-	conversationId: string,
-	role: "user" | "assistant",
-	content: string,
-	thinking?: string,
-	thinkingSegments?: Array<unknown>,
-	metadata?: Record<string, unknown>,
-) => Promise<{ id: string } | undefined>;
+type CreateMessageFn = typeof createMessage;
 
 type FileProductionJobSummary = {
 	id: string;
@@ -148,7 +142,7 @@ export type FinalizeChatTurnParams = {
 	upstreamMessage: string;
 	assistantResponse: string;
 	assistantThinking?: string;
-	serverSegments?: Array<unknown>;
+	serverSegments?: ThinkingSegment[];
 	assistantMetadata: Record<string, unknown>;
 	reasoningDepth?: ReasoningDepth;
 	depthMetadata?: DepthMetadata;
@@ -270,7 +264,7 @@ async function createTurnMessage(
 		role: "user" | "assistant";
 		content: string;
 		thinking?: string;
-		serverSegments?: Array<unknown>;
+		serverSegments?: ThinkingSegment[];
 		metadata?: Record<string, unknown>;
 	},
 	mode: MessageCreationMode,
@@ -576,7 +570,7 @@ export async function finalizeChatTurn(
 			normalizedMessage: params.normalizedMessage,
 			assistantResponse: params.assistantResponse,
 			attachmentIds: params.attachmentIds,
-			activeDocumentArtifactId: params.activeDocumentArtifactId,
+			activeDocumentArtifactId: params.activeDocumentArtifactId ?? undefined,
 			contextStatus: params.contextStatus,
 			initialTaskState: params.initialTaskState,
 			initialContextDebug: params.initialContextDebug,

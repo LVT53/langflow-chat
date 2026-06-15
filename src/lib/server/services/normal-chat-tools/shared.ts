@@ -173,7 +173,10 @@ export function modelSafeToolError(error: unknown, fallback: string): string {
 	return truncateText(trimmed || fallback, 500);
 }
 
-export async function executeToolWithEnvelope<TModelPayload>(params: {
+export async function executeToolWithEnvelope<
+	TModelPayload,
+	TErrorPayload = TModelPayload,
+>(params: {
 	toolName: string;
 	timeoutMs: number;
 	options: Pick<ToolExecutionOptions, "toolCallId" | "abortSignal">;
@@ -183,10 +186,10 @@ export async function executeToolWithEnvelope<TModelPayload>(params: {
 		entry: ToolCallEntry;
 	}>;
 	onError: (error: unknown) => {
-		modelPayload: TModelPayload;
+		modelPayload: TErrorPayload;
 		entry: ToolCallEntry;
 	};
-}): Promise<TModelPayload> {
+}): Promise<TModelPayload | TErrorPayload> {
 	try {
 		if (params.options.abortSignal?.aborted) {
 			throw toolAbortError(params.toolName, params.options.abortSignal.reason);

@@ -2863,6 +2863,7 @@ function mapReviewedSourceForCoverage(
 				planGoal: plan.goal,
 				keyQuestions: plan.keyQuestions,
 				source: {
+					id: source.id,
 					title: source.title ?? source.url,
 					snippet: source.snippet,
 					sourceText: [
@@ -2881,10 +2882,11 @@ function filterSourcesForCurrentPlan(
 	sources: DeepResearchSource[],
 	currentPlan: { updatedAt?: number } | null | undefined,
 ): DeepResearchSource[] {
-	if (!currentPlan?.updatedAt) return sources;
+	const updatedAt = currentPlan?.updatedAt;
+	if (!updatedAt) return sources;
 	return sources.filter((source) => {
 		const activeAt = Date.parse(source.reviewedAt ?? source.discoveredAt);
-		return Number.isNaN(activeAt) || activeAt >= currentPlan.updatedAt;
+		return Number.isNaN(activeAt) || activeAt >= updatedAt;
 	});
 }
 
@@ -2953,7 +2955,7 @@ function mapReviewedSourceForSynthesis(
 		},
 		rejectedReason: source.rejectedReason ?? null,
 		openedContentLength: source.openedContentLength ?? 0,
-		reviewedAt: source.reviewedAt,
+		reviewedAt: reviewedAt,
 		createdAt: reviewedAt,
 	};
 }

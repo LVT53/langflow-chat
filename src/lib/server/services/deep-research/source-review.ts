@@ -687,7 +687,10 @@ type TopicRelevanceResult = {
 export function isSourceTopicRelevantToPlan(input: {
 	planGoal?: string | null;
 	keyQuestions?: string[];
-	source: Pick<DiscoveredResearchSource, "title" | "snippet" | "sourceText">;
+	source: Pick<
+		DiscoveredResearchSource,
+		"id" | "title" | "snippet" | "sourceText"
+	>;
 }): boolean {
 	return evaluateTopicRelevance({
 		planGoal: input.planGoal ?? undefined,
@@ -706,7 +709,10 @@ export function isSourceTopicRelevantToPlan(input: {
 function evaluateTopicRelevance(input: {
 	planGoal?: string;
 	keyQuestions: string[];
-	source: Pick<DiscoveredResearchSource, "title" | "snippet" | "sourceText">;
+	source: Pick<
+		DiscoveredResearchSource,
+		"id" | "title" | "url" | "snippet" | "sourceText"
+	>;
 	sourceText: string;
 }): TopicRelevanceResult {
 	const anchors = extractTopicAnchors(

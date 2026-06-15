@@ -7,9 +7,11 @@ import {
 	type LanguageModelUsage,
 	type ModelMessage,
 	NoSuchToolError,
+	type OnStepFinishEvent,
 	type StopCondition,
 	stepCountIs,
 	streamText,
+	type TextStreamPart,
 	type ToolChoice,
 	type ToolSet,
 } from "ai";
@@ -52,6 +54,9 @@ export {
 
 const DEFAULT_MAX_TOOL_STEPS = 20;
 const DONE_TOOL_NAME = "done";
+type NormalChatModelRunProviderOptions = NonNullable<
+	Parameters<typeof generateText>[0]["providerOptions"]
+>;
 
 function toolCallRepairFunction({
 	error,
@@ -59,11 +64,16 @@ function toolCallRepairFunction({
 }: {
 	error: InvalidToolInputError | NoSuchToolError;
 	toolCall: { toolCallId: string; toolName: string; input: string };
-}): { toolCallId: string; toolName: string; input: string } | null {
-	if (NoSuchToolError.isInstance(error)) return null;
+}): Promise<{
+	type: "tool-call";
+	toolCallId: string;
+	toolName: string;
+	input: string;
+} | null> {
+	if (NoSuchToolError.isInstance(error)) return Promise.resolve(null);
 	const repaired = repairMalformedToolCallJson(toolCall.input);
-	if (!repaired) return null;
-	return { ...toolCall, input: repaired };
+	if (!repaired) return Promise.resolve(null);
+	return Promise.resolve({ type: "tool-call", ...toolCall, input: repaired });
 }
 
 function stagnantProgress(): StopCondition<ToolSet> {
@@ -207,10 +217,10 @@ export type NormalChatModelRunBaseParams = {
 	messages: ModelMessage[];
 	system?: string;
 	headers?: Record<string, string | undefined>;
-	providerOptions?: Record<string, Record<string, unknown>>;
+	providerOptions?: NormalChatModelRunProviderOptions;
 	resolveProviderOptions?: (
 		provider: NormalChatModelRunProvider,
-	) => Record<string, Record<string, unknown>> | undefined;
+	) => NormalChatModelRunProviderOptions | undefined;
 	abortSignal?: AbortSignal;
 	fetch?: typeof fetch;
 	maxRetries?: number;
@@ -221,14 +231,14 @@ export type PlainNormalChatModelRunParams = NormalChatModelRunBaseParams & {
 	tools?: ToolSet;
 	toolChoice?: ToolChoice<ToolSet>;
 	maxToolSteps?: number;
-	stopWhen?: StopCondition<ToolSet>;
+	stopWhen?: StopCondition<ToolSet> | Array<StopCondition<ToolSet>>;
 };
 
 export type StreamingNormalChatModelRunParams = NormalChatModelRunBaseParams & {
 	tools?: ToolSet;
 	toolChoice?: ToolChoice<ToolSet>;
 	maxToolSteps?: number;
-	stopWhen?: StopCondition<ToolSet>;
+	stopWhen?: StopCondition<ToolSet> | Array<StopCondition<ToolSet>>;
 	firstOutputTimeoutMs?: number | null;
 	deliberationElapsedMs?: number;
 };
@@ -334,15 +344,13 @@ async function resolveBuiltinFromNewProvidersTable(
 	name: string,
 ): Promise<NormalChatModelRunProvider | null> {
 	// Handle composite ID format: provider:<provider-uuid>:<model-uuid>
-	let provider: Awaited<ReturnType<typeof getProviderWithSecrets>> | null =
-		null;
 	const providerModelIdParts = name.startsWith("provider:")
 		? name.split(":")
 		: null;
 	if (providerModelIdParts && providerModelIdParts.length >= 3) {
 		const providerId = providerModelIdParts[1];
 		const modelId = providerModelIdParts[2];
-		provider = await getProviderWithSecrets(providerId);
+		const provider = await getProviderWithSecrets(providerId);
 		if (provider?.enabled) {
 			const models = await listEnabledProviderModels(provider.id);
 			const model = models.find((m) => m.id === modelId);
@@ -358,7 +366,7 @@ async function resolveBuiltinFromNewProvidersTable(
 
 	if (providerModelIdParts && providerModelIdParts.length === 2) {
 		const providerId = providerModelIdParts[1];
-		provider = await getProviderWithSecrets(providerId);
+		const provider = await getProviderWithSecrets(providerId);
 		if (provider?.enabled) {
 			const models = await listEnabledProviderModels(provider.id);
 			const model = models[0];
@@ -369,7 +377,7 @@ async function resolveBuiltinFromNewProvidersTable(
 	}
 
 	// Legacy format: provider:<provider-name> or bare name
-	provider = await getProviderByName(name);
+	const provider = await getProviderByName(name);
 	if (!provider?.enabled) return null;
 
 	const models = await listEnabledProviderModels(provider.id);
@@ -396,7 +404,9 @@ function providerModelRunId(
 }
 
 function buildProviderModelRunConfig(
-	providerWithSecrets: Awaited<ReturnType<typeof getProviderWithSecrets>>,
+	providerWithSecrets: NonNullable<
+		Awaited<ReturnType<typeof getProviderWithSecrets>>
+	>,
 	model: Awaited<ReturnType<typeof listEnabledProviderModels>>[number],
 	modelId?: ModelId,
 ): NormalChatModelRunProvider {
@@ -407,8 +417,10 @@ function buildProviderModelRunConfig(
 		...(modelId ? { modelId } : {}),
 		name: providerWithSecrets.name,
 		displayName: model.displayName ?? providerWithSecrets.displayName,
-		iconUrl: (providerWithSecrets as Record<string, unknown>).iconAssetId
-			? `/api/campaign-assets/${encodeURIComponent(String((providerWithSecrets as Record<string, unknown>).iconAssetId))}/content`
+		iconUrl: providerWithSecrets.iconAssetId
+			? `/api/campaign-assets/${encodeURIComponent(
+					providerWithSecrets.iconAssetId,
+				)}/content`
 			: null,
 		baseUrl: normalizeOpenAICompatibleBaseUrl(providerWithSecrets.baseUrl),
 		modelName: model.name,
@@ -478,7 +490,7 @@ function builtinModelRunProvider(
 export function buildNormalChatModelRunProviderOptions(
 	provider: NormalChatModelRunProvider,
 	thinkingMode: ThinkingMode | undefined,
-): Record<string, Record<string, unknown>> | undefined {
+): NormalChatModelRunProviderOptions | undefined {
 	if (isCapabilityUnsupported(provider, "reasoningControls")) return undefined;
 
 	const options = buildNormalChatModelRunCompatibilityProviderOptions(
@@ -729,22 +741,25 @@ export async function runPlainNormalChatModelRun(
 					runtimeConfig,
 				)
 			: null;
-		const attemptTimeoutController =
-			failoverTarget && !attemptedModelIds.has(failoverTarget)
-				? new AbortController()
-				: null;
+		const shouldArmAttemptTimeout =
+			Boolean(runtimeConfig) &&
+			failoverTarget !== null &&
+			!attemptedModelIds.has(failoverTarget);
+		const attemptTimeoutMs = runtimeConfig
+			? Math.min(
+					runtimeConfig.requestTimeoutMs,
+					Math.max(1000, runtimeConfig.modelTimeoutFailoverTimeoutMs),
+				)
+			: 0;
+		const attemptTimeoutController = shouldArmAttemptTimeout
+			? new AbortController()
+			: null;
 		let attemptTimedOut = false;
 		const attemptTimeoutId = attemptTimeoutController
-			? setTimeout(
-					() => {
-						attemptTimedOut = true;
-						attemptTimeoutController.abort(createModelAttemptTimeoutError());
-					},
-					Math.min(
-						runtimeConfig.requestTimeoutMs,
-						Math.max(1000, runtimeConfig.modelTimeoutFailoverTimeoutMs),
-					),
-				)
+			? setTimeout(() => {
+					attemptTimedOut = true;
+					attemptTimeoutController.abort(createModelAttemptTimeoutError());
+				}, attemptTimeoutMs)
 			: null;
 		attemptTimeoutId?.unref?.();
 		const attemptParams = {
@@ -809,7 +824,7 @@ function resolveProviderOptionsForAttempt(
 		"provider" | "providerOptions" | "resolveProviderOptions"
 	>,
 	provider: NormalChatModelRunProvider,
-): Record<string, Record<string, unknown>> | undefined {
+): NormalChatModelRunProviderOptions | undefined {
 	const resolved = params.resolveProviderOptions?.(provider);
 	if (resolved !== undefined) return resolved;
 	return provider === params.provider ? params.providerOptions : undefined;
@@ -846,7 +861,11 @@ async function runPlainNormalChatModelRunAttempt(
 		headers: params.headers,
 		providerOptions: params.providerOptions,
 		experimental_repairToolCall: toolCallRepairFunction,
-		onStepFinish: ({ stepNumber, finishReason, usage }) => {
+		onStepFinish: ({
+			stepNumber,
+			finishReason,
+			usage,
+		}: OnStepFinishEvent<ToolSet>) => {
 			console.warn("[NORMAL_CHAT_MODEL] plain step finish", {
 				providerId: params.provider.id,
 				stepNumber,
@@ -1119,7 +1138,7 @@ async function* streamStreamingNormalChatModelRunAttempt(
 			: undefined);
 	const buildStreamConfig = (
 		tools?: ToolSet,
-		toolStopWhen?: StopCondition,
+		toolStopWhen?: StopCondition<ToolSet> | Array<StopCondition<ToolSet>>,
 	) => ({
 		model: provider(params.provider.modelName),
 		messages: params.messages,
@@ -1134,7 +1153,11 @@ async function* streamStreamingNormalChatModelRunAttempt(
 		providerOptions: params.providerOptions,
 		experimental_repairToolCall: toolCallRepairFunction,
 		onError: () => undefined,
-		onStepFinish: ({ stepNumber, finishReason, usage }) => {
+		onStepFinish: ({
+			stepNumber,
+			finishReason,
+			usage,
+		}: OnStepFinishEvent<ToolSet>) => {
 			console.warn("[NORMAL_CHAT_MODEL] stream step finish", {
 				providerId: params.provider.id,
 				stepNumber,
@@ -1148,21 +1171,9 @@ async function* streamStreamingNormalChatModelRunAttempt(
 	let responseModelName = params.provider.modelName;
 
 	const yieldStreamEvents = async function* (
-		fullStream: AsyncIterable<unknown>,
+		fullStream: AsyncIterable<TextStreamPart<ToolSet>>,
 	): AsyncGenerator<StreamingNormalChatModelRunEvent, void, undefined> {
-		for await (const part of fullStream as AsyncIterable<{
-			type: string;
-			text?: string;
-			toolCallId?: string;
-			toolName?: string;
-			input?: unknown;
-			output?: unknown;
-			error?: unknown;
-			response?: { modelId: string };
-			finishReason?: string;
-			rawFinishReason?: string;
-			totalUsage?: LanguageModelUsage;
-		}>) {
+		for await (const part of fullStream) {
 			switch (part.type) {
 				case "text-delta":
 					if (typeof part.text === "string") {
@@ -1226,7 +1237,14 @@ async function* streamStreamingNormalChatModelRunAttempt(
 					};
 					break;
 				case "finish-step":
-					responseModelName = part.response.modelId;
+					if (
+						part.response &&
+						typeof part.response === "object" &&
+						"modelId" in part.response &&
+						typeof part.response.modelId === "string"
+					) {
+						responseModelName = part.response.modelId;
+					}
 					break;
 				case "finish":
 					yield {

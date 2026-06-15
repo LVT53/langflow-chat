@@ -317,11 +317,11 @@ export type DeepResearchReportIntent =
 export interface DeepResearchBudget {
 	sourceReviewCeiling: number;
 	synthesisPassCeiling: number;
-	meaningfulPassFloor?: number;
-	meaningfulPassCeiling?: number;
-	repairPassCeiling?: number;
-	sourceProcessingConcurrency?: number;
-	modelReasoningConcurrency?: number;
+	meaningfulPassFloor: number;
+	meaningfulPassCeiling: number;
+	repairPassCeiling: number;
+	sourceProcessingConcurrency: number;
+	modelReasoningConcurrency: number;
 }
 
 export type DeepResearchJobStatus =
@@ -345,6 +345,7 @@ export interface DeepResearchEffortEstimate {
 export interface DeepResearchPlanRaw {
 	goal: string;
 	depth: DeepResearchDepth;
+	researchLanguage?: "en" | "hu";
 	reportIntent: DeepResearchReportIntent;
 	comparedEntities?: string[];
 	comparisonAxes?: string[];
@@ -373,7 +374,7 @@ export interface DeepResearchPlanSummary {
 	jobId?: string;
 	version: number;
 	status?: DeepResearchPlanStatus;
-	rawPlan?: DeepResearchPlanRaw;
+	rawPlan: DeepResearchPlanRaw;
 	renderedPlan: string;
 	contextDisclosure?: string | null;
 	effortEstimate: DeepResearchEffortEstimate;
@@ -728,7 +729,10 @@ export interface DeepResearchTimelineEvent {
 	kind: string;
 	occurredAt: string;
 	messageKey: string;
-	messageParams: Record<string, string | number | boolean | null>;
+	messageParams: Record<
+		string,
+		string | number | boolean | null | Array<string | number | boolean | null>
+	>;
 	sourceCounts: DeepResearchSourceCounts;
 	assumptions: string[];
 	warnings: string[];

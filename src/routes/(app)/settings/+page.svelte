@@ -133,7 +133,7 @@ let selectedTitleLanguage = $state(initialPreferences.titleLanguage ?? "auto");
 let selectedUiLanguage = $state<UiLanguage>(
 	initialPreferences.uiLanguage ?? "en",
 );
-let selectedAvatar = $state(initialPreferences.avatarId);
+let selectedAvatar = $state<number | null>(initialPreferences.avatarId);
 let selectedPersonalityId = $state<string | null>(
 	initialPreferences.preferredPersonalityId ?? null,
 );

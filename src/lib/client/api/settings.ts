@@ -21,7 +21,7 @@ interface AnalyticsByModelRow {
 	model: string;
 	displayName?: string;
 	msgCount: number;
-	totalCostUsd?: number;
+	totalCostUsd: number;
 }
 
 interface AnalyticsByProviderRow {

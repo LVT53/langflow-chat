@@ -2680,6 +2680,8 @@ function mapConversationRow(
 		id: row.id,
 		title: row.title,
 		projectId: row.projectId ?? null,
+		sidebarPinned: row.sidebarPinned,
+		sidebarSortOrder: row.sidebarSortOrder ?? null,
 		createdAt: row.createdAt.getTime() / 1000,
 		updatedAt: row.updatedAt.getTime() / 1000,
 	};
@@ -3192,6 +3194,7 @@ function buildEvidenceLimitationReviewedScope(input: {
 			planGoal: input.plan.goal,
 			keyQuestions: input.plan.keyQuestions,
 			source: {
+				id: source.id,
 				title: source.title ?? source.url,
 				snippet: source.snippet,
 				sourceText: [
@@ -3289,7 +3292,7 @@ async function mapDeepResearchJobWithCurrentPlanAndTimeline(
 }
 
 type SourceLedgerForCard = {
-	sourceCounts: DeepResearchJob["sourceCounts"];
+	sourceCounts: DeepResearchSourceCounts;
 	sources: DeepResearchSource[];
 };
 

@@ -2,6 +2,14 @@ import type { ModelConfig } from "$lib/server/env";
 import type { ThinkingMode } from "$lib/types";
 
 type NormalChatThinkingType = NonNullable<ModelConfig["thinkingType"]>;
+type JsonValue =
+	| string
+	| number
+	| boolean
+	| null
+	| JsonValue[]
+	| { [key: string]: JsonValue };
+type NormalChatProviderOptions = { [key: string]: JsonValue };
 
 export type NormalChatModelRunCompatibilityProvider = {
 	name: string;
@@ -15,8 +23,8 @@ export type NormalChatModelRunCompatibilityProvider = {
 export function buildNormalChatModelRunCompatibilityProviderOptions(
 	provider: NormalChatModelRunCompatibilityProvider,
 	thinkingMode: ThinkingMode | undefined,
-): Record<string, unknown> {
-	const options: Record<string, unknown> = {};
+): NormalChatProviderOptions {
+	const options: NormalChatProviderOptions = {};
 	const family = identifyProviderFamily(provider);
 	const thinkingType = resolveThinkingType(provider, thinkingMode, family);
 

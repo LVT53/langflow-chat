@@ -1,6 +1,8 @@
 import type { FinishReason } from "ai";
 import { getConfig } from "$lib/server/config-store";
+import type { ProviderUsageSnapshot } from "$lib/server/services/analytics";
 import { getConversationCostSummary } from "$lib/server/services/analytics";
+import type { getChatFilesForAssistantMessage } from "$lib/server/services/chat-files";
 import {
 	buildChatTurnCompletionContextSources,
 	finalizeChatTurn,
@@ -17,10 +19,13 @@ import type {
 	ConversationContextStatus,
 	DepthMetadata,
 	FileProductionJob,
+	HonchoContextInfo,
+	HonchoContextSnapshot,
 	LinkedContextSource,
 	ReasoningDepth,
+	TaskState,
+	ThinkingSegment,
 	ToolCallEntry,
-	WebCitationAudit,
 } from "$lib/types";
 import { isFileProductionToolName } from "$lib/utils/tool-calls";
 import type { LegacyContextTraceSectionInput } from "./context-trace";
@@ -38,14 +43,21 @@ import {
 	streamTextEndEvent,
 	streamTextStartEvent,
 } from "./stream";
-import type { WorkCapsuleSummary } from "./types";
+import type {
+	PersistAssistantEvidenceParams,
+	PersistAssistantTurnStateParams,
+	PersistAssistantTurnStateResult,
+	RunPostTurnTasksParams,
+	WorkCapsuleSummary,
+	WorkingSetItem,
+} from "./types";
 
 type PersistedStreamTurnState = {
-	activeWorkingSet: unknown;
-	taskState: unknown;
-	contextDebug: unknown;
+	activeWorkingSet: WorkingSetItem[] | undefined;
+	taskState: TaskState | null | undefined;
+	contextDebug: ContextDebugState | null | undefined;
 	workCapsule: WorkCapsuleSummary;
-	attachedArtifacts?: unknown;
+	attachedArtifacts?: WorkingSetItem[];
 };
 
 export interface CompleteStreamTurnParams {
@@ -68,102 +80,43 @@ export interface CompleteStreamTurnParams {
 	toolCallRecords: ToolCallEntry[];
 	skillControlEnvelopePayloads: string[];
 	skillControlEnabled?: boolean;
-	serverSegments: Array<unknown>;
+	serverSegments: ThinkingSegment[];
 	attachmentIds: string[];
 	linkedSources: LinkedContextSource[];
 	activeSkillSessionId?: string | null;
 	activeDocumentArtifactId: string | null;
 	requestStartTime: number;
 	fileProductionJobIdsAtStart: Set<string>;
-	latestContextStatus: unknown;
-	latestActiveWorkingSet: unknown;
-	latestTaskState: unknown;
-	latestContextDebug: unknown;
-	latestHonchoContext: unknown;
-	latestHonchoSnapshot: unknown;
+	latestContextStatus: ConversationContextStatus | null | undefined;
+	latestActiveWorkingSet: WorkingSetItem[] | undefined;
+	latestTaskState: TaskState | null | undefined;
+	latestContextDebug: ContextDebugState | null | undefined;
+	latestHonchoContext: HonchoContextInfo | null | undefined;
+	latestHonchoSnapshot: HonchoContextSnapshot | null | undefined;
 	latestContextTraceSections?: LegacyContextTraceSectionInput[];
-	latestProviderUsage: unknown;
+	latestProviderUsage: ProviderUsageSnapshot | null;
 	upstreamFinishReason?: FinishReason | null;
 	upstreamRawFinishReason?: string | null;
 	streamClosedWithoutFinish?: boolean;
-	initialContextStatus: unknown;
-	initialTaskState: unknown;
-	initialContextDebug: unknown;
+	initialContextStatus: ConversationContextStatus | undefined;
+	initialTaskState: TaskState | null | undefined;
+	initialContextDebug: ContextDebugState | null | undefined;
 	initialContextTraceSections?: LegacyContextTraceSectionInput[];
-	createMessage: (
-		conversationId: string,
-		role: "user" | "assistant",
-		content: string,
-		thinking?: string,
-		serverSegments?: Array<unknown>,
-		metadata?: Record<string, unknown>,
-	) => Promise<{ id: string } | undefined>;
+	createMessage: typeof import("$lib/server/services/messages").createMessage;
 	persistUserTurnAttachments: (params: {
 		userId: string;
 		conversationId: string;
 		messageId: string;
 		normalizedMessage: string;
 		attachmentIds: string[];
-	}) => Promise<unknown>;
-	persistAssistantTurnState: (params: {
-		userId: string;
-		conversationId: string;
-		normalizedMessage: string;
-		assistantResponse: string;
-		attachmentIds: string[];
-		activeDocumentArtifactId: string | null;
-		contextStatus: unknown;
-		initialTaskState: unknown;
-		initialContextDebug: unknown;
-		userMessageId: string | null;
-		assistantMessageId: string;
-		analytics: {
-			model: string;
-			modelDisplayName: string | null;
-			providerDisplayName?: string | null;
-			providerIconUrl?: string | null;
-			promptTokens: number;
-			completionTokens: number;
-			reasoningTokens: number;
-			generationTimeMs: number;
-			providerUsage: unknown;
-		};
-		continuitySource: string;
-		honchoContext: unknown;
-		honchoSnapshot: unknown;
-	}) => Promise<{
-		activeWorkingSet: unknown;
-		taskState: unknown;
-		contextDebug: unknown;
-		workCapsule: WorkCapsuleSummary;
-		attachedArtifacts?: unknown;
-	}>;
-	persistAssistantEvidence: (params: {
-		logPrefix: string;
-		userId: string;
-		conversationId: string;
-		assistantMessageId: string;
-		normalizedMessage: string;
-		assistantResponse: string;
-		attachmentIds: string[];
-		taskState: unknown;
-		contextStatus: unknown;
-		contextDebug: unknown;
-		initialTaskState: unknown;
-		initialContextDebug: unknown;
-		contextTraceSections?: LegacyContextTraceSectionInput[];
-		toolCalls: ToolCallEntry[];
-		webCitationAudit?: WebCitationAudit | null;
-	}) => Promise<void>;
-	runPostTurnTasks: (params: {
-		logPrefix: string;
-		userId: string;
-		conversationId: string;
-		upstreamMessage: string;
-		assistantMirrorContent: string;
-		workCapsule: WorkCapsuleSummary;
-		maintenanceReason: string;
-	}) => Promise<void>;
+	}) => Promise<WorkingSetItem[] | undefined>;
+	persistAssistantTurnState: (
+		params: PersistAssistantTurnStateParams,
+	) => Promise<PersistAssistantTurnStateResult>;
+	persistAssistantEvidence: (
+		params: PersistAssistantEvidenceParams,
+	) => Promise<void>;
+	runPostTurnTasks: (params: RunPostTurnTasksParams) => Promise<void>;
 	touchConversation: (
 		userId: string,
 		conversationId: string,
@@ -186,7 +139,7 @@ export interface CompleteStreamTurnParams {
 	getChatFilesForAssistantMessage: (
 		conversationId: string,
 		assistantMessageId: string,
-	) => Promise<ChatGeneratedFile[]>;
+	) => ReturnType<typeof getChatFilesForAssistantMessage>;
 	getFileProductionJobs: (
 		userId: string,
 		conversationId: string,

@@ -631,6 +631,9 @@ function createAlternativesPreservationBrief(
 			continue;
 		}
 
+		if (!("openQuestions" in entry.brief)) {
+			continue;
+		}
 		appendUnique(
 			viableAlternatives,
 			entry.brief.openQuestions.map(
@@ -951,6 +954,7 @@ export async function verifyAndRepairDeliberatedFinalAnswer(params: {
 	}
 
 	let result: PlainNormalChatModelRunResult;
+	const depthEffort = params.depthEffort;
 	try {
 		result = await runPlainNormalChatModelRun({
 			provider: params.provider,
@@ -961,7 +965,9 @@ export async function verifyAndRepairDeliberatedFinalAnswer(params: {
 				"You are repairing a completed Max-depth answer. Keep the user's requested substance, but fix only the listed quality issues. Return the revised final answer only.",
 			].join("\n\n"),
 			resolveProviderOptions: (attemptProvider) =>
-				buildReasoningDepthProviderOptions(attemptProvider, params.depthEffort),
+				depthEffort
+					? buildReasoningDepthProviderOptions(attemptProvider, depthEffort)
+					: undefined,
 			abortSignal: params.abortSignal,
 			maxOutputTokens: 4_000,
 			messages: [
@@ -1091,6 +1097,7 @@ async function runDeliberationPass(
 	}
 
 	let result: PlainNormalChatModelRunResult;
+	const depthEffort = params.depthEffort;
 	try {
 		result = await runPlainNormalChatModelRun({
 			provider: params.provider,
@@ -1098,11 +1105,8 @@ async function runDeliberationPass(
 			runtimeConfig: params.runtimeConfig,
 			system: deliberationSystemPrompt(params.passSpec),
 			resolveProviderOptions: (attemptProvider) =>
-				params.depthEffort && params.passSpec.useDepthProviderOptions
-					? buildReasoningDepthProviderOptions(
-							attemptProvider,
-							params.depthEffort,
-						)
+				depthEffort && params.passSpec.useDepthProviderOptions
+					? buildReasoningDepthProviderOptions(attemptProvider, depthEffort)
 					: undefined,
 			abortSignal: params.abortSignal,
 			maxOutputTokens: params.passSpec.maxOutputTokens,
@@ -1167,6 +1171,7 @@ async function repairDeliberationBrief(
 	usage: NormalChatModelRunUsage;
 }> {
 	let result: PlainNormalChatModelRunResult;
+	const depthEffort = params.depthEffort;
 	try {
 		result = await runPlainNormalChatModelRun({
 			provider: params.provider,
@@ -1175,11 +1180,8 @@ async function repairDeliberationBrief(
 			system:
 				"Repair the provided deliberation output into valid compact JSON only. Do not add new facts, chain-of-thought, markdown, or commentary.",
 			resolveProviderOptions: (attemptProvider) =>
-				params.depthEffort && params.passSpec.useDepthProviderOptions
-					? buildReasoningDepthProviderOptions(
-							attemptProvider,
-							params.depthEffort,
-						)
+				depthEffort && params.passSpec.useDepthProviderOptions
+					? buildReasoningDepthProviderOptions(attemptProvider, depthEffort)
 					: undefined,
 			abortSignal: params.abortSignal,
 			maxOutputTokens: params.passSpec.repairMaxOutputTokens,

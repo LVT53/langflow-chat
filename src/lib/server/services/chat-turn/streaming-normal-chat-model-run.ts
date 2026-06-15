@@ -128,8 +128,9 @@ export async function runStreamingNormalChatSendModel(
 		classifier: params.depthClarificationClassifier,
 	});
 	if (clarificationGate.action === "ask") {
+		const emptyPrepared: StreamingNormalChatPreparedContext = {};
 		return {
-			prepared: {},
+			prepared: emptyPrepared,
 			modelId,
 			modelDisplayName: provider.displayName,
 			providerIconUrl: provider.iconUrl ?? null,
@@ -205,6 +206,15 @@ export async function runStreamingNormalChatSendModel(
 	const toolChoice = undefined;
 	const prefetchedToolCalls = prepared.prefetchedToolCalls ?? [];
 	const getNormalChatToolCalls = () => normalChatTools.getToolCalls();
+	const assumptionPrefix =
+		clarificationGate.action === "proceed"
+			? clarificationGate.assumptionPrefix
+			: undefined;
+	const deliberationUsage = deliberation?.usage ?? {
+		inputTokens: undefined,
+		outputTokens: undefined,
+		totalTokens: undefined,
+	};
 	const finalInputValue = appendDeliberationBriefsToInput(
 		prepared.inputValue,
 		deliberation?.briefs ?? [],
@@ -252,8 +262,8 @@ export async function runStreamingNormalChatSendModel(
 		providerIconUrl: provider.iconUrl ?? null,
 		resolvedProviderId: provider.id,
 		stream: withOptionalAssumptionPrefix(
-			deliberation ? withDeliberationUsage(stream, deliberation.usage) : stream,
-			clarificationGate.assumptionPrefix,
+			deliberation ? withDeliberationUsage(stream, deliberationUsage) : stream,
+			assumptionPrefix,
 		),
 		prefetchedToolCalls,
 		getNormalChatToolCalls,
@@ -278,7 +288,19 @@ async function* createSyntheticTextStream(
 	text: string,
 ): AsyncIterable<StreamingNormalChatModelRunEvent> {
 	yield { type: "text_delta", text };
-	yield { type: "finish", finishReason: "stop" };
+	yield {
+		type: "finish",
+		finishReason: "stop",
+		rawFinishReason: undefined,
+		model: {
+			modelId: "clarification",
+			providerId: "clarification",
+			providerName: "clarification",
+			displayName: "Clarification",
+			requestedModelName: "clarification",
+			responseModelName: "clarification",
+		},
+	};
 }
 
 async function* withOptionalAssumptionPrefix(
@@ -294,9 +316,9 @@ async function* withOptionalAssumptionPrefix(
 async function* withDeliberationUsage(
 	stream: AsyncIterable<StreamingNormalChatModelRunEvent>,
 	deliberationUsage: {
-		inputTokens?: number;
-		outputTokens?: number;
-		totalTokens?: number;
+		inputTokens: number | undefined;
+		outputTokens: number | undefined;
+		totalTokens: number | undefined;
 	},
 ): AsyncIterable<StreamingNormalChatModelRunEvent> {
 	for await (const event of stream) {

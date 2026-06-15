@@ -672,7 +672,7 @@ function mapLlmFindings(
 	sourceRefsById: Map<string, ResearchSourceReference>,
 ): SynthesisFinding[] {
 	return objectArrayValue(value)
-		.map((item) => {
+		.map<SynthesisFinding | null>((item) => {
 			const statement = stringValue(item.statement);
 			const sourceRefs = stringArrayValue(item.sourceIds)
 				.map((sourceId) => sourceRefsById.get(sourceId))
@@ -691,7 +691,7 @@ function mapLlmFindings(
 				central: kind === "supported" ? true : undefined,
 			};
 		})
-		.filter((finding): finding is SynthesisFinding => Boolean(finding));
+		.filter((finding): finding is SynthesisFinding => finding !== null);
 }
 
 function sourceForPrompt(source: DeepResearchSource) {

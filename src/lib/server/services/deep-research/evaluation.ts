@@ -6,7 +6,7 @@ import {
 	assessResearchCoverage,
 	type ReviewedCoverageSource,
 } from "./coverage";
-import type { ResearchPlan } from "./planning";
+import { buildResearchBudget, type ResearchPlan } from "./planning";
 
 export type DeepResearchEvaluationDimension =
 	| "readableSynthesis"
@@ -128,10 +128,7 @@ const standardComparisonPlan: ResearchPlan = {
 	goal: "Compare private AI coding assistants for a small engineering team.",
 	depth: "standard",
 	reportIntent: "comparison",
-	researchBudget: {
-		sourceReviewCeiling: 40,
-		synthesisPassCeiling: 2,
-	},
+	researchBudget: buildResearchBudget("standard"),
 	keyQuestions: [
 		"Which products have repository-aware coding workflows?",
 		"Which pricing and compliance differences matter?",

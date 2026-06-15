@@ -259,6 +259,15 @@ export async function runPlainNormalChatSendModel(
 					),
 				})
 			: null;
+	const assumptionPrefix =
+		clarificationGate.action === "proceed"
+			? clarificationGate.assumptionPrefix
+			: undefined;
+	const deliberationUsage = deliberation?.usage ?? {
+		inputTokens: undefined,
+		outputTokens: undefined,
+		totalTokens: undefined,
+	};
 	const normalChatToolCalls = normalChatTools.getToolCalls();
 	const evidenceReadyNormalChatToolCalls = normalChatToolCalls.filter(
 		isEvidenceReadyToolCall,
@@ -270,8 +279,8 @@ export async function runPlainNormalChatSendModel(
 	];
 
 	return {
-		text: clarificationGate.assumptionPrefix
-			? `${clarificationGate.assumptionPrefix}\n\n${finalAnswerRepair?.text ?? result.text}`
+		text: assumptionPrefix
+			? `${assumptionPrefix}\n\n${finalAnswerRepair?.text ?? result.text}`
 			: (finalAnswerRepair?.text ?? result.text),
 		contextStatus: prepared.contextStatus,
 		taskState: prepared.taskState,
@@ -281,8 +290,12 @@ export async function runPlainNormalChatSendModel(
 		contextTraceSections: prepared.contextTraceSections,
 		providerUsage: mapNormalChatModelRunUsageToProviderSnapshot(
 			sumUsage(
-				sumUsage(deliberation?.usage ?? {}, result.usage),
-				finalAnswerRepair?.usage ?? {},
+				sumUsage(deliberationUsage, result.usage),
+				finalAnswerRepair?.usage ?? {
+					inputTokens: undefined,
+					outputTokens: undefined,
+					totalTokens: undefined,
+				},
 			),
 		),
 		prefetchedToolCalls: prepared.prefetchedToolCalls,

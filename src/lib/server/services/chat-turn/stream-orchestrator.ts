@@ -35,7 +35,6 @@ import {
 	createSseHeartbeatComment,
 	createSsePreludeComment,
 	isAbruptUpstreamTermination,
-	type StreamErrorCode,
 	type StreamPhaseTimings,
 	streamErrorEvent,
 	streamResponseActivityEvent,
@@ -59,14 +58,22 @@ import {
 	getContextDebugState,
 	getConversationTaskState,
 } from "$lib/server/services/task-state";
+import type { StreamErrorCode } from "$lib/services/stream-protocol";
 import type {
+	ContextDebugState,
+	ConversationContextStatus,
 	DepthMetadata,
+	HonchoContextInfo,
+	HonchoContextSnapshot,
 	ModelId,
 	ResponseActivityEntry,
+	TaskState,
 	ToolCallEntry,
 } from "$lib/types";
 import { estimateTokenCount } from "$lib/utils/tokens";
 import { isFileProductionToolName } from "$lib/utils/tool-calls";
+import type { StreamingNormalChatPreparedContext } from "./streaming-normal-chat-model-run";
+import type { WorkingSetItem } from "./types";
 
 function getStreamTimeoutMs(): number {
 	return Math.max(60_000, getConfig().requestTimeoutMs);
@@ -224,7 +231,7 @@ export function runChatStreamOrchestrator(
 	const skillControlEnabled = getConfig().composerCommandRegistryEnabled;
 
 	const encoder = new TextEncoder();
-	let cancelStream = () => undefined;
+	let cancelStream = () => {};
 	const streamStartTime = Date.now();
 	const phaseTimingMs: StreamPhaseTimings = { ...(routePhaseTimings ?? {}) };
 	const recordElapsedPhase = (name: string) => {
@@ -258,7 +265,7 @@ export function runChatStreamOrchestrator(
 			let downstreamClosed = false;
 			let ended = false;
 
-			const closeDownstream = () => {
+			const closeDownstream = (): void => {
 				if (downstreamClosed) return;
 				downstreamClosed = true;
 				downstreamAbortSignal.removeEventListener("abort", closeDownstream);
@@ -625,7 +632,7 @@ export function runChatStreamOrchestrator(
 			const emitError = (code: StreamErrorCode) =>
 				enqueueChunk(streamErrorEvent(code));
 			const emitResolvedAssistantText = async (
-				text: string,
+				text: string | null,
 			): Promise<boolean> => {
 				if (!text) {
 					return true;
@@ -723,35 +730,12 @@ export function runChatStreamOrchestrator(
 				}
 				failStream("backend_failure");
 			};
-			let latestContextStatus:
-				| import("$lib/types").ConversationContextStatus
-				| undefined;
-			let latestActiveWorkingSet:
-				| Array<{
-						id: string;
-						type: string;
-						name: string;
-						mimeType: string | null;
-						sizeBytes: number | null;
-						conversationId: string | null;
-						summary: string | null;
-						createdAt: number;
-						updatedAt: number;
-				  }>
-				| undefined;
-			let latestTaskState: import("$lib/types").TaskState | null | undefined;
-			let latestContextDebug:
-				| import("$lib/types").ContextDebugState
-				| null
-				| undefined;
-			let latestHonchoContext:
-				| import("$lib/types").HonchoContextInfo
-				| null
-				| undefined;
-			let latestHonchoSnapshot:
-				| import("$lib/types").HonchoContextSnapshot
-				| null
-				| undefined;
+			let latestContextStatus: ConversationContextStatus | undefined;
+			let latestActiveWorkingSet: WorkingSetItem[] | undefined;
+			let latestTaskState: TaskState | null | undefined;
+			let latestContextDebug: ContextDebugState | null | undefined;
+			let latestHonchoContext: HonchoContextInfo | null | undefined;
+			let latestHonchoSnapshot: HonchoContextSnapshot | null | undefined;
 			let latestContextTraceSections:
 				| LegacyContextTraceSectionInput[]
 				| undefined;
@@ -762,14 +746,9 @@ export function runChatStreamOrchestrator(
 			let latestDepthMetadata: DepthMetadata = turn.depthMetadata;
 			let latestUpstreamFinishReason: FinishReason | null = null;
 			let latestUpstreamRawFinishReason: string | null = null;
-			let initialContextStatus:
-				| import("$lib/types").ConversationContextStatus
-				| undefined;
-			let initialTaskState: import("$lib/types").TaskState | null | undefined;
-			let initialContextDebug:
-				| import("$lib/types").ContextDebugState
-				| null
-				| undefined;
+			let initialContextStatus: ConversationContextStatus | undefined;
+			let initialTaskState: TaskState | null | undefined;
+			let initialContextDebug: ContextDebugState | null | undefined;
 			let initialContextTraceSections:
 				| LegacyContextTraceSectionInput[]
 				| undefined;
@@ -789,7 +768,7 @@ export function runChatStreamOrchestrator(
 				await completeStreamTurn({
 					wasStopped,
 					conversationId,
-					streamId,
+					streamId: streamId ?? null,
 					modelId: latestModelId,
 					modelDisplayName: latestModelDisplayName,
 					providerDisplayName,
@@ -814,7 +793,7 @@ export function runChatStreamOrchestrator(
 						turn.skillPromptContext?.source === "active_session"
 							? turn.skillPromptContext.sessionId
 							: null,
-					activeDocumentArtifactId,
+					activeDocumentArtifactId: activeDocumentArtifactId ?? null,
 					requestStartTime,
 					fileProductionJobIdsAtStart,
 					latestContextStatus,
@@ -1114,7 +1093,8 @@ export function runChatStreamOrchestrator(
 				latestModelDisplayName =
 					modelRun.modelDisplayName ?? latestModelDisplayName;
 				latestDepthMetadata = modelRun.depthMetadata ?? latestDepthMetadata;
-				const prepared = modelRun.prepared ?? {};
+				const prepared: StreamingNormalChatPreparedContext =
+					modelRun.prepared ?? {};
 				emitResponseActivity({
 					id: "context-ready",
 					kind: "context",

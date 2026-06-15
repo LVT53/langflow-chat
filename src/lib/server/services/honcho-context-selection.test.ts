@@ -1,8 +1,96 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { getConversationForkOrigin as getConversationForkOriginType } from "$lib/server/services/conversation-forks";
+import type {
+	findRelevantKnowledgeArtifacts as findRelevantKnowledgeArtifactsType,
+	getArtifactsForUser as getArtifactsForUserType,
+	resolvePromptAttachmentArtifacts as resolvePromptAttachmentArtifactsType,
+} from "$lib/server/services/knowledge";
+import type { listConversationLinkedContextSources as listConversationLinkedContextSourcesType } from "$lib/server/services/linked-context-sources";
+import type { listMessages as listMessagesType } from "$lib/server/services/messages";
+import type {
+	getProjectFolderReferenceContext as getProjectFolderReferenceContextType,
+	getProjectReferenceContext as getProjectReferenceContextType,
+	getPromptArtifactSnippets as getPromptArtifactSnippetsType,
+	prepareTaskContext as prepareTaskContextType,
+	selectProjectFolderSiblingPromotion as selectProjectFolderSiblingPromotionType,
+} from "$lib/server/services/task-state";
+import type { resolveWorkingDocumentSelection as resolveWorkingDocumentSelectionType } from "$lib/server/services/working-document-selection";
+import type {
+	compactContextSections,
+	selectPromptSessionTurns,
+	selectRecentRoleTurns,
+	serializeBudgetedAttachments,
+	serializeBudgetedRoleTurns,
+	serializeWorkingSetArtifacts,
+} from "$lib/server/utils/prompt-context";
+import type { Artifact, LinkedContextSource, MemoryLayer } from "$lib/types";
+
+type TestArtifact = {
+	id: string;
+	userId: string;
+	type: Artifact["type"];
+	retrievalClass: Artifact["retrievalClass"];
+	name: string;
+	mimeType: string | null;
+	sizeBytes: number | null;
+	conversationId: string | null;
+	summary: string | null;
+	contentText: string | null;
+	extension: string | null;
+	storagePath: string | null;
+	metadata: Artifact["metadata"];
+	createdAt: number;
+	updatedAt: number;
+};
+type TestPeerScopeItem = {
+	id: string;
+	content: string;
+	sessionId: string | null;
+	createdAt: string;
+};
+type MockPeerScope = {
+	toArray: () => Promise<TestPeerScopeItem[]>;
+};
+
+const createTestArtifact = (
+	artifact: Omit<Partial<TestArtifact>, "id" | "userId" | "type" | "name"> & {
+		id: string;
+		userId: string;
+		type: Artifact["type"];
+		name: string;
+	},
+): TestArtifact => ({
+	retrievalClass: "durable",
+	mimeType: "application/octet-stream",
+	sizeBytes: 0,
+	conversationId: null,
+	summary: null,
+	contentText: null,
+	extension: null,
+	storagePath: null,
+	metadata: null,
+	createdAt: Date.now(),
+	updatedAt: Date.now(),
+	...artifact,
+});
+
+type PromptAttachmentResolutionResult = Awaited<
+	ReturnType<typeof resolvePromptAttachmentArtifactsType>
+>;
+const emptyPromptAttachmentResolution: PromptAttachmentResolutionResult = {
+	displayArtifacts: [],
+	promptArtifacts: [],
+	items: [],
+	unresolvedItems: [],
+};
 
 const mockHonchoPeerVersion = vi.hoisted(() => ({ value: 0 }));
 const mockPrepareTaskContext = vi.hoisted(() =>
-	vi.fn(async () => ({
+	vi.fn<
+		(
+			params: Parameters<typeof prepareTaskContextType>[0],
+		) => ReturnType<typeof prepareTaskContextType>
+	>(async () => ({
 		taskState: null,
 		routingStage: "deterministic" as const,
 		routingConfidence: 0,
@@ -13,19 +101,20 @@ const mockPrepareTaskContext = vi.hoisted(() =>
 	})),
 );
 const mockGetPromptArtifactSnippets = vi.hoisted(() =>
-	vi.fn(async () => new Map<string, string>()),
+	vi.fn<
+		(
+			params: Parameters<typeof getPromptArtifactSnippetsType>[0],
+		) => ReturnType<typeof getPromptArtifactSnippetsType>
+	>(async () => new Map<string, string>()),
 );
 const mockSerializeBudgetedAttachments = vi.hoisted(() =>
-	vi.fn(
-		({
-			artifacts,
-		}: {
-			artifacts: Array<{
-				id: string;
-				name: string;
-				contentText?: string | null;
-			}>;
-		}) => ({
+	vi.fn<
+		(
+			params: Parameters<typeof serializeBudgetedAttachments>[0],
+		) => ReturnType<typeof serializeBudgetedAttachments>
+	>((params) => {
+		const artifacts = params.artifacts;
+		return {
 			body: artifacts
 				.map(
 					(artifact) =>
@@ -39,33 +128,64 @@ const mockSerializeBudgetedAttachments = vi.hoisted(() =>
 				estimatedTokens: 10,
 				trimmed: false,
 			})),
+			estimatedTokens: 10,
 			mode: "excerpt",
-		}),
-	),
+		};
+	}),
 );
 const mockSerializeWorkingSetArtifacts = vi.hoisted(() =>
-	vi.fn(() => "Serialized evidence"),
+	vi.fn<
+		(
+			params: Parameters<typeof serializeWorkingSetArtifacts>[0],
+		) => ReturnType<typeof serializeWorkingSetArtifacts>
+	>((params) => {
+		const firstArtifact = params.artifacts[0];
+		const snippet = params.snippets?.get(firstArtifact?.id ?? "") ?? "";
+		const name = firstArtifact?.name ?? "No artifact";
+		return `Document: ${name}\n${snippet}`;
+	}),
 );
 const mockResolvePromptAttachmentArtifacts = vi.hoisted(() =>
-	vi.fn(async () => ({
-		displayArtifacts: [],
-		promptArtifacts: [],
-		items: [],
-		unresolvedItems: [],
-	})),
+	vi.fn<
+		(
+			userId: string,
+			attachmentIds: string[],
+		) => ReturnType<typeof resolvePromptAttachmentArtifactsType>
+	>(async () => ({ ...emptyPromptAttachmentResolution })),
 );
-const mockGetArtifactsForUser = vi.hoisted(() => vi.fn(async () => []));
+const mockGetArtifactsForUser = vi.hoisted(() =>
+	vi.fn<
+		(
+			userId: string,
+			artifactIds: string[],
+		) => ReturnType<typeof getArtifactsForUserType>
+	>(async () => []),
+);
 const mockListConversationLinkedContextSources = vi.hoisted(() =>
-	vi.fn(async () => []),
+	vi.fn<
+		(
+			params: Parameters<typeof listConversationLinkedContextSourcesType>[0],
+		) => Promise<LinkedContextSource[]>
+	>(async () => []),
 );
 const mockListConversationSourceArtifactIds = vi.hoisted(() =>
-	vi.fn(async () => []),
+	vi.fn<(userId: string, conversationId: string) => Promise<string[]>>(
+		async () => [],
+	),
 );
 const mockFindRelevantKnowledgeArtifacts = vi.hoisted(() =>
-	vi.fn(async () => []),
+	vi.fn<
+		(
+			params: Parameters<typeof findRelevantKnowledgeArtifactsType>[0],
+		) => Promise<TestArtifact[]>
+	>(async () => []),
 );
 const mockResolveWorkingDocumentSelection = vi.hoisted(() =>
-	vi.fn(() => ({
+	vi.fn<
+		(
+			params: Parameters<typeof resolveWorkingDocumentSelectionType>[0],
+		) => ReturnType<typeof resolveWorkingDocumentSelectionType>
+	>(() => ({
 		documentFocused: false,
 		currentDocument: null,
 		latestGeneratedDocumentIds: [],
@@ -105,17 +225,32 @@ const mockResolveWorkingDocumentSelection = vi.hoisted(() =>
 	})),
 );
 const mockGetConversationProjectLabel = vi.hoisted(() =>
-	vi.fn(async () => null as string | null),
+	vi.fn<(userId: string, conversationId: string) => Promise<string | null>>(
+		async () => null,
+	),
 );
 const mockGetProjectFolderReferenceContext = vi.hoisted(() =>
-	vi.fn(async () => null),
+	vi.fn<
+		(
+			params: Parameters<typeof getProjectFolderReferenceContextType>[0],
+		) => ReturnType<typeof getProjectFolderReferenceContextType>
+	>(async () => null),
 );
 const mockGetProjectReferenceContext = vi.hoisted(() =>
-	vi.fn(async () => null),
+	vi.fn<
+		(
+			params: Parameters<typeof getProjectReferenceContextType>[0],
+		) => ReturnType<typeof getProjectReferenceContextType>
+	>(async () => null),
 );
 const mockSelectProjectFolderSiblingPromotion = vi.hoisted(() =>
-	vi.fn(async () => null),
+	vi.fn<
+		(
+			params: Parameters<typeof selectProjectFolderSiblingPromotionType>[0],
+		) => ReturnType<typeof selectProjectFolderSiblingPromotionType>
+	>(async () => null),
 );
+
 const now = Date.now();
 
 const userRows = [
@@ -152,7 +287,11 @@ const mockSessionContext = vi.fn(async () => ({
 	summary: null,
 }));
 
-const mockSessionAddMessages = vi.fn(async () => []);
+const mockSessionAddMessages = vi.fn<
+	(
+		messages: Array<{ metadata?: Record<string, unknown>; content: string }>,
+	) => Promise<unknown>
+>(async () => []);
 const mockSessionQueueStatus = vi.fn(async () => ({
 	pendingWorkUnits: 0,
 	inProgressWorkUnits: 0,
@@ -161,24 +300,45 @@ const mockSessionUploadFile = vi.fn(async () => undefined);
 const mockSessionDelete = vi.fn(async () => undefined);
 const mockSessionSetMetadata = vi.fn(async () => undefined);
 const mockSessionSetPeers = vi.fn(async () => undefined);
-const mockPeerContext = vi.fn(async () => ({
+const mockPeerContext = vi.fn<
+	(peerId: string) => Promise<{
+		representation: string | null;
+		peerCard: string[] | null;
+	}>
+>(async () => ({
 	representation: "User peer context for testing",
 	peerCard: null,
 }));
 const mockPeerChat = vi.fn(async () => "Mock peer chat response");
 const mockPeerSetCard = vi.fn(async () => []);
 const mockPeerSessions = vi.fn(async () => ({ toArray: async () => [] }));
-const mockScopeList = vi.fn(async () => ({ toArray: async () => [] }));
+const mockScopeList = vi.fn<() => Promise<MockPeerScope>>(async () => ({
+	toArray: async () => [],
+}));
 const mockScopeDelete = vi.fn(async () => undefined);
 const mockScopeCreate = vi.fn(async () => undefined);
-const mockListMessages = vi.fn(async () => []);
+const mockListMessages = vi.hoisted(() =>
+	vi.fn<(conversationId: string) => ReturnType<typeof listMessagesType>>(
+		async () => [],
+	),
+);
 const mockGetLatestHonchoMetadata = vi.fn(async () => ({
 	honchoContext: null,
 	honchoSnapshot: null,
 }));
-const mockGetConversationForkOrigin = vi.hoisted(() => vi.fn(async () => null));
+const mockGetConversationForkOrigin = vi.hoisted(() =>
+	vi.fn<
+		(
+			forkConversationId: string,
+		) => ReturnType<typeof getConversationForkOriginType>
+	>(async () => null),
+);
 const mockCompactContextSections = vi.hoisted(() =>
-	vi.fn(({ message }: { message: string }) => ({
+	vi.fn<
+		(
+			params: Parameters<typeof compactContextSections>[0],
+		) => ReturnType<typeof compactContextSections>
+	>(({ message }) => ({
 		inputValue: message,
 		compactionApplied: false,
 		compactionMode: "none",
@@ -188,10 +348,18 @@ const mockCompactContextSections = vi.hoisted(() =>
 	})),
 );
 const mockSelectRecentRoleTurns = vi.hoisted(() =>
-	vi.fn((messages: unknown[]) => (messages.length > 0 ? [{ messages }] : [])),
+	vi.fn<
+		(
+			...args: Parameters<typeof selectRecentRoleTurns>
+		) => ReturnType<typeof selectRecentRoleTurns>
+	>((messages) => (messages.length > 0 ? [{ messages }] : [])),
 );
 const mockSelectPromptSessionTurns = vi.hoisted(() =>
-	vi.fn(({ turns }: { turns: unknown[] }) => turns),
+	vi.fn<
+		(
+			...args: Parameters<typeof selectPromptSessionTurns>
+		) => ReturnType<typeof selectPromptSessionTurns>
+	>(({ turns }) => turns),
 );
 const mockExtractSerializedAttachmentBody = vi.hoisted(() =>
 	vi.fn(() => null as string | null),
@@ -203,11 +371,7 @@ const mockSerializeBudgetedRoleTurns = vi.hoisted(() =>
 			turns,
 			resolveRole,
 			resolveContent,
-		}: {
-			turns: Array<{ messages: unknown[] }>;
-			resolveRole: (message: unknown) => string;
-			resolveContent: (message: unknown) => string;
-		}) => ({
+		}: Parameters<typeof serializeBudgetedRoleTurns>[0]) => ({
 			body: turns
 				.flatMap((turn) => turn.messages)
 				.map((message) => `${resolveRole(message)}: ${resolveContent(message)}`)
@@ -513,7 +677,7 @@ function renderSectionsInCompactionMock() {
 			sections: Array<{
 				title: string;
 				body: string;
-				layer?: string;
+				layer?: MemoryLayer;
 				protected?: boolean;
 			}>;
 		}) => ({
@@ -524,7 +688,9 @@ function renderSectionsInCompactionMock() {
 			].join("\n\n"),
 			compactionApplied: false,
 			compactionMode: "none",
-			layersUsed: sections.map((section) => section.layer).filter(Boolean),
+			layersUsed: sections
+				.map((section) => section.layer)
+				.filter((layer): layer is MemoryLayer => Boolean(layer)),
 			estimatedTokens: 0,
 			sectionSelections: sections.map((section) => ({
 				title: section.title,
@@ -634,13 +800,21 @@ describe("honcho learning - mirrorMessage", () => {
 		await mirrorMessage("user-1", "conv-1", "user", "User message here");
 
 		const calls = mockSessionAddMessages.mock.calls;
-		if (calls.length > 0) {
-			const messages = calls[0];
-			if (Array.isArray(messages) && messages.length > 0) {
-				expect(messages[0].metadata?.role).toBe("user");
-				expect(messages[0].metadata?.alfyaiConversationId).toBe("conv-1");
-				expect(messages[0].metadata?.alfyaiUserId).toBe("user-1");
-			}
+		const messages = calls[0]?.[0] as
+			| Array<{
+					metadata?: {
+						role?: string;
+						alfyaiConversationId?: string;
+						alfyaiUserId?: string;
+						[k: string]: unknown;
+					};
+					content: string;
+			  }>
+			| undefined;
+		if (messages?.length) {
+			expect(messages[0].metadata?.role).toBe("user");
+			expect(messages[0].metadata?.alfyaiConversationId).toBe("conv-1");
+			expect(messages[0].metadata?.alfyaiUserId).toBe("user-1");
 		}
 	});
 
@@ -650,11 +824,14 @@ describe("honcho learning - mirrorMessage", () => {
 		await mirrorMessage("user-1", "conv-1", "assistant", "Assistant response");
 
 		const calls = mockSessionAddMessages.mock.calls;
-		if (calls.length > 0) {
-			const messages = calls[0];
-			if (Array.isArray(messages) && messages.length > 0) {
-				expect(messages[0].metadata?.role).toBe("assistant");
-			}
+		const messages = calls[0]?.[0] as
+			| Array<{
+					metadata?: { role?: string; [k: string]: unknown };
+					content: string;
+			  }>
+			| undefined;
+		if (messages?.length) {
+			expect(messages[0].metadata?.role).toBe("assistant");
 		}
 	});
 
@@ -774,8 +951,9 @@ describe("chat-turn context selection - buildConstructedContext", () => {
 	});
 
 	it("includes persisted /document linked source content as direct protected context", async () => {
-		const linkedArtifact = {
+		const linkedArtifact = createTestArtifact({
 			id: "prompt-1",
+			userId: "user-1",
 			type: "normalized_document",
 			name: "Internal extracted name.md",
 			mimeType: "text/markdown",
@@ -783,9 +961,7 @@ describe("chat-turn context selection - buildConstructedContext", () => {
 			conversationId: null,
 			summary: "A selected document",
 			contentText: "Full markdown body head ... tail marker",
-			createdAt: Date.now(),
-			updatedAt: Date.now(),
-		};
+		});
 		mockListConversationLinkedContextSources.mockResolvedValueOnce([
 			{
 				displayArtifactId: "display-1",
@@ -802,13 +978,12 @@ describe("chat-turn context selection - buildConstructedContext", () => {
 			new Map([["prompt-1", "FULL CONTENT TAIL MARKER"]]),
 		);
 		mockSerializeWorkingSetArtifacts.mockImplementationOnce(
-			({
-				artifacts,
-				snippets,
-			}: {
-				artifacts: Array<{ id: string; name: string }>;
-				snippets: Map<string, string>;
-			}) => `Document: ${artifacts[0].name}\n${snippets.get(artifacts[0].id)}`,
+			({ artifacts, snippets }) => {
+				const firstArtifact = artifacts[0];
+				const snippet =
+					snippets?.get(firstArtifact?.id ?? "") ?? "FULL CONTENT TAIL MARKER";
+				return `Document: ${firstArtifact?.name ?? "prompt-1"}\n${snippet}`;
+			},
 		);
 		renderSectionsInCompactionMock();
 		const { buildConstructedContext } = await import(
@@ -860,6 +1035,7 @@ describe("chat-turn context selection - buildConstructedContext", () => {
 		mockGetProjectReferenceContext.mockResolvedValueOnce({
 			source: "project_folder",
 			projectId: "folder-1",
+			projectName: "Launch folder",
 			entries: [
 				{
 					conversationId: "conv-sibling",
@@ -1062,6 +1238,7 @@ describe("chat-turn context selection - buildConstructedContext", () => {
 		mockGetProjectReferenceContext.mockResolvedValueOnce({
 			source: "project_folder",
 			projectId: "folder-1",
+			projectName: "Sister project",
 			entries: [
 				{
 					conversationId: "conv-sibling",
@@ -1419,7 +1596,7 @@ describe("chat-turn context selection - buildConstructedContext", () => {
 			}),
 		);
 		expect(serializeRequest.totalBudget).toBeLessThanOrEqual(
-			snippetRequest.totalCharBudget,
+			snippetRequest.totalCharBudget ?? 0,
 		);
 	});
 
@@ -1546,16 +1723,11 @@ describe("chat-turn context selection - buildConstructedContext", () => {
 			"linked-source",
 		]);
 		mockResolvePromptAttachmentArtifacts.mockImplementationOnce(async () => ({
-			displayArtifacts: [],
-			promptArtifacts: [],
-			items: [],
-			unresolvedItems: [],
+			...emptyPromptAttachmentResolution,
 		}));
 		mockResolvePromptAttachmentArtifacts.mockImplementationOnce(async () => ({
-			displayArtifacts: [],
+			...emptyPromptAttachmentResolution,
 			promptArtifacts: [linkedPromptArtifact],
-			items: [],
-			unresolvedItems: [],
 		}));
 		const { buildConstructedContext } = await import(
 			"./chat-turn/context-selection"
@@ -1588,11 +1760,10 @@ describe("chat-turn context selection - buildConstructedContext", () => {
 	});
 
 	it("keeps direct current attachments at task depth when the turn asks to use them", async () => {
-		const attachmentArtifact = {
+		const attachmentArtifact = createTestArtifact({
 			id: "current-attachment",
 			userId: "user-1",
-			type: "normalized_document" as const,
-			retrievalClass: "durable" as const,
+			type: "normalized_document",
 			name: "current-attachment.pdf",
 			mimeType: "text/plain",
 			sizeBytes: 140_000,
@@ -1600,16 +1771,10 @@ describe("chat-turn context selection - buildConstructedContext", () => {
 			summary: "Current attachment summary",
 			contentText: "Readable current attachment body.",
 			extension: "txt",
-			storagePath: null,
-			metadata: null,
-			createdAt: Date.now(),
-			updatedAt: Date.now(),
-		};
+		});
 		mockResolvePromptAttachmentArtifacts.mockResolvedValueOnce({
-			displayArtifacts: [],
+			...emptyPromptAttachmentResolution,
 			promptArtifacts: [attachmentArtifact],
-			items: [],
-			unresolvedItems: [],
 		});
 		mockExtractSerializedAttachmentBody.mockReturnValueOnce(
 			"Readable current attachment body.",
@@ -1651,32 +1816,36 @@ describe("chat-turn context selection - buildConstructedContext", () => {
 			async (_userId, artifactIds) => {
 				if (artifactIds.includes("source-1")) {
 					return {
+						...emptyPromptAttachmentResolution,
 						displayArtifacts: [
-							{
+							createTestArtifact({
 								id: "source-1",
-								name: "brief.pdf",
+								userId: "user-1",
 								type: "source_document",
+								name: "brief.pdf",
+								mimeType: "text/plain",
+								sizeBytes: 120_000,
+								conversationId: "conv-1",
 								contentText: null,
-							},
+								summary: "Brief summary",
+							}),
 						],
 						promptArtifacts: [
-							{
+							createTestArtifact({
 								id: "normalized-1",
-								name: "brief.pdf",
+								userId: "user-1",
 								type: "normalized_document",
+								name: "brief.pdf",
+								mimeType: "text/plain",
+								sizeBytes: 110_000,
+								conversationId: "conv-1",
 								contentText: "Extracted carried-forward attachment body.",
-							},
+								summary: "Brief normalized summary",
+							}),
 						],
-						items: [],
-						unresolvedItems: [],
 					};
 				}
-				return {
-					displayArtifacts: [],
-					promptArtifacts: [],
-					items: [],
-					unresolvedItems: [],
-				};
+				return emptyPromptAttachmentResolution;
 			},
 		);
 		mockPrepareTaskContext.mockResolvedValueOnce({
@@ -1685,12 +1854,16 @@ describe("chat-turn context selection - buildConstructedContext", () => {
 			routingConfidence: 0,
 			verificationStatus: "skipped",
 			selectedArtifacts: [
-				{
+				createTestArtifact({
 					id: "source-1",
-					name: "brief.pdf",
+					userId: "user-1",
 					type: "source_document",
+					name: "brief.pdf",
+					mimeType: "text/plain",
+					sizeBytes: 120_000,
+					conversationId: "conv-1",
 					contentText: null,
-				},
+				}),
 			],
 			pinnedArtifactIds: [],
 			excludedArtifactIds: [],
@@ -1789,7 +1962,7 @@ describe("chat-turn context selection - buildConstructedContext", () => {
 				role: "user",
 				content: "Fork-local follow-up",
 				timestamp: Date.parse("2026-05-15T10:05:00.000Z"),
-				forkCopy: null,
+				forkCopy: undefined,
 			},
 		]);
 		mockSessionContext.mockResolvedValueOnce({
@@ -1878,7 +2051,7 @@ describe("chat-turn context selection - buildConstructedContext", () => {
 				role: "user",
 				content: "Fork-local follow-up",
 				timestamp: Date.parse("2026-05-15T10:05:00.000Z"),
-				forkCopy: null,
+				forkCopy: undefined,
 			},
 		]);
 		mockSessionContext.mockResolvedValueOnce({
@@ -1942,21 +2115,21 @@ describe("chat-turn context selection - buildConstructedContext", () => {
 				role: "user",
 				content: "OLD PERSISTED NEEDLE: the launch codename is ember-lattice.",
 				timestamp: Date.parse("2026-05-15T09:00:00.000Z"),
-				forkCopy: null,
+				forkCopy: undefined,
 			},
 			{
 				id: "old-assistant",
 				role: "assistant",
 				content: "Acknowledged ember-lattice.",
 				timestamp: Date.parse("2026-05-15T09:00:01.000Z"),
-				forkCopy: null,
+				forkCopy: undefined,
 			},
 			{
 				id: "recent-user",
 				role: "user",
 				content: "Recent persisted follow-up.",
 				timestamp: Date.parse("2026-05-15T10:05:00.000Z"),
-				forkCopy: null,
+				forkCopy: undefined,
 			},
 		]);
 		mockSessionContext.mockResolvedValueOnce({
@@ -2084,12 +2257,12 @@ describe("chat-turn context selection - buildConstructedContext", () => {
 	it("omits baseline memory profile gracefully when Honcho profile synthesis times out", async () => {
 		mockConfig.honchoEnabled = true;
 		mockConfig.honchoPersonaContextWaitMs = 1;
-		mockPeerContext.mockImplementationOnce(
-			() =>
-				new Promise(() => {
-					// Intentionally unresolved to exercise the timeout fallback.
-				}),
-		);
+		mockPeerContext.mockImplementationOnce(async () => {
+			await new Promise<never>(() => {
+				// Intentionally unresolved to exercise the timeout fallback.
+			});
+			return { representation: "Timeout representation", peerCard: null };
+		});
 		mockScopeList.mockResolvedValue({
 			toArray: async () => [
 				{
@@ -2132,29 +2305,25 @@ describe("honcho learning - syncArtifactToHoncho", () => {
 		const result = await syncArtifactToHoncho({
 			userId: "user-1",
 			conversationId: "conv-1",
-			artifact: {
+			artifact: createTestArtifact({
 				id: "artifact-1",
 				userId: "user-1",
-				type: "source_document" as const,
+				type: "source_document",
 				name: "test.pdf",
 				mimeType: "application/pdf",
 				sizeBytes: 1000,
 				conversationId: "conv-1",
-				createdAt: Date.now(),
-				updatedAt: Date.now(),
-			},
-			fallbackTextArtifact: {
+			}),
+			fallbackTextArtifact: createTestArtifact({
 				id: "fallback-1",
 				userId: "user-1",
-				type: "normalized_document" as const,
+				type: "normalized_document",
 				name: "extracted.txt",
 				mimeType: "text/plain",
 				sizeBytes: 500,
 				conversationId: "conv-1",
 				contentText: "This is the extracted text content.",
-				createdAt: Date.now(),
-				updatedAt: Date.now(),
-			},
+			}),
 		});
 
 		expect(result.uploaded).toBe(true);
@@ -2167,17 +2336,15 @@ describe("honcho learning - syncArtifactToHoncho", () => {
 		const result = await syncArtifactToHoncho({
 			userId: "user-1",
 			conversationId: null,
-			artifact: {
+			artifact: createTestArtifact({
 				id: "artifact-1",
 				userId: "user-1",
-				type: "source_document" as const,
+				type: "source_document",
 				name: "test.pdf",
 				mimeType: "application/pdf",
 				sizeBytes: 1000,
 				conversationId: null,
-				createdAt: Date.now(),
-				updatedAt: Date.now(),
-			},
+			}),
 		});
 
 		expect(result.uploaded).toBe(false);
@@ -2197,17 +2364,15 @@ describe("honcho learning - syncArtifactToHoncho", () => {
 			const result = await syncArtifactToHoncho({
 				userId: "user-1",
 				conversationId: "conv-1",
-				artifact: {
+				artifact: createTestArtifact({
 					id: "artifact-1",
 					userId: "user-1",
-					type: "source_document" as const,
+					type: "source_document",
 					name: "large.pdf",
 					mimeType: "application/pdf",
 					sizeBytes: file.size,
 					conversationId: "conv-1",
-					createdAt: Date.now(),
-					updatedAt: Date.now(),
-				},
+				}),
 				file,
 			});
 
@@ -2229,17 +2394,15 @@ describe("honcho learning - syncArtifactToHoncho", () => {
 		const result = await syncArtifactToHoncho({
 			userId: "user-1",
 			conversationId: "conv-1",
-			artifact: {
+			artifact: createTestArtifact({
 				id: "artifact-1",
 				userId: "user-1",
-				type: "source_document" as const,
+				type: "source_document",
 				name: "test.pdf",
 				mimeType: "application/pdf",
 				sizeBytes: 1000,
 				conversationId: "conv-1",
-				createdAt: Date.now(),
-				updatedAt: Date.now(),
-			},
+			}),
 		});
 
 		expect(result.uploaded).toBe(false);
@@ -2254,29 +2417,25 @@ describe("honcho learning - syncArtifactToHoncho", () => {
 		const result = await syncArtifactToHoncho({
 			userId: "user-1",
 			conversationId: "conv-1",
-			artifact: {
+			artifact: createTestArtifact({
 				id: "artifact-1",
 				userId: "user-1",
-				type: "source_document" as const,
+				type: "source_document",
 				name: "test.bin",
 				mimeType: "application/octet-stream",
 				sizeBytes: 1000,
 				conversationId: "conv-1",
-				createdAt: Date.now(),
-				updatedAt: Date.now(),
-			},
-			fallbackTextArtifact: {
+			}),
+			fallbackTextArtifact: createTestArtifact({
 				id: "fallback-1",
 				userId: "user-1",
-				type: "normalized_document" as const,
+				type: "normalized_document",
 				name: "extracted.txt",
 				mimeType: "text/plain",
 				sizeBytes: 500,
 				conversationId: "conv-1",
 				contentText: "Fallback extracted text.",
-				createdAt: Date.now(),
-				updatedAt: Date.now(),
-			},
+			}),
 		});
 
 		expect(result.uploaded).toBe(true);
@@ -2289,39 +2448,35 @@ describe("honcho learning - syncArtifactToHoncho", () => {
 		await syncArtifactToHoncho({
 			userId: "user-1",
 			conversationId: "conv-1",
-			artifact: {
+			artifact: createTestArtifact({
 				id: "artifact-1",
 				userId: "user-1",
-				type: "source_document" as const,
+				type: "source_document",
 				name: "document.pdf",
 				mimeType: "application/pdf",
 				sizeBytes: 5000,
 				conversationId: "conv-1",
-				createdAt: Date.now(),
-				updatedAt: Date.now(),
-			},
-			fallbackTextArtifact: {
+			}),
+			fallbackTextArtifact: createTestArtifact({
 				id: "fallback-1",
 				userId: "user-1",
-				type: "normalized_document" as const,
+				type: "normalized_document",
 				name: "text.txt",
 				mimeType: "text/plain",
 				sizeBytes: 1000,
 				conversationId: "conv-1",
 				contentText: "Important extracted content.",
-				createdAt: Date.now(),
-				updatedAt: Date.now(),
-			},
+			}),
 		});
 
-		const calls = mockSessionAddMessages.mock.calls;
-		if (calls.length > 0) {
-			const messages = calls[0];
-			if (Array.isArray(messages) && messages.length > 0) {
-				expect(messages[0].metadata).toBeDefined();
-				expect(messages[0].metadata.artifactId).toBe("fallback-1");
-			}
-		}
+		const firstArg = mockSessionAddMessages.mock.calls[0]?.[0] as
+			| Array<{ metadata?: Record<string, unknown>; content: string }>
+			| { metadata?: Record<string, unknown>; content: string }
+			| undefined;
+		const firstMessage = Array.isArray(firstArg) ? firstArg[0] : firstArg;
+		expect(firstMessage).toBeDefined();
+		expect(firstMessage?.metadata).toBeDefined();
+		expect(firstMessage?.metadata?.artifactId).toBe("fallback-1");
 	});
 });
 

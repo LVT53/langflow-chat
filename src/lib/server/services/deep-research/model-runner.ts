@@ -276,7 +276,7 @@ async function buildProviderRateLimitFailoverAttempt(input: {
 		baseUrl,
 		model: modelName,
 		apiKey,
-		maxTokens: provider.maxTokens ?? input.sourceAttempt.maxTokens,
+		maxTokens: input.sourceAttempt.maxTokens,
 		includeBuiltInRequestOptions: false,
 		timeoutMs: deepResearchModelTimeoutMs(
 			provider.rateLimitFallbackTimeoutMs ?? input.config.requestTimeoutMs,
@@ -322,14 +322,14 @@ async function buildDeepResearchModelAttemptFromModelId(input: {
 			modelDisplayName: provider.displayName,
 			providerId,
 			providerDisplayName: provider.displayName,
-			providerModelName: provider.modelName,
+			providerModelName: provider.name,
 			baseUrl: provider.baseUrl,
-			model: provider.modelName,
+			model: provider.name,
 			apiKey,
-			maxTokens: provider.maxTokens ?? null,
+			maxTokens: null,
 			includeBuiltInRequestOptions: false,
 			timeoutMs: deepResearchModelTimeoutMs(input.config.requestTimeoutMs),
-			logLabel: `provider:${providerId}:${provider.modelName}`,
+			logLabel: `provider:${providerId}:${provider.name}`,
 		};
 	}
 
@@ -489,7 +489,7 @@ async function resolveModelCredentials(modelId: string): Promise<{
 		if (!provider) return { baseUrl: "", modelName: "", apiKey: "" };
 		return {
 			baseUrl: provider.baseUrl,
-			modelName: provider.modelName,
+			modelName: provider.name,
 			apiKey: decryptApiKey(provider.apiKeyEncrypted, provider.apiKeyIv),
 		};
 	}

@@ -74,7 +74,7 @@ export function resolvePromptContextLimits(params: {
 		targetConstructedContext?: number;
 	};
 	runtimeConfig: RuntimeConfig;
-}): PromptContextLimits | undefined {
+}): PromptContextLimits {
 	if (
 		params.modelId !== "model1" &&
 		params.modelId !== "model2" &&
@@ -113,5 +113,10 @@ export function resolvePromptContextLimits(params: {
 		};
 	}
 
-	return undefined;
+	return {
+		maxModelContext: params.runtimeConfig.model1MaxModelContext,
+		compactionUiThreshold: params.runtimeConfig.model1CompactionUiThreshold,
+		targetConstructedContext:
+			params.runtimeConfig.model1TargetConstructedContext,
+	};
 }

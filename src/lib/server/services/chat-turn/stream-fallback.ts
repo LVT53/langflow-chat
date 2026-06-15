@@ -2,11 +2,14 @@ import type { RuntimeConfig } from "$lib/server/config-store";
 import type { ProviderUsageSnapshot } from "$lib/server/services/analytics";
 import { isProduceFileRequest } from "$lib/server/services/normal-chat-tools";
 import type {
+	ContextDebugState,
+	ConversationContextStatus,
 	DepthMetadata,
 	HonchoContextInfo,
 	HonchoContextSnapshot,
 	ModelId,
 	ResponseActivityEntry,
+	TaskState,
 	ThinkingMode,
 	ToolCallEntry,
 } from "$lib/types";
@@ -26,9 +29,9 @@ export interface NonStreamFallbackSendParams {
 
 export interface NonStreamFallbackResponse {
 	text: string | null;
-	contextStatus?: Record<string, unknown> | null;
-	taskState?: Record<string, unknown> | null;
-	contextDebug?: Record<string, unknown> | null;
+	contextStatus?: ConversationContextStatus | null;
+	taskState?: TaskState | null;
+	contextDebug?: ContextDebugState | null;
 	honchoContext?: HonchoContextInfo | null;
 	honchoSnapshot?: HonchoContextSnapshot | null;
 	providerUsage?: ProviderUsageSnapshot | null;
@@ -64,8 +67,8 @@ export interface NonStreamFallbackDeps {
 	user: { id: string; displayName: string | null; email: string | null };
 	attachContinuityToTaskState: (
 		userId: string,
-		taskState: Record<string, unknown> | null,
-	) => Promise<Record<string, unknown> | null>;
+		taskState: TaskState | null,
+	) => Promise<TaskState | null>;
 	emitResolvedAssistantText: (text: string | null) => Promise<boolean>;
 	flushPendingThinking: () => void;
 	flushInlineThinkingBuffer: () => boolean;
@@ -76,9 +79,9 @@ export interface NonStreamFallbackDeps {
 	systemPromptAppendix: string | undefined;
 	personalityPrompt: string | undefined;
 	skipHonchoContext: boolean | undefined;
-	onContextStatus: (status: Record<string, unknown> | undefined) => void;
-	onTaskState: (state: Record<string, unknown> | null) => void;
-	onContextDebug: (debug: Record<string, unknown> | null) => void;
+	onContextStatus: (status: ConversationContextStatus | undefined) => void;
+	onTaskState: (state: TaskState | null) => void;
+	onContextDebug: (debug: ContextDebugState | null) => void;
 	onHonchoContext: (ctx: HonchoContextInfo | null) => void;
 	onHonchoSnapshot: (snap: HonchoContextSnapshot | null) => void;
 	onProviderUsage: (usage: ProviderUsageSnapshot | null) => void;
@@ -185,7 +188,7 @@ export async function runNonStreamFallback(
 				onRecoveredToolCalls?.(fallbackToolCalls);
 			}
 
-			const contextStatus = fallbackResponse.contextStatus;
+			const contextStatus = fallbackResponse.contextStatus ?? undefined;
 			onContextStatus(contextStatus);
 
 			const taskState = await attachContinuityToTaskState(

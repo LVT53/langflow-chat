@@ -7,6 +7,7 @@ import {
 	buildDiscoveryResearchRequest,
 	researchWeb as defaultResearchWeb,
 } from "$lib/server/services/web-research";
+import type { DeepResearchSource } from "$lib/types";
 import type { ResearchPlan } from "./planning";
 import { saveDiscoveredResearchSource } from "./sources";
 import {
@@ -36,8 +37,9 @@ export type DiscoveredResearchSourceCandidate = {
 	};
 };
 
-export type SavedDiscoveredResearchSource = DiscoveredResearchSourceCandidate &
-	Record<string, unknown>;
+export type SavedDiscoveredResearchSource = DeepResearchSource & {
+	metadata?: DiscoveredResearchSourceCandidate["metadata"];
+};
 
 export type PublicWebDiscoveryInput = {
 	jobId: string;

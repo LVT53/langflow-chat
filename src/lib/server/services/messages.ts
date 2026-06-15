@@ -35,10 +35,17 @@ type PersistedMessageMetadata = SkillControlMessageMetadata & {
 	evidenceSummary?: MessageEvidenceSummary | null;
 	evidenceStatus?: MessageEvidenceStatusState;
 	deepResearchReportContext?: {
-		action: "discuss_report" | "research_further";
+		action:
+			| "discuss_report"
+			| "discuss"
+			| "discuss_memo"
+			| "research_further"
+			| "research_further_from_memo";
 		sourceJobId: string;
 		sourceConversationId: string;
 		reportArtifactId: string;
+		researchLanguage?: "en" | "hu";
+		requestedDepth?: "focused" | "standard" | "max";
 	};
 	honchoContext?: HonchoContextInfo | null;
 	honchoSnapshot?: HonchoContextSnapshot | null;

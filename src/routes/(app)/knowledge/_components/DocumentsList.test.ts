@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/svelte";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { KnowledgeDocumentItem } from "$lib/types";
 import DocumentsList from "./DocumentsList.svelte";
 
 const { prewarmDocumentPreviewMock } = vi.hoisted(() => ({
@@ -10,16 +11,79 @@ vi.mock("$lib/client/document-preview-prewarm", () => ({
 	prewarmDocumentPreview: prewarmDocumentPreviewMock,
 }));
 
-const mockUploadedDocument = {
+function makeDocument(
+	overrides: Partial<KnowledgeDocumentItem> = {},
+): KnowledgeDocumentItem {
+	const id = overrides.id ?? "doc-1";
+	const displayArtifactId = overrides.displayArtifactId ?? id;
+	const hasPromptOverride = Object.hasOwn(overrides, "promptArtifactId");
+	const promptArtifactId = hasPromptOverride
+		? (overrides.promptArtifactId ?? `${displayArtifactId}-prompt`)
+		: `${displayArtifactId}-prompt`;
+	const familyArtifactIds =
+		overrides.familyArtifactIds ??
+		[displayArtifactId, ...(promptArtifactId ? [promptArtifactId] : [])].filter(
+			Boolean,
+		);
+	const hasDocumentOriginOverride = Object.hasOwn(overrides, "documentOrigin");
+
+	return {
+		id,
+		type: overrides.type ?? "source_document",
+		displayArtifactId,
+		promptArtifactId: promptArtifactId,
+		familyArtifactIds,
+		name: overrides.name ?? "Budget.pdf",
+		mimeType: overrides.mimeType ?? "application/pdf",
+		sizeBytes: overrides.sizeBytes ?? 1024,
+		conversationId: overrides.conversationId ?? null,
+		summary: overrides.summary ?? null,
+		normalizedAvailable: overrides.normalizedAvailable ?? false,
+		documentOrigin: hasDocumentOriginOverride
+			? overrides.documentOrigin
+			: "uploaded",
+		createdAt: overrides.createdAt ?? 1_000_000_000_000,
+		updatedAt: overrides.updatedAt ?? overrides.createdAt ?? 1_000_000_000_000,
+		...(Object.hasOwn(overrides, "documentFamilyId") && {
+			documentFamilyId: overrides.documentFamilyId,
+		}),
+		...(Object.hasOwn(overrides, "documentFamilyStatus") && {
+			documentFamilyStatus: overrides.documentFamilyStatus,
+		}),
+		...(Object.hasOwn(overrides, "documentLabel") && {
+			documentLabel: overrides.documentLabel,
+		}),
+		...(Object.hasOwn(overrides, "documentRole") && {
+			documentRole: overrides.documentRole,
+		}),
+		...(Object.hasOwn(overrides, "versionNumber") && {
+			versionNumber: overrides.versionNumber,
+		}),
+		...(Object.hasOwn(overrides, "isOriginal") && {
+			isOriginal: overrides.isOriginal,
+		}),
+		...(Object.hasOwn(overrides, "originConversationId") && {
+			originConversationId: overrides.originConversationId,
+		}),
+		...(Object.hasOwn(overrides, "originAssistantMessageId") && {
+			originAssistantMessageId: overrides.originAssistantMessageId,
+		}),
+		...(Object.hasOwn(overrides, "sourceChatFileId") && {
+			sourceChatFileId: overrides.sourceChatFileId,
+		}),
+	};
+}
+
+const mockUploadedDocument = makeDocument({
 	id: "doc-1",
 	name: "Budget.pdf",
 	type: "source_document",
 	mimeType: "application/pdf",
 	sizeBytes: 1024 * 1024 * 2.5,
 	createdAt: Date.now() - 86400000,
-};
+});
 
-const mockGeneratedDocument = {
+const mockGeneratedDocument = makeDocument({
 	id: "doc-2",
 	name: "Report.docx",
 	type: "generated_output",
@@ -28,12 +92,16 @@ const mockGeneratedDocument = {
 	sizeBytes: 512 * 1024,
 	createdAt: Date.now() - 172800000,
 	conversationId: "conv-1",
-};
+	documentOrigin: "generated",
+	displayArtifactId: "doc-2",
+	promptArtifactId: "doc-2",
+	familyArtifactIds: ["doc-1", "doc-2"],
+});
 
 const mockDocuments = [
 	mockUploadedDocument,
 	mockGeneratedDocument,
-	{
+	makeDocument({
 		id: "doc-3",
 		name: "Analysis.xlsx",
 		type: "source_document",
@@ -41,8 +109,8 @@ const mockDocuments = [
 			"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 		sizeBytes: 1024 * 1024,
 		createdAt: Date.now() - 259200000,
-	},
-	{
+	}),
+	makeDocument({
 		id: "doc-4",
 		name: "Summary.txt",
 		type: "generated_output",
@@ -50,16 +118,22 @@ const mockDocuments = [
 		sizeBytes: 1024,
 		createdAt: Date.now() - 345600000,
 		conversationId: "conv-2",
-	},
+		documentOrigin: "generated",
+		displayArtifactId: "doc-4",
+		promptArtifactId: "doc-4",
+		familyArtifactIds: ["doc-2", "doc-4"],
+	}),
 ];
 
 const manyDocuments = Array.from({ length: 150 }, (_, i) => ({
-	id: `doc-${i}`,
-	name: `File-${i}.pdf`,
-	type: i % 2 === 0 ? "source_document" : "generated_output",
-	mimeType: "application/pdf",
-	sizeBytes: 1024,
-	createdAt: Date.now() - i * 1000,
+	...makeDocument({
+		id: `doc-${i}`,
+		name: `File-${i}.pdf`,
+		type: i % 2 === 0 ? "source_document" : "generated_output",
+		mimeType: "application/pdf",
+		sizeBytes: 1024,
+		createdAt: Date.now() - i * 1000,
+	}),
 }));
 
 describe("DocumentsList", () => {
@@ -260,7 +334,7 @@ describe("DocumentsList", () => {
 			render(DocumentsList, {
 				props: {
 					documents: [
-						{
+						makeDocument({
 							id: "note-1",
 							name: "Research notes",
 							type: "skill_note",
@@ -268,7 +342,11 @@ describe("DocumentsList", () => {
 							mimeType: "text/markdown",
 							sizeBytes: 1024,
 							createdAt: Date.now(),
-						},
+							displayArtifactId: "note-1",
+							promptArtifactId: "note-1",
+							familyArtifactIds: ["note-1"],
+							conversationId: null,
+						}),
 					],
 				},
 			});
@@ -355,14 +433,14 @@ describe("DocumentsList", () => {
 		it("uses extension fallback for icon mapping when mime type is missing", () => {
 			const docsWithMissingMime = [
 				...mockDocuments,
-				{
+				makeDocument({
 					id: "doc-ext-fallback",
 					name: "Deck.pptx",
 					type: "source_document",
 					mimeType: null,
 					sizeBytes: 1024,
 					createdAt: Date.now(),
-				},
+				}),
 			];
 
 			render(DocumentsList, {
@@ -490,11 +568,11 @@ describe("DocumentsList", () => {
 	describe("Click Events", () => {
 		it("prewarms a document preview on intent without selecting until click", async () => {
 			const onSelect = vi.fn();
-			const document = {
+			const document = makeDocument({
 				...mockUploadedDocument,
 				displayArtifactId: "display-artifact-1",
 				sizeBytes: 1024,
-			};
+			});
 
 			render(DocumentsList, {
 				props: {
@@ -685,7 +763,7 @@ describe("DocumentsList", () => {
 				props: {
 					documents: [
 						mockUploadedDocument,
-						{
+						makeDocument({
 							id: "norm-1",
 							name: "Budget.md",
 							type: "normalized_document",
@@ -697,7 +775,7 @@ describe("DocumentsList", () => {
 							createdAt: Date.now(),
 							normalizedAvailable: true,
 							documentOrigin: undefined,
-						},
+						}),
 					],
 				},
 			});
@@ -712,11 +790,11 @@ describe("DocumentsList", () => {
 			render(DocumentsList, {
 				props: {
 					documents: [
-						{
+						makeDocument({
 							...mockUploadedDocument,
 							normalizedAvailable: true,
 							promptArtifactId: "prompt-1",
-						},
+						}),
 					],
 				},
 			});
@@ -730,11 +808,11 @@ describe("DocumentsList", () => {
 			render(DocumentsList, {
 				props: {
 					documents: [
-						{
+						makeDocument({
 							...mockUploadedDocument,
 							normalizedAvailable: false,
 							promptArtifactId: null,
-						},
+						}),
 					],
 				},
 			});
@@ -751,11 +829,11 @@ describe("DocumentsList", () => {
 			render(DocumentsList, {
 				props: {
 					documents: [
-						{
+						makeDocument({
 							...mockUploadedDocument,
 							normalizedAvailable: true,
 							promptArtifactId: "prompt-1",
-						},
+						}),
 					],
 				},
 			});
@@ -780,7 +858,7 @@ describe("DocumentsList", () => {
 			render(DocumentsList, {
 				props: {
 					documents: [
-						{
+						makeDocument({
 							id: "doc-norm",
 							name: "Normalized report.md",
 							type: "normalized_document",
@@ -792,7 +870,7 @@ describe("DocumentsList", () => {
 							createdAt: Date.now(),
 							normalizedAvailable: true,
 							documentOrigin: undefined,
-						},
+						}),
 					],
 				},
 			});
