@@ -29,7 +29,10 @@ tests/e2e/example.spec.ts
 .codex
 test-results/
 
-# SQLite database (runtime data, not source)
+# SQLite database and runtime data are local state, not source.
+data/
+
+# Legacy explicit data ignores retained for clarity.
 data/chat.db
 data/chat.db-shm
 data/chat.db-wal
