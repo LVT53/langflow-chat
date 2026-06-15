@@ -28,66 +28,117 @@ function jsonCandidates(content: string): string[] {
 	const candidates = [content];
 	if (fenced) candidates.unshift(fenced);
 
-	const withoutDanglingOpeningBrace = content.startsWith("{")
-		? content.slice(1).trimStart()
-		: "";
-	if (withoutDanglingOpeningBrace.startsWith("{")) {
-		candidates.push(withoutDanglingOpeningBrace);
+	const danglingOpeningBraceCandidate =
+		extractDanglingOpeningBraceCandidate(content);
+	if (danglingOpeningBraceCandidate) {
+		candidates.push(danglingOpeningBraceCandidate);
 	}
 
-	const firstBrace = content.indexOf("{");
-	const lastBrace = content.lastIndexOf("}");
-	if (firstBrace >= 0 && lastBrace > firstBrace) {
-		candidates.push(content.slice(firstBrace, lastBrace + 1));
+	const outerObject = extractOuterJsonObjectCandidate(content);
+	if (outerObject) {
+		candidates.push(outerObject);
 	}
+
 	candidates.push(...balancedJsonObjectCandidates(content));
 	return [...new Set(candidates)];
 }
 
-function balancedJsonObjectCandidates(content: string): string[] {
-	const ranges: Array<{ start: number; end: number }> = [];
-	let start = -1;
-	let depth = 0;
-	let inString = false;
-	let escaped = false;
+function extractDanglingOpeningBraceCandidate(content: string): string {
+	if (!content.startsWith("{")) {
+		return "";
+	}
+
+	const candidate = content.slice(1).trimStart();
+	return candidate.startsWith("{") ? candidate : "";
+}
+
+function extractOuterJsonObjectCandidate(content: string): string {
+	const firstBrace = content.indexOf("{");
+	const lastBrace = content.lastIndexOf("}");
+
+	if (firstBrace < 0 || lastBrace <= firstBrace) {
+		return "";
+	}
+
+	return content.slice(firstBrace, lastBrace + 1);
+}
+
+interface JsonRange {
+	start: number;
+	end: number;
+}
+
+function createJsonRange(start = -1): JsonRange {
+	return { start, end: -1 };
+}
+
+interface JsonScanState {
+	depth: number;
+	inString: boolean;
+	escaped: boolean;
+	currentRange: JsonRange;
+
+	ranges: JsonRange[];
+}
+
+function buildJsonScanState(): JsonScanState {
+	return {
+		depth: 0,
+		inString: false,
+		escaped: false,
+		currentRange: createJsonRange(),
+		ranges: [],
+	};
+}
+
+function collectBalancedJsonObjectRanges(content: string): JsonRange[] {
+	const state = buildJsonScanState();
 
 	for (let index = 0; index < content.length; index += 1) {
 		const char = content[index];
-
-		if (inString) {
-			if (escaped) {
-				escaped = false;
+		if (state.inString) {
+			if (state.escaped) {
+				state.escaped = false;
 				continue;
 			}
 			if (char === "\\") {
-				escaped = true;
+				state.escaped = true;
 				continue;
 			}
 			if (char === '"') {
-				inString = false;
+				state.inString = false;
 			}
 			continue;
 		}
 
 		if (char === '"') {
-			inString = true;
+			state.inString = true;
 			continue;
 		}
+
 		if (char === "{") {
-			if (depth === 0) {
-				start = index;
+			if (state.depth === 0) {
+				state.currentRange = createJsonRange(index);
 			}
-			depth += 1;
+			state.depth += 1;
 			continue;
 		}
-		if (char === "}" && depth > 0) {
-			depth -= 1;
-			if (depth === 0 && start >= 0) {
-				ranges.push({ start, end: index + 1 });
-				start = -1;
+
+		if (char === "}" && state.depth > 0) {
+			state.depth -= 1;
+			if (state.depth === 0 && state.currentRange.start >= 0) {
+				state.currentRange.end = index + 1;
+				state.ranges.push(state.currentRange);
+				state.currentRange = createJsonRange();
 			}
 		}
 	}
+
+	return state.ranges;
+}
+
+function balancedJsonObjectCandidates(content: string): string[] {
+	const ranges = collectBalancedJsonObjectRanges(content);
 
 	return ranges
 		.reverse()
