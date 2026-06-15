@@ -22,6 +22,9 @@ describe("tool-calls utils", () => {
 		expect(getHumanReadableToolNameKey("research_web")).toBe(
 			"toolCalls.webSearch",
 		);
+		expect(getHumanReadableToolNameKey("web search")).toBe(
+			"toolCalls.webSearch",
+		);
 		expect(getHumanReadableToolNameKey("browse")).toBe("toolCalls.fetchPage");
 		expect(getHumanReadableToolNameKey("memory_context")).toBe(
 			"toolCalls.memoryLookup",
@@ -36,6 +39,21 @@ describe("tool-calls utils", () => {
 		const second = toolCallInputKey({ a: 1, b: 2 });
 		expect(first).toBe(second);
 		expect(first).toBe('{"a":1,"b":2}');
+	});
+
+	it("normalizes nested objects recursively for stable keys", () => {
+		const value = toolCallInputKey({
+			outer: { z: 1, a: 2 },
+			inner: [3, { b: 1, a: 2 }],
+		});
+		expect(value).toBe('{"inner":[3,{"a":2,"b":1}],"outer":{"a":2,"z":1}}');
+	});
+
+	it("returns empty string when input contains non-serializable values", () => {
+		const cyclic: { self?: unknown } = {};
+		cyclic.self = cyclic;
+		const key = toolCallInputKey(cyclic);
+		expect(key).toBe("");
 	});
 
 	it("filters visible thinking segments", () => {

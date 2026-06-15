@@ -200,6 +200,70 @@ describe("admin provider detail route", () => {
 			expect(response.status).toBe(400);
 			expect(data.error).toContain("boolean");
 		});
+
+		it("rejects non-string baseUrl", async () => {
+			const response = await PUT(makeEvent("PUT", { baseUrl: 123 }));
+			const data = await response.json();
+
+			expect(response.status).toBe(400);
+			expect(data.error).toContain("baseUrl must be a string");
+		});
+
+		it("rejects negative timeout values", async () => {
+			const response = await PUT(
+				makeEvent("PUT", { rateLimitFallbackTimeoutMs: -5 }),
+			);
+			const data = await response.json();
+
+			expect(response.status).toBe(400);
+			expect(data.error).toContain("rateLimitFallbackTimeoutMs");
+		});
+
+		it("accepts negative sortOrder values", async () => {
+			const response = await PUT(makeEvent("PUT", { sortOrder: -2 }));
+
+			expect(response.status).toBe(200);
+			expect(mockUpdateProvider).toHaveBeenCalledWith(
+				"provider-1",
+				expect.objectContaining({ sortOrder: -2 }),
+			);
+		});
+
+		it("accepts fallback fields as null when non-string values are supplied", async () => {
+			mockUpdateProvider.mockResolvedValue({
+				id: "provider-1",
+				name: "test-provider",
+				displayName: "Test Provider",
+				baseUrl: "https://api.example.com/v1",
+				iconAssetId: null,
+				rateLimitFallbackEnabled: false,
+				rateLimitFallbackBaseUrl: null,
+				rateLimitFallbackModelName: null,
+				rateLimitFallbackTimeoutMs: 10000,
+				sortOrder: 0,
+				enabled: true,
+				createdAt: new Date("2026-06-01T12:00:00.000Z"),
+				updatedAt: new Date("2026-06-01T12:00:00.000Z"),
+			});
+
+			const response = await PUT(
+				makeEvent("PUT", {
+					rateLimitFallbackBaseUrl: 100,
+					rateLimitFallbackApiKey: 200,
+					rateLimitFallbackModelName: false,
+				}),
+			);
+
+			expect(response.status).toBe(200);
+			expect(mockUpdateProvider).toHaveBeenCalledWith(
+				"provider-1",
+				expect.objectContaining({
+					rateLimitFallbackBaseUrl: null,
+					rateLimitFallbackApiKey: null,
+					rateLimitFallbackModelName: null,
+				}),
+			);
+		});
 	});
 
 	describe("DELETE", () => {

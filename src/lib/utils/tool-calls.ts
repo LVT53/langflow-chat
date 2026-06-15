@@ -1,6 +1,13 @@
 import type { I18nKey } from "$lib/i18n";
 import type { ThinkingSegment } from "$lib/types";
 
+const FILE_PRODUCTION_TOOL_IDENTIFIERS = [
+	"produce_file",
+	"producefile",
+	"file_production",
+];
+const URL_OR_FETCH_TOOL_IDENTIFIERS = ["fetch", "url", "browse"];
+
 function normalizeToolNameForComparison(name: string): string {
 	return name
 		.trim()
@@ -30,12 +37,35 @@ export function toolCallInputKey(input: Record<string, unknown> = {}): string {
 	}
 }
 
+function isToolNameMatch(
+	normalizedName: string,
+	identifiers: readonly string[],
+): boolean {
+	return identifiers.some((identifier) => normalizedName === identifier);
+}
+
+function isToolNameContains(normalizedName: string, fragment: string): boolean {
+	return normalizedName.includes(fragment);
+}
+
+function isWebSearchToolName(normalizedName: string): boolean {
+	return (
+		normalizedName === "research_web" ||
+		isToolNameContains(normalizedName, "web_search")
+	);
+}
+
+function isFetchOrBrowseToolName(normalizedName: string): boolean {
+	return URL_OR_FETCH_TOOL_IDENTIFIERS.some((identifier) =>
+		isToolNameContains(normalizedName, identifier),
+	);
+}
+
 export function isFileProductionToolName(name: string): boolean {
 	const normalized = normalizeToolNameForComparison(name);
 	return (
-		normalized === "produce_file" ||
-		normalized === "producefile" ||
-		normalized.includes("file_production")
+		isToolNameMatch(normalized, FILE_PRODUCTION_TOOL_IDENTIFIERS) ||
+		isToolNameContains(normalized, FILE_PRODUCTION_TOOL_IDENTIFIERS[2])
 	);
 }
 
@@ -59,16 +89,16 @@ export function isVisibleThinkingSegment(segment: ThinkingSegment): boolean {
 
 export function getHumanReadableToolNameKey(name: string): I18nKey {
 	const normalized = normalizeToolNameForComparison(name);
-	if (normalized === "research_web" || normalized.includes("web_search")) {
+	if (isWebSearchToolName(normalized)) {
 		return "toolCalls.webSearch";
 	}
-	if (normalized === "image_search") return "toolCalls.imageSearch";
-	if (normalized === "memory_context") return "toolCalls.memoryLookup";
-	if (
-		normalized.includes("fetch") ||
-		normalized.includes("url") ||
-		normalized.includes("browse")
-	) {
+	if (normalized === "image_search") {
+		return "toolCalls.imageSearch";
+	}
+	if (normalized === "memory_context") {
+		return "toolCalls.memoryLookup";
+	}
+	if (isFetchOrBrowseToolName(normalized)) {
 		return "toolCalls.fetchPage";
 	}
 	if (isFileProductionToolName(name)) return "toolCalls.createFile";

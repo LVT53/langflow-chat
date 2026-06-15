@@ -1,12 +1,9 @@
 import { json } from "@sveltejs/kit";
 import { requireAdmin } from "$lib/server/auth/hooks";
 import { refreshConfig } from "$lib/server/config-store";
-import {
-	deleteProvider,
-	type UpdateProviderInput,
-	updateProvider,
-} from "$lib/server/services/providers";
+import { deleteProvider, updateProvider } from "$lib/server/services/providers";
 import type { RequestHandler } from "./$types";
+import { buildProviderUpdateInput } from "./provider-update-input";
 
 export const PUT: RequestHandler = async (event) => {
 	try {
@@ -58,98 +55,3 @@ export const DELETE: RequestHandler = async (event) => {
 		return json({ error: "Failed to delete provider" }, { status: 500 });
 	}
 };
-
-function buildProviderUpdateInput(body: Record<string, unknown>): {
-	input: UpdateProviderInput;
-	error?: string;
-} {
-	const input: UpdateProviderInput = {};
-
-	if (body.displayName !== undefined) {
-		if (typeof body.displayName !== "string") {
-			return { input: {}, error: "displayName must be a string" };
-		}
-		input.displayName = body.displayName.trim();
-	}
-
-	if (body.baseUrl !== undefined) {
-		if (typeof body.baseUrl !== "string") {
-			return { input: {}, error: "baseUrl must be a string" };
-		}
-		input.baseUrl = body.baseUrl.trim();
-	}
-
-	if (body.apiKey !== undefined) {
-		if (typeof body.apiKey !== "string") {
-			return { input: {}, error: "apiKey must be a string" };
-		}
-		input.apiKey = body.apiKey;
-	}
-
-	if (body.iconAssetId !== undefined) {
-		input.iconAssetId =
-			typeof body.iconAssetId === "string" && body.iconAssetId.trim()
-				? body.iconAssetId.trim()
-				: null;
-	}
-
-	if (body.rateLimitFallbackEnabled !== undefined) {
-		if (typeof body.rateLimitFallbackEnabled !== "boolean") {
-			return {
-				input: {},
-				error: "rateLimitFallbackEnabled must be a boolean",
-			};
-		}
-		input.rateLimitFallbackEnabled = body.rateLimitFallbackEnabled;
-	}
-
-	if (body.rateLimitFallbackBaseUrl !== undefined) {
-		input.rateLimitFallbackBaseUrl =
-			typeof body.rateLimitFallbackBaseUrl === "string"
-				? body.rateLimitFallbackBaseUrl.trim()
-				: null;
-	}
-
-	if (body.rateLimitFallbackApiKey !== undefined) {
-		input.rateLimitFallbackApiKey =
-			typeof body.rateLimitFallbackApiKey === "string"
-				? body.rateLimitFallbackApiKey
-				: null;
-	}
-
-	if (body.rateLimitFallbackModelName !== undefined) {
-		input.rateLimitFallbackModelName =
-			typeof body.rateLimitFallbackModelName === "string"
-				? body.rateLimitFallbackModelName.trim()
-				: null;
-	}
-
-	if (body.rateLimitFallbackTimeoutMs !== undefined) {
-		if (
-			typeof body.rateLimitFallbackTimeoutMs !== "number" ||
-			body.rateLimitFallbackTimeoutMs < 0
-		) {
-			return {
-				input: {},
-				error: "rateLimitFallbackTimeoutMs must be a non-negative number",
-			};
-		}
-		input.rateLimitFallbackTimeoutMs = body.rateLimitFallbackTimeoutMs;
-	}
-
-	if (body.sortOrder !== undefined) {
-		if (typeof body.sortOrder !== "number") {
-			return { input: {}, error: "sortOrder must be a number" };
-		}
-		input.sortOrder = body.sortOrder;
-	}
-
-	if (body.enabled !== undefined) {
-		if (typeof body.enabled !== "boolean") {
-			return { input: {}, error: "enabled must be a boolean" };
-		}
-		input.enabled = body.enabled;
-	}
-
-	return { input };
-}
