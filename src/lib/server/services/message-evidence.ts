@@ -592,7 +592,7 @@ export async function buildAssistantEvidenceSummary(params: {
 		}),
 	].filter(
 		(group): group is MessageEvidenceGroup =>
-			Boolean(group) && group.items.length > 0,
+			group !== null && group.items.length > 0,
 	);
 
 	if (groups.length === 0) return null;

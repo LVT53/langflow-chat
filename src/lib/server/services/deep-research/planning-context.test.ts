@@ -9,7 +9,7 @@ function artifact(
 		id: overrides.id,
 		userId: overrides.userId ?? "user-1",
 		type: overrides.type ?? "normalized_document",
-		retrievalClass: overrides.retrievalClass ?? "document",
+		retrievalClass: overrides.retrievalClass ?? "durable",
 		name: overrides.name,
 		mimeType: overrides.mimeType ?? "text/plain",
 		sizeBytes: overrides.sizeBytes ?? 100,

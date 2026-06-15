@@ -312,6 +312,7 @@ function getDocumentDetailMetadata(document: DocumentWorkspaceItem): string {
 		display: -webkit-box;
 		min-width: 0;
 		flex: 1 1 auto;
+		line-clamp: 2;
 		-webkit-line-clamp: 2;
 		-webkit-box-orient: vertical;
 		overflow: hidden;

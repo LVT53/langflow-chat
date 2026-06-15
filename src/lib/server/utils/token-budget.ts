@@ -21,7 +21,6 @@ export class TokenBudget {
 	private slotUsage: Map<string, number>;
 
 	constructor(totalBudget: number) {
-		this.totalBudget = totalBudget;
 		this.remainingTokens = totalBudget;
 		this.slotUsage = new Map();
 	}

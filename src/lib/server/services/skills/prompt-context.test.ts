@@ -35,7 +35,16 @@ function makeTurn(
 		attachmentIds: [],
 		linkedSources: [],
 		pendingSkill: null,
+		reasoningDepth: "auto",
 		thinkingMode: "auto",
+		forceWebSearch: false,
+		depthMetadata: {
+			requested: "auto",
+			appliedProfile: "standard",
+			fallback: false,
+			modelId: "model1",
+			modelDisplayName: "Model 1",
+		},
 		skipPersistUserMessage: false,
 		...overrides,
 	};

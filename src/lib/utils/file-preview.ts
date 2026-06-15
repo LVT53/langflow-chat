@@ -189,7 +189,9 @@ export function getPreviewContentType(
 	mimeType: string | null,
 ): string {
 	const normalizedMimeType = normalizeMimeType(mimeType);
-	if (!isGenericMimeType(normalizedMimeType)) return normalizedMimeType;
+	if (normalizedMimeType && !isGenericMimeType(normalizedMimeType)) {
+		return normalizedMimeType;
+	}
 	const ext = getExtension(filename);
 	if (!ext) return "application/octet-stream";
 	return EXTENSION_CONTENT_TYPES[ext] ?? "application/octet-stream";

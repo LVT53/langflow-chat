@@ -341,9 +341,12 @@ describe("messages Honcho metadata", () => {
 		await updateMessageEvidence("assistant-1", {
 			evidenceStatus: "ready",
 			evidenceSummary: {
+				structuredWebSearch: false,
 				groups: [
 					{
+						sourceType: "memory",
 						label: "Memory",
+						reranked: false,
 						items: [],
 					},
 				],

@@ -16,7 +16,7 @@ if (typeof Element !== "undefined") {
 			cancel: vi.fn(),
 			play: vi.fn(),
 			onfinish: null as Animation["onfinish"],
-		} as Animation;
+		} as unknown as Animation;
 		setTimeout(() => {
 			animation.onfinish?.call(
 				animation,

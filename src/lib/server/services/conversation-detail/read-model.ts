@@ -32,7 +32,11 @@ import {
 	getConversationTaskState,
 	getProjectReferenceContext,
 } from "$lib/server/services/task-state";
-import type { ChatMessage, ConversationDetail } from "$lib/types";
+import type {
+	ChatMessage,
+	ConversationDetail,
+	MessageSourceForks,
+} from "$lib/types";
 
 export type ConversationDetailView = "full" | "bootstrap" | "first-render";
 
@@ -46,12 +50,12 @@ async function attachSourceForksToAssistantMessages(
 	userId: string,
 	messageHistory: ChatMessage[],
 ): Promise<ChatMessage[]> {
-	const sourceForksByMessageId = await listChildForksBySourceMessages(
+	const sourceForksByMessageId = (await listChildForksBySourceMessages(
 		userId,
 		messageHistory
 			.filter((message) => message.role === "assistant")
 			.map((message) => message.id),
-	).catch(() => ({}));
+	).catch(() => ({}))) as Record<string, MessageSourceForks>;
 	return messageHistory.map((message) => {
 		if (message.role !== "assistant") return message;
 		const sourceForks = sourceForksByMessageId[message.id];

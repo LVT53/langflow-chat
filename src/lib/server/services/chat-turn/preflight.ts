@@ -130,11 +130,29 @@ export async function preflightChatTurn(params: {
 		}
 	}
 
+	const turnForDepthSelection = {
+		...request,
+		linkedSources: resolvedLinkedSources,
+	};
+	const carriedDepthMetadata = await resolveDepthClarificationCarryForward({
+		conversationId: request.conversationId,
+		request: turnForDepthSelection,
+	});
+	const depthMetadata =
+		carriedDepthMetadata ??
+		(
+			await resolveReasoningDepthSelection({
+				userId,
+				conversationId: request.conversationId,
+				request: turnForDepthSelection,
+			})
+		).metadata;
+
 	let skillPromptContext = await resolveSkillPromptContext({
 		userId,
 		turn: {
-			...request,
-			linkedSources: resolvedLinkedSources,
+			...turnForDepthSelection,
+			depthMetadata,
 		},
 	});
 
@@ -202,24 +220,6 @@ export async function preflightChatTurn(params: {
 			throw error;
 		}
 	}
-
-	const turnForDepthSelection = {
-		...request,
-		linkedSources: resolvedLinkedSources,
-	};
-	const carriedDepthMetadata = await resolveDepthClarificationCarryForward({
-		conversationId: request.conversationId,
-		request: turnForDepthSelection,
-	});
-	const depthMetadata =
-		carriedDepthMetadata ??
-		(
-			await resolveReasoningDepthSelection({
-				userId,
-				conversationId: request.conversationId,
-				request: turnForDepthSelection,
-			})
-		).metadata;
 
 	return {
 		ok: true,

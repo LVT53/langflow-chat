@@ -7,6 +7,7 @@ import {
 } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { DocumentWorkspaceItem } from "$lib/types";
 import DocumentWorkspace from "./DocumentWorkspace.svelte";
 
 vi.mock("$lib/services/markdown", () => ({
@@ -769,25 +770,28 @@ describe("DocumentWorkspace", () => {
 
 	describe("Multi-page document navigation", () => {
 		it("renders scrollable page container for multi-page documents", async () => {
+			const pdfDocument: DocumentWorkspaceItem & {
+				totalPages: number;
+				currentPage: number;
+			} = {
+				id: "doc-pdf",
+				source: "knowledge_artifact",
+				filename: "report.pdf",
+				title: "Annual Report",
+				documentFamilyId: "family-report",
+				documentLabel: "Annual Report",
+				documentRole: "report",
+				versionNumber: 1,
+				mimeType: "application/pdf",
+				artifactId: "artifact-pdf",
+				totalPages: 10,
+				currentPage: 1,
+			};
+
 			render(DocumentWorkspace, {
 				props: {
 					open: true,
-					documents: [
-						{
-							id: "doc-pdf",
-							source: "knowledge_artifact",
-							filename: "report.pdf",
-							title: "Annual Report",
-							documentFamilyId: "family-report",
-							documentLabel: "Annual Report",
-							documentRole: "report",
-							versionNumber: 1,
-							mimeType: "application/pdf",
-							artifactId: "artifact-pdf",
-							totalPages: 10,
-							currentPage: 1,
-						},
-					],
+					documents: [pdfDocument],
 					availableDocuments: [],
 					activeDocumentId: "doc-pdf",
 					onSelectDocument: vi.fn(),

@@ -26,7 +26,7 @@ vi.mock("jszip", () => {
 	return {
 		default: {
 			loadAsync: vi.fn().mockResolvedValue({
-				file: (name) =>
+				file: (name: string) =>
 					name === "conversations.json"
 						? {
 								async: () => Promise.resolve(JSON.stringify(mockConversations)),

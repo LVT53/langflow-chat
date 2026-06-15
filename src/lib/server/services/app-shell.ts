@@ -21,6 +21,15 @@ type AvailableShellModel = Awaited<
 	ReturnType<typeof getAvailableModelsWithProviders>
 >[number];
 
+function resolveUserTheme(
+	theme: string | null | undefined,
+): "system" | "light" | "dark" {
+	if (theme === "system" || theme === "light" || theme === "dark") {
+		return theme;
+	}
+	return "system";
+}
+
 export interface AppShellData {
 	user: SessionUser;
 	conversations: Promise<ConversationListItem[]>;
@@ -77,7 +86,7 @@ export async function getAuthenticatedAppShellData(
 		maxMessageLength: config.maxMessageLength,
 		deepResearchEnabled: config.deepResearchEnabled,
 		composerCommandRegistryEnabled: config.composerCommandRegistryEnabled,
-		userTheme: userRow?.theme ?? "system",
+		userTheme: resolveUserTheme(userRow?.theme),
 		userModel: resolvedModelPreference.effectiveModel,
 		systemDefaultModel: resolvedModelPreference.systemDefaultModel,
 		userModelPreference: resolvedModelPreference.preference,

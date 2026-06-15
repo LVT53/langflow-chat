@@ -17,9 +17,6 @@ function renderRing(props: Record<string, unknown> = {}) {
 		props: {
 			contextStatus: null,
 			attachedArtifacts: [],
-			taskState: null,
-			contextDebug: null,
-			onSteer: undefined,
 			onManageEvidence: undefined,
 			...props,
 		},
@@ -45,28 +42,7 @@ describe("ContextUsageRing cost display", () => {
 	});
 
 	it("omits the unused focus section and task control buttons", () => {
-		renderRing({
-			taskState: {
-				id: "task-1",
-				conversationId: "conversation-1",
-				userId: "user-1",
-				objective: "Prepare launch brief",
-				status: "active",
-				createdAt: Date.now(),
-				updatedAt: Date.now(),
-			},
-			contextDebug: {
-				routingStage: "deterministic",
-				routingConfidence: 100,
-				verificationStatus: "skipped",
-				activeTaskObjective: "Prepare launch brief",
-				taskLocked: true,
-				selectedEvidence: [],
-				pinnedEvidence: [],
-				excludedEvidence: [],
-			},
-			onSteer: vi.fn(),
-		});
+		renderRing({});
 
 		expect(screen.queryByText("contextUsageRing.focus")).toBeNull();
 		expect(screen.queryByText("Prepare launch brief")).toBeNull();

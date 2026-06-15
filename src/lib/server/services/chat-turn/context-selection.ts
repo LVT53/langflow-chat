@@ -1128,9 +1128,10 @@ export async function buildConstructedContext(params: {
 	// was already resolved (e.g. TEI cache hit or extremely fast embedder).
 	await new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-	if (topicShiftResult && topicShiftResult.length >= 2) {
-		currentMessageEmbedding = topicShiftResult[0] ?? [];
-		previousMessageEmbedding = topicShiftResult[1] ?? [];
+	const topicShiftEmbeddings = topicShiftResult ?? [];
+	if (topicShiftEmbeddings.length >= 2) {
+		currentMessageEmbedding = topicShiftEmbeddings[0] ?? [];
+		previousMessageEmbedding = topicShiftEmbeddings[1] ?? [];
 	}
 
 	const topicShift = detectTopicShift({

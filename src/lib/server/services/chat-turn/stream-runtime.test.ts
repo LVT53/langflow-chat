@@ -134,7 +134,14 @@ describe("AI SDK UI stream contract fixture", () => {
 function eventData(chunks: string[], eventName: string): unknown[] {
 	return chunks
 		.flatMap((chunk) => decodeUiMessageStreamParts(chunk))
-		.filter((event) => event !== "[DONE]" && event.type === eventName)
+		.filter(
+			(
+				event,
+			): event is Exclude<
+				ReturnType<typeof decodeUiMessageStreamParts>[number],
+				"[DONE]"
+			> => event !== "[DONE]" && event.type === eventName,
+		)
 		.map((event) => ("data" in event ? event.data : event));
 }
 

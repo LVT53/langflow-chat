@@ -487,6 +487,8 @@ describe("Reasoning Depth Auto selection", () => {
 				attachmentIds: Array.from({ length: 20 }, (_, index) => `att-${index}`),
 				linkedSources: Array.from({ length: 20 }, (_, index) => ({
 					displayArtifactId: `artifact-${index}`,
+					promptArtifactId: `artifact-${index}`,
+					familyArtifactIds: [`artifact-${index}`],
 					name: `Source ${index} ${longText}`,
 					type: "document",
 				})),

@@ -225,7 +225,7 @@ export function parseSkillControlEnvelopePayloads(
 		)
 		.map((operation) => operation.draft);
 
-	const metadata =
+	const metadata: SkillControlMessageMetadata | undefined =
 		operations.length > 0 || malformedEnvelopeCount > 0
 			? {
 					skillQuestion: skillQuestion || undefined,
@@ -233,7 +233,7 @@ export function parseSkillControlEnvelopePayloads(
 						pendingNoteIntents.length > 0 ? pendingNoteIntents : undefined,
 					skillDrafts: skillDrafts.length > 0 ? skillDrafts : undefined,
 					skillControl: {
-						envelopeVersion: 1,
+						envelopeVersion: 1 as const,
 						operations,
 						malformedEnvelopeCount,
 					},

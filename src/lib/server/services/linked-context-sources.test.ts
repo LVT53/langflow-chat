@@ -53,9 +53,12 @@ describe("linked context sources", () => {
 		vi.clearAllMocks();
 		mockGetConversation.mockResolvedValue({
 			id: "conv-1",
-			userId: "user-1",
 			title: "Conversation",
-		} as Awaited<ReturnType<typeof getConversation>>);
+			sidebarPinned: false,
+			sidebarSortOrder: null,
+			createdAt: Date.now(),
+			updatedAt: Date.now(),
+		});
 		mockListKnowledgeArtifacts.mockResolvedValue({
 			documents: [makeDocument()],
 			results: [],

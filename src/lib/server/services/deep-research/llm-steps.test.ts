@@ -39,7 +39,12 @@ function buildClaim(): DeepResearchSynthesisClaim {
 		competingClaimGroupId: null,
 		evidenceLinks: [
 			{
+				id: "link-1",
+				claimId: "claim-1",
+				jobId: "job-1",
+				conversationId: "conv-1",
 				evidenceNoteId: "note-1",
+				createdAt: "2026-05-05T10:00:00.000Z",
 				relation: "support",
 				material: true,
 			},

@@ -130,11 +130,11 @@ const finishEvent: NeutralStreamEvent = {
 	finishReason: "stop",
 	rawFinishReason: "stop",
 	model: {
-		providerId: "model-1",
+		providerId: "model1",
 		providerName: "Model One",
 		displayName: "Model One",
-		requestedModelName: "model-1",
-		responseModelName: "model-1",
+		requestedModelName: "model1",
+		responseModelName: "model1",
 	},
 };
 
@@ -191,7 +191,7 @@ function createTurn(
 		conversationId: "test-conv",
 		normalizedMessage: "Hello",
 		streamId: "test-stream",
-		modelId: "model-1",
+		modelId: "model1",
 		modelDisplayName: "Model One",
 		skipPersistUserMessage: false,
 		attachmentIds: [],
@@ -204,7 +204,7 @@ function createTurn(
 			requested: "auto",
 			appliedProfile: "standard",
 			fallback: false,
-			modelId: "model-1",
+			modelId: "model1",
 			modelDisplayName: "Model One",
 		},
 		...overrides,
@@ -226,7 +226,7 @@ function createNeutralStreamingResult(
 			honchoSnapshot: null,
 			contextTraceSections: undefined,
 		},
-		modelId: "model-1",
+		modelId: "model1",
 		modelDisplayName: "Model One",
 		stream: (async function* () {
 			for (const event of events) {
@@ -351,7 +351,7 @@ describe("stream-orchestrator SSE contract", () => {
 					transient: true,
 					data: expect.objectContaining({
 						responseTokenCount: 100,
-						modelId: "model-1",
+						modelId: "model1",
 					}),
 				}),
 				{ type: "finish", finishReason: "stop" },
@@ -363,7 +363,7 @@ describe("stream-orchestrator SSE contract", () => {
 				userId: "u1",
 				message: "Hello",
 				conversationId: "test-conv",
-				modelId: "model-1",
+				modelId: "model1",
 				signal: expect.any(AbortSignal),
 			}),
 		);
@@ -387,7 +387,7 @@ describe("stream-orchestrator SSE contract", () => {
 				requested: "max",
 				appliedProfile: "maximum",
 				fallback: false,
-				modelId: "model-1",
+				modelId: "model1",
 				modelDisplayName: "Model One",
 			},
 		});
@@ -451,7 +451,7 @@ describe("stream-orchestrator SSE contract", () => {
 				requested: "max",
 				appliedProfile: "maximum",
 				fallback: false,
-				modelId: "model-1",
+				modelId: "model1",
 				modelDisplayName: "Model One",
 			},
 		});
@@ -797,7 +797,7 @@ describe("stream-orchestrator SSE contract", () => {
 				honchoSnapshot: null,
 				providerUsage: null,
 				normalChatToolCalls: [],
-				modelId: "model-1",
+				modelId: "model1",
 				modelDisplayName: "Model One",
 			},
 		);
@@ -1038,7 +1038,7 @@ describe("stream-orchestrator SSE contract", () => {
 					requested: "auto",
 					appliedProfile: "standard",
 					fallback: false,
-					modelId: "model-1",
+					modelId: "model1",
 					modelDisplayName: "Model One",
 					appliedEffort: {
 						dimensions: ["provider_reasoning", "tool_steps"],

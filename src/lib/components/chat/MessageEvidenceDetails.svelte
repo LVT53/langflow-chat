@@ -56,7 +56,7 @@ function formatChannel(channel: string): string {
 }
 
 async function toggle() {
-	await preserveScrollOnToggle(container, expanded, () => {
+	await preserveScrollOnToggle(container ?? undefined, expanded, () => {
 		expanded = !expanded;
 	});
 }

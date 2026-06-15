@@ -50,7 +50,7 @@ function spyOnScrollIntoView() {
 		restore() {
 			spy.mockRestore();
 			if (!originalScrollIntoView) {
-				delete HTMLElement.prototype.scrollIntoView;
+				Reflect.deleteProperty(HTMLElement.prototype, "scrollIntoView");
 			}
 		},
 	};

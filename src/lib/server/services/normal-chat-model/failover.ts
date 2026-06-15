@@ -102,10 +102,8 @@ function isModelTimeoutErrorInner(error: unknown, seen: Set<unknown>): boolean {
 	if (seen.has(error)) return false;
 	seen.add(error);
 
-	const code =
-		typeof (error as ModelTimeoutLikeError).code === "string"
-			? (error as ModelTimeoutLikeError).code.toLowerCase()
-			: null;
+	const codeValue = (error as ModelTimeoutLikeError).code;
+	const code = typeof codeValue === "string" ? codeValue.toLowerCase() : null;
 	const name = error.name.toLowerCase();
 	const message = error.message.toLowerCase();
 	const cause = (error as ModelTimeoutLikeError).cause;

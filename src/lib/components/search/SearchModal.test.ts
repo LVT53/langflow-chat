@@ -45,6 +45,8 @@ describe("SearchModal", () => {
 				title: "Release notes",
 				projectId: "project-1",
 				updatedAt: Date.now(),
+				sidebarPinned: false,
+				sidebarSortOrder: null,
 			},
 		]);
 		projects.set([

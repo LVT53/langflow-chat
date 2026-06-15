@@ -4,7 +4,6 @@ import { db } from "$lib/server/db";
 import { conversationSummaries } from "$lib/server/db/schema";
 import {
 	createOpenAICompatibleProviderForNormalChatModelRun,
-	type NormalChatModelRunRuntimeConfig,
 	resolveNormalChatModelRunProvider,
 } from "$lib/server/services/normal-chat-model";
 import {
@@ -21,6 +20,9 @@ type SummaryOpenAICompatibleProvider = ReturnType<
 	typeof createOpenAICompatibleProviderForNormalChatModelRun
 >;
 type SummaryLanguageModel = ReturnType<SummaryOpenAICompatibleProvider>;
+type SummaryRuntimeConfig = NonNullable<
+	Parameters<typeof resolveNormalChatModelRunProvider>[1]
+>;
 
 export function estimateChars(
 	messages: { role: string; content: string }[],
@@ -83,7 +85,7 @@ async function createSummaryModelProvider(): Promise<{
 	const config = getConfig();
 	const modelProvider = await resolveNormalChatModelRunProvider(
 		"model1",
-		config as unknown as NormalChatModelRunRuntimeConfig,
+		config as SummaryRuntimeConfig,
 	);
 
 	const openaiCompatible = createOpenAICompatibleProviderForNormalChatModelRun({

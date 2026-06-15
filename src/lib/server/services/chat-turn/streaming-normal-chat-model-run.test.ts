@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createModelCapabilitySet } from "$lib/model-capabilities";
 import type { RuntimeConfig } from "$lib/server/config-store";
 

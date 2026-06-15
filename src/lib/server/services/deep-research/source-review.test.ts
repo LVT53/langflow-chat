@@ -647,6 +647,7 @@ describe("Deep Research source triage and review", () => {
 					"Miben különbözik a Cube Kathmandu és a Cube Nulane felszereltsége?",
 				],
 				source: {
+					id: "cube-topic-anchor",
 					title: "Cube Kathmandu es Cube Nulane kerekparok osszehasonlitasa",
 					snippet:
 						"Felszereltseg, hajtaslanc, varosi ingazas es turazas szempontjai.",

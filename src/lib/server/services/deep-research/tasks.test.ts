@@ -147,8 +147,8 @@ describe("deep research tasks", () => {
 				index >= 15
 					? ("critical" as const)
 					: index >= 10
-						? "important"
-						: "minor",
+						? ("important" as const)
+						: ("minor" as const),
 		}));
 
 		const tasks = await createResearchTasksFromCoverageGaps({

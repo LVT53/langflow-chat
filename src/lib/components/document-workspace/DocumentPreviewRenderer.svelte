@@ -17,8 +17,8 @@ import {
 	type OfficePreviewReady,
 	type PdfPreviewComponent as PdfPreviewComponentType,
 	type PreviewRuntimeAdapter,
-	type TextPreviewRenderResult,
 } from "./preview-runtime";
+import type { TextPreviewRenderResult } from "./preview-runtime/text";
 
 let {
 	open,

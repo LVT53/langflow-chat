@@ -11,6 +11,7 @@ import {
 
 export interface ReconnectBuffer {
 	userMessage: string | null;
+	createdAt?: number;
 	tokens: string[];
 	thinking: string[];
 	responseActivity: import("$lib/types").ResponseActivityEntry[];
@@ -118,7 +119,7 @@ export function doReconnect(targetStreamId: string, deps: ReconnectDeps): void {
 							? { activityCount: buffer.responseActivity.length }
 							: {}),
 						userMessage: buffer.userMessage,
-						createdAt: buffer.createdAt,
+						createdAt: buffer.createdAt ?? Date.now(),
 					}),
 				);
 

@@ -198,7 +198,7 @@ async function applyCreateOperation(params: {
 	conversationId: string;
 	session: typeof skillSessions.$inferSelect;
 	assistantMessageId: string;
-	operation: SkillNoteOperation;
+	operation: Extract<SkillNoteOperation, { action: "create" }>;
 }): Promise<AppliedSkillNoteOperation> {
 	const title = cleanTitle(params.operation.title);
 	const body = cleanText(params.operation.body, "body");

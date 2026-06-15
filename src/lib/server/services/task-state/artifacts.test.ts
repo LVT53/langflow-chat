@@ -674,14 +674,15 @@ describe("artifacts", () => {
 		it("uses the reranker to recover a semantic passage when lexical chunk scores are weak", async () => {
 			const reranker = await import("../tei-reranker");
 			vi.mocked(reranker.canUseTeiReranker).mockReturnValueOnce(true);
-			vi.mocked(reranker.rerankItems).mockImplementationOnce(
-				async ({ items }: { items: Array<{ chunk: ArtifactChunk }> }) => ({
+			vi.mocked(reranker.rerankItems).mockImplementationOnce(async (params) => {
+				const { items } = params as { items: Array<{ chunk: ArtifactChunk }> };
+				return {
 					confidence: 94,
 					items: items
 						.filter((entry) => entry.chunk.chunkIndex === 7)
-						.map((item) => ({ item, score: 94 })),
-				}),
-			);
+						.map((item, index) => ({ item, index, score: 94 })),
+				};
+			});
 
 			const artifact: Artifact = {
 				id: "semantic-passage-artifact",

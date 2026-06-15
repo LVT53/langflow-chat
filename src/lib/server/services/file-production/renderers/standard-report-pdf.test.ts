@@ -15,7 +15,6 @@ async function extractPdfText(content: Buffer): Promise<string> {
 	const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
 	const task = pdfjs.getDocument({
 		data: new Uint8Array(content),
-		disableWorker: true,
 		useSystemFonts: false,
 	});
 	const document = await task.promise;

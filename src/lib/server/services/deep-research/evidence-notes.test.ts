@@ -497,8 +497,22 @@ describe("deep research Evidence Notes", () => {
 						conversationId: "conversation-1",
 						status: "sufficient",
 						canContinue: false,
+						continuationRecommendation: null,
 						coverageGaps: [],
 						reportLimitations: [],
+						budget: {
+							selectedDepth: "standard",
+							sourceReviewCeiling: 3,
+							reviewedSourceCount: 1,
+							remainingSourceReviews: 2,
+							synthesisPassCeiling: 2,
+							remainingSynthesisPasses: 1,
+							exhausted: false,
+						},
+						remainingBudget: {
+							sourceReviews: 2,
+							synthesisPasses: 1,
+						},
 						timelineSummary: {
 							stage: "coverage_assessment",
 							kind: "stage_completed",

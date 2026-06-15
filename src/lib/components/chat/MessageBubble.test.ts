@@ -523,15 +523,13 @@ describe("MessageBubble", () => {
 				{
 					id: "artifact-123",
 					type: "source_document",
-					retrievalClass: "durable",
 					name: "brief.docx",
 					mimeType:
 						"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 					sizeBytes: 1024,
+					artifactId: "artifact-123",
 					conversationId: "conv-1",
-					summary: null,
 					createdAt: timestamp,
-					updatedAt: timestamp,
 				},
 			],
 			isStreaming: false,
