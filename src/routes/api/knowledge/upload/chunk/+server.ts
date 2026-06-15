@@ -10,52 +10,20 @@ import {
 	completeKnowledgeUploadFromStoredFile,
 	isKnowledgeUploadConversationError,
 	resolveKnowledgeUploadLimits,
-	validateKnowledgeUploadConversation,
 } from "$lib/server/services/knowledge/upload-intake";
+import {
+	formatBytes,
+	parseNonNegativeInteger,
+	readKnowledgeUploadRequestMetadata,
+	resolveKnowledgeUploadConversation,
+} from "../shared";
 import type { RequestHandler } from "./$types";
 
-const UPLOAD_NAME_HEADER = "x-alfyai-upload-name";
-const UPLOAD_SIZE_HEADER = "x-alfyai-upload-size";
-const UPLOAD_TRACE_HEADER = "x-alfyai-upload-trace-id";
-const UPLOAD_CONVERSATION_HEADER = "x-alfyai-conversation-id";
 const CHUNK_INDEX_HEADER = "x-alfyai-chunk-index";
 const CHUNK_TOTAL_HEADER = "x-alfyai-chunk-total";
 const CHUNK_START_HEADER = "x-alfyai-chunk-start";
 const CHUNK_SIZE_HEADER = "x-alfyai-chunk-size";
 const CHUNK_FINAL_HEADER = "x-alfyai-chunk-final";
-
-function parseNonNegativeInteger(value: string | null): number | null {
-	if (!value) return null;
-	const parsed = Number(value);
-	return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
-}
-
-function formatBytes(value: number | null): string {
-	if (value === null || !Number.isFinite(value)) return "unlimited";
-	const mb = value / (1024 * 1024);
-	return `${Number.isInteger(mb) ? mb : mb.toFixed(1)}MB`;
-}
-
-function decodeHeaderValue(value: string | null): string | null {
-	if (!value) return null;
-	try {
-		return decodeURIComponent(value).slice(0, 240);
-	} catch {
-		return value.slice(0, 240);
-	}
-}
-
-function sanitizeHeaderValue(value: string | null): string | null {
-	if (!value) return null;
-	const trimmed = value.trim();
-	return trimmed ? trimmed.slice(0, 240) : null;
-}
-
-function sanitizeUploadTraceId(value: string | null): string | null {
-	if (!value) return null;
-	const trimmed = value.trim();
-	return /^[a-z0-9:_-]{4,120}$/i.test(trimmed) ? trimmed : null;
-}
 
 function partName(index: number): string {
 	return `part-${String(index).padStart(6, "0")}`;
@@ -146,15 +114,10 @@ export const POST: RequestHandler = async (event) => {
 	const user = event.locals.user;
 	const startedAt = Date.now();
 	const limits = resolveKnowledgeUploadLimits();
-	const traceId =
-		sanitizeUploadTraceId(event.request.headers.get(UPLOAD_TRACE_HEADER)) ??
-		createAttachmentTraceId("upload");
-	const fileName = decodeHeaderValue(
-		event.request.headers.get(UPLOAD_NAME_HEADER),
-	);
-	const totalSize = parseNonNegativeInteger(
-		event.request.headers.get(UPLOAD_SIZE_HEADER),
-	);
+	const metadata = readKnowledgeUploadRequestMetadata(event.request);
+	const traceId = metadata.traceId || createAttachmentTraceId("upload");
+	const fileName = metadata.fileName;
+	const totalSize = metadata.declaredFileSize;
 	const chunkIndex = parseNonNegativeInteger(
 		event.request.headers.get(CHUNK_INDEX_HEADER),
 	);
@@ -168,11 +131,8 @@ export const POST: RequestHandler = async (event) => {
 		event.request.headers.get(CHUNK_SIZE_HEADER),
 	);
 	const isFinalChunk = event.request.headers.get(CHUNK_FINAL_HEADER) === "true";
-	const conversationId = sanitizeHeaderValue(
-		event.request.headers.get(UPLOAD_CONVERSATION_HEADER),
-	);
-	const mimeType =
-		event.request.headers.get("content-type")?.split(";")[0]?.trim() || null;
+	const conversationId = metadata.conversationId;
+	const mimeType = metadata.mimeType;
 	const fileLimit = limits.chunkFileLimit;
 	const chunkBodyLimit = limits.chunkBodyLimit;
 	const contentLength = parseNonNegativeInteger(
@@ -267,25 +227,15 @@ export const POST: RequestHandler = async (event) => {
 		);
 	}
 
-	let validatedConversationId: string | null;
-	try {
-		validatedConversationId = await validateKnowledgeUploadConversation({
-			userId: user.id,
-			conversationId,
-		});
-	} catch (error) {
-		if (isKnowledgeUploadConversationError(error)) {
-			return json(
-				{
-					error: "Conversation not found or access denied",
-					code: "conversation_not_found",
-					traceId,
-				},
-				{ status: 400 },
-			);
-		}
-		throw error;
+	const conversation = await resolveKnowledgeUploadConversation({
+		userId: user.id,
+		conversationId,
+		traceId,
+	});
+	if (conversation.response) {
+		return conversation.response;
 	}
+	const validatedConversationId = conversation.conversationId;
 
 	const chunkBuffer = Buffer.from(await event.request.arrayBuffer());
 	if (chunkBuffer.length !== declaredChunkSize) {

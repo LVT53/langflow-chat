@@ -10,14 +10,15 @@ import {
 	completeKnowledgeUploadFromStoredFile,
 	isKnowledgeUploadConversationError,
 	resolveKnowledgeUploadLimits,
-	validateKnowledgeUploadConversation,
 } from "$lib/server/services/knowledge/upload-intake";
+import {
+	formatBytes,
+	parseContentLength,
+	readKnowledgeUploadRequestMetadata,
+	resolveKnowledgeUploadConversation,
+} from "../shared";
 import type { RequestHandler } from "./$types";
 
-const UPLOAD_NAME_HEADER = "x-alfyai-upload-name";
-const UPLOAD_SIZE_HEADER = "x-alfyai-upload-size";
-const UPLOAD_TRACE_HEADER = "x-alfyai-upload-trace-id";
-const UPLOAD_CONVERSATION_HEADER = "x-alfyai-conversation-id";
 const PROGRESS_BYTES = 8 * 1024 * 1024;
 const PROGRESS_MS = 10_000;
 
@@ -29,39 +30,6 @@ class RawUploadLimitError extends Error {
 class RawUploadSizeMismatchError extends Error {
 	code = "upload_size_mismatch" as const;
 	status = 400 as const;
-}
-
-function parseContentLength(value: string | null): number | null {
-	if (!value) return null;
-	const parsed = Number(value);
-	return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
-}
-
-function formatBytes(value: number | null): string {
-	if (value === null || !Number.isFinite(value)) return "unlimited";
-	const mb = value / (1024 * 1024);
-	return `${Number.isInteger(mb) ? mb : mb.toFixed(1)}MB`;
-}
-
-function decodeHeaderValue(value: string | null): string | null {
-	if (!value) return null;
-	try {
-		return decodeURIComponent(value).slice(0, 240);
-	} catch {
-		return value.slice(0, 240);
-	}
-}
-
-function sanitizeHeaderValue(value: string | null): string | null {
-	if (!value) return null;
-	const trimmed = value.trim();
-	return trimmed ? trimmed.slice(0, 240) : null;
-}
-
-function sanitizeUploadTraceId(value: string | null): string | null {
-	if (!value) return null;
-	const trimmed = value.trim();
-	return /^[a-z0-9:_-]{4,120}$/i.test(trimmed) ? trimmed : null;
 }
 
 function uploadBodyLimitMessage(limitBytes: number | null) {
@@ -209,25 +177,17 @@ async function receiveRawUpload(params: {
 export const POST: RequestHandler = async (event) => {
 	requireAuth(event);
 	const user = event.locals.user;
-	const traceId =
-		sanitizeUploadTraceId(event.request.headers.get(UPLOAD_TRACE_HEADER)) ??
-		createAttachmentTraceId("upload");
+	const metadata = readKnowledgeUploadRequestMetadata(event.request);
+	const traceId = metadata.traceId || createAttachmentTraceId("upload");
 	const startedAt = Date.now();
 	const limits = resolveKnowledgeUploadLimits();
 	const contentLength = parseContentLength(
 		event.request.headers.get("content-length"),
 	);
-	const declaredFileName = decodeHeaderValue(
-		event.request.headers.get(UPLOAD_NAME_HEADER),
-	);
-	const declaredFileSize = parseContentLength(
-		event.request.headers.get(UPLOAD_SIZE_HEADER),
-	);
-	const conversationId = sanitizeHeaderValue(
-		event.request.headers.get(UPLOAD_CONVERSATION_HEADER),
-	);
-	const mimeType =
-		event.request.headers.get("content-type")?.split(";")[0]?.trim() || null;
+	const declaredFileName = metadata.fileName;
+	const declaredFileSize = metadata.declaredFileSize;
+	const conversationId = metadata.conversationId;
+	const mimeType = metadata.mimeType;
 	const requestBodyLimit = limits.storedFileLimit;
 
 	console.info("[KNOWLEDGE] Raw upload receive started", {
@@ -292,25 +252,15 @@ export const POST: RequestHandler = async (event) => {
 		);
 	}
 
-	let validatedConversationId: string | null;
-	try {
-		validatedConversationId = await validateKnowledgeUploadConversation({
-			userId: user.id,
-			conversationId,
-		});
-	} catch (error) {
-		if (isKnowledgeUploadConversationError(error)) {
-			return json(
-				{
-					error: "Conversation not found or access denied",
-					code: "conversation_not_found",
-					traceId,
-				},
-				{ status: 400 },
-			);
-		}
-		throw error;
+	const conversation = await resolveKnowledgeUploadConversation({
+		userId: user.id,
+		conversationId,
+		traceId,
+	});
+	if (conversation.response) {
+		return conversation.response;
 	}
+	const validatedConversationId = conversation.conversationId;
 
 	const tempDir = join(
 		process.cwd(),

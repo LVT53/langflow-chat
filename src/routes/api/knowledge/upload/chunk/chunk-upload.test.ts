@@ -120,20 +120,10 @@ describe("POST /api/knowledge/upload/chunk", () => {
 		consoleWarnSpy?.mockRestore();
 		consoleInfoSpy = null;
 		consoleWarnSpy = null;
-		await rm(
-			join(
-				process.cwd(),
-				"data",
-				"knowledge",
-				"user-1",
-				".incoming",
-				"upload-chunktest",
-			),
-			{
-				force: true,
-				recursive: true,
-			},
-		);
+		await rm(join(process.cwd(), "data", "knowledge", "user-1", ".incoming"), {
+			force: true,
+			recursive: true,
+		});
 	});
 
 	it("accepts non-final chunks without starting extraction", async () => {
