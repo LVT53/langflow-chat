@@ -1,14 +1,11 @@
-import {
-	fireEvent,
-	render,
-	screen,
-	waitFor,
-	within,
-} from "@testing-library/svelte";
+import { fireEvent, screen, waitFor, within } from "@testing-library/svelte";
 import { tick } from "svelte";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DocumentWorkspaceItem } from "$lib/types";
-import DocumentWorkspace from "./DocumentWorkspace.svelte";
+import {
+	makeWorkspaceDocument,
+	renderWorkspace,
+} from "./DocumentWorkspace.test-helpers";
 
 vi.mock("$lib/services/markdown", () => ({
 	renderHighlightedText: vi.fn(
@@ -24,27 +21,19 @@ describe("DocumentWorkspace", () => {
 	});
 
 	it("renders a single desktop preview body for one open document", async () => {
-		const { container } = render(DocumentWorkspace, {
-			props: {
-				open: true,
-				documents: [
-					{
-						id: "generated-file-1",
-						source: "chat_generated_file",
-						filename: "generated.txt",
-						title: "Generated notes",
-						mimeType: "text/plain",
-						artifactId: null,
-						previewUrl: "/api/chat/files/generated-file-1/preview",
-					},
-				],
-				availableDocuments: [],
-				activeDocumentId: "generated-file-1",
-				onSelectDocument: vi.fn(),
-				onOpenDocument: vi.fn(),
-				onCloseDocument: vi.fn(),
-				onCloseWorkspace: vi.fn(),
-			},
+		const { container } = renderWorkspace({
+			documents: [
+				{
+					id: "generated-file-1",
+					source: "chat_generated_file",
+					filename: "generated.txt",
+					title: "Generated notes",
+					mimeType: "text/plain",
+					artifactId: null,
+					previewUrl: "/api/chat/files/generated-file-1/preview",
+				},
+			],
+			activeDocumentId: "generated-file-1",
 		});
 
 		await waitFor(() => {
@@ -61,27 +50,19 @@ describe("DocumentWorkspace", () => {
 				Promise.resolve(new Blob(["workspace notes"], { type: "text/plain" })),
 		});
 
-		render(DocumentWorkspace, {
-			props: {
-				open: true,
-				documents: [
-					{
-						id: "generated-file-1",
-						source: "chat_generated_file",
-						filename: "workspace-notes.txt",
-						title: "Workspace notes",
-						mimeType: "text/plain",
-						artifactId: null,
-						previewUrl: "/api/chat/files/generated-file-1/preview",
-					},
-				],
-				availableDocuments: [],
-				activeDocumentId: "generated-file-1",
-				onSelectDocument: vi.fn(),
-				onOpenDocument: vi.fn(),
-				onCloseDocument: vi.fn(),
-				onCloseWorkspace: vi.fn(),
-			},
+		renderWorkspace({
+			documents: [
+				{
+					id: "generated-file-1",
+					source: "chat_generated_file",
+					filename: "workspace-notes.txt",
+					title: "Workspace notes",
+					mimeType: "text/plain",
+					artifactId: null,
+					previewUrl: "/api/chat/files/generated-file-1/preview",
+				},
+			],
+			activeDocumentId: "generated-file-1",
 		});
 
 		await waitFor(() => {
@@ -108,17 +89,9 @@ describe("DocumentWorkspace", () => {
 			previewUrl: null,
 		};
 
-		const { rerender } = render(DocumentWorkspace, {
-			props: {
-				open: true,
-				documents: [sourceLessDocument],
-				availableDocuments: [],
-				activeDocumentId: "source-less-document",
-				onSelectDocument: vi.fn(),
-				onOpenDocument: vi.fn(),
-				onCloseDocument: vi.fn(),
-				onCloseWorkspace: vi.fn(),
-			},
+		const { rerender } = renderWorkspace({
+			documents: [sourceLessDocument],
+			activeDocumentId: "source-less-document",
 		});
 
 		await waitFor(() => {
@@ -144,28 +117,11 @@ describe("DocumentWorkspace", () => {
 	it("requests expanded presentation instead of opening a separate viewer", async () => {
 		const onPresentationChange = vi.fn();
 
-		render(DocumentWorkspace, {
-			props: {
-				open: true,
-				presentation: "docked",
-				documents: [
-					{
-						id: "doc-1",
-						source: "knowledge_artifact",
-						filename: "document.pdf",
-						title: "Document",
-						mimeType: "application/pdf",
-						artifactId: null,
-					},
-				],
-				availableDocuments: [],
-				activeDocumentId: "doc-1",
-				onSelectDocument: vi.fn(),
-				onOpenDocument: vi.fn(),
-				onCloseDocument: vi.fn(),
-				onCloseWorkspace: vi.fn(),
-				onPresentationChange,
-			},
+		renderWorkspace({
+			presentation: "docked",
+			documents: [makeWorkspaceDocument({})],
+			activeDocumentId: "doc-1",
+			onPresentationChange,
 		});
 
 		const desktopWorkspace = screen.getByRole("complementary", {
@@ -204,17 +160,9 @@ describe("DocumentWorkspace", () => {
 			},
 		];
 
-		const { rerender } = render(DocumentWorkspace, {
-			props: {
-				open: true,
-				documents: [documents[0]],
-				availableDocuments: [],
-				activeDocumentId: "doc-1",
-				onSelectDocument: vi.fn(),
-				onOpenDocument: vi.fn(),
-				onCloseDocument: vi.fn(),
-				onCloseWorkspace: vi.fn(),
-			},
+		const { rerender } = renderWorkspace({
+			documents: [documents[0]],
+			activeDocumentId: "doc-1",
 		});
 
 		expect(screen.queryByTestId("open-documents-rail")).not.toBeInTheDocument();
@@ -257,32 +205,24 @@ describe("DocumentWorkspace", () => {
 	it("uses the document title as the source jump and keeps version metadata out of the header", async () => {
 		const onJumpToSource = vi.fn();
 
-		render(DocumentWorkspace, {
-			props: {
-				open: true,
-				documents: [
-					{
-						id: "generated-doc",
-						source: "chat_generated_file",
-						filename: "brief.pdf",
-						title: "Generated Brief",
-						documentRole: "brief",
-						versionNumber: 1,
-						mimeType: "application/pdf",
-						artifactId: null,
-						previewUrl: "/api/chat/files/generated-doc/preview",
-						originConversationId: "conversation-1",
-						originAssistantMessageId: "message-1",
-					},
-				],
-				availableDocuments: [],
-				activeDocumentId: "generated-doc",
-				onSelectDocument: vi.fn(),
-				onOpenDocument: vi.fn(),
-				onJumpToSource,
-				onCloseDocument: vi.fn(),
-				onCloseWorkspace: vi.fn(),
-			},
+		renderWorkspace({
+			documents: [
+				{
+					id: "generated-doc",
+					source: "chat_generated_file",
+					filename: "brief.pdf",
+					title: "Generated Brief",
+					documentRole: "brief",
+					versionNumber: 1,
+					mimeType: "application/pdf",
+					artifactId: null,
+					previewUrl: "/api/chat/files/generated-doc/preview",
+					originConversationId: "conversation-1",
+					originAssistantMessageId: "message-1",
+				},
+			],
+			activeDocumentId: "generated-doc",
+			onJumpToSource,
 		});
 
 		const desktopWorkspace = screen.getByRole("complementary", {
@@ -318,34 +258,32 @@ describe("DocumentWorkspace", () => {
 	it("uses a mobile documents sheet instead of the desktop rail in the mobile workspace", async () => {
 		const onSelectDocument = vi.fn();
 		const onCloseDocument = vi.fn();
-		render(DocumentWorkspace, {
-			props: {
-				open: true,
-				documents: [
-					{
-						id: "doc-1",
-						source: "knowledge_artifact",
-						filename: "first.md",
-						title: "First document",
-						mimeType: "text/markdown",
-						artifactId: "artifact-1",
-					},
-					{
-						id: "doc-2",
-						source: "knowledge_artifact",
-						filename: "second.md",
-						title: "Second document",
-						mimeType: "text/markdown",
-						artifactId: "artifact-2",
-					},
-				],
-				availableDocuments: [],
-				activeDocumentId: "doc-1",
-				onSelectDocument,
-				onOpenDocument: vi.fn(),
-				onCloseDocument,
-				onCloseWorkspace: vi.fn(),
-			},
+		renderWorkspace({
+			open: true,
+			documents: [
+				{
+					id: "doc-1",
+					source: "knowledge_artifact",
+					filename: "first.md",
+					title: "First document",
+					mimeType: "text/markdown",
+					artifactId: "artifact-1",
+				},
+				{
+					id: "doc-2",
+					source: "knowledge_artifact",
+					filename: "second.md",
+					title: "Second document",
+					mimeType: "text/markdown",
+					artifactId: "artifact-2",
+				},
+			],
+			availableDocuments: [],
+			activeDocumentId: "doc-1",
+			onSelectDocument,
+			onOpenDocument: vi.fn(),
+			onCloseDocument,
+			onCloseWorkspace: vi.fn(),
 		});
 
 		const mobileWorkspace = document.querySelector(
@@ -403,17 +341,15 @@ describe("DocumentWorkspace", () => {
 			},
 		];
 
-		const { rerender } = render(DocumentWorkspace, {
-			props: {
-				open: true,
-				documents,
-				availableDocuments: [],
-				activeDocumentId: "doc-1",
-				onSelectDocument: vi.fn(),
-				onOpenDocument: vi.fn(),
-				onCloseDocument: vi.fn(),
-				onCloseWorkspace: vi.fn(),
-			},
+		const { rerender } = renderWorkspace({
+			open: true,
+			documents,
+			availableDocuments: [],
+			activeDocumentId: "doc-1",
+			onSelectDocument: vi.fn(),
+			onOpenDocument: vi.fn(),
+			onCloseDocument: vi.fn(),
+			onCloseWorkspace: vi.fn(),
 		});
 		const desktopWorkspace = screen.getByRole("complementary", {
 			name: /document workspace/i,
@@ -429,35 +365,33 @@ describe("DocumentWorkspace", () => {
 	});
 
 	it("uses an expanded workspace layout with rail and preview column sharing the extra width", async () => {
-		render(DocumentWorkspace, {
-			props: {
-				open: true,
-				presentation: "expanded",
-				documents: [
-					{
-						id: "doc-1",
-						source: "knowledge_artifact",
-						filename: "first.pdf",
-						title: "First document",
-						mimeType: "application/pdf",
-						artifactId: "artifact-1",
-					},
-					{
-						id: "doc-2",
-						source: "knowledge_artifact",
-						filename: "second.pdf",
-						title: "Second document",
-						mimeType: "application/pdf",
-						artifactId: "artifact-2",
-					},
-				],
-				availableDocuments: [],
-				activeDocumentId: "doc-1",
-				onSelectDocument: vi.fn(),
-				onOpenDocument: vi.fn(),
-				onCloseDocument: vi.fn(),
-				onCloseWorkspace: vi.fn(),
-			},
+		renderWorkspace({
+			open: true,
+			presentation: "expanded",
+			documents: [
+				{
+					id: "doc-1",
+					source: "knowledge_artifact",
+					filename: "first.pdf",
+					title: "First document",
+					mimeType: "application/pdf",
+					artifactId: "artifact-1",
+				},
+				{
+					id: "doc-2",
+					source: "knowledge_artifact",
+					filename: "second.pdf",
+					title: "Second document",
+					mimeType: "application/pdf",
+					artifactId: "artifact-2",
+				},
+			],
+			availableDocuments: [],
+			activeDocumentId: "doc-1",
+			onSelectDocument: vi.fn(),
+			onOpenDocument: vi.fn(),
+			onCloseDocument: vi.fn(),
+			onCloseWorkspace: vi.fn(),
 		});
 
 		const desktopWorkspace = screen.getByRole("complementary", {
@@ -482,28 +416,26 @@ describe("DocumentWorkspace", () => {
 	it("closes an expanded workspace when Escape is pressed", async () => {
 		const onCloseWorkspace = vi.fn();
 
-		render(DocumentWorkspace, {
-			props: {
-				open: true,
-				presentation: "expanded",
-				returnToDockedOnExpandedClose: false,
-				documents: [
-					{
-						id: "doc-1",
-						source: "knowledge_artifact",
-						filename: "document.pdf",
-						title: "Document",
-						mimeType: "application/pdf",
-						artifactId: "artifact-1",
-					},
-				],
-				availableDocuments: [],
-				activeDocumentId: "doc-1",
-				onSelectDocument: vi.fn(),
-				onOpenDocument: vi.fn(),
-				onCloseDocument: vi.fn(),
-				onCloseWorkspace,
-			},
+		renderWorkspace({
+			open: true,
+			presentation: "expanded",
+			returnToDockedOnExpandedClose: false,
+			documents: [
+				{
+					id: "doc-1",
+					source: "knowledge_artifact",
+					filename: "document.pdf",
+					title: "Document",
+					mimeType: "application/pdf",
+					artifactId: "artifact-1",
+				},
+			],
+			availableDocuments: [],
+			activeDocumentId: "doc-1",
+			onSelectDocument: vi.fn(),
+			onOpenDocument: vi.fn(),
+			onCloseDocument: vi.fn(),
+			onCloseWorkspace,
 		});
 
 		await fireEvent.keyDown(window, { key: "Escape" });
@@ -514,28 +446,26 @@ describe("DocumentWorkspace", () => {
 	it("closes an expanded workspace when pressing outside the desktop shell", async () => {
 		const onCloseWorkspace = vi.fn();
 
-		render(DocumentWorkspace, {
-			props: {
-				open: true,
-				presentation: "expanded",
-				returnToDockedOnExpandedClose: false,
-				documents: [
-					{
-						id: "doc-1",
-						source: "knowledge_artifact",
-						filename: "document.pdf",
-						title: "Document",
-						mimeType: "application/pdf",
-						artifactId: "artifact-1",
-					},
-				],
-				availableDocuments: [],
-				activeDocumentId: "doc-1",
-				onSelectDocument: vi.fn(),
-				onOpenDocument: vi.fn(),
-				onCloseDocument: vi.fn(),
-				onCloseWorkspace,
-			},
+		renderWorkspace({
+			open: true,
+			presentation: "expanded",
+			returnToDockedOnExpandedClose: false,
+			documents: [
+				{
+					id: "doc-1",
+					source: "knowledge_artifact",
+					filename: "document.pdf",
+					title: "Document",
+					mimeType: "application/pdf",
+					artifactId: "artifact-1",
+				},
+			],
+			availableDocuments: [],
+			activeDocumentId: "doc-1",
+			onSelectDocument: vi.fn(),
+			onOpenDocument: vi.fn(),
+			onCloseDocument: vi.fn(),
+			onCloseWorkspace,
 		});
 
 		const desktopWorkspace = screen.getByRole("complementary", {
@@ -555,28 +485,26 @@ describe("DocumentWorkspace", () => {
 	it("keeps an expanded mobile workspace open when pressing inside the mobile shell", async () => {
 		const onCloseWorkspace = vi.fn();
 
-		render(DocumentWorkspace, {
-			props: {
-				open: true,
-				presentation: "expanded",
-				returnToDockedOnExpandedClose: false,
-				documents: [
-					{
-						id: "doc-1",
-						source: "knowledge_artifact",
-						filename: "document.pdf",
-						title: "Document",
-						mimeType: "application/pdf",
-						artifactId: "artifact-1",
-					},
-				],
-				availableDocuments: [],
-				activeDocumentId: "doc-1",
-				onSelectDocument: vi.fn(),
-				onOpenDocument: vi.fn(),
-				onCloseDocument: vi.fn(),
-				onCloseWorkspace,
-			},
+		renderWorkspace({
+			open: true,
+			presentation: "expanded",
+			returnToDockedOnExpandedClose: false,
+			documents: [
+				{
+					id: "doc-1",
+					source: "knowledge_artifact",
+					filename: "document.pdf",
+					title: "Document",
+					mimeType: "application/pdf",
+					artifactId: "artifact-1",
+				},
+			],
+			availableDocuments: [],
+			activeDocumentId: "doc-1",
+			onSelectDocument: vi.fn(),
+			onOpenDocument: vi.fn(),
+			onCloseDocument: vi.fn(),
+			onCloseWorkspace,
 		});
 
 		const mobileWorkspace = document.querySelector(
@@ -593,29 +521,27 @@ describe("DocumentWorkspace", () => {
 			() => new Promise(() => undefined),
 		);
 
-		render(DocumentWorkspace, {
-			props: {
-				open: true,
-				presentation: "docked",
-				documents: [
-					{
-						id: "chat-pptx",
-						source: "chat_generated_file",
-						filename: "slides.pptx",
-						title: "Slides",
-						mimeType:
-							"application/vnd.openxmlformats-officedocument.presentationml.presentation",
-						artifactId: null,
-						previewUrl: "/api/chat/files/chat-pptx/preview",
-					},
-				],
-				availableDocuments: [],
-				activeDocumentId: "chat-pptx",
-				onSelectDocument: vi.fn(),
-				onOpenDocument: vi.fn(),
-				onCloseDocument: vi.fn(),
-				onCloseWorkspace: vi.fn(),
-			},
+		renderWorkspace({
+			open: true,
+			presentation: "docked",
+			documents: [
+				{
+					id: "chat-pptx",
+					source: "chat_generated_file",
+					filename: "slides.pptx",
+					title: "Slides",
+					mimeType:
+						"application/vnd.openxmlformats-officedocument.presentationml.presentation",
+					artifactId: null,
+					previewUrl: "/api/chat/files/chat-pptx/preview",
+				},
+			],
+			availableDocuments: [],
+			activeDocumentId: "chat-pptx",
+			onSelectDocument: vi.fn(),
+			onOpenDocument: vi.fn(),
+			onCloseDocument: vi.fn(),
+			onCloseWorkspace: vi.fn(),
 		});
 
 		await waitFor(() => {
@@ -658,18 +584,16 @@ describe("DocumentWorkspace", () => {
 			},
 		];
 
-		const { rerender } = render(DocumentWorkspace, {
-			props: {
-				open: true,
-				presentation: "expanded",
-				documents,
-				availableDocuments: [],
-				activeDocumentId: "knowledge-docx",
-				onSelectDocument: vi.fn(),
-				onOpenDocument: vi.fn(),
-				onCloseDocument: vi.fn(),
-				onCloseWorkspace: vi.fn(),
-			},
+		const { rerender } = renderWorkspace({
+			open: true,
+			presentation: "expanded",
+			documents,
+			availableDocuments: [],
+			activeDocumentId: "knowledge-docx",
+			onSelectDocument: vi.fn(),
+			onOpenDocument: vi.fn(),
+			onCloseDocument: vi.fn(),
+			onCloseWorkspace: vi.fn(),
 		});
 
 		await waitFor(() => {
@@ -722,18 +646,16 @@ describe("DocumentWorkspace", () => {
 			artifactId: "artifact-image",
 		};
 
-		const { rerender } = render(DocumentWorkspace, {
-			props: {
-				open: true,
-				presentation: "docked",
-				documents: [chatImage],
-				availableDocuments: [],
-				activeDocumentId: "chat-image",
-				onSelectDocument: vi.fn(),
-				onOpenDocument: vi.fn(),
-				onCloseDocument: vi.fn(),
-				onCloseWorkspace: vi.fn(),
-			},
+		const { rerender } = renderWorkspace({
+			open: true,
+			presentation: "docked",
+			documents: [chatImage],
+			availableDocuments: [],
+			activeDocumentId: "chat-image",
+			onSelectDocument: vi.fn(),
+			onOpenDocument: vi.fn(),
+			onCloseDocument: vi.fn(),
+			onCloseWorkspace: vi.fn(),
 		});
 
 		await waitFor(() => {
@@ -788,17 +710,15 @@ describe("DocumentWorkspace", () => {
 				currentPage: 1,
 			};
 
-			render(DocumentWorkspace, {
-				props: {
-					open: true,
-					documents: [pdfDocument],
-					availableDocuments: [],
-					activeDocumentId: "doc-pdf",
-					onSelectDocument: vi.fn(),
-					onOpenDocument: vi.fn(),
-					onCloseDocument: vi.fn(),
-					onCloseWorkspace: vi.fn(),
-				},
+			renderWorkspace({
+				open: true,
+				documents: [pdfDocument],
+				availableDocuments: [],
+				activeDocumentId: "doc-pdf",
+				onSelectDocument: vi.fn(),
+				onOpenDocument: vi.fn(),
+				onCloseDocument: vi.fn(),
+				onCloseWorkspace: vi.fn(),
 			});
 
 			const desktopWorkspace = screen.getByRole("complementary", {
@@ -827,26 +747,24 @@ describe("DocumentWorkspace", () => {
 				configurable: true,
 			});
 
-			render(DocumentWorkspace, {
-				props: {
-					open: true,
-					documents: [
-						{
-							id: "doc-1",
-							source: "knowledge_artifact",
-							filename: "document.pdf",
-							title: "Document",
-							mimeType: "application/pdf",
-							artifactId: null,
-						},
-					],
-					availableDocuments: [],
-					activeDocumentId: "doc-1",
-					onSelectDocument: vi.fn(),
-					onOpenDocument: vi.fn(),
-					onCloseDocument: vi.fn(),
-					onCloseWorkspace: vi.fn(),
-				},
+			renderWorkspace({
+				open: true,
+				documents: [
+					{
+						id: "doc-1",
+						source: "knowledge_artifact",
+						filename: "document.pdf",
+						title: "Document",
+						mimeType: "application/pdf",
+						artifactId: null,
+					},
+				],
+				availableDocuments: [],
+				activeDocumentId: "doc-1",
+				onSelectDocument: vi.fn(),
+				onOpenDocument: vi.fn(),
+				onCloseDocument: vi.fn(),
+				onCloseWorkspace: vi.fn(),
 			});
 
 			const desktopWorkspace = screen.getByRole("complementary", {
@@ -857,26 +775,24 @@ describe("DocumentWorkspace", () => {
 		});
 
 		it("can be dragged to resize to a new width", async () => {
-			render(DocumentWorkspace, {
-				props: {
-					open: true,
-					documents: [
-						{
-							id: "doc-1",
-							source: "knowledge_artifact",
-							filename: "document.pdf",
-							title: "Document",
-							mimeType: "application/pdf",
-							artifactId: null,
-						},
-					],
-					availableDocuments: [],
-					activeDocumentId: "doc-1",
-					onSelectDocument: vi.fn(),
-					onOpenDocument: vi.fn(),
-					onCloseDocument: vi.fn(),
-					onCloseWorkspace: vi.fn(),
-				},
+			renderWorkspace({
+				open: true,
+				documents: [
+					{
+						id: "doc-1",
+						source: "knowledge_artifact",
+						filename: "document.pdf",
+						title: "Document",
+						mimeType: "application/pdf",
+						artifactId: null,
+					},
+				],
+				availableDocuments: [],
+				activeDocumentId: "doc-1",
+				onSelectDocument: vi.fn(),
+				onOpenDocument: vi.fn(),
+				onCloseDocument: vi.fn(),
+				onCloseWorkspace: vi.fn(),
 			});
 
 			const desktopWorkspace = screen.getByRole("complementary", {
@@ -902,26 +818,24 @@ describe("DocumentWorkspace", () => {
 		});
 
 		it("resets the docked workspace width when the resize handle is double-clicked", async () => {
-			render(DocumentWorkspace, {
-				props: {
-					open: true,
-					documents: [
-						{
-							id: "doc-1",
-							source: "knowledge_artifact",
-							filename: "document.pdf",
-							title: "Document",
-							mimeType: "application/pdf",
-							artifactId: null,
-						},
-					],
-					availableDocuments: [],
-					activeDocumentId: "doc-1",
-					onSelectDocument: vi.fn(),
-					onOpenDocument: vi.fn(),
-					onCloseDocument: vi.fn(),
-					onCloseWorkspace: vi.fn(),
-				},
+			renderWorkspace({
+				open: true,
+				documents: [
+					{
+						id: "doc-1",
+						source: "knowledge_artifact",
+						filename: "document.pdf",
+						title: "Document",
+						mimeType: "application/pdf",
+						artifactId: null,
+					},
+				],
+				availableDocuments: [],
+				activeDocumentId: "doc-1",
+				onSelectDocument: vi.fn(),
+				onOpenDocument: vi.fn(),
+				onCloseDocument: vi.fn(),
+				onCloseWorkspace: vi.fn(),
 			});
 
 			const desktopWorkspace = screen.getByRole("complementary", {
@@ -950,26 +864,24 @@ describe("DocumentWorkspace", () => {
 		});
 
 		it("respects minimum width constraint during resize", async () => {
-			render(DocumentWorkspace, {
-				props: {
-					open: true,
-					documents: [
-						{
-							id: "doc-1",
-							source: "knowledge_artifact",
-							filename: "document.pdf",
-							title: "Document",
-							mimeType: "application/pdf",
-							artifactId: null,
-						},
-					],
-					availableDocuments: [],
-					activeDocumentId: "doc-1",
-					onSelectDocument: vi.fn(),
-					onOpenDocument: vi.fn(),
-					onCloseDocument: vi.fn(),
-					onCloseWorkspace: vi.fn(),
-				},
+			renderWorkspace({
+				open: true,
+				documents: [
+					{
+						id: "doc-1",
+						source: "knowledge_artifact",
+						filename: "document.pdf",
+						title: "Document",
+						mimeType: "application/pdf",
+						artifactId: null,
+					},
+				],
+				availableDocuments: [],
+				activeDocumentId: "doc-1",
+				onSelectDocument: vi.fn(),
+				onOpenDocument: vi.fn(),
+				onCloseDocument: vi.fn(),
+				onCloseWorkspace: vi.fn(),
 			});
 
 			const desktopWorkspace = screen.getByRole("complementary", {
@@ -996,26 +908,24 @@ describe("DocumentWorkspace", () => {
 		});
 
 		it("respects maximum width constraint during resize", async () => {
-			render(DocumentWorkspace, {
-				props: {
-					open: true,
-					documents: [
-						{
-							id: "doc-1",
-							source: "knowledge_artifact",
-							filename: "document.pdf",
-							title: "Document",
-							mimeType: "application/pdf",
-							artifactId: null,
-						},
-					],
-					availableDocuments: [],
-					activeDocumentId: "doc-1",
-					onSelectDocument: vi.fn(),
-					onOpenDocument: vi.fn(),
-					onCloseDocument: vi.fn(),
-					onCloseWorkspace: vi.fn(),
-				},
+			renderWorkspace({
+				open: true,
+				documents: [
+					{
+						id: "doc-1",
+						source: "knowledge_artifact",
+						filename: "document.pdf",
+						title: "Document",
+						mimeType: "application/pdf",
+						artifactId: null,
+					},
+				],
+				availableDocuments: [],
+				activeDocumentId: "doc-1",
+				onSelectDocument: vi.fn(),
+				onOpenDocument: vi.fn(),
+				onCloseDocument: vi.fn(),
+				onCloseWorkspace: vi.fn(),
 			});
 
 			const desktopWorkspace = screen.getByRole("complementary", {
@@ -1045,26 +955,24 @@ describe("DocumentWorkspace", () => {
 
 	describe("Fade animation", () => {
 		it("has transition class for opacity/transform when opening/closing", async () => {
-			const { rerender } = render(DocumentWorkspace, {
-				props: {
-					open: false,
-					documents: [
-						{
-							id: "doc-1",
-							source: "knowledge_artifact",
-							filename: "document.pdf",
-							title: "Document",
-							mimeType: "application/pdf",
-							artifactId: null,
-						},
-					],
-					availableDocuments: [],
-					activeDocumentId: "doc-1",
-					onSelectDocument: vi.fn(),
-					onOpenDocument: vi.fn(),
-					onCloseDocument: vi.fn(),
-					onCloseWorkspace: vi.fn(),
-				},
+			const { rerender } = renderWorkspace({
+				open: false,
+				documents: [
+					{
+						id: "doc-1",
+						source: "knowledge_artifact",
+						filename: "document.pdf",
+						title: "Document",
+						mimeType: "application/pdf",
+						artifactId: null,
+					},
+				],
+				availableDocuments: [],
+				activeDocumentId: "doc-1",
+				onSelectDocument: vi.fn(),
+				onOpenDocument: vi.fn(),
+				onCloseDocument: vi.fn(),
+				onCloseWorkspace: vi.fn(),
 			});
 
 			expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
@@ -1084,26 +992,24 @@ describe("DocumentWorkspace", () => {
 		});
 
 		it("applies fade-in animation when opening", async () => {
-			const { rerender } = render(DocumentWorkspace, {
-				props: {
-					open: false,
-					documents: [
-						{
-							id: "doc-1",
-							source: "knowledge_artifact",
-							filename: "document.pdf",
-							title: "Document",
-							mimeType: "application/pdf",
-							artifactId: null,
-						},
-					],
-					availableDocuments: [],
-					activeDocumentId: "doc-1",
-					onSelectDocument: vi.fn(),
-					onOpenDocument: vi.fn(),
-					onCloseDocument: vi.fn(),
-					onCloseWorkspace: vi.fn(),
-				},
+			const { rerender } = renderWorkspace({
+				open: false,
+				documents: [
+					{
+						id: "doc-1",
+						source: "knowledge_artifact",
+						filename: "document.pdf",
+						title: "Document",
+						mimeType: "application/pdf",
+						artifactId: null,
+					},
+				],
+				availableDocuments: [],
+				activeDocumentId: "doc-1",
+				onSelectDocument: vi.fn(),
+				onOpenDocument: vi.fn(),
+				onCloseDocument: vi.fn(),
+				onCloseWorkspace: vi.fn(),
 			});
 
 			await rerender({ open: true });
@@ -1122,43 +1028,41 @@ describe("DocumentWorkspace", () => {
 		const onSelectDocument = vi.fn();
 		const onOpenDocument = vi.fn();
 
-		render(DocumentWorkspace, {
-			props: {
-				open: true,
-				documents: [
-					{
-						id: "doc-v2",
-						source: "knowledge_artifact",
-						filename: "brief-v2.pdf",
-						title: "Client Brief",
-						documentFamilyId: "family-brief",
-						documentFamilyStatus: "historical",
-						documentLabel: "Client Brief",
-						documentRole: "brief",
-						versionNumber: 2,
-						mimeType: "application/pdf",
-						artifactId: null,
-					},
-					{
-						id: "doc-v1",
-						source: "knowledge_artifact",
-						filename: "brief-v1.pdf",
-						title: "Client Brief",
-						documentFamilyId: "family-brief",
-						documentLabel: "Client Brief",
-						documentRole: "brief",
-						versionNumber: 1,
-						mimeType: "application/pdf",
-						artifactId: null,
-					},
-				],
-				availableDocuments: [],
-				activeDocumentId: "doc-v2",
-				onSelectDocument,
-				onOpenDocument,
-				onCloseDocument: vi.fn(),
-				onCloseWorkspace: vi.fn(),
-			},
+		renderWorkspace({
+			open: true,
+			documents: [
+				{
+					id: "doc-v2",
+					source: "knowledge_artifact",
+					filename: "brief-v2.pdf",
+					title: "Client Brief",
+					documentFamilyId: "family-brief",
+					documentFamilyStatus: "historical",
+					documentLabel: "Client Brief",
+					documentRole: "brief",
+					versionNumber: 2,
+					mimeType: "application/pdf",
+					artifactId: null,
+				},
+				{
+					id: "doc-v1",
+					source: "knowledge_artifact",
+					filename: "brief-v1.pdf",
+					title: "Client Brief",
+					documentFamilyId: "family-brief",
+					documentLabel: "Client Brief",
+					documentRole: "brief",
+					versionNumber: 1,
+					mimeType: "application/pdf",
+					artifactId: null,
+				},
+			],
+			availableDocuments: [],
+			activeDocumentId: "doc-v2",
+			onSelectDocument,
+			onOpenDocument,
+			onCloseDocument: vi.fn(),
+			onCloseWorkspace: vi.fn(),
 		});
 
 		const desktopWorkspace = screen.getByRole("complementary", {
@@ -1204,43 +1108,41 @@ describe("DocumentWorkspace", () => {
 		const onSelectDocument = vi.fn();
 		const onOpenDocument = vi.fn();
 
-		render(DocumentWorkspace, {
-			props: {
-				open: true,
-				documents: [
-					{
-						id: "doc-v2",
-						source: "knowledge_artifact",
-						filename: "brief-v2.pdf",
-						title: "Client Brief",
-						documentFamilyId: "family-brief",
-						documentLabel: "Client Brief",
-						documentRole: "brief",
-						versionNumber: 2,
-						mimeType: "application/pdf",
-						artifactId: null,
-					},
-				],
-				availableDocuments: [
-					{
-						id: "doc-v3",
-						source: "knowledge_artifact",
-						filename: "brief-v3.pdf",
-						title: "Client Brief",
-						documentFamilyId: "family-brief",
-						documentLabel: "Client Brief",
-						documentRole: "brief",
-						versionNumber: 3,
-						mimeType: "application/pdf",
-						artifactId: "artifact-v3",
-					},
-				],
-				activeDocumentId: "doc-v2",
-				onSelectDocument,
-				onOpenDocument,
-				onCloseDocument: vi.fn(),
-				onCloseWorkspace: vi.fn(),
-			},
+		renderWorkspace({
+			open: true,
+			documents: [
+				{
+					id: "doc-v2",
+					source: "knowledge_artifact",
+					filename: "brief-v2.pdf",
+					title: "Client Brief",
+					documentFamilyId: "family-brief",
+					documentLabel: "Client Brief",
+					documentRole: "brief",
+					versionNumber: 2,
+					mimeType: "application/pdf",
+					artifactId: null,
+				},
+			],
+			availableDocuments: [
+				{
+					id: "doc-v3",
+					source: "knowledge_artifact",
+					filename: "brief-v3.pdf",
+					title: "Client Brief",
+					documentFamilyId: "family-brief",
+					documentLabel: "Client Brief",
+					documentRole: "brief",
+					versionNumber: 3,
+					mimeType: "application/pdf",
+					artifactId: "artifact-v3",
+				},
+			],
+			activeDocumentId: "doc-v2",
+			onSelectDocument,
+			onOpenDocument,
+			onCloseDocument: vi.fn(),
+			onCloseWorkspace: vi.fn(),
 		});
 
 		const desktopWorkspace = screen.getByRole("complementary", {
@@ -1260,33 +1162,31 @@ describe("DocumentWorkspace", () => {
 	it("uses the header document title as the source-message affordance for origin metadata", async () => {
 		const onJumpToSource = vi.fn();
 
-		render(DocumentWorkspace, {
-			props: {
-				open: true,
-				documents: [
-					{
-						id: "doc-v2",
-						source: "knowledge_artifact",
-						filename: "brief-v2.pdf",
-						title: "Client Brief",
-						documentFamilyId: "family-brief",
-						documentLabel: "Client Brief",
-						documentRole: "brief",
-						versionNumber: 2,
-						originConversationId: "conv-1",
-						originAssistantMessageId: "assistant-1",
-						mimeType: "application/pdf",
-						artifactId: null,
-					},
-				],
-				availableDocuments: [],
-				activeDocumentId: "doc-v2",
-				onSelectDocument: vi.fn(),
-				onOpenDocument: vi.fn(),
-				onJumpToSource,
-				onCloseDocument: vi.fn(),
-				onCloseWorkspace: vi.fn(),
-			},
+		renderWorkspace({
+			open: true,
+			documents: [
+				{
+					id: "doc-v2",
+					source: "knowledge_artifact",
+					filename: "brief-v2.pdf",
+					title: "Client Brief",
+					documentFamilyId: "family-brief",
+					documentLabel: "Client Brief",
+					documentRole: "brief",
+					versionNumber: 2,
+					originConversationId: "conv-1",
+					originAssistantMessageId: "assistant-1",
+					mimeType: "application/pdf",
+					artifactId: null,
+				},
+			],
+			availableDocuments: [],
+			activeDocumentId: "doc-v2",
+			onSelectDocument: vi.fn(),
+			onOpenDocument: vi.fn(),
+			onJumpToSource,
+			onCloseDocument: vi.fn(),
+			onCloseWorkspace: vi.fn(),
 		});
 
 		const desktopWorkspace = screen.getByRole("complementary", {
@@ -1348,43 +1248,41 @@ describe("DocumentWorkspace", () => {
 			},
 		);
 
-		render(DocumentWorkspace, {
-			props: {
-				open: true,
-				documents: [
-					{
-						id: "doc-v2",
-						source: "knowledge_artifact",
-						filename: "brief-v2.md",
-						title: "Client Brief",
-						documentFamilyId: "family-brief",
-						documentLabel: "Client Brief",
-						documentRole: "brief",
-						versionNumber: 2,
-						mimeType: "text/markdown",
-						artifactId: "artifact-v2",
-					},
-				],
-				availableDocuments: [
-					{
-						id: "doc-v1",
-						source: "knowledge_artifact",
-						filename: "brief-v1.md",
-						title: "Client Brief",
-						documentFamilyId: "family-brief",
-						documentLabel: "Client Brief",
-						documentRole: "brief",
-						versionNumber: 1,
-						mimeType: "text/markdown",
-						artifactId: "artifact-v1",
-					},
-				],
-				activeDocumentId: "doc-v2",
-				onSelectDocument: vi.fn(),
-				onOpenDocument: vi.fn(),
-				onCloseDocument: vi.fn(),
-				onCloseWorkspace: vi.fn(),
-			},
+		renderWorkspace({
+			open: true,
+			documents: [
+				{
+					id: "doc-v2",
+					source: "knowledge_artifact",
+					filename: "brief-v2.md",
+					title: "Client Brief",
+					documentFamilyId: "family-brief",
+					documentLabel: "Client Brief",
+					documentRole: "brief",
+					versionNumber: 2,
+					mimeType: "text/markdown",
+					artifactId: "artifact-v2",
+				},
+			],
+			availableDocuments: [
+				{
+					id: "doc-v1",
+					source: "knowledge_artifact",
+					filename: "brief-v1.md",
+					title: "Client Brief",
+					documentFamilyId: "family-brief",
+					documentLabel: "Client Brief",
+					documentRole: "brief",
+					versionNumber: 1,
+					mimeType: "text/markdown",
+					artifactId: "artifact-v1",
+				},
+			],
+			activeDocumentId: "doc-v2",
+			onSelectDocument: vi.fn(),
+			onOpenDocument: vi.fn(),
+			onCloseDocument: vi.fn(),
+			onCloseWorkspace: vi.fn(),
 		});
 
 		const desktopWorkspace = screen.getByRole("complementary", {
@@ -1437,26 +1335,24 @@ describe("DocumentWorkspace", () => {
 
 	it("keeps mobile workspace taps inside the workspace and only closes on backdrop taps", async () => {
 		const onCloseWorkspace = vi.fn();
-		const { container } = render(DocumentWorkspace, {
-			props: {
-				open: true,
-				documents: [
-					{
-						id: "doc-1",
-						source: "knowledge_artifact",
-						filename: "notes.txt",
-						title: "Notes",
-						mimeType: "text/plain",
-						artifactId: null,
-					},
-				],
-				availableDocuments: [],
-				activeDocumentId: "doc-1",
-				onSelectDocument: vi.fn(),
-				onOpenDocument: vi.fn(),
-				onCloseDocument: vi.fn(),
-				onCloseWorkspace,
-			},
+		const { container } = renderWorkspace({
+			open: true,
+			documents: [
+				{
+					id: "doc-1",
+					source: "knowledge_artifact",
+					filename: "notes.txt",
+					title: "Notes",
+					mimeType: "text/plain",
+					artifactId: null,
+				},
+			],
+			availableDocuments: [],
+			activeDocumentId: "doc-1",
+			onSelectDocument: vi.fn(),
+			onOpenDocument: vi.fn(),
+			onCloseDocument: vi.fn(),
+			onCloseWorkspace,
 		});
 
 		const mobileBackdrop = container.querySelector(
