@@ -52,68 +52,46 @@ type RequestBody = {
 	forceWebSearch?: unknown;
 };
 
+type ParsedStreamIds = {
+	streamId: string | undefined;
+	reconnectToStreamId: string | undefined;
+};
+
+type ParsedMessage = {
+	normalizedMessage: string;
+	streamIds: ParsedStreamIds;
+};
+
+type ModelSelectionState = {
+	modelId: ModelId | undefined;
+	modelDisplayName: string;
+	providerDisplayName: string | undefined;
+	resolvedMaxMessageLength: number | null;
+};
+
+type ModelSelectionOutcome =
+	| { ok: false; error: ChatTurnRequestError }
+	| { ok: true; value: ModelSelectionState };
+
 export async function parseChatTurnRequest(
 	request: Request,
 	runtimeConfig: RuntimeConfig,
 	route: ChatTurnRoute,
 ): Promise<ParseResult> {
-	let body: RequestBody;
-	try {
-		body = await request.json();
-	} catch {
-		return { ok: false, error: { status: 400, error: "Invalid JSON body" } };
+	const bodyResult = await parseJsonBody(request);
+	if (!bodyResult.ok) {
+		return bodyResult;
 	}
 
-	const {
-		message,
-		userMessage,
-		conversationId,
-		streamId,
-		reconnectToStreamId,
-		model,
-		skipPersistUserMessage,
-		attachmentIds,
-		linkedSources,
-		pendingSkill,
-		activeDocumentArtifactId,
-		personalityProfileId,
-		deepResearch,
-		deepResearchDepth,
-		reasoningDepth,
-		thinkingMode,
-		forceWebSearch,
-	} = body;
-
-	const safeStreamId =
-		typeof streamId === "string" && streamId.trim().length > 0
-			? streamId.trim()
-			: undefined;
-	const safeReconnectToStreamId =
-		typeof reconnectToStreamId === "string" &&
-		reconnectToStreamId.trim().length > 0
-			? reconnectToStreamId.trim()
-			: undefined;
-
-	// Allow empty message only when explicitly reconnecting to an existing stream.
-	const isReconnect = Boolean(safeReconnectToStreamId);
-
-	const rawMessage =
-		isReconnect && typeof userMessage === "string" ? userMessage : message;
-	const normalizedMessage =
-		typeof rawMessage === "string" ? rawMessage.trim() : "";
-
-	if (!isReconnect && normalizedMessage.length === 0) {
-		return {
-			ok: false,
-			error: { status: 400, error: "Message must be a non-empty string" },
-		};
+	const body = bodyResult.value;
+	const parsedMessage = parseRequestMessage(body);
+	if (!parsedMessage.ok) {
+		return parsedMessage;
 	}
-	// Message length validation deferred to after model resolution below
-	// (per-model maxMessageLength may differ from global)
 
 	if (
-		typeof conversationId !== "string" ||
-		conversationId.trim().length === 0
+		typeof body.conversationId !== "string" ||
+		body.conversationId.trim().length === 0
 	) {
 		return {
 			ok: false,
@@ -121,72 +99,15 @@ export async function parseChatTurnRequest(
 		};
 	}
 
-	let modelId: ModelId | undefined;
-	let modelDisplayName: string;
-	let providerDisplayName: string | undefined;
-	let resolvedMaxMessageLength: number | null = null;
-
-	const modelStr = typeof model === "string" ? model.trim() : "";
-
-	if (modelStr === "model1" || modelStr === "model2") {
-		const newProvider = await resolveModelFromNewProvidersTable(modelStr);
-		if (newProvider) {
-			modelId = modelStr as ModelId;
-			modelDisplayName = newProvider.displayName;
-			resolvedMaxMessageLength = newProvider.maxMessageLength ?? null;
-		} else {
-			modelId = normalizeModelSelection(modelStr, runtimeConfig);
-			modelDisplayName =
-				modelId === "model2"
-					? runtimeConfig.model2.displayName
-					: runtimeConfig.model1.displayName;
-		}
-	} else if (modelStr.startsWith("provider:")) {
-		const providerId = modelStr.slice("provider:".length);
-		if (providerId.length > 0) {
-			const actualProviderId = providerId.includes(":")
-				? providerId.split(":")[0]
-				: providerId;
-			const provider = await getProviderWithSecrets(actualProviderId).catch(
-				() => null,
-			);
-			if (!provider?.enabled) {
-				return {
-					ok: false,
-					error: {
-						status: 400,
-						error: "Selected provider model is not available",
-					},
-				};
-			}
-			modelId = modelStr as ModelId;
-			providerDisplayName = provider.displayName;
-			if (providerId.includes(":")) {
-				const modelUuid = providerId.split(":")[1];
-				const models = await listEnabledProviderModels(actualProviderId).catch(
-					() => [],
-				);
-				const found = models.find((m) => m.id === modelUuid);
-				modelDisplayName = found?.displayName || provider.displayName;
-				if (found) resolvedMaxMessageLength = found.maxMessageLength ?? null;
-			} else {
-				modelDisplayName = provider.displayName;
-			}
-		} else {
-			modelId = undefined;
-			modelDisplayName = runtimeConfig.model1.displayName;
-		}
-	} else if (modelStr !== "") {
-		modelId = undefined;
-		modelDisplayName = runtimeConfig.model1.displayName;
-	} else {
-		modelId = "model1";
-		modelDisplayName = runtimeConfig.model1.displayName;
+	const modelResult = await resolveModelSelection(body.model, runtimeConfig);
+	if (!modelResult.ok) {
+		return modelResult;
 	}
 
-	// Per-model message length check
-	const maxLen = resolvedMaxMessageLength ?? getMaxMessageLength(modelId);
-	if (normalizedMessage.length > maxLen) {
+	const maxLen =
+		modelResult.value.resolvedMaxMessageLength ??
+		getMaxMessageLength(modelResult.value.modelId);
+	if (parsedMessage.value.normalizedMessage.length > maxLen) {
 		return {
 			ok: false,
 			error: {
@@ -196,57 +117,237 @@ export async function parseChatTurnRequest(
 		};
 	}
 
-	const safeAttachmentIds = Array.isArray(attachmentIds)
-		? attachmentIds.filter((id): id is string => typeof id === "string")
-		: [];
-	const safeLinkedSources = parseLinkedSources(linkedSources);
-	const safePendingSkill = parsePendingSkill(pendingSkill);
-	const selectedDeepResearchDepth = parseDeepResearchDepth(
-		deepResearch,
-		deepResearchDepth,
+	const safeAttachmentIds = parseAttachmentIds(body.attachmentIds);
+	const deepResearchDepth = parseDeepResearchDepth(
+		body.deepResearch,
+		body.deepResearchDepth,
 	);
-	const selectedReasoningDepth = parseReasoningDepth(
-		reasoningDepth,
-		thinkingMode,
-	);
-	const selectedThinkingMode = reasoningDepthToThinkingMode(
-		selectedReasoningDepth,
+	const reasoningDepth = parseReasoningDepth(
+		body.reasoningDepth,
+		body.thinkingMode,
 	);
 
 	return {
 		ok: true,
 		value: {
-			conversationId,
-			normalizedMessage,
-			streamId: safeReconnectToStreamId ?? safeStreamId,
-			reconnectToStreamId: safeReconnectToStreamId,
-			modelId,
-			modelDisplayName,
-			providerDisplayName,
+			conversationId: body.conversationId,
+			normalizedMessage: parsedMessage.value.normalizedMessage,
+			streamId: parsedMessage.value.streamIds.streamId,
+			reconnectToStreamId: parsedMessage.value.streamIds.reconnectToStreamId,
+			modelId: modelResult.value.modelId,
+			modelDisplayName: modelResult.value.modelDisplayName,
+			providerDisplayName: modelResult.value.providerDisplayName,
 			attachmentIds: safeAttachmentIds,
-			linkedSources: safeLinkedSources,
-			pendingSkill: selectedDeepResearchDepth ? null : safePendingSkill,
+			linkedSources: parseLinkedSources(body.linkedSources),
+			pendingSkill: deepResearchDepth
+				? null
+				: parsePendingSkill(body.pendingSkill),
 			activeDocumentArtifactId:
-				typeof activeDocumentArtifactId === "string" &&
-				activeDocumentArtifactId.trim().length > 0
-					? activeDocumentArtifactId.trim()
+				typeof body.activeDocumentArtifactId === "string" &&
+				body.activeDocumentArtifactId.trim().length > 0
+					? body.activeDocumentArtifactId.trim()
 					: undefined,
 			personalityProfileId:
-				typeof personalityProfileId === "string" &&
-				personalityProfileId.trim().length > 0
-					? personalityProfileId.trim()
+				typeof body.personalityProfileId === "string" &&
+				body.personalityProfileId.trim().length > 0
+					? body.personalityProfileId.trim()
 					: undefined,
-			deepResearchDepth: selectedDeepResearchDepth,
-			reasoningDepth: selectedReasoningDepth,
-			thinkingMode: selectedThinkingMode,
-			forceWebSearch: forceWebSearch === true,
-			skipPersistUserMessage: skipPersistUserMessage === true,
+			deepResearchDepth,
+			reasoningDepth,
+			thinkingMode: reasoningDepthToThinkingMode(reasoningDepth),
+			forceWebSearch: body.forceWebSearch === true,
+			skipPersistUserMessage: body.skipPersistUserMessage === true,
 			attachmentTraceId:
 				safeAttachmentIds.length > 0
 					? createAttachmentTraceId(route)
 					: undefined,
 		},
 	};
+}
+
+async function parseJsonBody(
+	request: Request,
+): Promise<
+	{ ok: true; value: RequestBody } | { ok: false; error: ChatTurnRequestError }
+> {
+	try {
+		const body = await request.json();
+		return { ok: true, value: body as RequestBody };
+	} catch {
+		return { ok: false, error: { status: 400, error: "Invalid JSON body" } };
+	}
+}
+
+function parseRequestMessage(
+	body: RequestBody,
+):
+	| { ok: true; value: ParsedMessage }
+	| { ok: false; error: ChatTurnRequestError } {
+	const safeStreamId = normalizeStreamId(body.streamId);
+	const safeReconnectToStreamId = normalizeStreamId(body.reconnectToStreamId);
+
+	const isReconnect = Boolean(safeReconnectToStreamId);
+	const rawMessage =
+		isReconnect && typeof body.userMessage === "string"
+			? body.userMessage
+			: body.message;
+	const normalizedMessage =
+		typeof rawMessage === "string" ? rawMessage.trim() : "";
+
+	if (!isReconnect && normalizedMessage.length === 0) {
+		return {
+			ok: false,
+			error: { status: 400, error: "Message must be a non-empty string" },
+		};
+	}
+
+	return {
+		ok: true,
+		value: {
+			normalizedMessage,
+			streamIds: {
+				streamId: safeReconnectToStreamId ?? safeStreamId,
+				reconnectToStreamId: safeReconnectToStreamId,
+			},
+		},
+	};
+}
+
+function normalizeStreamId(value: unknown): string | undefined {
+	return typeof value === "string" && value.trim().length > 0
+		? value.trim()
+		: undefined;
+}
+
+async function resolveModelSelection(
+	model: unknown,
+	runtimeConfig: RuntimeConfig,
+): Promise<ModelSelectionOutcome> {
+	const modelStr = typeof model === "string" ? model.trim() : "";
+
+	if (modelStr === "model1" || modelStr === "model2") {
+		const providerModel = await resolveModelFromNewProvidersTable(modelStr);
+		if (providerModel) {
+			return {
+				ok: true,
+				value: {
+					modelId: modelStr as ModelId,
+					modelDisplayName: providerModel.displayName,
+					providerDisplayName: undefined,
+					resolvedMaxMessageLength: providerModel.maxMessageLength,
+				},
+			};
+		}
+
+		const resolvedModelId = normalizeModelSelection(modelStr, runtimeConfig);
+		return {
+			ok: true,
+			value: {
+				modelId: resolvedModelId,
+				modelDisplayName:
+					resolvedModelId === "model2"
+						? runtimeConfig.model2.displayName
+						: runtimeConfig.model1.displayName,
+				providerDisplayName: undefined,
+				resolvedMaxMessageLength: null,
+			},
+		};
+	}
+
+	if (modelStr.startsWith("provider:")) {
+		return resolveProviderModelSelection(modelStr, runtimeConfig);
+	}
+
+	if (modelStr !== "") {
+		return {
+			ok: true,
+			value: {
+				modelId: undefined,
+				modelDisplayName: runtimeConfig.model1.displayName,
+				providerDisplayName: undefined,
+				resolvedMaxMessageLength: null,
+			},
+		};
+	}
+
+	return {
+		ok: true,
+		value: {
+			modelId: "model1",
+			modelDisplayName: runtimeConfig.model1.displayName,
+			providerDisplayName: undefined,
+			resolvedMaxMessageLength: null,
+		},
+	};
+}
+
+async function resolveProviderModelSelection(
+	providerValue: string,
+	runtimeConfig: RuntimeConfig,
+): Promise<ModelSelectionOutcome> {
+	const providerId = providerValue.slice("provider:".length);
+	if (providerId.length === 0) {
+		return {
+			ok: true,
+			value: {
+				modelId: undefined,
+				modelDisplayName: runtimeConfig.model1.displayName,
+				providerDisplayName: undefined,
+				resolvedMaxMessageLength: null,
+			},
+		};
+	}
+
+	const actualProviderId = providerId.includes(":")
+		? providerId.split(":")[0]
+		: providerId;
+	const provider = await getProviderWithSecrets(actualProviderId).catch(
+		() => null,
+	);
+	if (!provider?.enabled) {
+		return {
+			ok: false,
+			error: {
+				status: 400,
+				error: "Selected provider model is not available",
+			},
+		};
+	}
+
+	if (!providerId.includes(":")) {
+		return {
+			ok: true,
+			value: {
+				modelId: providerValue as ModelId,
+				modelDisplayName: provider.displayName,
+				providerDisplayName: provider.displayName,
+				resolvedMaxMessageLength: null,
+			},
+		};
+	}
+
+	const modelUuid = providerId.split(":")[1];
+	const models = await listEnabledProviderModels(actualProviderId).catch(
+		() => [],
+	);
+	const found = models.find((m) => m.id === modelUuid);
+	return {
+		ok: true,
+		value: {
+			modelId: providerValue as ModelId,
+			modelDisplayName: found?.displayName ?? provider.displayName,
+			providerDisplayName: provider.displayName,
+			resolvedMaxMessageLength: found?.maxMessageLength ?? null,
+		},
+	};
+}
+
+function parseAttachmentIds(value: unknown): string[] {
+	return Array.isArray(value)
+		? value.filter(
+				(candidate): candidate is string => typeof candidate === "string",
+			)
+		: [];
 }
 
 function parsePendingSkill(value: unknown): PendingSkillSelection | null {
@@ -309,10 +410,6 @@ function parseDeepResearchDepth(
 	return isDeepResearchDepth(nestedDepth) ? nestedDepth : undefined;
 }
 
-function isDeepResearchDepth(value: string): value is DeepResearchDepth {
-	return value === "focused" || value === "standard" || value === "max";
-}
-
 function parseReasoningDepth(
 	value: unknown,
 	legacyThinkingMode: unknown,
@@ -323,6 +420,10 @@ function parseReasoningDepth(
 
 function parseThinkingMode(value: unknown): ThinkingMode {
 	return value === "on" || value === "off" || value === "auto" ? value : "auto";
+}
+
+function isDeepResearchDepth(value: string): value is DeepResearchDepth {
+	return value === "focused" || value === "standard" || value === "max";
 }
 
 type ModelFromProvidersTable = {
