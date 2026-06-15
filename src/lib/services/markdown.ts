@@ -722,7 +722,6 @@ function createMarkdownRenderer(
 export {
 	collectSourceReferenceCandidates,
 	initHighlighter,
-	normalizeLanguage,
 	prepareCodeHighlighting,
 	type RenderMarkdownOptions,
 	renderCodeBlock,

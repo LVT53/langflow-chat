@@ -1,11 +1,8 @@
-import type { KnowledgeBulkAction } from "$lib/client/api/knowledge";
 import { resolveWorkingDocumentIdentity } from "$lib/services/working-document-identity";
 import type {
 	DocumentWorkspaceItem,
-	FocusContinuityItem,
 	KnowledgeDocumentItem,
 	PersonaMemoryItem,
-	TaskMemoryItem,
 } from "$lib/types";
 import { formatMediumDateTime } from "$lib/utils/time";
 
@@ -29,7 +26,7 @@ export function getDefaultPersonaMemoryFilter(
 	return "active";
 }
 
-export function getPrimaryPersonaScope(
+function getPrimaryPersonaScope(
 	memory: PersonaMemoryItem,
 ): "self" | "assistant_about_user" {
 	return memory.members[0]?.scope ?? "self";
@@ -80,10 +77,6 @@ export function getPersonaRowKey(
 	return `${memory.state}:${memory.id}:${index}`;
 }
 
-export function getLibraryBulkAction(): KnowledgeBulkAction {
-	return "forget_all_documents";
-}
-
 export function getLibraryBulkKey(): string {
 	return "forget-all-documents";
 }
@@ -92,21 +85,10 @@ export function getLibraryBulkLabel(): string {
 	return "Forget all documents";
 }
 
-export function getLibraryBulkConfirmation(): string {
-	return "Forget all documents from the Knowledge Base? This removes uploaded files and their normalized text artifacts.";
-}
-
 export function getLibraryItemCount(params: {
 	documents: KnowledgeDocumentItem[];
 }): number {
 	return params.documents.length;
-}
-
-export function getFocusContinuityItemCount(params: {
-	taskMemories: TaskMemoryItem[];
-	focusContinuities: FocusContinuityItem[];
-}): number {
-	return params.taskMemories.length + params.focusContinuities.length;
 }
 
 // Workspace document helpers

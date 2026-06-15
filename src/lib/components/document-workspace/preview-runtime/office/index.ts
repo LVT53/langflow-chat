@@ -304,7 +304,7 @@ function formatXlsxDateForPreview(value: Date): string {
 	return `${year}-${month}-${day}`;
 }
 
-export function formatXlsxCellValueForPreview(value: unknown): string {
+function formatXlsxCellValueForPreview(value: unknown): string {
 	if (value == null) return "";
 	if (value instanceof Date) return formatXlsxDateForPreview(value);
 	if (typeof value === "string") return value;
@@ -350,7 +350,7 @@ export function formatXlsxCellValueForPreview(value: unknown): string {
 	return "";
 }
 
-export function formatXlsxCellForPreview(cell: XlsxCellLike): string {
+function formatXlsxCellForPreview(cell: XlsxCellLike): string {
 	if (cell.result instanceof Date) {
 		return formatXlsxCellValueForPreview(cell.result);
 	}

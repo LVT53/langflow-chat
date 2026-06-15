@@ -37,6 +37,45 @@ type CampaignAssetResponse = {
 	asset: CampaignAsset;
 };
 
+type CampaignAssetImageFormInput = {
+	image: File;
+	width?: number;
+	height?: number;
+};
+
+type CampaignAssetCropFormInput = CampaignAssetImageFormInput & {
+	crop: CampaignAssetCropGeometry;
+};
+
+function appendOptionalImageDimensions(
+	formData: FormData,
+	input: Pick<CampaignAssetImageFormInput, "width" | "height">,
+): void {
+	if (input.width) formData.set("width", String(input.width));
+	if (input.height) formData.set("height", String(input.height));
+}
+
+function createCampaignAssetUploadFormData(
+	input: CampaignAssetImageFormInput,
+): FormData {
+	const formData = new FormData();
+	formData.set("image", input.image);
+	appendOptionalImageDimensions(formData, input);
+	return formData;
+}
+
+function createCampaignAssetCropFormData(
+	input: CampaignAssetCropFormInput,
+	options: { variant?: CampaignAssetVariant } = {},
+): FormData {
+	const formData = new FormData();
+	formData.set("image", input.image);
+	if (options.variant) formData.set("variant", options.variant);
+	formData.set("crop", JSON.stringify(input.crop));
+	appendOptionalImageDimensions(formData, input);
+	return formData;
+}
+
 export async function uploadCampaignAssetSource(
 	input: {
 		image: File;
@@ -45,10 +84,7 @@ export async function uploadCampaignAssetSource(
 	},
 	fetchImpl: FetchLike = fetch,
 ): Promise<CampaignAsset> {
-	const formData = new FormData();
-	formData.set("image", input.image);
-	if (input.width) formData.set("width", String(input.width));
-	if (input.height) formData.set("height", String(input.height));
+	const formData = createCampaignAssetUploadFormData(input);
 
 	const response = await requestJson<CampaignAssetResponse>(
 		"/api/admin/campaigns/assets/upload",
@@ -67,10 +103,7 @@ export async function uploadModelIconAsset(
 	},
 	fetchImpl: FetchLike = fetch,
 ): Promise<CampaignAsset> {
-	const formData = new FormData();
-	formData.set("image", input.image);
-	if (input.width) formData.set("width", String(input.width));
-	if (input.height) formData.set("height", String(input.height));
+	const formData = createCampaignAssetUploadFormData(input);
 
 	const response = await requestJson<CampaignAssetResponse>(
 		"/api/admin/model-icons/upload",
@@ -91,11 +124,7 @@ export async function saveModelIconAssetCrop(
 	},
 	fetchImpl: FetchLike = fetch,
 ): Promise<CampaignAsset> {
-	const formData = new FormData();
-	formData.set("image", input.image);
-	formData.set("crop", JSON.stringify(input.crop));
-	if (input.width) formData.set("width", String(input.width));
-	if (input.height) formData.set("height", String(input.height));
+	const formData = createCampaignAssetCropFormData(input);
 
 	const response = await requestJson<CampaignAssetResponse>(
 		`/api/admin/model-icons/${encodeURIComponent(input.sourceAssetId)}/crop`,
@@ -117,12 +146,9 @@ export async function saveCampaignAssetCrop(
 	},
 	fetchImpl: FetchLike = fetch,
 ): Promise<CampaignAsset> {
-	const formData = new FormData();
-	formData.set("image", input.image);
-	formData.set("variant", input.variant);
-	formData.set("crop", JSON.stringify(input.crop));
-	if (input.width) formData.set("width", String(input.width));
-	if (input.height) formData.set("height", String(input.height));
+	const formData = createCampaignAssetCropFormData(input, {
+		variant: input.variant,
+	});
 
 	const response = await requestJson<CampaignAssetResponse>(
 		`/api/admin/campaigns/assets/${encodeURIComponent(input.sourceAssetId)}/crop`,

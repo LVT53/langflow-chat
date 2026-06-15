@@ -110,14 +110,14 @@ export function renderCsvPreviewHtml(csvText: string): string {
 	return html;
 }
 
-export async function renderMarkdownPreviewHtml(
+async function renderMarkdownPreviewHtml(
 	content: string,
 	options: { isDark?: boolean } = {},
 ): Promise<string> {
 	return renderMarkdown(content, options.isDark ?? false);
 }
 
-export async function renderHighlightedPreviewHtml(
+async function renderHighlightedPreviewHtml(
 	content: string,
 	language: string | undefined,
 	options: { isDark?: boolean } = {},
@@ -140,7 +140,7 @@ export function buildStaticHtmlPreviewSrcdoc(content: string): string {
 	return `<!doctype html><html><head><base target="_blank"><meta charset="utf-8">${styleBlock}</head><body>${safeHtmlWithSafeInlineStyles}</body></html>`;
 }
 
-export function extractLocalStyleBlocks(content: string): {
+function extractLocalStyleBlocks(content: string): {
 	html: string;
 	css: string;
 } {
@@ -155,7 +155,7 @@ export function extractLocalStyleBlocks(content: string): {
 	return { html, css };
 }
 
-export function sanitizeLocalCss(css: string): string {
+function sanitizeLocalCss(css: string): string {
 	return css
 		.replace(/@import[^;]+;?/gi, "")
 		.replace(/(?:-webkit-)?image-set\s*\([^)]*\)/gi, "none")

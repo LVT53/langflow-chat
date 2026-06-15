@@ -185,7 +185,7 @@ vi.mock("./document-resolution", async (importOriginal) => {
 	};
 });
 
-vi.mock("../memory-events", () => ({
+vi.mock("./memory-events", () => ({
 	countRecentMemoryEventsBySubject: (...args: unknown[]) =>
 		mockCountRecentMemoryEventsBySubject(...args),
 }));

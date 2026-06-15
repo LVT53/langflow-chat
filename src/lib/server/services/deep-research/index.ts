@@ -584,15 +584,7 @@ export async function cancelPrePlanDeepResearchJob(
 		.returning();
 
 	if (!job) return null;
-	const currentPlans = await loadCurrentPlansByJobId([job.id]);
-	const timelineEvents = await loadTimelineEventsByJobId(input.userId, [
-		job.id,
-	]);
-	return mapDeepResearchJob(
-		job,
-		currentPlans.get(job.id) ?? null,
-		timelineEvents.get(job.id) ?? [],
-	);
+	return mapDeepResearchJobWithCurrentPlanAndTimeline(input.userId, job);
 }
 
 export async function editDeepResearchPlan(
@@ -715,15 +707,7 @@ export async function approveDeepResearchPlan(
 
 	if (!job) return null;
 	if (job.status === "approved") {
-		const currentPlans = await loadCurrentPlansByJobId([job.id]);
-		const timelineEvents = await loadTimelineEventsByJobId(input.userId, [
-			job.id,
-		]);
-		return mapDeepResearchJob(
-			job,
-			currentPlans.get(job.id) ?? null,
-			timelineEvents.get(job.id) ?? [],
-		);
+		return mapDeepResearchJobWithCurrentPlanAndTimeline(input.userId, job);
 	}
 	const approvingPlanRevisionRecovery =
 		job.status === "completed" && job.stage === "plan_revision_needed";
@@ -915,15 +899,7 @@ export async function completeDeepResearchJobWithAuditedReport(
 
 	if (!job) return null;
 	if (job.status === "completed" && job.reportArtifactId) {
-		const currentPlans = await loadCurrentPlansByJobId([job.id]);
-		const timelineEvents = await loadTimelineEventsByJobId(input.userId, [
-			job.id,
-		]);
-		return mapDeepResearchJob(
-			job,
-			currentPlans.get(job.id) ?? null,
-			timelineEvents.get(job.id) ?? [],
-		);
+		return mapDeepResearchJobWithCurrentPlanAndTimeline(input.userId, job);
 	}
 	if (job.status !== "approved" && job.status !== "running") {
 		return null;
@@ -2057,15 +2033,7 @@ export async function completeDeepResearchJobWithEvidenceLimitationMemo(
 		job.stage === "evidence_limitation_memo_ready" &&
 		job.reportArtifactId
 	) {
-		const currentPlans = await loadCurrentPlansByJobId([job.id]);
-		const timelineEvents = await loadTimelineEventsByJobId(input.userId, [
-			job.id,
-		]);
-		return mapDeepResearchJob(
-			job,
-			currentPlans.get(job.id) ?? null,
-			timelineEvents.get(job.id) ?? [],
-		);
+		return mapDeepResearchJobWithCurrentPlanAndTimeline(input.userId, job);
 	}
 	if (job.status !== "approved" && job.status !== "running") {
 		return null;
@@ -3305,6 +3273,19 @@ async function loadTimelineEventsByJobId(
 		]);
 	}
 	return timelineByJobId;
+}
+
+async function mapDeepResearchJobWithCurrentPlanAndTimeline(
+	userId: string,
+	job: DeepResearchJobRow,
+): Promise<DeepResearchJob> {
+	const currentPlans = await loadCurrentPlansByJobId([job.id]);
+	const timelineEvents = await loadTimelineEventsByJobId(userId, [job.id]);
+	return mapDeepResearchJob(
+		job,
+		currentPlans.get(job.id) ?? null,
+		timelineEvents.get(job.id) ?? [],
+	);
 }
 
 type SourceLedgerForCard = {

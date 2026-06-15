@@ -19,7 +19,7 @@ vi.mock("$lib/server/db", () => ({
 }));
 
 const mockGetSmallFileThreshold = vi.fn(() => 5000);
-vi.mock("$lib/server/services/knowledge/store/core", () => ({
+vi.mock("$lib/server/config-store", () => ({
 	getSmallFileThreshold: mockGetSmallFileThreshold,
 }));
 

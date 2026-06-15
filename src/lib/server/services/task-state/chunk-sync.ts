@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
+import { getSmallFileThreshold } from "$lib/server/config-store";
 import { db } from "$lib/server/db";
 import { artifactChunks } from "$lib/server/db/schema";
-import { getSmallFileThreshold } from "$lib/server/services/knowledge/store/core";
 import { estimateTokenCount } from "$lib/utils/tokens";
 
 const CHUNK_CHAR_TARGET = 1400;

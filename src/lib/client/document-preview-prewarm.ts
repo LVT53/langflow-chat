@@ -1,4 +1,4 @@
-export const DEFAULT_PREVIEW_PREWARM_MAX_BYTES = 8 * 1024 * 1024;
+const DEFAULT_PREVIEW_PREWARM_MAX_BYTES = 8 * 1024 * 1024;
 const DEFAULT_PREVIEW_PREWARM_DELAY_MS = 120;
 const DEFAULT_PREVIEW_PREWARM_MAX_CONCURRENCY = 2;
 const DEFAULT_RECENT_TTL_MS = 60_000;
@@ -74,7 +74,7 @@ export function resetDocumentPreviewPrewarmCache() {
 	recentUrls.clear();
 }
 
-export function resolveDocumentPreviewUrl(
+function resolveDocumentPreviewUrl(
 	target: DocumentPreviewPrewarmTarget,
 ): string | null {
 	if (target.previewUrl) return target.previewUrl;
