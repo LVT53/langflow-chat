@@ -18,6 +18,13 @@ import {
 	seedFirstRunOnboardingTemplate,
 	updateCampaignDraft,
 } from "./announcement-campaigns";
+import {
+	buildFirstRunOnboardingImageFreeSlides,
+	buildFirstRunOnboardingSlides,
+	createFirstRunOnboardingDraft,
+	insertRequiredCampaignCrops,
+	publishFirstRunOnboardingCampaign,
+} from "./announcement-campaigns.test-helpers";
 
 describe("announcement campaign service", () => {
 	let sqlite: Database.Database;
@@ -51,36 +58,23 @@ describe("announcement campaign service", () => {
 		sqlite.close();
 	});
 
-	function insertCrop(id: string, variant: "desktop" | "mobile") {
-		db.insert(schema.campaignAssets)
-			.values({
-				id,
-				uploadedByUserId: "admin-user",
-				assetKind: "crop",
-				variant,
-				status: "draft",
-				originalFilename: `${id}.png`,
-				mimeType: "image/png",
-				sizeBytes: 12,
-				storagePath: `crops/${id}.png`,
-			})
-			.run();
-	}
-
-	function insertRequiredCrops(prefix: string) {
-		insertCrop(`${prefix}-desktop`, "desktop");
-		insertCrop(`${prefix}-mobile`, "mobile");
-	}
-
 	it("creates editable draft campaigns with system-generated identity and localized slides", async () => {
-		const draft = await createCampaignDraft(
-			{
-				type: "first_run_onboarding",
-				name: "First-run onboarding",
-				createdByUserId: "admin-user",
-			},
-			{ db, ids: ["campaign-1"] },
-		);
+		const draft = await createFirstRunOnboardingDraft(db, {
+			campaignId: "campaign-1",
+			name: "First-run onboarding",
+			slides: buildFirstRunOnboardingImageFreeSlides({
+				setup: {
+					id: "slide-setup",
+					sortOrder: 10,
+					title: { en: "Set up AlfyAI", hu: "AlfyAI beállítása" },
+					body: {
+						en: "Choose your starting defaults.",
+						hu: "Válaszd ki a kezdő beállításokat.",
+					},
+					altText: { en: "Settings preview", hu: "Beállítások előnézete" },
+				},
+			}),
+		});
 
 		expect(draft).toMatchObject({
 			id: "campaign-1",
@@ -91,8 +85,9 @@ describe("announcement campaign service", () => {
 			revision: 1,
 			name: "First-run onboarding",
 			releaseVersion: null,
-			slides: [],
 		});
+		expect(draft.slides).toHaveLength(2);
+		expect(draft.slides.map((slide) => slide.sortOrder)).toEqual([2, 10]);
 
 		const updated = await updateCampaignDraft(
 			"campaign-1",
@@ -132,62 +127,26 @@ describe("announcement campaign service", () => {
 	});
 
 	it("publishes a valid first-run draft into immutable snapshot content and publishes crop assets", async () => {
-		insertRequiredCrops("setup");
-		insertRequiredCrops("disclosure");
-
-		await createCampaignDraft(
-			{
-				type: "first_run_onboarding",
-				name: "Onboarding",
-				createdByUserId: "admin-user",
-			},
-			{ db, ids: ["campaign-1"] },
-		);
-		await updateCampaignDraft(
-			"campaign-1",
-			{
-				slides: [
-					{
-						id: "slide-setup",
-						layoutType: "setup",
-						sortOrder: 1,
-						title: { en: "Set up", hu: "Beállítás" },
-						body: { en: "Choose defaults.", hu: "Válassz alapokat." },
-						altText: { en: "Setup screenshot", hu: "Beállítás képernyőkép" },
-						desktopCropAssetId: "setup-desktop",
-						mobileCropAssetId: "setup-mobile",
-						setupControls: [
-							"ui_language",
-							"theme",
-							"model_default",
-							"ai_style",
-						],
+		const published = await publishFirstRunOnboardingCampaign(db, {
+			campaignId: "campaign-1",
+			snapshotIds: ["snapshot-1", "snap-slide-1", "snap-slide-2"],
+			name: "Onboarding",
+			slides: buildFirstRunOnboardingSlides({
+				setup: {
+					setupControls: ["ui_language", "theme", "model_default", "ai_style"],
+				},
+				disclosure: {
+					body: {
+						en: "Messages and files may use configured providers.",
+						hu: "Az üzenetek és fájlok konfigurált szolgáltatókat használhatnak.",
 					},
-					{
-						id: "slide-disclosure",
-						layoutType: "standard",
-						semanticRole: "data_disclosure",
-						sortOrder: 2,
-						title: { en: "Data use", hu: "Adathasználat" },
-						body: {
-							en: "Messages and files may use configured providers.",
-							hu: "Az üzenetek és fájlok konfigurált szolgáltatókat használhatnak.",
-						},
-						altText: {
-							en: "Data disclosure screenshot",
-							hu: "Adatkezelési képernyőkép",
-						},
-						desktopCropAssetId: "disclosure-desktop",
-						mobileCropAssetId: "disclosure-mobile",
+					altText: {
+						en: "Data disclosure screenshot",
+						hu: "Adatkezelési képernyőkép",
 					},
-				],
-			},
-			{ db },
-		);
-
-		const published = await publishCampaign("campaign-1", "admin-user", {
-			db,
-			ids: ["snapshot-1", "snap-slide-1", "snap-slide-2"],
+				},
+			}),
+			assetPrefixes: ["setup", "disclosure"],
 		});
 		expect(published.status).toBe("published");
 		expect(published.snapshot?.slides.map((slide) => slide.title.en)).toEqual([
@@ -264,53 +223,28 @@ describe("announcement campaign service", () => {
 	});
 
 	it("publishes slides without uploaded images and leaves snapshot crop ids empty", async () => {
-		await createCampaignDraft(
-			{
-				type: "first_run_onboarding",
-				name: "Image-free onboarding",
-				createdByUserId: "admin-user",
-			},
-			{ db, ids: ["campaign-optional-images"] },
-		);
-		await updateCampaignDraft(
-			"campaign-optional-images",
-			{
-				slides: [
-					{
-						id: "setup-slide",
-						layoutType: "setup",
-						sortOrder: 1,
-						semanticRole: "feature",
-						title: { en: "Set up", hu: "Beállítás" },
-						body: { en: "Choose defaults.", hu: "Válassz alapokat." },
-						altText: { en: "", hu: "" },
-						setupControls: ["ui_language"],
+		const published = await publishFirstRunOnboardingCampaign(db, {
+			campaignId: "campaign-optional-images",
+			snapshotIds: [
+				"snapshot-no-images",
+				"snapshot-slide-1",
+				"snapshot-slide-2",
+			],
+			name: "Image-free onboarding",
+			slides: buildFirstRunOnboardingImageFreeSlides({
+				setup: {
+					id: "setup-slide",
+					setupControls: ["ui_language"],
+				},
+				disclosure: {
+					id: "disclosure-slide",
+					body: {
+						en: "Review data use.",
+						hu: "Tekintsd át az adathasználatot.",
 					},
-					{
-						id: "disclosure-slide",
-						layoutType: "standard",
-						sortOrder: 2,
-						semanticRole: "data_disclosure",
-						title: { en: "Data use", hu: "Adathasználat" },
-						body: {
-							en: "Review data use.",
-							hu: "Tekintsd át az adathasználatot.",
-						},
-						altText: { en: "", hu: "" },
-					},
-				],
-			},
-			{ db },
-		);
-
-		const published = await publishCampaign(
-			"campaign-optional-images",
-			"admin-user",
-			{
-				db,
-				ids: ["snapshot-no-images", "snapshot-slide-1", "snapshot-slide-2"],
-			},
-		);
+				},
+			}),
+		});
 
 		expect(published.status).toBe("published");
 		expect(
@@ -336,54 +270,12 @@ describe("announcement campaign service", () => {
 		);
 		expect(await getCampaignById("draft-campaign", { db })).toBeNull();
 
-		insertRequiredCrops("setup");
-		insertRequiredCrops("disclosure");
-		await createCampaignDraft(
-			{
-				type: "first_run_onboarding",
-				name: "Onboarding",
-				createdByUserId: "admin-user",
-			},
-			{ db, ids: ["campaign-1"] },
-		);
-		await updateCampaignDraft(
-			"campaign-1",
-			{
-				slides: [
-					{
-						id: "slide-setup",
-						layoutType: "setup",
-						sortOrder: 1,
-						title: { en: "Set up", hu: "Beállítás" },
-						body: { en: "Choose defaults.", hu: "Válassz alapokat." },
-						altText: { en: "Setup screenshot", hu: "Beállítás képernyőkép" },
-						desktopCropAssetId: "setup-desktop",
-						mobileCropAssetId: "setup-mobile",
-					},
-					{
-						id: "slide-disclosure",
-						layoutType: "standard",
-						semanticRole: "data_disclosure",
-						sortOrder: 2,
-						title: { en: "Data use", hu: "Adathasználat" },
-						body: {
-							en: "Messages may use providers.",
-							hu: "Az üzenetek szolgáltatókat használhatnak.",
-						},
-						altText: {
-							en: "Disclosure screenshot",
-							hu: "Tájékoztató képernyőkép",
-						},
-						desktopCropAssetId: "disclosure-desktop",
-						mobileCropAssetId: "disclosure-mobile",
-					},
-				],
-			},
-			{ db },
-		);
-		await publishCampaign("campaign-1", "admin-user", {
-			db,
-			ids: ["snapshot-1", "snap-slide-1", "snap-slide-2"],
+		await publishFirstRunOnboardingCampaign(db, {
+			campaignId: "campaign-1",
+			snapshotIds: ["snapshot-1", "snap-slide-1", "snap-slide-2"],
+			name: "Onboarding",
+			slides: buildFirstRunOnboardingSlides(),
+			assetPrefixes: ["setup", "disclosure"],
 		});
 
 		await expect(
@@ -397,54 +289,12 @@ describe("announcement campaign service", () => {
 	});
 
 	it("archives published campaigns and duplicates published history as a new draft revision", async () => {
-		insertRequiredCrops("setup");
-		insertRequiredCrops("disclosure");
-		await createCampaignDraft(
-			{
-				type: "first_run_onboarding",
-				name: "Onboarding",
-				createdByUserId: "admin-user",
-			},
-			{ db, ids: ["campaign-1"] },
-		);
-		await updateCampaignDraft(
-			"campaign-1",
-			{
-				slides: [
-					{
-						id: "slide-setup",
-						layoutType: "setup",
-						sortOrder: 1,
-						title: { en: "Set up", hu: "Beállítás" },
-						body: { en: "Choose defaults.", hu: "Válassz alapokat." },
-						altText: { en: "Setup screenshot", hu: "Beállítás képernyőkép" },
-						desktopCropAssetId: "setup-desktop",
-						mobileCropAssetId: "setup-mobile",
-					},
-					{
-						id: "slide-disclosure",
-						layoutType: "standard",
-						semanticRole: "data_disclosure",
-						sortOrder: 2,
-						title: { en: "Data use", hu: "Adathasználat" },
-						body: {
-							en: "Messages may use providers.",
-							hu: "Az üzenetek szolgáltatókat használhatnak.",
-						},
-						altText: {
-							en: "Disclosure screenshot",
-							hu: "Tájékoztató képernyőkép",
-						},
-						desktopCropAssetId: "disclosure-desktop",
-						mobileCropAssetId: "disclosure-mobile",
-					},
-				],
-			},
-			{ db },
-		);
-		await publishCampaign("campaign-1", "admin-user", {
-			db,
-			ids: ["snapshot-1", "snap-slide-1", "snap-slide-2"],
+		await publishFirstRunOnboardingCampaign(db, {
+			campaignId: "campaign-1",
+			snapshotIds: ["snapshot-1", "snap-slide-1", "snap-slide-2"],
+			name: "Onboarding",
+			slides: buildFirstRunOnboardingSlides(),
+			assetPrefixes: ["setup", "disclosure"],
 		});
 
 		const archived = await archiveCampaign("campaign-1", { db });
@@ -473,9 +323,7 @@ describe("announcement campaign service", () => {
 	});
 
 	it("selects first-run campaigns before release campaigns and records completion state", async () => {
-		insertRequiredCrops("setup");
-		insertRequiredCrops("disclosure");
-		insertRequiredCrops("release");
+		insertRequiredCampaignCrops(db, "release");
 
 		await seedFirstRunOnboardingTemplate("admin-user", {
 			db,
@@ -489,52 +337,12 @@ describe("announcement campaign service", () => {
 		});
 		expect(await getEligibleCampaignForUser("viewer-user", { db })).toBeNull();
 
-		await createCampaignDraft(
-			{
-				type: "first_run_onboarding",
-				name: "Onboarding",
-				createdByUserId: "admin-user",
-			},
-			{ db, ids: ["campaign-1"] },
-		);
-		await updateCampaignDraft(
-			"campaign-1",
-			{
-				slides: [
-					{
-						id: "slide-setup",
-						layoutType: "setup",
-						sortOrder: 1,
-						title: { en: "Set up", hu: "Beállítás" },
-						body: { en: "Choose defaults.", hu: "Válassz alapokat." },
-						altText: { en: "Setup screenshot", hu: "Beállítás képernyőkép" },
-						desktopCropAssetId: "setup-desktop",
-						mobileCropAssetId: "setup-mobile",
-					},
-					{
-						id: "slide-disclosure",
-						layoutType: "standard",
-						semanticRole: "data_disclosure",
-						sortOrder: 2,
-						title: { en: "Data use", hu: "Adathasználat" },
-						body: {
-							en: "Messages may use providers.",
-							hu: "Az üzenetek szolgáltatókat használhatnak.",
-						},
-						altText: {
-							en: "Disclosure screenshot",
-							hu: "Tájékoztató képernyőkép",
-						},
-						desktopCropAssetId: "disclosure-desktop",
-						mobileCropAssetId: "disclosure-mobile",
-					},
-				],
-			},
-			{ db },
-		);
-		const onboarding = await publishCampaign("campaign-1", "admin-user", {
-			db,
-			ids: ["snapshot-1", "snap-slide-1", "snap-slide-2"],
+		const onboarding = await publishFirstRunOnboardingCampaign(db, {
+			campaignId: "campaign-1",
+			snapshotIds: ["snapshot-1", "snap-slide-1", "snap-slide-2"],
+			name: "Onboarding",
+			slides: buildFirstRunOnboardingSlides(),
+			assetPrefixes: ["setup", "disclosure"],
 		});
 
 		await createCampaignDraft(
@@ -581,54 +389,12 @@ describe("announcement campaign service", () => {
 	});
 
 	it("records minimal analytics events and summarizes engagement without duplicate slide-view spam", async () => {
-		insertRequiredCrops("setup");
-		insertRequiredCrops("disclosure");
-		await createCampaignDraft(
-			{
-				type: "first_run_onboarding",
-				name: "Onboarding",
-				createdByUserId: "admin-user",
-			},
-			{ db, ids: ["campaign-1"] },
-		);
-		await updateCampaignDraft(
-			"campaign-1",
-			{
-				slides: [
-					{
-						id: "slide-setup",
-						layoutType: "setup",
-						sortOrder: 1,
-						title: { en: "Set up", hu: "Beállítás" },
-						body: { en: "Choose defaults.", hu: "Válassz alapokat." },
-						altText: { en: "Setup screenshot", hu: "Beállítás képernyőkép" },
-						desktopCropAssetId: "setup-desktop",
-						mobileCropAssetId: "setup-mobile",
-					},
-					{
-						id: "slide-disclosure",
-						layoutType: "standard",
-						semanticRole: "data_disclosure",
-						sortOrder: 2,
-						title: { en: "Data use", hu: "Adathasználat" },
-						body: {
-							en: "Messages may use providers.",
-							hu: "Az üzenetek szolgáltatókat használhatnak.",
-						},
-						altText: {
-							en: "Disclosure screenshot",
-							hu: "Tájékoztató képernyőkép",
-						},
-						desktopCropAssetId: "disclosure-desktop",
-						mobileCropAssetId: "disclosure-mobile",
-					},
-				],
-			},
-			{ db },
-		);
-		const campaign = await publishCampaign("campaign-1", "admin-user", {
-			db,
-			ids: ["snapshot-1", "snap-slide-1", "snap-slide-2"],
+		const campaign = await publishFirstRunOnboardingCampaign(db, {
+			campaignId: "campaign-1",
+			snapshotIds: ["snapshot-1", "snap-slide-1", "snap-slide-2"],
+			name: "Onboarding",
+			slides: buildFirstRunOnboardingSlides(),
+			assetPrefixes: ["setup", "disclosure"],
 		});
 
 		await recordCampaignEvent(
@@ -696,54 +462,12 @@ describe("announcement campaign service", () => {
 	});
 
 	it("counts terminal completion analytics once per user even if completion is submitted twice", async () => {
-		insertRequiredCrops("setup");
-		insertRequiredCrops("disclosure");
-		await createCampaignDraft(
-			{
-				type: "first_run_onboarding",
-				name: "Onboarding",
-				createdByUserId: "admin-user",
-			},
-			{ db, ids: ["campaign-1"] },
-		);
-		await updateCampaignDraft(
-			"campaign-1",
-			{
-				slides: [
-					{
-						id: "slide-setup",
-						layoutType: "setup",
-						sortOrder: 1,
-						title: { en: "Set up", hu: "Beállítás" },
-						body: { en: "Choose defaults.", hu: "Válassz alapokat." },
-						altText: { en: "Setup screenshot", hu: "Beállítás képernyőkép" },
-						desktopCropAssetId: "setup-desktop",
-						mobileCropAssetId: "setup-mobile",
-					},
-					{
-						id: "slide-disclosure",
-						layoutType: "standard",
-						semanticRole: "data_disclosure",
-						sortOrder: 2,
-						title: { en: "Data use", hu: "Adathasználat" },
-						body: {
-							en: "Messages may use providers.",
-							hu: "Az üzenetek szolgáltatókat használhatnak.",
-						},
-						altText: {
-							en: "Disclosure screenshot",
-							hu: "Tájékoztató képernyőkép",
-						},
-						desktopCropAssetId: "disclosure-desktop",
-						mobileCropAssetId: "disclosure-mobile",
-					},
-				],
-			},
-			{ db },
-		);
-		const campaign = await publishCampaign("campaign-1", "admin-user", {
-			db,
-			ids: ["snapshot-1", "snap-slide-1", "snap-slide-2"],
+		const campaign = await publishFirstRunOnboardingCampaign(db, {
+			campaignId: "campaign-1",
+			snapshotIds: ["snapshot-1", "snap-slide-1", "snap-slide-2"],
+			name: "Onboarding",
+			slides: buildFirstRunOnboardingSlides(),
+			assetPrefixes: ["setup", "disclosure"],
 		});
 
 		await completeCampaignForUser(campaign.id, "viewer-user", "completed", {
@@ -765,54 +489,12 @@ describe("announcement campaign service", () => {
 	});
 
 	it("rejects event slide ids that are not part of the active published snapshot", async () => {
-		insertRequiredCrops("setup");
-		insertRequiredCrops("disclosure");
-		await createCampaignDraft(
-			{
-				type: "first_run_onboarding",
-				name: "Onboarding",
-				createdByUserId: "admin-user",
-			},
-			{ db, ids: ["campaign-1"] },
-		);
-		await updateCampaignDraft(
-			"campaign-1",
-			{
-				slides: [
-					{
-						id: "slide-setup",
-						layoutType: "setup",
-						sortOrder: 1,
-						title: { en: "Set up", hu: "Beállítás" },
-						body: { en: "Choose defaults.", hu: "Válassz alapokat." },
-						altText: { en: "Setup screenshot", hu: "Beállítás képernyőkép" },
-						desktopCropAssetId: "setup-desktop",
-						mobileCropAssetId: "setup-mobile",
-					},
-					{
-						id: "slide-disclosure",
-						layoutType: "standard",
-						semanticRole: "data_disclosure",
-						sortOrder: 2,
-						title: { en: "Data use", hu: "Adathasználat" },
-						body: {
-							en: "Messages may use providers.",
-							hu: "Az üzenetek szolgáltatókat használhatnak.",
-						},
-						altText: {
-							en: "Disclosure screenshot",
-							hu: "Tájékoztató képernyőkép",
-						},
-						desktopCropAssetId: "disclosure-desktop",
-						mobileCropAssetId: "disclosure-mobile",
-					},
-				],
-			},
-			{ db },
-		);
-		const campaign = await publishCampaign("campaign-1", "admin-user", {
-			db,
-			ids: ["snapshot-1", "snap-slide-1", "snap-slide-2"],
+		const campaign = await publishFirstRunOnboardingCampaign(db, {
+			campaignId: "campaign-1",
+			snapshotIds: ["snapshot-1", "snap-slide-1", "snap-slide-2"],
+			name: "Onboarding",
+			slides: buildFirstRunOnboardingSlides(),
+			assetPrefixes: ["setup", "disclosure"],
 		});
 
 		await expect(
@@ -889,10 +571,10 @@ describe("announcement campaign service", () => {
 	});
 
 	it("keeps a saved seeded first-run campaign publishable with setup controls and data disclosure role", async () => {
-		insertRequiredCrops("setup");
-		insertRequiredCrops("import");
-		insertRequiredCrops("feature");
-		insertRequiredCrops("disclosure");
+		insertRequiredCampaignCrops(db, "setup");
+		insertRequiredCampaignCrops(db, "import");
+		insertRequiredCampaignCrops(db, "feature");
+		insertRequiredCampaignCrops(db, "disclosure");
 		const seeded = await seedFirstRunOnboardingTemplate("admin-user", {
 			db,
 			ids: [
