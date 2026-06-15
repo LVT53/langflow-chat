@@ -89,8 +89,9 @@
 	},
 	"type": "module",
 	"overrides": {
-		"@esbuild-kit/core-utils": {
-			"esbuild": "0.25.12"
+		"esbuild": "0.28.1",
+		"exceljs": {
+			"uuid": "11.1.1"
 		},
 		"@sveltejs/kit": {
 			"cookie": "0.7.2"
