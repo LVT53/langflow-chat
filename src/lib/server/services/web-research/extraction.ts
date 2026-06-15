@@ -147,7 +147,7 @@ function isBlockedIpv6Address(hostname: string): boolean {
 	return mappedIpv4 ? isBlockedIpv4Address(mappedIpv4[1]) : false;
 }
 
-export function isSafeWebResearchFetchUrl(value: string): boolean {
+function isSafeWebResearchFetchUrl(value: string): boolean {
 	try {
 		const url = new URL(value);
 		if (url.protocol !== "http:" && url.protocol !== "https:") return false;

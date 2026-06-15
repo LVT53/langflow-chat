@@ -1,0 +1,141 @@
+{
+	"$schema": "https://raw.githubusercontent.com/fallow-rs/fallow/main/schema.json",
+	"entry": [
+		"scripts/honcho-backfill.ts",
+		"scripts/repair-orphaned-generated-files.ts",
+		"scripts/seed-admin.ts",
+		"scripts/seed-test-user.ts",
+		"scripts/validate-i18n.ts",
+		"scripts/verify-live-file-production-types.ts",
+		"static/sw.js"
+	],
+	"ignoreDependencies": ["pptxgenjs"],
+	"usedClassMembers": [
+		{
+			"extends": "Error",
+			"members": ["code", "status"]
+		}
+	],
+	"ignoreExports": [
+		{
+			"file": "src/lib/client/api/*.ts",
+			"exports": ["*"]
+		},
+		{
+			"file": "src/lib/client/document-workspace-state.ts",
+			"exports": ["*"]
+		},
+		{
+			"file": "src/lib/deep-research-models.ts",
+			"exports": ["*"]
+		},
+		{
+			"file": "src/lib/services/markdown.ts",
+			"exports": ["*"]
+		},
+		{
+			"file": "src/lib/stores/conversations.ts",
+			"exports": ["*"]
+		},
+		{
+			"file": "src/lib/stores/projects.ts",
+			"exports": ["*"]
+		},
+		{
+			"file": "src/lib/stores/theme.ts",
+			"exports": ["*"]
+		},
+		{
+			"file": "src/lib/types.ts",
+			"exports": ["*"]
+		},
+		{
+			"file": "src/lib/utils/markdown-loader.ts",
+			"exports": ["*"]
+		},
+		{
+			"file": "src/lib/server/config-store.ts",
+			"exports": ["modelIconUrl"]
+		},
+		{
+			"file": "src/lib/server/services/available-models.ts",
+			"exports": ["modelIconUrl"]
+		},
+		{
+			"file": "src/lib/server/services/chat-turn/shared-normal-chat-model-run-helpers.ts",
+			"exports": ["resolvePromptContextLimits"]
+		},
+		{
+			"file": "src/lib/server/services/deep-research/citation-audit.ts",
+			"exports": ["DeepResearchCitationAuditVerdict", "DeepResearchCitationAuditVerdictStatus"]
+		},
+		{
+			"file": "src/lib/server/services/deep-research/index.ts",
+			"exports": ["DeepResearchReportActionResult"]
+		},
+		{
+			"file": "src/lib/server/services/file-production/index.ts",
+			"exports": ["*"]
+		},
+		{
+			"file": "src/lib/server/services/file-production/read-model.ts",
+			"exports": ["listConversationFileProductionJobs"]
+		},
+		{
+			"file": "src/lib/server/services/model-preferences.ts",
+			"exports": ["UserModelPreference"]
+		},
+		{
+			"file": "src/lib/server/services/normal-chat-context.ts",
+			"exports": ["resolvePromptContextLimits"]
+		},
+		{
+			"file": "src/lib/server/services/**/*.ts",
+			"exports": ["*"]
+		},
+		{
+			"file": "src/lib/server/utils/prompt-context.ts",
+			"exports": ["*"]
+		},
+		{
+			"file": "src/lib/server/db/index.ts",
+			"exports": ["*"]
+		},
+		{
+			"file": "src/lib/server/auth/hooks.ts",
+			"exports": ["*"]
+		},
+		{
+			"file": "src/lib/server/config-store.ts",
+			"exports": ["*"]
+		},
+		{
+			"file": "src/lib/components/document-workspace/preview-runtime/index.ts",
+			"exports": ["*"]
+		},
+		{
+			"file": "src/lib/stores/ui.ts",
+			"exports": ["*"]
+		},
+		{
+			"file": "src/lib/actions/preserve-scroll.ts",
+			"exports": ["*"]
+		},
+		{
+			"file": "src/lib/utils/text-compare.ts",
+			"exports": ["*"]
+		},
+		{
+			"file": "src/lib/model-capabilities.ts",
+			"exports": ["*"]
+		},
+		{
+			"file": "src/lib/model-limit-presets.ts",
+			"exports": ["*"]
+		},
+		{
+			"file": "src/lib/client/normal-chat-client-turn-runtime.ts",
+			"exports": ["*"]
+		}
+	]
+}

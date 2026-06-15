@@ -51,7 +51,7 @@ export function initTheme(serverTheme?: Theme) {
 		});
 }
 
-export function setTheme(t: Theme) {
+function setTheme(t: Theme) {
 	theme.set(t);
 	persist("theme", t);
 	applyTheme(t);

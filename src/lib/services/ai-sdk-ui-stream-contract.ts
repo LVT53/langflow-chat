@@ -50,7 +50,7 @@ export function encodeAiSdkUiStreamDoneFrame(): string {
 	return `data: ${AI_SDK_UI_STREAM_DONE}\n\n`;
 }
 
-export function findNextAiSdkUiStreamBlockDelimiter(
+function findNextAiSdkUiStreamBlockDelimiter(
 	value: string,
 ): { index: number; length: number } | null {
 	const delimiters = ["\r\n\r\n", "\n\n", "\r\r"] as const;
@@ -69,7 +69,7 @@ export function findNextAiSdkUiStreamBlockDelimiter(
 	return next;
 }
 
-export function decodeAiSdkUiStreamFrameBlock(
+function decodeAiSdkUiStreamFrameBlock(
 	block: string,
 ): AiSdkUiStreamFrame | null {
 	const dataLines: string[] = [];
@@ -148,7 +148,7 @@ export function consumeAiSdkUiStreamFrames(
 	return { frames, remaining };
 }
 
-export function decodeAiSdkUiStreamFrames(value: string): AiSdkUiStreamFrame[] {
+function decodeAiSdkUiStreamFrames(value: string): AiSdkUiStreamFrame[] {
 	return consumeAiSdkUiStreamFrames(value).frames;
 }
 
@@ -160,7 +160,7 @@ export function decodeAiSdkUiStreamPayloads(
 	);
 }
 
-export function isTerminalAiSdkUiStreamPayload(
+function isTerminalAiSdkUiStreamPayload(
 	payload: AiSdkUiStreamPayload,
 ): boolean {
 	if (payload === AI_SDK_UI_STREAM_DONE) {

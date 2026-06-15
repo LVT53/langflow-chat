@@ -4,6 +4,7 @@ import {
 	createConversationFork,
 	deleteConversationMessages,
 	fetchConversationDetail,
+	persistConversationLinkedSources,
 	savePinnedConversationSidebarOrder,
 	setConversationSidebarPinned,
 } from "./conversations";
@@ -240,5 +241,52 @@ describe("conversation sidebar API", () => {
 		});
 		expect(result).toHaveLength(1);
 		expect(result[0]?.id).toBe("conv-2");
+	});
+});
+
+describe("linked-source persistence API", () => {
+	const linkedSource = {
+		displayArtifactId: "artifact-1",
+		promptArtifactId: "prompt-1",
+		familyArtifactIds: ["artifact-1"],
+		name: "Doc 1",
+		type: "document" as const,
+		mimeType: "text/plain",
+	};
+
+	it("persists linked sources with attachment ids", async () => {
+		const fetchMock = vi.fn(
+			async () =>
+				new Response(
+					JSON.stringify({
+						linkedSources: [linkedSource],
+					}),
+					{ status: 200, headers: { "content-type": "application/json" } },
+				),
+		);
+
+		const result = await persistConversationLinkedSources(
+			"conversation-1",
+			{
+				linkedSources: [linkedSource],
+				attachmentIds: ["attachment-1", "attachment-2"],
+			},
+			fetchMock,
+		);
+
+		expect(fetchMock).toHaveBeenCalledWith(
+			"/api/conversations/conversation-1/linked-sources",
+			{
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					linkedSources: [linkedSource],
+					attachmentIds: ["attachment-1", "attachment-2"],
+				}),
+			},
+		);
+		expect(result).toEqual([linkedSource]);
 	});
 });

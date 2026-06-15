@@ -133,7 +133,7 @@ For code, make it usable with minimal modification.
 Be decisive when the evidence is clear and nuanced when it is not.`;
 
 // Simple default prompt
-export const DEFAULT_PROMPT = `You are a helpful AI assistant.`;
+const DEFAULT_PROMPT = `You are a helpful AI assistant.`;
 
 const LEGACY_FETCH_CONTENT_TOOL_TABLE_ROWS = [
 	"| search | Search the web for information | Current events, recent facts, product research, general-topic research, verification |",
@@ -183,7 +183,7 @@ const DEPRECATED_TRANSLATION_CONTRACT_LINE_RE = new RegExp(
 );
 
 // Map of prompt names to prompts
-export const SYSTEM_PROMPTS: Record<string, string> = {
+const SYSTEM_PROMPTS: Record<string, string> = {
 	"alfyai-nemotron": ALFYAI_NEMOTRON_PROMPT,
 	default: DEFAULT_PROMPT,
 };

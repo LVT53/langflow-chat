@@ -161,21 +161,6 @@ export function toFriendlySendError(
 	return friendlyError("backend_failure", translate);
 }
 
-export function mergeAttachedArtifacts(
-	currentArtifacts: ArtifactSummary[],
-	nextArtifacts: ArtifactSummary[],
-): ArtifactSummary[] {
-	if (nextArtifacts.length === 0) return currentArtifacts;
-
-	const mergedArtifacts = new Map(
-		currentArtifacts.map((artifact) => [artifact.id, artifact]),
-	);
-	for (const artifact of nextArtifacts) {
-		mergedArtifacts.set(artifact.id, artifact);
-	}
-	return Array.from(mergedArtifacts.values());
-}
-
 export function hasActiveFileProductionJobs(
 	jobs: FileProductionJob[],
 ): boolean {
@@ -323,37 +308,6 @@ export function createAssistantPlaceholder(
 		content: "",
 		timestamp,
 		isStreaming: true,
-	};
-}
-
-export function createUserMessage(params: {
-	id: string;
-	text: string;
-	timestamp?: number;
-	attachmentIds: string[];
-	attachedArtifacts: ArtifactSummary[];
-}): ChatMessage {
-	const timestamp = params.timestamp ?? Date.now();
-
-	return {
-		id: params.id,
-		renderKey: params.id,
-		role: "user",
-		content: params.text,
-		attachments: params.attachedArtifacts
-			.filter((artifact) => params.attachmentIds.includes(artifact.id))
-			.map((artifact) => ({
-				id: artifact.id,
-				artifactId: artifact.id,
-				name: artifact.name,
-				type: artifact.type,
-				mimeType: artifact.mimeType,
-				sizeBytes: artifact.sizeBytes,
-				conversationId: artifact.conversationId,
-				messageId: null,
-				createdAt: artifact.createdAt,
-			})),
-		timestamp,
 	};
 }
 

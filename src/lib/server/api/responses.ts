@@ -13,14 +13,3 @@ export function createJsonErrorResponse(
 ): Response {
 	return createJsonResponse({ error }, status);
 }
-
-export function validateJsonBody(
-	body: unknown,
-):
-	| { ok: true; body: Record<string, unknown> }
-	| { ok: false; error: string; status: number } {
-	if (!body || typeof body !== "object") {
-		return { ok: false, error: "Invalid request body", status: 400 };
-	}
-	return { ok: true, body: body as Record<string, unknown> };
-}

@@ -150,7 +150,7 @@ const BYTE_SUFFIX_MULTIPLIERS: Record<string, number> = {
 	G: 1024 * 1024 * 1024,
 };
 
-export function parseByteSizeLimit(value: string): number {
+function parseByteSizeLimit(value: string): number {
 	const trimmed = value.trim();
 	if (/^infinity$/i.test(trimmed)) return Infinity;
 
@@ -732,7 +732,7 @@ function readConfig(): Config {
 
 let cachedConfig: Config | null = null;
 
-export function getConfig(): Config {
+function getConfig(): Config {
 	if (!cachedConfig) {
 		cachedConfig = readConfig();
 	}

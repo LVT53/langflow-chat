@@ -1,10 +1,10 @@
-export const THINKING_OPEN_TAG = "<thinking>";
-export const THINKING_CLOSE_TAG = "</thinking>";
-export const DEEPSEEK_THINKING_OPEN_TAG = "<think>";
-export const DEEPSEEK_THINKING_CLOSE_TAG = "</think>";
-export const QWEN_CHATML_THINKING_OPEN_TAG = "<|im_start|>think";
-export const QWEN_CHATML_ANALYSIS_OPEN_TAG = "<|im_start|>analysis";
-export const QWEN_CHATML_THINKING_CLOSE_TAG = "<|im_end|>";
+const THINKING_OPEN_TAG = "<thinking>";
+const THINKING_CLOSE_TAG = "</thinking>";
+const DEEPSEEK_THINKING_OPEN_TAG = "<think>";
+const DEEPSEEK_THINKING_CLOSE_TAG = "</think>";
+const QWEN_CHATML_THINKING_OPEN_TAG = "<|im_start|>think";
+const QWEN_CHATML_ANALYSIS_OPEN_TAG = "<|im_start|>analysis";
+const QWEN_CHATML_THINKING_CLOSE_TAG = "<|im_end|>";
 export const SKILL_CONTROL_ENVELOPE_OPEN_TAG = "<skill_control_v1>";
 export const SKILL_CONTROL_ENVELOPE_CLOSE_TAG = "</skill_control_v1>";
 
@@ -52,7 +52,7 @@ export function createInlineThinkingState(): InlineThinkingState {
 	};
 }
 
-export function getPartialTagPrefixLength(value: string, tag: string): number {
+function getPartialTagPrefixLength(value: string, tag: string): number {
 	const maxLength = Math.min(value.length, tag.length - 1);
 
 	for (let length = maxLength; length > 0; length -= 1) {
@@ -1952,9 +1952,4 @@ function getTextContent(value: unknown): string {
 }
 
 // Exported for stream.ts import
-export {
-	getFirstChoice,
-	getNestedObject,
-	getTextContent,
-	getTextFromContentBlocks,
-};
+export { getFirstChoice, getNestedObject, getTextContent };

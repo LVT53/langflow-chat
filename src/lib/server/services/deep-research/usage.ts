@@ -184,7 +184,7 @@ export async function buildResearchUsageRecord(
 	};
 }
 
-export async function calculateResearchUsageCostUsdMicros(input: {
+async function calculateResearchUsageCostUsdMicros(input: {
 	modelId: string;
 	providerId: string | null;
 	providerModelName: string | null;

@@ -53,7 +53,7 @@ function normalizeConfidenceScore(score: number): number {
 	return 1 / (1 + Math.exp(-score));
 }
 
-export function scoreToConfidencePercent(score: number): number {
+function scoreToConfidencePercent(score: number): number {
 	return Math.max(
 		0,
 		Math.min(100, Math.round(normalizeConfidenceScore(score) * 100)),
@@ -65,7 +65,7 @@ export function canUseTeiReranker(): boolean {
 	return Boolean(config.teiRerankerUrl);
 }
 
-export function getTeiRerankerMaxTexts(): number {
+function getTeiRerankerMaxTexts(): number {
 	return Math.max(1, getConfig().teiRerankerMaxTexts);
 }
 

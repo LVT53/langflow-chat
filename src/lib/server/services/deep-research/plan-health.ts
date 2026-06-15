@@ -1,6 +1,6 @@
 import type { ResearchPlan } from "./planning";
 
-export const PLAN_HEALTH_MIN_REVIEWED_SOURCES = 20;
+const PLAN_HEALTH_MIN_REVIEWED_SOURCES = 20;
 
 export type PlanHealthFailure = {
 	reason: string;

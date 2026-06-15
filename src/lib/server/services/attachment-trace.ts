@@ -3,7 +3,7 @@ import { getConfig } from "$lib/server/config-store";
 
 const DEFAULT_PREVIEW_LENGTH = 320;
 
-export function isAttachmentTraceDebugEnabled(): boolean {
+function isAttachmentTraceDebugEnabled(): boolean {
 	return getConfig().attachmentTraceDebug === true;
 }
 
@@ -11,7 +11,7 @@ export function createAttachmentTraceId(prefix = "attachment"): string {
 	return `${prefix}-${randomUUID().slice(0, 8)}`;
 }
 
-export function normalizeAttachmentTraceText(
+function normalizeAttachmentTraceText(
 	value: string | null | undefined,
 ): string {
 	return String(value ?? "")
@@ -19,7 +19,7 @@ export function normalizeAttachmentTraceText(
 		.trim();
 }
 
-export function clipAttachmentTraceText(
+function clipAttachmentTraceText(
 	value: string | null | undefined,
 	maxLength = DEFAULT_PREVIEW_LENGTH,
 ): string | null {
@@ -29,7 +29,7 @@ export function clipAttachmentTraceText(
 	return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 }
 
-export function hashAttachmentTraceText(
+function hashAttachmentTraceText(
 	value: string | null | undefined,
 ): string | null {
 	const normalized = normalizeAttachmentTraceText(value);

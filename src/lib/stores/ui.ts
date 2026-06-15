@@ -26,9 +26,9 @@ import { persist, read } from "./_local-storage";
  */
 
 export const SIDEBAR_DESKTOP_BREAKPOINT = 1024;
-export const SIDEBAR_MIN_WIDTH = 240;
+const SIDEBAR_MIN_WIDTH = 240;
 export const SIDEBAR_DEFAULT_WIDTH = 300;
-export const SIDEBAR_MAX_WIDTH = 480;
+const SIDEBAR_MAX_WIDTH = 480;
 const PROJECT_FOLDER_EXPANDED_KEY = "projectFolderExpanded";
 const SIDEBAR_PROJECTS_EXPANDED_KEY = "sidebarProjectsExpanded";
 const SIDEBAR_CHATS_EXPANDED_KEY = "sidebarChatsExpanded";

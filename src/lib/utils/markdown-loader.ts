@@ -19,7 +19,7 @@ let markdownModulePromise: Promise<MarkdownModule> | null = null;
  * Gets the cached markdown module promise, creating it on first call.
  * Safe to call multiple times — the same promise is returned.
  */
-export function getMarkdownModule(): Promise<MarkdownModule> {
+function getMarkdownModule(): Promise<MarkdownModule> {
 	if (!markdownModulePromise) {
 		markdownModulePromise = import("$lib/services/markdown");
 	}

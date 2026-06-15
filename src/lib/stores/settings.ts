@@ -13,7 +13,7 @@ export type UiLanguage = "en" | "hu";
 export type { ModelId };
 
 export const selectedModel = writable<ModelId>("model1");
-export const titleLanguage = writable<TitleLanguage>("auto");
+const titleLanguage = writable<TitleLanguage>("auto");
 export const uiLanguage = writable<UiLanguage>("en");
 export const selectedReasoningDepth = writable<ReasoningDepth>("auto");
 

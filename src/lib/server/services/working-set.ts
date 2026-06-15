@@ -7,8 +7,8 @@ import { clamp } from "$lib/utils/math";
 import { computeDecayScore } from "../utils/artifact-decay";
 
 export const WORKING_SET_ACTIVE_LIMIT = 64;
-export const WORKING_SET_DOCUMENT_LIMIT = 48;
-export const WORKING_SET_OUTPUT_LIMIT = 16;
+const WORKING_SET_DOCUMENT_LIMIT = 48;
+const WORKING_SET_OUTPUT_LIMIT = 16;
 export const WORKING_SET_PROMPT_LIMIT = 64;
 
 export interface WorkingSetCandidate {

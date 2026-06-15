@@ -85,7 +85,7 @@ export function reduceWorkspaceClose(
 	};
 }
 
-export function isWorkspaceDocumentFromConversation(
+function isWorkspaceDocumentFromConversation(
 	document: DocumentWorkspaceItem,
 	conversationId: string,
 ): boolean {
