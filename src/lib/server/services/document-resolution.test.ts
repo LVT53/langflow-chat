@@ -1,47 +1,17 @@
 import { describe, expect, it } from "vitest";
-import type { Artifact } from "$lib/types";
 import {
 	isGeneratedDocumentPromptEligible,
 	resolveCurrentGeneratedDocumentSelection,
 	resolveRelevantGeneratedDocumentArtifacts,
 	resolveRelevantGeneratedDocumentSelection,
 } from "./document-resolution";
-
-function makeArtifact(params: {
-	id: string;
-	name: string;
-	summary?: string | null;
-	conversationId?: string | null;
-	updatedAt?: number;
-	metadata?: Record<string, unknown> | null;
-}): Artifact {
-	return {
-		id: params.id,
-		userId: "user-1",
-		type: "generated_output",
-		retrievalClass: "durable",
-		name: params.name,
-		mimeType: "application/pdf",
-		sizeBytes: 1024,
-		conversationId: params.conversationId ?? null,
-		summary: params.summary ?? null,
-		createdAt: params.updatedAt ?? 1,
-		updatedAt: params.updatedAt ?? 1,
-		extension: "pdf",
-		storagePath: null,
-		contentText: null,
-		metadata: params.metadata ?? null,
-	};
-}
-
-function makeEphemeralArtifact(
-	params: Parameters<typeof makeArtifact>[0],
-): Artifact {
-	return {
-		...makeArtifact(params),
-		retrievalClass: "ephemeral",
-	} as unknown as Artifact;
-}
+import {
+	makeArtifact,
+	makeArtifacts,
+	makeBriefFamilyArtifacts,
+	makeCurrentDocumentArtifacts,
+	makeEphemeralArtifact,
+} from "./document-resolution.test-helpers";
 
 describe("document resolution", () => {
 	it("dedupes generated outputs by family and prefers explicit label/name matches", () => {
@@ -132,38 +102,7 @@ describe("document resolution", () => {
 			query: "continue the project brief",
 			limit: 4,
 			preferredArtifactId: "artifact-1",
-			artifacts: [
-				makeArtifact({
-					id: "artifact-1",
-					name: "brief-v1.pdf",
-					updatedAt: 1,
-					metadata: {
-						documentFamilyId: "family-brief",
-						documentLabel: "Project brief",
-						versionNumber: 1,
-					},
-				}),
-				makeArtifact({
-					id: "artifact-2",
-					name: "brief-v2.pdf",
-					updatedAt: 2,
-					metadata: {
-						documentFamilyId: "family-brief",
-						documentLabel: "Project brief",
-						versionNumber: 2,
-					},
-				}),
-				makeArtifact({
-					id: "artifact-3",
-					name: "slides-v1.pdf",
-					updatedAt: 3,
-					metadata: {
-						documentFamilyId: "family-slides",
-						documentLabel: "Investor slides",
-						versionNumber: 1,
-					},
-				}),
-			],
+			artifacts: makeBriefFamilyArtifacts(),
 		});
 
 		expect(selection.orderedArtifacts.map((artifact) => artifact.id)).toEqual([
@@ -178,38 +117,7 @@ describe("document resolution", () => {
 			query: "please keep refining it",
 			limit: 4,
 			preferredFamilyId: "family-brief",
-			artifacts: [
-				makeArtifact({
-					id: "artifact-1",
-					name: "brief-v1.pdf",
-					updatedAt: 1,
-					metadata: {
-						documentFamilyId: "family-brief",
-						documentLabel: "Project brief",
-						versionNumber: 1,
-					},
-				}),
-				makeArtifact({
-					id: "artifact-2",
-					name: "brief-v2.pdf",
-					updatedAt: 2,
-					metadata: {
-						documentFamilyId: "family-brief",
-						documentLabel: "Project brief",
-						versionNumber: 2,
-					},
-				}),
-				makeArtifact({
-					id: "artifact-3",
-					name: "slides-v1.pdf",
-					updatedAt: 3,
-					metadata: {
-						documentFamilyId: "family-slides",
-						documentLabel: "Investor slides",
-						versionNumber: 1,
-					},
-				}),
-			],
+			artifacts: makeBriefFamilyArtifacts(),
 		});
 
 		expect(selection.orderedArtifacts.map((artifact) => artifact.id)).toEqual([
@@ -226,38 +134,32 @@ describe("document resolution", () => {
 			limit: 4,
 			suppressCarryoverWhenUnfocused: true,
 			preferredFamilyId: "family-brief",
-			artifacts: [
-				makeArtifact({
-					id: "artifact-brief-old",
-					name: "brief-v1.pdf",
-					updatedAt: 1,
-					metadata: {
-						documentFamilyId: "family-brief",
-						documentLabel: "Project brief",
-						versionNumber: 1,
-					},
-				}),
-				makeArtifact({
-					id: "artifact-brief-current",
-					name: "brief-v2.pdf",
-					updatedAt: 2,
-					metadata: {
-						documentFamilyId: "family-brief",
-						documentLabel: "Project brief",
-						versionNumber: 2,
-					},
-				}),
-				makeArtifact({
-					id: "artifact-active",
-					name: "slides-v1.pdf",
-					updatedAt: 3,
-					metadata: {
-						documentFamilyId: "family-slides",
-						documentLabel: "Investor slides",
-						versionNumber: 1,
-					},
-				}),
-			],
+			artifacts: makeArtifacts(
+				[
+					"artifact-brief-old",
+					"brief-v1.pdf",
+					1,
+					"family-brief",
+					"Project brief",
+					1,
+				],
+				[
+					"artifact-brief-current",
+					"brief-v2.pdf",
+					2,
+					"family-brief",
+					"Project brief",
+					2,
+				],
+				[
+					"artifact-active",
+					"slides-v1.pdf",
+					3,
+					"family-slides",
+					"Investor slides",
+					1,
+				],
+			),
 		});
 
 		expect(selection.orderedArtifacts.map((artifact) => artifact.id)).toEqual([
@@ -274,28 +176,7 @@ describe("document resolution", () => {
 			query: "please keep refining it",
 			limit: 4,
 			behaviorScoresByKey: new Map([["family-brief", 3]]),
-			artifacts: [
-				makeArtifact({
-					id: "artifact-brief",
-					name: "brief-v2.pdf",
-					updatedAt: 2,
-					metadata: {
-						documentFamilyId: "family-brief",
-						documentLabel: "Project brief",
-						versionNumber: 2,
-					},
-				}),
-				makeArtifact({
-					id: "artifact-slides",
-					name: "slides-v3.pdf",
-					updatedAt: 3,
-					metadata: {
-						documentFamilyId: "family-slides",
-						documentLabel: "Investor slides",
-						versionNumber: 3,
-					},
-				}),
-			],
+			artifacts: makeCurrentDocumentArtifacts(),
 		});
 
 		expect(selection.orderedArtifacts.map((artifact) => artifact.id)).toEqual([
@@ -311,28 +192,7 @@ describe("document resolution", () => {
 			query: "open the draft again",
 			limit: 4,
 			reopenScoresByKey: new Map([["family-brief", 3]]),
-			artifacts: [
-				makeArtifact({
-					id: "artifact-brief",
-					name: "brief-v2.pdf",
-					updatedAt: 2,
-					metadata: {
-						documentFamilyId: "family-brief",
-						documentLabel: "Project brief",
-						versionNumber: 2,
-					},
-				}),
-				makeArtifact({
-					id: "artifact-slides",
-					name: "slides-v3.pdf",
-					updatedAt: 3,
-					metadata: {
-						documentFamilyId: "family-slides",
-						documentLabel: "Investor slides",
-						versionNumber: 3,
-					},
-				}),
-			],
+			artifacts: makeCurrentDocumentArtifacts(),
 		});
 
 		expect(selection.orderedArtifacts.map((artifact) => artifact.id)).toEqual([
@@ -349,28 +209,24 @@ describe("document resolution", () => {
 			limit: 4,
 			semanticScoresByArtifactId: new Map([["artifact-forecast", 0.91]]),
 			rerankScoresByArtifactId: new Map([["artifact-forecast", 0.83]]),
-			artifacts: [
-				makeArtifact({
-					id: "artifact-brief",
-					name: "brief-v2.pdf",
-					updatedAt: 2,
-					metadata: {
-						documentFamilyId: "family-brief",
-						documentLabel: "Project brief",
-						versionNumber: 2,
-					},
-				}),
-				makeArtifact({
-					id: "artifact-forecast",
-					name: "forecast-v1.pdf",
-					updatedAt: 1,
-					metadata: {
-						documentFamilyId: "family-forecast",
-						documentLabel: "Revenue forecast",
-						versionNumber: 1,
-					},
-				}),
-			],
+			artifacts: makeArtifacts(
+				[
+					"artifact-brief",
+					"brief-v2.pdf",
+					2,
+					"family-brief",
+					"Project brief",
+					2,
+				],
+				[
+					"artifact-forecast",
+					"forecast-v1.pdf",
+					1,
+					"family-forecast",
+					"Revenue forecast",
+					1,
+				],
+			),
 		});
 
 		expect(selection.orderedArtifacts[0]?.id).toBe("artifact-forecast");
@@ -386,29 +242,25 @@ describe("document resolution", () => {
 		const selection = resolveRelevantGeneratedDocumentSelection({
 			query: "draft",
 			limit: 4,
-			artifacts: [
-				makeArtifact({
-					id: "artifact-historical",
-					name: "old-draft.pdf",
-					updatedAt: 2,
-					metadata: {
-						documentFamilyId: "family-brief",
-						documentLabel: "Project draft",
-						documentFamilyStatus: "historical",
-						versionNumber: 2,
-					},
-				}),
-				makeArtifact({
-					id: "artifact-active",
-					name: "current-draft.pdf",
-					updatedAt: 3,
-					metadata: {
-						documentFamilyId: "family-slides",
-						documentLabel: "Current draft",
-						versionNumber: 3,
-					},
-				}),
-			],
+			artifacts: makeArtifacts(
+				[
+					"artifact-historical",
+					"old-draft.pdf",
+					2,
+					"family-brief",
+					"Project draft",
+					2,
+					{ documentFamilyStatus: "historical" },
+				],
+				[
+					"artifact-active",
+					"current-draft.pdf",
+					3,
+					"family-slides",
+					"Current draft",
+					3,
+				],
+			),
 		});
 
 		expect(selection.orderedArtifacts.map((artifact) => artifact.id)).toEqual([
@@ -422,38 +274,7 @@ describe("document resolution", () => {
 			query: "compare it with the investor slides",
 			limit: 4,
 			preferredFamilyId: "family-brief",
-			artifacts: [
-				makeArtifact({
-					id: "artifact-1",
-					name: "brief-v1.pdf",
-					updatedAt: 1,
-					metadata: {
-						documentFamilyId: "family-brief",
-						documentLabel: "Project brief",
-						versionNumber: 1,
-					},
-				}),
-				makeArtifact({
-					id: "artifact-2",
-					name: "brief-v2.pdf",
-					updatedAt: 2,
-					metadata: {
-						documentFamilyId: "family-brief",
-						documentLabel: "Project brief",
-						versionNumber: 2,
-					},
-				}),
-				makeArtifact({
-					id: "artifact-3",
-					name: "slides-v1.pdf",
-					updatedAt: 3,
-					metadata: {
-						documentFamilyId: "family-slides",
-						documentLabel: "Investor slides",
-						versionNumber: 1,
-					},
-				}),
-			],
+			artifacts: makeBriefFamilyArtifacts(),
 		});
 
 		expect(selection.orderedArtifacts.map((artifact) => artifact.id)).toEqual([
@@ -464,38 +285,18 @@ describe("document resolution", () => {
 
 	it("selects the latest artifact per generated document family for current-document context", () => {
 		const selection = resolveCurrentGeneratedDocumentSelection({
-			artifacts: [
-				makeArtifact({
-					id: "artifact-1",
-					name: "brief-v1.pdf",
-					updatedAt: 1,
-					metadata: {
-						documentFamilyId: "family-brief",
-						documentLabel: "Project brief",
-						versionNumber: 1,
-					},
-				}),
-				makeArtifact({
-					id: "artifact-2",
-					name: "brief-v2.pdf",
-					updatedAt: 2,
-					metadata: {
-						documentFamilyId: "family-brief",
-						documentLabel: "Project brief",
-						versionNumber: 2,
-					},
-				}),
-				makeArtifact({
-					id: "artifact-3",
-					name: "slides-v1.pdf",
-					updatedAt: 3,
-					metadata: {
-						documentFamilyId: "family-slides",
-						documentLabel: "Investor slides",
-						versionNumber: 1,
-					},
-				}),
-			],
+			artifacts: makeArtifacts(
+				["artifact-1", "brief-v1.pdf", 1, "family-brief", "Project brief", 1],
+				["artifact-2", "brief-v2.pdf", 2, "family-brief", "Project brief", 2],
+				[
+					"artifact-3",
+					"slides-v1.pdf",
+					3,
+					"family-slides",
+					"Investor slides",
+					1,
+				],
+			),
 		});
 
 		expect(selection.latestArtifactIds).toEqual(["artifact-3", "artifact-2"]);
@@ -505,29 +306,29 @@ describe("document resolution", () => {
 	it("excludes failed source-first generated documents from current and preferred selection", () => {
 		const selection = resolveCurrentGeneratedDocumentSelection({
 			preferredArtifactId: "artifact-failed",
-			artifacts: [
-				makeArtifact({
-					id: "artifact-failed",
-					name: "failed-report.pdf",
-					updatedAt: 3,
-					metadata: {
-						documentFamilyId: "family-failed",
-						documentLabel: "Failed report",
-						generatedDocumentSourceStatus: "failed",
-					},
-				}),
-				makeArtifact({
-					id: "artifact-ready",
-					name: "ready-report.pdf",
-					updatedAt: 2,
-					metadata: {
-						documentFamilyId: "family-ready",
-						documentLabel: "Ready report",
+			artifacts: makeArtifacts(
+				[
+					"artifact-failed",
+					"failed-report.pdf",
+					3,
+					"family-failed",
+					"Failed report",
+					undefined,
+					{ generatedDocumentSourceStatus: "failed" },
+				],
+				[
+					"artifact-ready",
+					"ready-report.pdf",
+					2,
+					"family-ready",
+					"Ready report",
+					undefined,
+					{
 						sourceChatFileId: "chat-file-ready",
 						generatedDocumentSourceStatus: "succeeded",
 					},
-				}),
-			],
+				],
+			),
 		});
 
 		expect(selection.primaryArtifactId).toBe("artifact-ready");
@@ -556,28 +357,10 @@ describe("document resolution", () => {
 	it("preserves an explicitly preferred artifact id for current-document context", () => {
 		const selection = resolveCurrentGeneratedDocumentSelection({
 			preferredArtifactId: "artifact-1",
-			artifacts: [
-				makeArtifact({
-					id: "artifact-1",
-					name: "brief-v1.pdf",
-					updatedAt: 1,
-					metadata: {
-						documentFamilyId: "family-brief",
-						documentLabel: "Project brief",
-						versionNumber: 1,
-					},
-				}),
-				makeArtifact({
-					id: "artifact-2",
-					name: "brief-v2.pdf",
-					updatedAt: 2,
-					metadata: {
-						documentFamilyId: "family-brief",
-						documentLabel: "Project brief",
-						versionNumber: 2,
-					},
-				}),
-			],
+			artifacts: makeArtifacts(
+				["artifact-1", "brief-v1.pdf", 1, "family-brief", "Project brief", 1],
+				["artifact-2", "brief-v2.pdf", 2, "family-brief", "Project brief", 2],
+			),
 		});
 
 		expect(selection.latestArtifactIds).toEqual(["artifact-2"]);
@@ -589,30 +372,7 @@ describe("document resolution", () => {
 		const selection = resolveCurrentGeneratedDocumentSelection({
 			query: "continue the project brief",
 			currentConversationId: "conv-1",
-			artifacts: [
-				makeArtifact({
-					id: "artifact-brief",
-					name: "brief-v2.pdf",
-					conversationId: "conv-1",
-					updatedAt: 2,
-					metadata: {
-						documentFamilyId: "family-brief",
-						documentLabel: "Project brief",
-						versionNumber: 2,
-					},
-				}),
-				makeArtifact({
-					id: "artifact-slides",
-					name: "slides-v3.pdf",
-					conversationId: "conv-1",
-					updatedAt: 3,
-					metadata: {
-						documentFamilyId: "family-slides",
-						documentLabel: "Investor slides",
-						versionNumber: 3,
-					},
-				}),
-			],
+			artifacts: makeCurrentDocumentArtifacts(),
 		});
 
 		expect(selection.latestArtifactIds).toEqual([
@@ -626,28 +386,7 @@ describe("document resolution", () => {
 	it("falls back to recency when there is no preferred artifact or explicit query match", () => {
 		const selection = resolveCurrentGeneratedDocumentSelection({
 			query: "please keep refining it",
-			artifacts: [
-				makeArtifact({
-					id: "artifact-brief",
-					name: "brief-v2.pdf",
-					updatedAt: 2,
-					metadata: {
-						documentFamilyId: "family-brief",
-						documentLabel: "Project brief",
-						versionNumber: 2,
-					},
-				}),
-				makeArtifact({
-					id: "artifact-slides",
-					name: "slides-v3.pdf",
-					updatedAt: 3,
-					metadata: {
-						documentFamilyId: "family-slides",
-						documentLabel: "Investor slides",
-						versionNumber: 3,
-					},
-				}),
-			],
+			artifacts: makeCurrentDocumentArtifacts(),
 		});
 
 		expect(selection.primaryArtifactId).toBe("artifact-slides");
@@ -660,28 +399,24 @@ describe("document resolution", () => {
 		const selection = resolveCurrentGeneratedDocumentSelection({
 			query: "Please make it shorter.",
 			preferredFamilyId: "family-brief",
-			artifacts: [
-				makeArtifact({
-					id: "artifact-brief",
-					name: "brief-v2.pdf",
-					updatedAt: 2,
-					metadata: {
-						documentFamilyId: "family-brief",
-						documentLabel: "Project brief",
-						versionNumber: 2,
-					},
-				}),
-				makeArtifact({
-					id: "artifact-slides",
-					name: "slides-v3.pdf",
-					updatedAt: 3,
-					metadata: {
-						documentFamilyId: "family-slides",
-						documentLabel: "Investor slides",
-						versionNumber: 3,
-					},
-				}),
-			],
+			artifacts: makeArtifacts(
+				[
+					"artifact-brief",
+					"brief-v2.pdf",
+					2,
+					"family-brief",
+					"Project brief",
+					2,
+				],
+				[
+					"artifact-slides",
+					"slides-v3.pdf",
+					3,
+					"family-slides",
+					"Investor slides",
+					3,
+				],
+			),
 		});
 
 		expect(selection.primaryArtifactId).toBe("artifact-brief");
@@ -719,18 +454,14 @@ describe("document resolution", () => {
 			query: "let's talk about something else",
 			limit: 4,
 			suppressCarryoverWhenUnfocused: true,
-			artifacts: [
-				makeArtifact({
-					id: "artifact-brief",
-					name: "brief-v2.pdf",
-					updatedAt: 2,
-					metadata: {
-						documentFamilyId: "family-brief",
-						documentLabel: "Project brief",
-						versionNumber: 2,
-					},
-				}),
-			],
+			artifacts: makeArtifacts([
+				"artifact-brief",
+				"brief-v2.pdf",
+				2,
+				"family-brief",
+				"Project brief",
+				2,
+			]),
 		});
 
 		expect(selection.orderedArtifacts).toEqual([]);
@@ -742,19 +473,15 @@ describe("document resolution", () => {
 			query: "Create a new one-page PDF file called context-sweep-summary.pdf",
 			limit: 4,
 			suppressCarryoverWhenUnfocused: true,
-			artifacts: [
-				makeArtifact({
-					id: "artifact-summary",
-					name: "context-sweep-summary.pdf",
-					updatedAt: 4,
-					metadata: {
-						documentFamilyId: "family-summary",
-						documentLabel: "context-sweep-summary",
-						versionNumber: 1,
-						generatedFilename: "context-sweep-summary.pdf",
-					},
-				}),
-			],
+			artifacts: makeArtifacts([
+				"artifact-summary",
+				"context-sweep-summary.pdf",
+				4,
+				"family-summary",
+				"context-sweep-summary",
+				1,
+				{ generatedFilename: "context-sweep-summary.pdf" },
+			]),
 		});
 
 		expect(selection.orderedArtifacts).toEqual([]);
