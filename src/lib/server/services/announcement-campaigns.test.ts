@@ -222,6 +222,35 @@ describe("announcement campaign service", () => {
 		});
 	});
 
+	it("rejects publish attempts with invalid slide interactions and unsupported setup controls", async () => {
+		const slides = buildFirstRunOnboardingSlides({
+			setup: {
+				setupControls: ["ui_language", "unsupported_preference"],
+			},
+		});
+		slides[0] = {
+			...slides[0],
+			actionDestination: "/external",
+		};
+
+		await expect(
+			publishFirstRunOnboardingCampaign(db, {
+				campaignId: "campaign-1",
+				snapshotIds: ["snapshot-1", "snap-slide-1", "snap-slide-2"],
+				name: "Onboarding",
+				slides,
+				assetPrefixes: ["setup", "disclosure"],
+			}),
+		).rejects.toMatchObject({
+			fieldErrors: expect.objectContaining({
+				"slides.slide-setup.actionDestination":
+					"Action destination must be an allowlisted internal route.",
+				"slides.slide-setup.setupControls":
+					"Setup controls include an unsupported preference control.",
+			}),
+		});
+	});
+
 	it("publishes slides without uploaded images and leaves snapshot crop ids empty", async () => {
 		const published = await publishFirstRunOnboardingCampaign(db, {
 			campaignId: "campaign-optional-images",

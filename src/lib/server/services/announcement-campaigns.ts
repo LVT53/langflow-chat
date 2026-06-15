@@ -592,12 +592,11 @@ function validateActionDestination(value: string | null): boolean {
 	return ACTION_DESTINATION_ALLOWLIST.has(value.split("?")[0]);
 }
 
-function validatePublishInput(
+function validatePublishCampaignBasics(
 	campaign: DraftRow,
 	slides: DraftSlideRow[],
-	assetRows: Array<{ id: string; assetKind: string; variant: string | null }>,
+	errors: Record<string, string>,
 ) {
-	const errors: Record<string, string> = {};
 	if (!trimString(campaign.name)) {
 		errors.name = "Campaign name is required.";
 	}
@@ -621,9 +620,116 @@ function validatePublishInput(
 	if (slides.length === 0) {
 		errors.slides = "At least one slide is required.";
 	}
+}
+
+function validateRequiredLocalizedFields(
+	prefix: string,
+	fields: Array<[string, string]>,
+	message: string,
+	errors: Record<string, string>,
+) {
+	for (const [field, value] of fields) {
+		if (!value.trim()) {
+			addFieldError(errors, `${prefix}.${field}`, message);
+		}
+	}
+}
+
+function validateSlideCropAssets(
+	prefix: string,
+	slide: DraftSlideRow,
+	assetMap: Map<
+		string,
+		{ id: string; assetKind: string; variant: string | null }
+	>,
+	errors: Record<string, string>,
+) {
+	if (slide.desktopCropAssetId) {
+		const asset = assetMap.get(slide.desktopCropAssetId);
+		if (!asset || asset.assetKind !== "crop" || asset.variant !== "desktop") {
+			addFieldError(
+				errors,
+				`${prefix}.desktopCropAssetId`,
+				"Desktop crop asset must be a campaign desktop crop.",
+			);
+		}
+	}
+	if (slide.mobileCropAssetId) {
+		const asset = assetMap.get(slide.mobileCropAssetId);
+		if (!asset || asset.assetKind !== "crop" || asset.variant !== "mobile") {
+			addFieldError(
+				errors,
+				`${prefix}.mobileCropAssetId`,
+				"Mobile crop asset must be a campaign mobile crop.",
+			);
+		}
+	}
+}
+
+function validateSlideInteractions(
+	prefix: string,
+	campaignType: AnnouncementCampaignType,
+	slide: DraftSlideRow,
+	errors: Record<string, string>,
+) {
+	if (!validateActionDestination(slide.actionDestination)) {
+		addFieldError(
+			errors,
+			`${prefix}.actionDestination`,
+			"Action destination must be an allowlisted internal route.",
+		);
+	}
+	if (
+		slide.actionDestination &&
+		(!slide.actionLabelEn?.trim() || !slide.actionLabelHu?.trim())
+	) {
+		addFieldError(
+			errors,
+			`${prefix}.actionLabel`,
+			"Action labels are required in English and Hungarian when an action is configured.",
+		);
+	}
+
+	const setupControls = parseSetupControlsJson(slide.setupControlsJson);
+	if (
+		setupControls.length > 0 &&
+		(campaignType !== "first_run_onboarding" || slide.layoutType !== "setup")
+	) {
+		addFieldError(
+			errors,
+			`${prefix}.setupControls`,
+			"Setup controls are only allowed on first-run setup slides.",
+		);
+	}
+	for (const control of setupControls) {
+		if (!SETUP_CONTROLS.has(control)) {
+			addFieldError(
+				errors,
+				`${prefix}.setupControls`,
+				"Setup controls include an unsupported preference control.",
+			);
+		}
+	}
+
+	return {
+		isSetupSlide: slide.layoutType === "setup",
+		isDataDisclosureSlide:
+			slide.layoutType === "standard" &&
+			slide.semanticRole === "data_disclosure",
+	};
+}
+
+function validatePublishInput(
+	campaign: DraftRow,
+	slides: DraftSlideRow[],
+	assetRows: Array<{ id: string; assetKind: string; variant: string | null }>,
+) {
+	const errors: Record<string, string> = {};
+	validatePublishCampaignBasics(campaign, slides, errors);
 
 	const orderSet = new Set<number>();
 	const assetMap = new Map(assetRows.map((row) => [row.id, row]));
+	const campaignType = campaign.type as AnnouncementCampaignType;
 	let setupCount = 0;
 	let dataDisclosureCount = 0;
 
@@ -660,104 +766,44 @@ function validatePublishInput(
 		}
 		orderSet.add(slide.sortOrder);
 
-		for (const [field, value] of [
-			["title.en", slide.titleEn],
-			["title.hu", slide.titleHu],
-			["body.en", slide.bodyEn],
-			["body.hu", slide.bodyHu],
-		]) {
-			if (!value.trim()) {
-				addFieldError(
-					errors,
-					`${prefix}.${field}`,
-					"Localized EN/HU title and body are required.",
-				);
-			}
-		}
+		validateRequiredLocalizedFields(
+			prefix,
+			[
+				["title.en", slide.titleEn],
+				["title.hu", slide.titleHu],
+				["body.en", slide.bodyEn],
+				["body.hu", slide.bodyHu],
+			],
+			"Localized EN/HU title and body are required.",
+			errors,
+		);
 
 		const hasUploadedImage = Boolean(
 			slide.desktopCropAssetId || slide.mobileCropAssetId,
 		);
 		if (hasUploadedImage) {
-			for (const [field, value] of [
-				["altText.en", slide.altTextEn],
-				["altText.hu", slide.altTextHu],
-			]) {
-				if (!value.trim()) {
-					addFieldError(
-						errors,
-						`${prefix}.${field}`,
-						"Localized EN/HU alt text is required when an image is uploaded.",
-					);
-				}
-			}
-		}
-
-		if (slide.desktopCropAssetId) {
-			const asset = assetMap.get(slide.desktopCropAssetId);
-			if (!asset || asset.assetKind !== "crop" || asset.variant !== "desktop") {
-				addFieldError(
-					errors,
-					`${prefix}.desktopCropAssetId`,
-					"Desktop crop asset must be a campaign desktop crop.",
-				);
-			}
-		}
-		if (slide.mobileCropAssetId) {
-			const asset = assetMap.get(slide.mobileCropAssetId);
-			if (!asset || asset.assetKind !== "crop" || asset.variant !== "mobile") {
-				addFieldError(
-					errors,
-					`${prefix}.mobileCropAssetId`,
-					"Mobile crop asset must be a campaign mobile crop.",
-				);
-			}
-		}
-
-		if (!validateActionDestination(slide.actionDestination)) {
-			addFieldError(
+			validateRequiredLocalizedFields(
+				prefix,
+				[
+					["altText.en", slide.altTextEn],
+					["altText.hu", slide.altTextHu],
+				],
+				"Localized EN/HU alt text is required when an image is uploaded.",
 				errors,
-				`${prefix}.actionDestination`,
-				"Action destination must be an allowlisted internal route.",
-			);
-		}
-		if (
-			slide.actionDestination &&
-			(!slide.actionLabelEn?.trim() || !slide.actionLabelHu?.trim())
-		) {
-			addFieldError(
-				errors,
-				`${prefix}.actionLabel`,
-				"Action labels are required in English and Hungarian when an action is configured.",
 			);
 		}
 
-		const setupControls = parseSetupControlsJson(slide.setupControlsJson);
-		if (slide.layoutType === "setup") setupCount += 1;
-		if (
-			slide.layoutType === "standard" &&
-			slide.semanticRole === "data_disclosure"
-		) {
+		validateSlideCropAssets(prefix, slide, assetMap, errors);
+
+		const { isSetupSlide, isDataDisclosureSlide } = validateSlideInteractions(
+			prefix,
+			campaignType,
+			slide,
+			errors,
+		);
+		if (isSetupSlide) setupCount += 1;
+		if (isDataDisclosureSlide) {
 			dataDisclosureCount += 1;
-		}
-		if (
-			setupControls.length > 0 &&
-			(campaign.type !== "first_run_onboarding" || slide.layoutType !== "setup")
-		) {
-			addFieldError(
-				errors,
-				`${prefix}.setupControls`,
-				"Setup controls are only allowed on first-run setup slides.",
-			);
-		}
-		for (const control of setupControls) {
-			if (!SETUP_CONTROLS.has(control)) {
-				addFieldError(
-					errors,
-					`${prefix}.setupControls`,
-					"Setup controls include an unsupported preference control.",
-				);
-			}
 		}
 	}
 
