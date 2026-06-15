@@ -125,7 +125,7 @@ let researchSeverity = $derived(
 	getResearchSeverity(job, isEvidenceLimitationMemo),
 );
 let reportDocument = $derived(buildReportDocument(job));
-let openReportLabelKey = $derived(
+let openReportLabelKey: I18nKey = $derived(
 	isLimitedResearchReport
 		? "deepResearch.openLimitedReportLabel"
 		: "deepResearch.openReportLabel",
@@ -405,14 +405,15 @@ function buildTimelineSteps(job: DeepResearchJob): TimelineStep[] {
 		const events = timelineEvents.filter((event) =>
 			step.stages.includes(event.stage),
 		);
+		const status: TimelineStep["status"] =
+			isTerminalCompleted || index < currentIndex
+				? "completed"
+				: index === currentIndex
+					? "active"
+					: "pending";
 		return {
 			...step,
-			status:
-				isTerminalCompleted || index < currentIndex
-					? "completed"
-					: index === currentIndex
-						? "active"
-						: "pending",
+			status,
 			events,
 		};
 	}).filter((step, index) => {

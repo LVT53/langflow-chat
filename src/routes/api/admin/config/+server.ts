@@ -33,7 +33,7 @@ export const GET: RequestHandler = async (event) => {
 
 export const PUT: RequestHandler = async (event) => {
 	requireAdmin(event);
-	const userId = event.locals.user?.id;
+	const userId = event.locals.user.id;
 
 	let body: Record<string, unknown>;
 	try {

@@ -25,6 +25,7 @@ function isUploadFile(value: FormDataEntryValue | null): value is File {
 
 export const POST: RequestHandler = async (event) => {
 	requireAdmin(event);
+	const uploadedByUserId = event.locals.user.id;
 
 	let formData: FormData;
 	try {
@@ -54,7 +55,7 @@ export const POST: RequestHandler = async (event) => {
 		const width = parseOptionalPositiveInteger(formData.get("width"));
 		const height = parseOptionalPositiveInteger(formData.get("height"));
 		const asset = await storeCampaignSourceAsset({
-			uploadedByUserId: event.locals.user?.id,
+			uploadedByUserId,
 			file: {
 				filename: image.name,
 				mimeType: image.type,

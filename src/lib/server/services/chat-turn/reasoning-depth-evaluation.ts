@@ -254,13 +254,20 @@ async function evaluateClarificationFixture(
 	}
 	if (fixture.language === "hu") {
 		const text =
-			result.action === "ask" ? result.text : (result.assumptionPrefix ?? "");
+			result.action === "ask"
+				? result.text
+				: result.action === "proceed"
+					? (result.assumptionPrefix ?? "")
+					: "";
 		dimensions.localizedWording = passIf(
 			containsHungarianSignal(text) && !/\bI can do that\b/i.test(text),
 			["Expected localized Hungarian wording."],
 		);
 	}
-	if (fixture.expectedAction === "proceed_with_assumption") {
+	if (
+		fixture.expectedAction === "proceed_with_assumption" &&
+		result.depthMetadata
+	) {
 		dimensions.metadataClassification = passIf(
 			result.depthMetadata.outcome === "proceeded_with_assumption" &&
 				result.depthMetadata.clarification?.outcome ===

@@ -37,6 +37,7 @@ type MockCondition =
 	| undefined;
 
 type MockOrder = { direction: "asc" | "desc"; field: string };
+type MockShapeField = { kind?: string; name?: string };
 
 function readComparable(value: unknown): string | number {
 	if (value instanceof Date) return value.getTime();
@@ -64,7 +65,7 @@ function matchesCondition(
 
 function mapSelectedRows(
 	rows: Array<Record<string, unknown>>,
-	shape?: Record<string, unknown>,
+	shape?: Record<string, MockShapeField>,
 ) {
 	if (!shape) return rows;
 	const entries = Object.entries(shape);
@@ -73,7 +74,9 @@ function mapSelectedRows(
 			Object.fromEntries(
 				entries.map(([alias, field]) => [
 					alias,
-					field?.kind === "count" ? rows.length : rows[0]?.[field?.name],
+					field?.kind === "count"
+						? rows.length
+						: rows[0]?.[field?.name ?? alias],
 				]),
 			),
 		];
@@ -87,7 +90,7 @@ function mapSelectedRows(
 
 function createQuery(
 	rows: Array<Record<string, unknown>>,
-	shape?: Record<string, unknown>,
+	shape?: Record<string, MockShapeField>,
 ) {
 	let currentRows = [...rows];
 	const chain = {
@@ -129,7 +132,7 @@ function createQuery(
 
 vi.mock("$lib/server/db", () => ({
 	db: {
-		select: (shape?: Record<string, unknown>) => ({
+		select: (shape?: Record<string, MockShapeField>) => ({
 			from: (table: { __name?: string }) => {
 				if (table?.__name === "memory_project_task_links") {
 					return createQuery(linkRows as Array<Record<string, unknown>>, shape);
@@ -1160,6 +1163,7 @@ describe("task continuity memory events", () => {
 				objective: "Draft the new launch brief",
 				confidence: 88,
 				locked: false,
+				lastConfirmedTurnMessageId: null,
 				constraints: [],
 				factsToPreserve: [],
 				decisions: [],

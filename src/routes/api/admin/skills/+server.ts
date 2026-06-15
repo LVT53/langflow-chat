@@ -69,17 +69,19 @@ function validationResponse(error: UserSkillValidationError) {
 
 export const GET: RequestHandler = async (event) => {
 	requireAdmin(event);
+	const actorUserId = event.locals.user.id;
 
 	if (!getConfig().composerCommandRegistryEnabled) {
 		return disabledResponse();
 	}
 
-	await seedBuiltInSystemSkillDefinitions(event.locals.user?.id);
+	await seedBuiltInSystemSkillDefinitions(actorUserId);
 	return json({ skills: await listAdminSystemSkillDefinitions() });
 };
 
 export const POST: RequestHandler = async (event) => {
 	requireAdmin(event);
+	const actorUserId = event.locals.user.id;
 
 	if (!getConfig().composerCommandRegistryEnabled) {
 		return disabledResponse();
@@ -88,7 +90,7 @@ export const POST: RequestHandler = async (event) => {
 	const body = await event.request.json().catch(() => ({}));
 	try {
 		const skill = await createSystemSkillDefinition(
-			event.locals.user?.id,
+			actorUserId,
 			readCreateInput(body),
 		);
 		return json({ skill }, { status: 201 });

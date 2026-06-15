@@ -11,7 +11,7 @@ import {
 	ChevronRight,
 	Code,
 	Download,
-	File,
+	File as FileIcon,
 	FileText,
 	Image,
 	Loader,
@@ -591,7 +591,10 @@ function formatFileType(mimeType: string | null, filename: string): string {
 	return "FILE";
 }
 
-function getFileIcon(mimeType: string | null, filename: string): typeof File {
+function getFileIcon(
+	mimeType: string | null,
+	filename: string,
+): typeof FileIcon {
 	const mime = normalizeText(mimeType);
 	const extension = getFileExtension(filename);
 
@@ -680,7 +683,7 @@ function getFileIcon(mimeType: string | null, filename: string): typeof File {
 		return FileText;
 	}
 
-	return File;
+	return FileIcon;
 }
 
 function handleRowClick(event: MouseEvent, document: KnowledgeDocumentItem) {

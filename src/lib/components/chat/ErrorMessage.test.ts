@@ -13,6 +13,7 @@ describe("ErrorMessage", () => {
 			props: {
 				error: errorText,
 				onRetry: vi.fn(),
+				onClose: vi.fn(),
 			},
 		});
 
@@ -25,6 +26,7 @@ describe("ErrorMessage", () => {
 			props: {
 				error: "Error occurred",
 				onRetry,
+				onClose: vi.fn(),
 			},
 		});
 
@@ -38,6 +40,7 @@ describe("ErrorMessage", () => {
 			props: {
 				error: "Error occurred",
 				onRetry,
+				onClose: vi.fn(),
 			},
 		});
 

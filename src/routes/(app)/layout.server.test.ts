@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { AppShellData } from "$lib/server/services/app-shell";
 
 vi.mock("@sveltejs/kit", () => ({
 	redirect: vi.fn((status: number, location: string) => ({ status, location })),
@@ -87,8 +88,10 @@ function createAuthenticatedLoadEvent() {
 			},
 		},
 		depends: vi.fn(),
-	} as Parameters<typeof load>[0];
+	} as unknown as Parameters<typeof load>[0];
 }
+
+type LoadResult = AppShellData;
 
 describe("(app) layout load", () => {
 	it("streams sidebar conversations without blocking the critical app shell payload", async () => {
@@ -96,7 +99,7 @@ describe("(app) layout load", () => {
 			| ((
 					value: Array<{ id: string; title: string; updatedAt: number }>,
 			  ) => void)
-			| null = null;
+			| undefined;
 		const conversationsPromise = new Promise<
 			Array<{ id: string; title: string; updatedAt: number }>
 		>((resolve) => {
@@ -106,13 +109,15 @@ describe("(app) layout load", () => {
 			conversationsPromise as ReturnType<typeof listConversations>,
 		);
 
-		const loadPromise = load(createAuthenticatedLoadEvent());
-		const earlyResult = await Promise.race([
+		const loadPromise: Promise<LoadResult> = Promise.resolve(
+			load(createAuthenticatedLoadEvent()),
+		) as Promise<LoadResult>;
+		const earlyResult = (await Promise.race([
 			loadPromise.then((result) => ({ status: "resolved" as const, result })),
 			new Promise<{ status: "pending" }>((resolve) =>
 				setTimeout(() => resolve({ status: "pending" }), 0),
 			),
-		]);
+		])) as { status: "resolved"; result: LoadResult } | { status: "pending" };
 
 		expect(earlyResult.status).toBe("resolved");
 		if (earlyResult.status !== "resolved") {
@@ -127,27 +132,31 @@ describe("(app) layout load", () => {
 			}),
 		);
 
-		resolveConversations?.([
-			{ id: "conv-1", title: "Sidebar chat", updatedAt: 1 },
-		]);
-		await expect(earlyResult.result.conversations).resolves.toEqual([
-			{ id: "conv-1", title: "Sidebar chat", updatedAt: 1 },
-		]);
+		if (resolveConversations) {
+			resolveConversations([
+				{ id: "conv-1", title: "Sidebar chat", updatedAt: 1 },
+			]);
+		}
+		await expect(
+			Promise.resolve(earlyResult.result.conversations),
+		).resolves.toEqual([{ id: "conv-1", title: "Sidebar chat", updatedAt: 1 }]);
 	});
 
 	it("marks manually streamed app shell promises as handled before returning load data", async () => {
-		const conversationsPromise = new Promise<
+		const conversationsCatch = vi.fn();
+		const conversationsPromise = {
+			catch: conversationsCatch,
+		} as unknown as Promise<
 			Array<{ id: string; title: string; updatedAt: number }>
-		>(() => undefined);
-		const projectsPromise = new Promise<Array<{ id: string; name: string }>>(
-			() => undefined,
-		);
-		const appVersionPromise = new Promise<{ compact: string; full: string }>(
-			() => undefined,
-		);
-		const conversationsCatch = vi.spyOn(conversationsPromise, "catch");
-		const projectsCatch = vi.spyOn(projectsPromise, "catch");
-		const appVersionCatch = vi.spyOn(appVersionPromise, "catch");
+		>;
+		const projectsCatch = vi.fn();
+		const projectsPromise = {
+			catch: projectsCatch,
+		} as unknown as Promise<Array<{ id: string; name: string }>>;
+		const appVersionCatch = vi.fn();
+		const appVersionPromise = {
+			catch: appVersionCatch,
+		} as unknown as Promise<{ compact: string; full: string }>;
 		vi.mocked(listConversations).mockReturnValueOnce(
 			conversationsPromise as ReturnType<typeof listConversations>,
 		);
@@ -159,7 +168,7 @@ describe("(app) layout load", () => {
 			appVersionPromise as ReturnType<typeof getAppVersionMetadata>,
 		);
 
-		const result = await load(createAuthenticatedLoadEvent());
+		const result = (await load(createAuthenticatedLoadEvent())) as LoadResult;
 
 		expect(result.conversations).toBe(conversationsPromise);
 		expect(result.projects).toBe(projectsPromise);
@@ -179,7 +188,7 @@ describe("(app) layout load", () => {
 	});
 
 	it("exposes the Deep Research feature flag to app pages", async () => {
-		const result = await load(createAuthenticatedLoadEvent());
+		const result = (await load(createAuthenticatedLoadEvent())) as LoadResult;
 
 		expect(result).toEqual(
 			expect.objectContaining({
@@ -189,7 +198,7 @@ describe("(app) layout load", () => {
 	});
 
 	it("exposes the Composer Command Registry feature flag to app pages", async () => {
-		const result = await load(createAuthenticatedLoadEvent());
+		const result = (await load(createAuthenticatedLoadEvent())) as LoadResult;
 
 		expect(result).toEqual(
 			expect.objectContaining({
@@ -199,7 +208,7 @@ describe("(app) layout load", () => {
 	});
 
 	it("exposes inherited and effective model preferences to the app shell", async () => {
-		const result = await load(createAuthenticatedLoadEvent());
+		const result = (await load(createAuthenticatedLoadEvent())) as LoadResult;
 
 		expect(result).toEqual(
 			expect.objectContaining({
@@ -211,7 +220,7 @@ describe("(app) layout load", () => {
 	});
 
 	it("exposes resolved app version metadata to the sidebar", async () => {
-		const result = await load(createAuthenticatedLoadEvent());
+		const result = (await load(createAuthenticatedLoadEvent())) as LoadResult;
 
 		await expect(result.appVersion).resolves.toEqual({
 			compact: "v1.0.1",

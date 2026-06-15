@@ -1,4 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+type OrphanFile = { path: string; sizeBytes: number; category: string };
+type FindOrphanFilesResult = {
+	orphanFiles: OrphanFile[];
+	totalFilesOnDisk: number;
+	totalOrphanBytes: number;
+};
 
 const mockState = vi.hoisted(() => {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -29,11 +36,14 @@ const mockState = vi.hoisted(() => {
 		errors: 0,
 	}));
 	let mockDeleteOrphanChatFiles = vi.fn(async () => 0);
-	let mockFindOrphanFiles = vi.fn(async () => ({
-		orphanFiles: [],
-		totalFilesOnDisk: 0,
-		totalOrphanBytes: 0,
-	}));
+	let mockFindOrphanFiles = vi.fn(
+		async () =>
+			({
+				orphanFiles: [],
+				totalFilesOnDisk: 0,
+				totalOrphanBytes: 0,
+			}) as FindOrphanFilesResult,
+	);
 
 	const tableMeta = new Map<unknown, string>();
 	const tTable = (name: string) => {
@@ -73,11 +83,14 @@ const mockState = vi.hoisted(() => {
 			errors: 0,
 		}));
 		mockDeleteOrphanChatFiles = vi.fn(async () => 0);
-		mockFindOrphanFiles = vi.fn(async () => ({
-			orphanFiles: [],
-			totalFilesOnDisk: 0,
-			totalOrphanBytes: 0,
-		}));
+		mockFindOrphanFiles = vi.fn(
+			async () =>
+				({
+					orphanFiles: [],
+					totalFilesOnDisk: 0,
+					totalOrphanBytes: 0,
+				}) as FindOrphanFilesResult,
+		);
 	}
 
 	return {
@@ -118,13 +131,17 @@ vi.mock("./semantic-embedding-refresh", () => ({
 }));
 
 vi.mock("./memory-events", () => ({
-	pruneOldMemoryEvents: (...args: unknown[]) =>
-		mockState.mockPruneOldMemoryEvents(...args),
+	pruneOldMemoryEvents: (
+		...args: Parameters<typeof mockState.mockPruneOldMemoryEvents>
+	) => mockState.mockPruneOldMemoryEvents(...args),
 }));
 
 vi.mock("./semantic-embeddings", () => ({
-	deleteSemanticEmbeddingsForSubjects: (...args: unknown[]) =>
-		mockState.mockDeleteSemanticEmbeddingsForSubjects(...args),
+	deleteSemanticEmbeddingsForSubjects: (
+		...args: Parameters<
+			typeof mockState.mockDeleteSemanticEmbeddingsForSubjects
+		>
+	) => mockState.mockDeleteSemanticEmbeddingsForSubjects(...args),
 }));
 
 vi.mock("./honcho", () => ({
@@ -136,8 +153,9 @@ vi.mock("./chat-files", () => ({
 }));
 
 vi.mock("./disk-reconciliation", () => ({
-	findOrphanFiles: (...args: unknown[]) =>
-		mockState.mockFindOrphanFiles(...args),
+	findOrphanFiles: (
+		...args: Parameters<typeof mockState.mockFindOrphanFiles>
+	) => mockState.mockFindOrphanFiles(...args),
 }));
 
 vi.mock("$lib/server/db/schema", () => mockState.schemaStubs);

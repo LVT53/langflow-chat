@@ -1,6 +1,7 @@
 import { render, screen, waitFor } from "@testing-library/svelte";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WORKSPACE_CONVERSATION_DELETED_EVENT } from "$lib/client/document-workspace-state";
+import type { KnowledgeDocumentItem } from "$lib/types";
 import KnowledgeWorkspaceCoordinator from "./KnowledgeWorkspaceCoordinator.svelte";
 
 const { replaceStateMock } = vi.hoisted(() => ({
@@ -46,17 +47,7 @@ describe("KnowledgeWorkspaceCoordinator", () => {
 	it("opens handoff documents in the expanded shared document workspace", async () => {
 		render(KnowledgeWorkspaceCoordinator, {
 			props: {
-				documents: [
-					{
-						id: "doc-1",
-						name: "Notes.md",
-						type: "source_document",
-						mimeType: "text/markdown",
-						sizeBytes: 120,
-						createdAt: 1,
-						displayArtifactId: "artifact-1",
-					},
-				],
+				documents: [makeDocument()],
 			},
 		});
 
@@ -75,17 +66,7 @@ describe("KnowledgeWorkspaceCoordinator", () => {
 	it("shows the active document download action in the expanded workspace", async () => {
 		render(KnowledgeWorkspaceCoordinator, {
 			props: {
-				documents: [
-					{
-						id: "doc-1",
-						name: "Notes.md",
-						type: "source_document",
-						mimeType: "text/markdown",
-						sizeBytes: 120,
-						createdAt: 1,
-						displayArtifactId: "artifact-1",
-					},
-				],
+				documents: [makeDocument()],
 			},
 		});
 
@@ -105,17 +86,7 @@ describe("KnowledgeWorkspaceCoordinator", () => {
 	it("does not show a presentation toggle in the expanded Knowledge workspace", async () => {
 		render(KnowledgeWorkspaceCoordinator, {
 			props: {
-				documents: [
-					{
-						id: "doc-1",
-						name: "Notes.md",
-						type: "source_document",
-						mimeType: "text/markdown",
-						sizeBytes: 120,
-						createdAt: 1,
-						displayArtifactId: "artifact-1",
-					},
-				],
+				documents: [makeDocument()],
 			},
 		});
 
@@ -134,19 +105,15 @@ describe("KnowledgeWorkspaceCoordinator", () => {
 		render(KnowledgeWorkspaceCoordinator, {
 			props: {
 				documents: [
-					{
-						id: "doc-1",
+					makeDocument({
 						name: "Contract.docx",
-						type: "source_document",
 						mimeType:
 							"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-						sizeBytes: 120,
-						createdAt: 1,
 						displayArtifactId: "display-docx-1",
 						promptArtifactId: "artifact-1",
 						familyArtifactIds: ["display-docx-1", "artifact-1"],
 						normalizedAvailable: true,
-					},
+					}),
 				],
 			},
 		});
@@ -211,16 +178,9 @@ describe("KnowledgeWorkspaceCoordinator", () => {
 		render(KnowledgeWorkspaceCoordinator, {
 			props: {
 				documents: [
-					{
-						id: "doc-1",
-						name: "Notes.md",
-						type: "source_document",
-						mimeType: "text/markdown",
-						sizeBytes: 120,
-						createdAt: 1,
-						displayArtifactId: "artifact-1",
+					makeDocument({
 						conversationId: "deleted-conversation",
-					},
+					}),
 				],
 			},
 		});
@@ -243,4 +203,26 @@ describe("KnowledgeWorkspaceCoordinator", () => {
 			).not.toBeInTheDocument();
 		});
 	});
+
+	function makeDocument(
+		overrides: Partial<KnowledgeDocumentItem> = {},
+	): KnowledgeDocumentItem {
+		const now = 1;
+		return {
+			id: overrides.id ?? "doc-1",
+			name: overrides.name ?? "Notes.md",
+			type: overrides.type ?? "source_document",
+			mimeType: overrides.mimeType ?? "text/markdown",
+			sizeBytes: overrides.sizeBytes ?? 120,
+			createdAt: overrides.createdAt ?? now,
+			updatedAt: overrides.updatedAt ?? now,
+			displayArtifactId: overrides.displayArtifactId ?? "artifact-1",
+			promptArtifactId: overrides.promptArtifactId ?? "artifact-1",
+			familyArtifactIds: overrides.familyArtifactIds ?? ["artifact-1"],
+			conversationId: overrides.conversationId ?? null,
+			summary: overrides.summary ?? null,
+			normalizedAvailable: overrides.normalizedAvailable ?? false,
+			...overrides,
+		};
+	}
 });

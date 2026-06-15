@@ -34,6 +34,15 @@ function makeArtifact(params: {
 	};
 }
 
+function makeEphemeralArtifact(
+	params: Parameters<typeof makeArtifact>[0],
+): Artifact {
+	return {
+		...makeArtifact(params),
+		retrievalClass: "ephemeral",
+	} as unknown as Artifact;
+}
+
 describe("document resolution", () => {
 	it("dedupes generated outputs by family and prefers explicit label/name matches", () => {
 		const resolved = resolveRelevantGeneratedDocumentArtifacts({
@@ -633,7 +642,7 @@ describe("document resolution", () => {
 	});
 
 	it("treats active/current generated documents as prompt-eligible even when ephemeral", () => {
-		const artifact = makeArtifact({
+		const ephemeralArtifact = makeEphemeralArtifact({
 			id: "artifact-1",
 			name: "brief-v2.pdf",
 			conversationId: "conv-1",
@@ -644,11 +653,10 @@ describe("document resolution", () => {
 				versionNumber: 2,
 			},
 		});
-		artifact.retrievalClass = "ephemeral";
 
 		expect(
 			isGeneratedDocumentPromptEligible({
-				artifact,
+				artifact: ephemeralArtifact,
 				conversationId: "conv-1",
 				reasonCodes: ["current_generated_document"],
 				messageMatchScore: 0,
@@ -705,7 +713,7 @@ describe("document resolution", () => {
 	});
 
 	it("treats a recently corrected generated document as prompt-eligible even when ephemeral", () => {
-		const artifact = makeArtifact({
+		const ephemeralArtifact = makeEphemeralArtifact({
 			id: "artifact-1",
 			name: "brief-v2.pdf",
 			conversationId: "conv-1",
@@ -716,11 +724,10 @@ describe("document resolution", () => {
 				versionNumber: 2,
 			},
 		});
-		artifact.retrievalClass = "ephemeral";
 
 		expect(
 			isGeneratedDocumentPromptEligible({
-				artifact,
+				artifact: ephemeralArtifact,
 				conversationId: "conv-1",
 				reasonCodes: ["recent_user_correction"],
 				messageMatchScore: 0,
@@ -730,7 +737,7 @@ describe("document resolution", () => {
 	});
 
 	it("treats a recently refined generated document family as prompt-eligible even when ephemeral", () => {
-		const artifact = makeArtifact({
+		const ephemeralArtifact = makeEphemeralArtifact({
 			id: "artifact-1",
 			name: "brief-v2.pdf",
 			conversationId: "conv-1",
@@ -741,11 +748,10 @@ describe("document resolution", () => {
 				versionNumber: 2,
 			},
 		});
-		artifact.retrievalClass = "ephemeral";
 
 		expect(
 			isGeneratedDocumentPromptEligible({
-				artifact,
+				artifact: ephemeralArtifact,
 				conversationId: "conv-1",
 				reasonCodes: ["recently_refined_document_family"],
 				messageMatchScore: 0,
@@ -755,7 +761,7 @@ describe("document resolution", () => {
 	});
 
 	it("keeps unrelated ephemeral generated outputs out of prompt selection", () => {
-		const artifact = makeArtifact({
+		const ephemeralArtifact = makeEphemeralArtifact({
 			id: "artifact-1",
 			name: "brief-v2.pdf",
 			conversationId: "conv-1",
@@ -766,11 +772,10 @@ describe("document resolution", () => {
 				versionNumber: 2,
 			},
 		});
-		artifact.retrievalClass = "ephemeral";
 
 		expect(
 			isGeneratedDocumentPromptEligible({
-				artifact,
+				artifact: ephemeralArtifact,
 				conversationId: "conv-1",
 				reasonCodes: [],
 				messageMatchScore: 0,

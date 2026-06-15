@@ -60,6 +60,7 @@ function parseCropGeometry(
 
 export const POST: RequestHandler = async (event) => {
 	requireAdmin(event);
+	const uploadedByUserId = event.locals.user.id;
 
 	let formData: FormData;
 	try {
@@ -111,7 +112,7 @@ export const POST: RequestHandler = async (event) => {
 		const width = parseOptionalPositiveInteger(formData.get("width"));
 		const height = parseOptionalPositiveInteger(formData.get("height"));
 		const asset = await saveCampaignCropAsset({
-			uploadedByUserId: event.locals.user?.id,
+			uploadedByUserId,
 			sourceAssetId: event.params.id,
 			variant,
 			file: {

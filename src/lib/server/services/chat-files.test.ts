@@ -335,7 +335,7 @@ function extractArtifactType(condition: unknown): string | undefined {
 function selectRowsForTable(
 	table: { __table?: string },
 	condition: unknown,
-): Array<ChatFileRow | ArtifactRow> {
+): Array<ChatFileRow | ArtifactRow | { id: string }> {
 	if (table.__table === "conversations") {
 		return Array.from(mockConversationIds).map((id) => ({ id }));
 	}
@@ -460,17 +460,20 @@ vi.mock("drizzle-orm", () => ({
 
 vi.mock("$lib/server/services/knowledge", () => ({
 	createArtifactLink: vi.fn(async () => undefined),
-	createGeneratedOutputArtifact: (...args: unknown[]) =>
-		mockCreateGeneratedOutputArtifact(...args),
+	createGeneratedOutputArtifact: (
+		...args: Parameters<typeof mockCreateGeneratedOutputArtifact>
+	) => mockCreateGeneratedOutputArtifact(...args),
 }));
 
 vi.mock("$lib/server/services/honcho", () => ({
-	syncArtifactToHoncho: (...args: unknown[]) =>
-		mockSyncArtifactToHoncho(...args),
+	syncArtifactToHoncho: (
+		...args: Parameters<typeof mockSyncArtifactToHoncho>
+	) => mockSyncArtifactToHoncho(...args),
 }));
 
 vi.mock("./document-extraction", () => ({
-	extractDocumentText: (...args: unknown[]) => mockExtractDocumentText(...args),
+	extractDocumentText: (...args: Parameters<typeof mockExtractDocumentText>) =>
+		mockExtractDocumentText(...args),
 }));
 
 describe("chat-files service", () => {

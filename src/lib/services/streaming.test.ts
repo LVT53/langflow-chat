@@ -45,7 +45,9 @@ function errorEvent(payload: {
 	})}${uiFrame({ type: "finish", finishReason: "error" })}${uiFrame("[DONE]")}`;
 }
 
-function uiFrame(payload: Record<string, unknown> | "[DONE]"): string {
+function uiFrame(
+	payload: Parameters<typeof encodeAiSdkUiFixtureFrame>[0],
+): string {
 	return encodeAiSdkUiFixtureFrame(payload);
 }
 
@@ -794,7 +796,7 @@ describe("streamChat", () => {
 					sourceTokenEstimate: 420,
 				},
 			],
-		};
+		} as Partial<StreamMetadata>;
 		mockFetch.mockResolvedValue(
 			buildFetchResponse([tokenEvent("Hello"), endEvent(endMetadata)]),
 		);

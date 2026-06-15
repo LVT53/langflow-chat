@@ -29,6 +29,7 @@ type MockCondition =
 	| undefined;
 
 type MockOrder = { direction: "asc" | "desc"; field: string };
+type MockShapeField = { kind?: string; name?: string };
 
 function matchesCondition(
 	row: Record<string, unknown>,
@@ -55,7 +56,7 @@ function readComparable(value: unknown): string | number {
 
 function mapSelectedRows(
 	rows: Array<Record<string, unknown>>,
-	shape?: Record<string, unknown>,
+	shape?: Record<string, MockShapeField>,
 ) {
 	if (!shape) return rows;
 	if (Object.values(shape).some((field) => field?.kind === "count")) {
@@ -63,7 +64,9 @@ function mapSelectedRows(
 			Object.fromEntries(
 				Object.entries(shape).map(([alias, field]) => [
 					alias,
-					field?.kind === "count" ? rows.length : rows[0]?.[field?.name],
+					field?.kind === "count"
+						? rows.length
+						: rows[0]?.[field?.name ?? alias],
 				]),
 			),
 		];
@@ -80,7 +83,7 @@ function mapSelectedRows(
 
 function createQuery(
 	rows: Array<Record<string, unknown>>,
-	shape?: Record<string, unknown>,
+	shape?: Record<string, MockShapeField>,
 ) {
 	let currentRows = [...rows];
 	const chain = {
@@ -132,7 +135,7 @@ function createQuery(
 
 vi.mock("$lib/server/db", () => ({
 	db: {
-		select: (shape?: Record<string, unknown>) => ({
+		select: (shape?: Record<string, MockShapeField>) => ({
 			from: (table: { __name?: string }) => {
 				if (table?.__name === "messages") {
 					return createQuery(messageRows, shape);

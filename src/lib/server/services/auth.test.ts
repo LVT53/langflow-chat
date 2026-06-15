@@ -45,8 +45,14 @@ import {
 	verifyPassword,
 } from "./auth";
 
-const mockBcrypt = bcrypt as { compare: Mock };
-const mockDb = db as { delete: Mock; insert: Mock; select: Mock };
+type MockFn = ReturnType<typeof vi.fn>;
+
+const mockBcryptCompare = vi.mocked(bcrypt.compare);
+const mockDb = db as unknown as {
+	delete: MockFn;
+	insert: MockFn;
+	select: MockFn;
+};
 
 function makeSelectChain(result: unknown[]) {
 	const chain: Record<string, Mock> = {};
@@ -70,14 +76,14 @@ function makeDeleteChain() {
 
 describe("verifyPassword", () => {
 	it("returns true when password matches hash", async () => {
-		mockBcrypt.compare.mockResolvedValue(true);
+		mockBcryptCompare.mockImplementation(async () => true);
 		const result = await verifyPassword("secret", "$2b$10$hash");
 		expect(result).toBe(true);
-		expect(mockBcrypt.compare).toHaveBeenCalledWith("secret", "$2b$10$hash");
+		expect(mockBcryptCompare).toHaveBeenCalledWith("secret", "$2b$10$hash");
 	});
 
 	it("returns false when password does not match hash", async () => {
-		mockBcrypt.compare.mockResolvedValue(false);
+		mockBcryptCompare.mockImplementation(async () => false);
 		const result = await verifyPassword("wrong", "$2b$10$hash");
 		expect(result).toBe(false);
 	});

@@ -63,6 +63,8 @@ describe("PUT /api/conversations/[id]/draft", () => {
 			id: "conv-1",
 			userId: "user-1",
 			title: "Conversation",
+			sidebarPinned: false,
+			sidebarSortOrder: null,
 			createdAt: 1,
 			updatedAt: 2,
 		} as Awaited<ReturnType<typeof getConversation>>);

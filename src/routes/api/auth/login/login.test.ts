@@ -40,7 +40,7 @@ type SelectChain = {
 	where: ReturnType<typeof vi.fn>;
 	limit: ReturnType<typeof vi.fn>;
 };
-const mockDb = db as MockDb;
+const mockDb = db as unknown as MockDb;
 
 function makeEvent(body: unknown): LoginEvent {
 	return {
@@ -52,7 +52,7 @@ function makeEvent(body: unknown): LoginEvent {
 		cookies: {
 			set: vi.fn(),
 		},
-	} as LoginEvent;
+	} as unknown as LoginEvent;
 }
 
 function makeFormEvent(body: URLSearchParams): LoginEvent {
@@ -65,7 +65,7 @@ function makeFormEvent(body: URLSearchParams): LoginEvent {
 		cookies: {
 			set: vi.fn(),
 		},
-	} as LoginEvent;
+	} as unknown as LoginEvent;
 }
 
 function makeSelectChain(result: unknown[]) {

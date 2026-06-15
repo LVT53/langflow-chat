@@ -166,7 +166,6 @@ function buildLinkedSourceGroup(
 		title: source.name,
 		state: "active" as const,
 		sourceType: "document" as const,
-		artifactType: "document" as const,
 		reason: "linked_context_source",
 		metadata: {
 			promptArtifactId: source.promptArtifactId ?? null,
@@ -438,10 +437,7 @@ function countUniqueItems(groups: ContextSourceGroup[]): number {
 function toSourceType(
 	artifactType: ArtifactSummary["type"],
 ): EvidenceSourceType {
-	if (
-		artifactType === "conversation_summary" ||
-		artifactType === "work_capsule"
-	) {
+	if (artifactType === "work_capsule") {
 		return "memory";
 	}
 	return "document";

@@ -279,7 +279,7 @@ export function reconstructThread(
 		if (visited.has(nodeId)) break;
 		visited.add(nodeId);
 
-		const node = mapping[nodeId];
+		const node: ChatGPTMappingNode | undefined = mapping[nodeId];
 		if (!node) break;
 
 		nodeStack.push(node);
@@ -450,7 +450,7 @@ function findHighestWeightLeafInSubtree(
 		if (!currentId || visited.has(currentId)) continue;
 		visited.add(currentId);
 
-		const node = mapping[currentId];
+		const node: ChatGPTMappingNode | undefined = mapping[currentId];
 		if (!node) continue;
 
 		if (node.children.length === 0) {
@@ -485,7 +485,7 @@ export function detectBranches(
 		pathVisited.add(nodeId);
 		activePathIds.add(nodeId);
 		activePathOrdered.unshift(nodeId);
-		const node = mapping[nodeId];
+		const node: ChatGPTMappingNode | undefined = mapping[nodeId];
 		if (!node) break;
 		nodeId = node.parent;
 	}

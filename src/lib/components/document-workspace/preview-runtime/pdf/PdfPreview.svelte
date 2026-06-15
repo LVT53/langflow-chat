@@ -222,7 +222,9 @@ async function loadPdfjs() {
 	if (!pdfjsLib) {
 		pdfjsLib = await import("pdfjs-dist");
 		pdfjsLib.GlobalWorkerOptions.workerSrc = await loadPdfWorkerUrl();
-		pdfjsLib.setVerbosityLevel?.(pdfjsLib.VerbosityLevel.ERRORS);
+		(pdfjsLib as typeof pdfjsLib & {
+			setVerbosityLevel?: (level: number) => void;
+		}).setVerbosityLevel?.(pdfjsLib.VerbosityLevel.ERRORS);
 	}
 
 	return pdfjsLib;
@@ -260,10 +262,10 @@ async function renderPdf(nextBlob: Blob) {
 		if (pdfRenderVersion !== currentVersion) return;
 
 		const verbosity = pdfjs.VerbosityLevel?.ERRORS;
-		loadingTask = pdfjs.getDocument({
-			data: arrayBuffer,
-			...(verbosity !== undefined ? { verbosity } : {}),
-		}) as PdfLoadingTask;
+			loadingTask = pdfjs.getDocument({
+				data: arrayBuffer,
+				...(verbosity !== undefined ? { verbosity } : {}),
+			}) as unknown as PdfLoadingTask;
 		activePdfLoadingTask = loadingTask;
 
 		const nextPdfDoc = await loadingTask.promise;

@@ -22,6 +22,11 @@ const basePlan: ResearchPlan = {
 	researchBudget: {
 		sourceReviewCeiling: 36,
 		synthesisPassCeiling: 2,
+		meaningfulPassFloor: 1,
+		meaningfulPassCeiling: 2,
+		repairPassCeiling: 1,
+		sourceProcessingConcurrency: 2,
+		modelReasoningConcurrency: 1,
 	},
 	keyQuestions: [
 		"What answer should the report lead with?",
@@ -179,9 +184,17 @@ function buildClaim(input: {
 }
 
 function headingTexts(markdown: string, depth = 2): string[] {
+	type HeadingToken = Extract<
+		ReturnType<typeof marked.lexer>[number],
+		{ type: "heading" }
+	>;
+
 	return marked
 		.lexer(markdown)
-		.filter((token) => token.type === "heading" && token.depth === depth)
+		.filter(
+			(token): token is HeadingToken =>
+				token.type === "heading" && token.depth === depth,
+		)
 		.map((token) => token.text);
 }
 

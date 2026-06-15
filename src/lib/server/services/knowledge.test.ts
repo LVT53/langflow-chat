@@ -70,7 +70,7 @@ describe("knowledge service listKnowledgeArtifacts", () => {
 	});
 
 	it("does not block knowledge reads on maintenance completion", async () => {
-		let resolveMaintenance: (() => void) | null = null;
+		let resolveMaintenance: (() => void) | undefined;
 		const maintenancePromise = new Promise<void>((resolve) => {
 			resolveMaintenance = resolve;
 		});
@@ -186,13 +186,16 @@ vi.mock("./document-resolution", async (importOriginal) => {
 });
 
 vi.mock("./memory-events", () => ({
-	countRecentMemoryEventsBySubject: (...args: unknown[]) =>
-		mockCountRecentMemoryEventsBySubject(...args),
+	countRecentMemoryEventsBySubject: (
+		...args: Parameters<typeof mockCountRecentMemoryEventsBySubject>
+	) => mockCountRecentMemoryEventsBySubject(...args),
 }));
 
 const mockedStore = store as typeof store & {
-	findRelevantArtifactsByTypesDetailed: ReturnType<typeof vi.fn>;
-	getArtifactsForUser: ReturnType<typeof vi.fn>;
+	findRelevantArtifactsByTypesDetailed: ReturnType<typeof vi.fn> &
+		((params: { types: string[] }) => Promise<unknown[]>);
+	getArtifactsForUser: ReturnType<typeof vi.fn> &
+		((userId: string) => Promise<unknown[]>);
 };
 
 describe("findRelevantKnowledgeArtifacts", () => {
@@ -200,8 +203,10 @@ describe("findRelevantKnowledgeArtifacts", () => {
 		vi.clearAllMocks();
 
 		// Add the mocked functions explicitly here since they weren't in the original mock of store
-		mockedStore.findRelevantArtifactsByTypesDetailed = vi.fn();
-		mockedStore.getArtifactsForUser = vi.fn();
+		mockedStore.findRelevantArtifactsByTypesDetailed =
+			vi.fn() as unknown as typeof mockedStore.findRelevantArtifactsByTypesDetailed;
+		mockedStore.getArtifactsForUser =
+			vi.fn() as unknown as typeof mockedStore.getArtifactsForUser;
 
 		mockedStore.getArtifactsForUser.mockResolvedValue([]);
 		mockedStore.findRelevantArtifactsByTypesDetailed.mockImplementation(

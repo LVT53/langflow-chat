@@ -323,18 +323,18 @@ export function normalizeProduceFileInput(
 
 function normalizePatches(
 	patches: Array<{ oldText: string; newText: string }> | undefined,
-): Array<{ oldText: string; newText: string }> | null {
-	if (!patches || patches.length === 0) return null;
+): Array<{ oldText: string; newText: string }> | undefined {
+	if (!patches || patches.length === 0) return undefined;
 	const result: Array<{ oldText: string; newText: string }> = [];
 	for (const patch of patches) {
 		const oldText = typeof patch.oldText === "string" ? patch.oldText : "";
-		if (!oldText.trim()) return null;
+		if (!oldText.trim()) return undefined;
 		result.push({
 			oldText,
 			newText: typeof patch.newText === "string" ? patch.newText : "",
 		});
 	}
-	return result.length > 0 ? result : null;
+	return result.length > 0 ? result : undefined;
 }
 
 function normalizeDocumentSourceEnvelope(

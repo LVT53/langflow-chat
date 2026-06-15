@@ -138,6 +138,14 @@ function extractReasoningFallbackText(rawResponse: unknown): string | null {
 	return null;
 }
 
+function extractRawResponseBody(response: unknown): unknown {
+	const record =
+		response && typeof response === "object"
+			? (response as Record<string, unknown>)
+			: null;
+	return record && "body" in record ? record.body : response;
+}
+
 export async function sendJsonControlMessage(
 	message: string,
 	modelId: ModelId | undefined,
@@ -192,7 +200,7 @@ export async function sendJsonControlMessage(
 			options.allowReasoningFallback &&
 			NoObjectGeneratedError.isInstance(error)
 		) {
-			const rawResponse = error.response?.body;
+			const rawResponse = extractRawResponseBody(error.response);
 			const fallbackText = extractReasoningFallbackText(rawResponse);
 			if (fallbackText) {
 				return {

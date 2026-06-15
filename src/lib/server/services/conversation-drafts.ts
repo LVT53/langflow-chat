@@ -142,18 +142,19 @@ export async function getConversationDraft(
 					selectedAttachmentIds,
 				).catch(() => null)
 			: null;
-	const pendingAttachments: PendingAttachment[] =
-		resolved?.items
-			.map((item) => {
-				if (!item.displayArtifact) return null;
-				return {
-					artifact: toArtifactSummary(item.displayArtifact),
-					promptReady: item.promptReady,
-					promptArtifactId: item.promptArtifact?.id ?? null,
-					readinessError: item.readinessError ?? null,
-				};
-			})
-			.filter((item): item is PendingAttachment => Boolean(item)) ?? [];
+	const pendingAttachments: PendingAttachment[] = (
+		resolved?.items ?? []
+	).flatMap((item) => {
+		if (!item.displayArtifact) return [];
+		return [
+			{
+				artifact: toArtifactSummary(item.displayArtifact),
+				promptReady: item.promptReady,
+				promptArtifactId: item.promptArtifact?.id ?? null,
+				readinessError: item.readinessError ?? null,
+			},
+		];
+	});
 
 	return {
 		conversationId: row.conversationId,

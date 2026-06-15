@@ -6,10 +6,11 @@ import type { RequestHandler } from "./$types";
 
 export const POST: RequestHandler = async (event) => {
 	requireAdmin(event);
+	const actorUserId = event.locals.user.id;
 	try {
 		const campaign = await duplicateCampaignAsDraft(
 			event.params.id,
-			event.locals.user?.id,
+			actorUserId,
 		);
 		return json({ campaign }, { status: 201 });
 	} catch (error) {

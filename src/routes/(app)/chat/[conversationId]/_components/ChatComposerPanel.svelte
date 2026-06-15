@@ -144,15 +144,10 @@ onMount(() => {
 	isMobile = window.matchMedia("(hover: none) and (pointer: coarse)").matches;
 
 	// Listen for visualViewport changes (keyboard open/close)
-	if (typeof window.visualViewport !== "undefined") {
-		window.visualViewport.addEventListener(
-			"resize",
-			handleVisualViewportChange,
-		);
-		window.visualViewport.addEventListener(
-			"scroll",
-			handleVisualViewportChange,
-		);
+	const visualViewport = window.visualViewport;
+	if (visualViewport) {
+		visualViewport.addEventListener("resize", handleVisualViewportChange);
+		visualViewport.addEventListener("scroll", handleVisualViewportChange);
 	}
 
 	// Fallback: listen for window resize
@@ -164,15 +159,10 @@ onMount(() => {
 
 onDestroy(() => {
 	if (!browser) return;
-	if (typeof window.visualViewport !== "undefined") {
-		window.visualViewport.removeEventListener(
-			"resize",
-			handleVisualViewportChange,
-		);
-		window.visualViewport.removeEventListener(
-			"scroll",
-			handleVisualViewportChange,
-		);
+	const visualViewport = window.visualViewport;
+	if (visualViewport) {
+		visualViewport.removeEventListener("resize", handleVisualViewportChange);
+		visualViewport.removeEventListener("scroll", handleVisualViewportChange);
 	}
 	window.removeEventListener("resize", handleVisualViewportChange);
 });

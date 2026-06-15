@@ -317,7 +317,7 @@ function buildEvidenceCandidates(
 			id: `conversation-summary:${sibling.conversationId}`,
 			title: sibling.title,
 			snippet: sibling.summary,
-			sourceType: "memory",
+			sourceType: "memory" as const,
 		}));
 	const deepResearchCandidates = siblings.flatMap((sibling) =>
 		buildDeepResearchEvidenceCandidates(sibling.deepResearchResults ?? []),

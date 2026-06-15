@@ -147,7 +147,8 @@ describe("generateTitle", () => {
 		mockFetch.mockResolvedValue(mockResponse);
 
 		await generateTitle("User message", longResponse);
-		const callArgs = mockFetch.mock.calls[0][1];
+		const callArgs = mockFetch.mock.calls[0]?.[1];
+		if (!callArgs) throw new Error("Expected fetch call arguments");
 		const body = JSON.parse(
 			typeof callArgs.body === "string" ? callArgs.body : "",
 		);

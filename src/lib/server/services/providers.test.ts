@@ -142,11 +142,10 @@ describe("Provider CRUD", () => {
 			expect(provider.updatedAt).toBeInstanceOf(Date);
 
 			// Public interface must not leak key material
-			expect(
-				(provider as Record<string, unknown>).apiKeyEncrypted,
-			).toBeUndefined();
-			expect((provider as Record<string, unknown>).apiKeyIv).toBeUndefined();
-			expect((provider as Record<string, unknown>).apiKey).toBeUndefined();
+			const providerRecord = provider as unknown as Record<string, unknown>;
+			expect(providerRecord.apiKeyEncrypted).toBeUndefined();
+			expect(providerRecord.apiKeyIv).toBeUndefined();
+			expect(providerRecord.apiKey).toBeUndefined();
 		});
 
 		it("persists optional rate-limit fallback fields", async () => {
@@ -237,9 +236,8 @@ describe("Provider CRUD", () => {
 				"fetched provider",
 			);
 			expect(fetched.name).toBe("getter-test");
-			expect(
-				(fetched as Record<string, unknown>).apiKeyEncrypted,
-			).toBeUndefined();
+			const fetchedRecord = fetched as unknown as Record<string, unknown>;
+			expect(fetchedRecord.apiKeyEncrypted).toBeUndefined();
 		});
 
 		it("getProviderWithSecrets includes encrypted fields and decrypts", async () => {

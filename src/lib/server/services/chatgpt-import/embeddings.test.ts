@@ -103,7 +103,7 @@ describe("generateImportEmbeddings", () => {
 	});
 
 	it("handles embedText returning null gracefully", async () => {
-		mockEmbedText.mockResolvedValue(null);
+		mockEmbedText.mockResolvedValue(null as unknown as number[]);
 
 		const { generateImportEmbeddings } = await import("./embeddings");
 
@@ -178,7 +178,8 @@ describe("generateImportEmbeddings", () => {
 		await generateImportEmbeddings("conv-1", "user-1", "Long Chat", messages);
 
 		expect(mockEmbedText).toHaveBeenCalledTimes(1);
-		const sourceText = mockEmbedText.mock.calls[0][0] as string;
+		const embedCalls = mockEmbedText.mock.calls as unknown as Array<[string]>;
+		const sourceText = embedCalls[0]?.[0] ?? "";
 		expect(sourceText).toContain("Title: Long Chat");
 		expect(sourceText).toContain("user: Message content 0");
 		expect(sourceText).toContain("assistant: Message content 49");

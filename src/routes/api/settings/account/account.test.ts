@@ -47,7 +47,7 @@ function makeEvent(
 		params: {},
 		url: new URL("http://localhost/api/settings/account"),
 		route: { id: "/api/settings/account" },
-	} as AccountRouteEvent;
+	} as unknown as AccountRouteEvent;
 }
 
 describe("DELETE /api/settings/account", () => {

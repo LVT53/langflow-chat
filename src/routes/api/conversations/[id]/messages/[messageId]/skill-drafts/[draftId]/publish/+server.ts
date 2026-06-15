@@ -1,4 +1,4 @@
-import { json } from "@sveltejs/kit";
+import { json, redirect } from "@sveltejs/kit";
 import { requireAdmin } from "$lib/server/auth/hooks";
 import { getConfig } from "$lib/server/config-store";
 import { getConversation } from "$lib/server/services/conversations";
@@ -37,6 +37,9 @@ export const POST: RequestHandler = async (event) => {
 	}
 
 	const user = event.locals.user;
+	if (!user) {
+		throw redirect(302, "/login");
+	}
 	const conversation = await getConversation(user.id, event.params.id);
 	if (!conversation) {
 		return json({ error: "Conversation not found." }, { status: 404 });

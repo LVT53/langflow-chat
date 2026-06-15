@@ -608,15 +608,18 @@ export function applyToolCallUpdateToMessageList(
 		}
 
 		if (lastRunningIndex !== -1) {
-			updatedSegments[lastRunningIndex] = {
-				...updatedSegments[lastRunningIndex],
-				status: "done" as const,
-				...(callId ? { callId } : {}),
-				outputSummary: params.details?.outputSummary ?? null,
-				sourceType: params.details?.sourceType ?? null,
-				candidates: params.details?.candidates,
-				metadata: params.details?.metadata,
-			};
+			const updatedSegment = updatedSegments[lastRunningIndex];
+			if (updatedSegment.type === "tool_call") {
+				updatedSegments[lastRunningIndex] = {
+					...updatedSegment,
+					status: "done" as const,
+					...(callId ? { callId } : {}),
+					outputSummary: params.details?.outputSummary ?? null,
+					sourceType: params.details?.sourceType ?? null,
+					candidates: params.details?.candidates,
+					metadata: params.details?.metadata,
+				};
+			}
 		}
 
 		return mergeResponseActivityEntries(

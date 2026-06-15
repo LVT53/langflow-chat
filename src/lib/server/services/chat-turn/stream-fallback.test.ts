@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { RuntimeConfig } from "$lib/server/config-store";
+import type { ModelId } from "$lib/types";
 import { runNonStreamFallback } from "./stream-fallback";
 
 describe("runNonStreamFallback", () => {
@@ -21,10 +23,10 @@ describe("runNonStreamFallback", () => {
 	const defaultSendParams = {
 		runtimeConfig: {
 			requestTimeoutMs: 30000,
-		},
+		} as unknown as RuntimeConfig,
 		upstreamMessage: "test message",
 		conversationId: "conv-1",
-		modelId: "model-1",
+		modelId: "model-1" as ModelId,
 		attachmentIds: ["att-1"],
 		activeDocumentArtifactId: "doc-1",
 		attachmentTraceId: "trace-1",

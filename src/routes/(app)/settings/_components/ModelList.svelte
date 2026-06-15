@@ -32,6 +32,7 @@ let error = $state("");
 let message = $state("");
 let showForm = $state(false);
 let formModel = $state<ProviderModel | null>(null);
+let formModelId = $derived(formModel?.id ?? null);
 let formSaving = $state(false);
 let formError = $state("");
 let deletingId = $state<string | null>(null);
@@ -219,12 +220,12 @@ $effect(() => {
 
 {#if showForm}
 	<ModelForm
-		{providerId}
-		model={formModel}
-		saving={formSaving}
-		error={formError}
-		onSave={handleSave}
-		onClose={closeForm}
-		onIconFile={onIconFile && formModel?.id ? (e: Event) => onIconFile(e, formModel.id) : undefined}
+	{providerId}
+	model={formModel}
+	saving={formSaving}
+	error={formError}
+	onSave={handleSave}
+	onClose={closeForm}
+	onIconFile={onIconFile && formModelId ? (e: Event) => onIconFile(e, formModelId) : undefined}
 	/>
 {/if}

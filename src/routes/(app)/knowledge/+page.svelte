@@ -45,9 +45,7 @@ const OVERVIEW_POLL_MAX_ATTEMPTS = 15;
 const MEMORY_UPDATE_ERROR_MESSAGE = "Failed to update memory profile.";
 type DocumentSortKey = "name" | "size" | "type" | "date";
 type SortDirection = "asc" | "desc";
-type KnowledgeWorkspaceCoordinator = InstanceType<
-	typeof KnowledgeWorkspaceCoordinatorComponent
->;
+type KnowledgeWorkspaceCoordinator = KnowledgeWorkspaceCoordinatorComponent;
 
 let { data }: PageProps = $props();
 const getData = () => data;
@@ -677,12 +675,19 @@ async function submitMemoryAction(
 	return submitKnowledgeMemoryAction(payload);
 }
 
+function isKnowledgeMemoryActionPayload(
+	payload: Record<string, unknown>,
+): payload is KnowledgeMemoryActionPayload {
+	return typeof payload.action === "string";
+}
+
 async function runMemoryAction(
-	payload: KnowledgeMemoryActionPayload,
+	payload: Record<string, unknown>,
 	key: string,
 	confirmationMessage?: string,
 ) {
 	if (isMemoryActionPending(key)) return;
+	if (!isKnowledgeMemoryActionPayload(payload)) return;
 
 	if (confirmationMessage) {
 		showConfirmation(
@@ -1160,10 +1165,11 @@ $effect(() => {
 		cursor: pointer;
 	}
 
-	:global(.memory-preview) {
-		display: -webkit-box;
-		-webkit-box-orient: vertical;
-		-webkit-line-clamp: 3;
-		overflow: hidden;
-	}
+		:global(.memory-preview) {
+			display: -webkit-box;
+			-webkit-box-orient: vertical;
+			line-clamp: 3;
+			-webkit-line-clamp: 3;
+			overflow: hidden;
+		}
 </style>

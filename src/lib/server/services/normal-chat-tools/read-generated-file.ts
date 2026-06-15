@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { and, desc, eq, or } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 
 import { db } from "$lib/server/db";
@@ -117,6 +117,13 @@ async function resolveBestContent(
 	artifactMetadataJson: string | null,
 ): Promise<string | null> {
 	const metadataRecord = parseJsonRecord(artifactMetadataJson);
+	if (!metadataRecord) {
+		return (
+			extractContentFromMemoryText(artifactContentText) ??
+			artifactContentText?.trim() ??
+			null
+		);
+	}
 	const originalChatFileId =
 		typeof metadataRecord.originalChatFileId === "string"
 			? metadataRecord.originalChatFileId
@@ -176,7 +183,7 @@ export async function readGeneratedFileContent(params: {
 	if (params.filename) {
 		const trimmed = params.filename.trim();
 		if (trimmed) {
-			conditions.push(or(eq(artifacts.name, trimmed)));
+			conditions.push(eq(artifacts.name, trimmed));
 		}
 	}
 

@@ -39,7 +39,7 @@ function makeUploadEvent(
 		params: {},
 		url: new URL("http://localhost/api/admin/model-icons/upload"),
 		route: { id: "/api/admin/model-icons/upload" },
-	} as ModelIconUploadEvent;
+	} as unknown as ModelIconUploadEvent;
 }
 
 describe("POST /api/admin/model-icons/upload", () => {

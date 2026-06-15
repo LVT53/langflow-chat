@@ -774,9 +774,8 @@ function builtInManagedResourcesForSkill(
 	skillId: string,
 ): ManagedSkillResourceMetadata[] {
 	const builtIn = builtInSystemSkills.find((skill) => skill.id === skillId);
-	return "managedResources" in (builtIn ?? {})
-		? [...(builtIn.managedResources ?? [])]
-		: [];
+	if (!builtIn || !("managedResources" in builtIn)) return [];
+	return [...(builtIn.managedResources ?? [])];
 }
 
 function builtInPromptResourcesForSkill(

@@ -816,17 +816,29 @@ export function createServerChunkRuntime({
 		if (!segment.label.trim()) return;
 		flushInlineThinkingBuffer();
 		flushPendingThinking();
+		const streamStatus: "running" | "done" =
+			segment.status === "error" ? "done" : segment.status;
+		const statusSegment: ServerStreamSegment = {
+			type: "status",
+			id: segment.id,
+			label: segment.label,
+			status: streamStatus,
+			...(segment.passIndex !== undefined
+				? { passIndex: segment.passIndex }
+				: {}),
+			...(segment.passTotal !== undefined
+				? { passTotal: segment.passTotal }
+				: {}),
+			...(segment.passKind !== undefined ? { passKind: segment.passKind } : {}),
+		};
 		const existingIndex = serverSegments.findIndex(
 			(entry) => entry.type === "status" && entry.id === segment.id,
 		);
 		if (existingIndex === -1) {
-			serverSegments.push({ type: "status", ...segment });
+			serverSegments.push(statusSegment);
 			return;
 		}
-		serverSegments[existingIndex] = {
-			...serverSegments[existingIndex],
-			...segment,
-		};
+		serverSegments[existingIndex] = statusSegment;
 	};
 
 	const getNativeToolCallInput = (
@@ -1178,7 +1190,7 @@ export function streamErrorEvent(code: StreamErrorCode): string {
 	].join("");
 }
 
-function stripUndefined<T extends Record<string, unknown>>(value: T): T {
+function stripUndefined<T extends object>(value: T): T {
 	return Object.fromEntries(
 		Object.entries(value).filter(([, entry]) => entry !== undefined),
 	) as T;

@@ -1,4 +1,4 @@
-import type { Handle } from "@sveltejs/kit";
+import type { Handle, ResolveOptions } from "@sveltejs/kit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type HookEvent = Parameters<Handle>[0]["event"];
@@ -47,7 +47,7 @@ vi.mock("$lib/server/services/deep-research/worker", () => ({
 	ensureDeepResearchWorkerScheduler: mockEnsureDeepResearchWorkerScheduler,
 }));
 
-function deferred<T = void>() {
+function deferred<T = undefined>() {
 	let resolve!: (value: T | PromiseLike<T>) => void;
 	const promise = new Promise<T>((res) => {
 		resolve = res;
@@ -60,7 +60,7 @@ function makeHookEvent(path: string, sessionToken?: string): HookEvent {
 		cookies: { get: vi.fn(() => sessionToken) },
 		locals: {},
 		url: new URL(`http://localhost${path}`),
-	} as HookEvent;
+	} as unknown as HookEvent;
 }
 
 describe("hooks.server.ts", () => {
@@ -75,7 +75,8 @@ describe("hooks.server.ts", () => {
 	it("allows public routes without a session", async () => {
 		const { handle } = await import("./hooks.server");
 		const resolve = vi.fn(
-			async ({ locals }) => new Response(JSON.stringify({ user: locals.user })),
+			async ({ locals }: HookEvent, _options?: ResolveOptions) =>
+				new Response(JSON.stringify({ user: locals.user })),
 		);
 		const event = makeHookEvent("/api/auth/login");
 
@@ -112,7 +113,10 @@ describe("hooks.server.ts", () => {
 		const refresh = deferred();
 		mockRefreshConfig.mockReturnValue(refresh.promise);
 		const { handle } = await import("./hooks.server");
-		const resolve = vi.fn(async () => new Response("ok"));
+		const resolve = vi.fn(
+			async (_event: HookEvent, _options?: ResolveOptions) =>
+				new Response("ok"),
+		);
 		const event = makeHookEvent("/api/health");
 
 		const handlePromise = handle({ event, resolve });
@@ -122,14 +126,17 @@ describe("hooks.server.ts", () => {
 			await Promise.resolve();
 			expect(resolve).not.toHaveBeenCalled();
 		} finally {
-			refresh.resolve();
-			await handlePromise.catch(() => undefined);
+			refresh.resolve(undefined);
+			await Promise.resolve(handlePromise).catch(() => undefined);
 		}
 	});
 
 	it("allows the health check route without a session", async () => {
 		const { handle } = await import("./hooks.server");
-		const resolve = vi.fn(async () => new Response("ok"));
+		const resolve = vi.fn(
+			async (_event: HookEvent, _options?: ResolveOptions) =>
+				new Response("ok"),
+		);
 		const event = makeHookEvent("/api/health");
 
 		await handle({ event, resolve });
@@ -178,7 +185,10 @@ describe("hooks.server.ts", () => {
 			profilePicture: null,
 		};
 		mockValidateSession.mockResolvedValue(sessionUser);
-		const resolve = vi.fn(async () => new Response("ok"));
+		const resolve = vi.fn(
+			async (_event: HookEvent, _options?: ResolveOptions) =>
+				new Response("ok"),
+		);
 		const event = makeHookEvent("/", "session-token");
 
 		await handle({ event, resolve });
@@ -202,12 +212,19 @@ describe("hooks.server.ts", () => {
 			avatarId: null,
 			profilePicture: null,
 		});
-		const resolve = vi.fn(async () => new Response("ok"));
+		const resolve = vi.fn(
+			async (_event: HookEvent, _options?: ResolveOptions) =>
+				new Response("ok"),
+		);
 		const event = makeHookEvent("/chat/conversation-1", "session-token");
 
 		await handle({ event, resolve });
 
-		const resolveOptions = resolve.mock.calls[0]?.[1];
+		const resolveOptions = resolve.mock.calls[0]?.[1] as
+			| {
+					preload?: (asset: { type: string; path: string }) => boolean;
+			  }
+			| undefined;
 		expect(
 			resolveOptions?.preload?.({
 				type: "js",

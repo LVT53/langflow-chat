@@ -3,8 +3,17 @@ import * as pdfjsLib from "pdfjs-dist";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import PdfPreview from "./PdfPreview.svelte";
 
+type PdfRenderOptions = {
+	canvasContext: CanvasRenderingContext2D;
+	viewport: {
+		width: number;
+		height: number;
+	};
+	transform?: [number, number, number, number, number, number];
+};
+
 const mockPdfRenderCancel = vi.fn();
-const mockPdfRender = vi.fn(() => ({
+const mockPdfRender = vi.fn((_: PdfRenderOptions) => ({
 	promise: Promise.resolve(),
 	cancel: mockPdfRenderCancel,
 }));
@@ -38,6 +47,14 @@ vi.mock("pdfjs-dist/build/pdf.worker.min.mjs?url", () => ({
 	default: "/mock-pdf-worker.mjs",
 }));
 
+const pdfjsLibMock = pdfjsLib as typeof pdfjsLib & {
+	setVerbosityLevel: ReturnType<typeof vi.fn>;
+	VerbosityLevel: {
+		ERRORS: number;
+	};
+	getDocument: typeof pdfjsLib.getDocument;
+};
+
 const originalIntersectionObserver = globalThis.IntersectionObserver;
 
 describe("PdfPreview", () => {
@@ -69,12 +86,12 @@ describe("PdfPreview", () => {
 		});
 
 		expect(pdfjsLib.GlobalWorkerOptions.workerSrc).toBe("/mock-pdf-worker.mjs");
-		expect(pdfjsLib.setVerbosityLevel).toHaveBeenCalledWith(
-			pdfjsLib.VerbosityLevel.ERRORS,
+		expect(pdfjsLibMock.setVerbosityLevel).toHaveBeenCalledWith(
+			pdfjsLibMock.VerbosityLevel.ERRORS,
 		);
-		expect(pdfjsLib.getDocument).toHaveBeenCalledWith({
+		expect(pdfjsLibMock.getDocument).toHaveBeenCalledWith({
 			data: await blob.arrayBuffer(),
-			verbosity: pdfjsLib.VerbosityLevel.ERRORS,
+			verbosity: pdfjsLibMock.VerbosityLevel.ERRORS,
 		});
 		expect(screen.getByTestId("preview-page-input")).toHaveDisplayValue("1");
 		expect(screen.getByText("of 2")).toBeInTheDocument();
@@ -91,18 +108,18 @@ describe("PdfPreview", () => {
 			getPage: typeof mockPdfGetPage;
 		}>(() => undefined);
 
-		vi.mocked(pdfjsLib.getDocument)
+		vi.mocked(pdfjsLibMock.getDocument)
 			.mockReturnValueOnce({
 				promise: firstLoadingPromise,
 				destroy: firstDestroy,
-			} as ReturnType<typeof pdfjsLib.getDocument>)
+			} as unknown as ReturnType<typeof pdfjsLib.getDocument>)
 			.mockReturnValueOnce({
 				promise: Promise.resolve({
 					numPages: 2,
 					getPage: mockPdfGetPage,
 				}),
 				destroy: secondDestroy,
-			} as ReturnType<typeof pdfjsLib.getDocument>);
+			} as unknown as ReturnType<typeof pdfjsLib.getDocument>);
 
 		const { rerender } = render(PdfPreview, {
 			props: {
@@ -137,18 +154,18 @@ describe("PdfPreview", () => {
 			getPage: typeof mockPdfGetPage;
 		}>(() => undefined);
 
-		vi.mocked(pdfjsLib.getDocument)
+		vi.mocked(pdfjsLibMock.getDocument)
 			.mockReturnValueOnce({
 				promise: firstLoadingPromise,
 				destroy: firstDestroy,
-			} as ReturnType<typeof pdfjsLib.getDocument>)
+			} as unknown as ReturnType<typeof pdfjsLib.getDocument>)
 			.mockReturnValueOnce({
 				promise: Promise.resolve({
 					numPages: 2,
 					getPage: mockPdfGetPage,
 				}),
 				destroy: vi.fn(async () => undefined),
-			} as ReturnType<typeof pdfjsLib.getDocument>);
+			} as unknown as ReturnType<typeof pdfjsLib.getDocument>);
 
 		const { rerender } = render(PdfPreview, {
 			props: {
@@ -186,10 +203,10 @@ describe("PdfPreview", () => {
 		});
 		mockPdfRender.mockImplementationOnce(() => ({
 			promise: slowRenderPromise,
-			cancel: () => {
+			cancel: vi.fn(() => {
 				mockPdfRenderCancel();
 				rejectSlowRender(new Error("cancelled"));
-			},
+			}),
 		}));
 
 		render(PdfPreview, {
@@ -547,19 +564,17 @@ describe("PdfPreview", () => {
 	});
 
 	it("updates the toolbar current page from the most visible observed page", async () => {
-		let observerCallback:
-			| ((
-					entries: Array<{
-						isIntersecting: boolean;
-						target: Element;
-						intersectionRatio: number;
-					}>,
-			  ) => void)
-			| null = null;
+		type ObserverEntry = {
+			isIntersecting: boolean;
+			target: Element;
+			intersectionRatio: number;
+		};
+		type ObserverCallback = (entries: ObserverEntry[]) => void;
+		let observerCallback: ObserverCallback | null = null;
 		const observedElements: Element[] = [];
 
 		globalThis.IntersectionObserver = class {
-			constructor(callback: typeof observerCallback) {
+			constructor(callback: ObserverCallback) {
 				observerCallback = callback;
 			}
 
@@ -583,18 +598,23 @@ describe("PdfPreview", () => {
 			expect(observedElements).toHaveLength(2);
 		});
 
-		observerCallback?.([
-			{
-				isIntersecting: true,
-				target: observedElements[0],
-				intersectionRatio: 0.25,
-			},
-			{
-				isIntersecting: true,
-				target: observedElements[1],
-				intersectionRatio: 0.9,
-			},
-		]);
+		const callback = observerCallback as
+			| ((entries: ObserverEntry[]) => void)
+			| null;
+		if (callback) {
+			callback([
+				{
+					isIntersecting: true,
+					target: observedElements[0],
+					intersectionRatio: 0.25,
+				},
+				{
+					isIntersecting: true,
+					target: observedElements[1],
+					intersectionRatio: 0.9,
+				},
+			]);
+		}
 
 		await waitFor(() => {
 			expect(screen.getByTestId("preview-page-input")).toHaveDisplayValue("2");

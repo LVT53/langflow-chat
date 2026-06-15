@@ -1,6 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { KnowledgeDocumentItem } from "$lib/types";
+import type { Artifact, KnowledgeDocumentItem } from "$lib/types";
 import { resolveWorkingDocumentIdentity } from "./working-document-identity";
+
+type SemanticShortlistMatch = {
+	item: { id: string };
+	subjectId: string;
+	semanticScore: number;
+};
+
+type RerankResult = {
+	items: Array<{ item: Artifact; index: number; score: number }>;
+	confidence: number;
+};
 
 const {
 	mockRows,
@@ -13,9 +24,12 @@ const {
 	const mockRows: Array<Record<string, unknown>> = [];
 	const mockDerivedRows: Array<Record<string, unknown>> = [];
 	const mockSelect = vi.fn();
-	const mockShortlistSemanticMatchesBySubject = vi.fn(async () => []);
+	const mockShortlistSemanticMatchesBySubject = vi.fn(
+		async (_params: { items: Array<{ id: string }>; subjectType: string }) =>
+			[] as SemanticShortlistMatch[],
+	);
 	const mockCanUseTeiReranker = vi.fn(() => true);
-	const mockRerankItems = vi.fn(async () => null);
+	const mockRerankItems = vi.fn(async () => null as RerankResult | null);
 
 	return {
 		mockRows,
@@ -718,15 +732,19 @@ describe("knowledge documents store", () => {
 		});
 
 		mockShortlistSemanticMatchesBySubject.mockImplementation(
-			async ({ items }) => [
-				{
-					item: items.find(
-						(artifact: { id: string }) => artifact.id === "artifact-semantic",
-					),
-					subjectId: "artifact-semantic",
-					semanticScore: 0.92,
-				},
-			],
+			async ({ items }) => {
+				const item = items.find(
+					(artifact) => artifact.id === "artifact-semantic",
+				);
+				if (!item) return [];
+				return [
+					{
+						item,
+						subjectId: "artifact-semantic",
+						semanticScore: 0.92,
+					},
+				];
+			},
 		);
 		mockRerankItems.mockResolvedValue({
 			items: [

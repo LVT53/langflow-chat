@@ -7,11 +7,9 @@ import type { RequestHandler } from "./$types";
 
 export const POST: RequestHandler = async (event) => {
 	requireAdmin(event);
+	const actorUserId = event.locals.user.id;
 	try {
-		const campaign = await publishCampaign(
-			event.params.id,
-			event.locals.user?.id,
-		);
+		const campaign = await publishCampaign(event.params.id, actorUserId);
 		if (campaign.type === "release_update") {
 			await getAppVersionMetadata();
 		}

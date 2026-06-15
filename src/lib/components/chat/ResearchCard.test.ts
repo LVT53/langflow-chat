@@ -1,11 +1,20 @@
 import { fireEvent, render, waitFor } from "@testing-library/svelte";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { uiLanguage } from "$lib/stores/settings";
-import type { DeepResearchJob, DocumentWorkspaceItem } from "$lib/types";
+import type {
+	DeepResearchBudget,
+	DeepResearchJob,
+	DeepResearchPlanRaw,
+	DeepResearchPlanSummary,
+	DocumentWorkspaceItem,
+} from "$lib/types";
 import ResearchCard from "./ResearchCard.svelte";
 
 function makeDeepResearchJob(
-	overrides: Partial<DeepResearchJob> = {},
+	overrides: Omit<Partial<DeepResearchJob>, "plan" | "currentPlan"> & {
+		plan?: Partial<DeepResearchPlanSummary> | null;
+		currentPlan?: Partial<DeepResearchPlanSummary> | null;
+	} = {},
 ): DeepResearchJob {
 	const now = Date.now();
 	return {
@@ -21,6 +30,41 @@ function makeDeepResearchJob(
 		updatedAt: overrides.updatedAt ?? now,
 		completedAt: overrides.completedAt ?? null,
 		cancelledAt: overrides.cancelledAt ?? null,
+		...overrides,
+	} as DeepResearchJob;
+}
+
+function makeDeepResearchBudget(
+	overrides: Partial<DeepResearchBudget> = {},
+): DeepResearchBudget {
+	return {
+		sourceReviewCeiling: 40,
+		synthesisPassCeiling: 2,
+		meaningfulPassFloor: 1,
+		meaningfulPassCeiling: 2,
+		repairPassCeiling: 1,
+		sourceProcessingConcurrency: 1,
+		modelReasoningConcurrency: 1,
+		...overrides,
+	};
+}
+
+function makeDeepResearchPlanRaw(
+	overrides: Partial<DeepResearchPlanRaw> = {},
+): DeepResearchPlanRaw {
+	return {
+		goal: "Compare battery recycling policy.",
+		depth: "standard",
+		reportIntent: "comparison",
+		researchBudget: makeDeepResearchBudget(),
+		keyQuestions: ["Which rules changed recently?"],
+		sourceScope: {
+			includePublicWeb: true,
+			planningContextDisclosure: null,
+		},
+		reportShape: [],
+		constraints: [],
+		deliverables: [],
 		...overrides,
 	};
 }
@@ -70,23 +114,11 @@ describe("ResearchCard", () => {
 				plan: {
 					version: 1,
 					renderedPlan: "",
-					rawPlan: {
+					rawPlan: makeDeepResearchPlanRaw({
 						goal: "Hasonlítsd össze az akkumulátor-újrahasznosítási szabályokat.",
-						depth: "standard",
-						reportIntent: "comparison",
-						researchBudget: {
-							sourceReviewCeiling: 40,
-							synthesisPassCeiling: 2,
-						},
 						keyQuestions: ["Mely szabályok változtak mostanában?"],
-						sourceScope: {
-							includePublicWeb: true,
-							planningContextDisclosure: null,
-						},
-						reportShape: [],
-						constraints: [],
 						deliverables: ["Rövid összehasonlító jelentés"],
-					},
+					}),
 					contextDisclosure: null,
 					effortEstimate: {
 						selectedDepth: "standard",
@@ -190,10 +222,9 @@ describe("ResearchCard", () => {
 						goal: "Compare EU and US battery recycling policy with a narrower source scope.",
 						depth: "standard",
 						reportIntent: "comparison",
-						researchBudget: {
+						researchBudget: makeDeepResearchBudget({
 							sourceReviewCeiling: 24,
-							synthesisPassCeiling: 2,
-						},
+						}),
 						keyQuestions: [
 							"Which official policy updates are supported by primary sources?",
 						],
@@ -497,10 +528,9 @@ describe("ResearchCard", () => {
 						goal: "Compare EU and US battery recycling policy.",
 						depth: "standard",
 						reportIntent: "comparison",
-						researchBudget: {
+						researchBudget: makeDeepResearchBudget({
 							sourceReviewCeiling: 40,
-							synthesisPassCeiling: 2,
-						},
+						}),
 						keyQuestions: ["Which rules changed recently?"],
 						sourceScope: {
 							includePublicWeb: true,

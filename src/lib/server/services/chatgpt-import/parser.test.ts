@@ -126,7 +126,7 @@ describe("isDeletedMessage", () => {
 
 	it("returns false when status is missing (undefined)", () => {
 		const msg = makeMessage();
-		(msg as Record<string, unknown>).status = undefined;
+		(msg as unknown as { status?: unknown }).status = undefined;
 		expect(isDeletedMessage(msg)).toBe(false);
 	});
 
@@ -1234,7 +1234,7 @@ describe("parseConversationsJson", () => {
 
 	it("captures unexpected errors on individual conversation entries", async () => {
 		const conv = makeConversation();
-		(conv as Record<string, unknown>).mapping = undefined;
+		(conv as unknown as { mapping?: unknown }).mapping = undefined;
 
 		const buffer = await makeZipWithConversations([conv]);
 		const result = await parseConversationsJson(buffer);

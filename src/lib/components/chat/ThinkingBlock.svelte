@@ -19,6 +19,16 @@ import {
 	isVisibleThinkingToolCall,
 } from "$lib/utils/tool-calls";
 
+type DeliberationStatusSegment = {
+	type: "status";
+	id: string;
+	label: string;
+	status: "running" | "done" | "error";
+	passIndex?: number;
+	passTotal?: number;
+	passKind?: string;
+};
+
 let {
 	content = "",
 	thinkingIsDone = false,
@@ -50,7 +60,9 @@ type FetchedSource = {
 const isActiveThinking = $derived(!thinkingIsDone);
 const visibleSegmentsRaw = $derived(segments.filter(isVisibleThinkingSegment));
 
-function isDeliberationStatusSegment(segment: ThinkingSegment): boolean {
+function isDeliberationStatusSegment(
+	segment: ThinkingSegment,
+): segment is DeliberationStatusSegment {
 	return (
 		segment.type === "status" &&
 		segment.id.startsWith("deliberation-pass-") &&
@@ -65,7 +77,7 @@ function getDeliberationPassIndex(segmentId: string): number {
 }
 
 function getDeliberationStatusIconType(
-	segment: ThinkingSegment,
+	segment: DeliberationStatusSegment,
 ):
 	| "search"
 	| "clipboard-check"
@@ -101,8 +113,9 @@ function getDeliberationStatusIconType(
 	return "shield-alert";
 }
 
-function formatDeliberationStatusLabel(segment: ThinkingSegment): string {
-	if (segment.type !== "status") return "";
+function formatDeliberationStatusLabel(
+	segment: DeliberationStatusSegment,
+): string {
 	const label = segment.label.trim();
 	if (!label) return "";
 	const current =
@@ -125,12 +138,18 @@ const latestDeliberationStatusSegment = $derived.by(() => {
 	return undefined;
 });
 
+const latestDeliberationStatusSegmentId = $derived.by(() =>
+	latestDeliberationStatusSegment?.type === "status"
+		? latestDeliberationStatusSegment.id
+		: null,
+);
+
 const visibleSegments = $derived(
 	streaming
 		? visibleSegmentsRaw.filter((segment) => {
 				if (!isDeliberationStatusSegment(segment)) return true;
-				return latestDeliberationStatusSegment
-					? segment.id === latestDeliberationStatusSegment.id
+				return latestDeliberationStatusSegmentId
+					? segment.id === latestDeliberationStatusSegmentId
 					: false;
 			})
 		: visibleSegmentsRaw,
@@ -449,17 +468,18 @@ async function toggle() {
 <div class="thinking-content" class:content-fresh={contentFresh} transition:slide>
 				{#if hasSegments}
 				{#each visibleSegments as seg, i (seg.type === 'tool_call' ? (seg.callId ?? seg.name + JSON.stringify(seg.input) + '-' + i) : seg.type === 'status' ? seg.id : `text-${i}`)}
-					{#if seg.type === 'text'}
-						<pre class="thinking-text">{formatThinkingTextForDisplay(seg.content)}</pre>
-					{:else if seg.type === 'status'}
-						{@const isDeliberationStatus = isDeliberationStatusSegment(seg)}
-						<div
-							class="status-step"
-							class:status-deliberation={isDeliberationStatus}
-							class:is-running={seg.status === 'running'}
-							>
+				{#if seg.type === 'text'}
+					<pre class="thinking-text">{formatThinkingTextForDisplay(seg.content)}</pre>
+				{:else if seg.type === 'status'}
+					{@const statusSeg = seg as any}
+					{@const isDeliberationStatus = isDeliberationStatusSegment(statusSeg)}
+					<div
+						class="status-step"
+						class:status-deliberation={isDeliberationStatus}
+						class:is-running={statusSeg.status === 'running'}
+						>
 								{#if isDeliberationStatus}
-									{@const iconType = getDeliberationStatusIconType(seg)}
+										{@const iconType = getDeliberationStatusIconType(statusSeg)}
 									{#if iconType === 'search'}
 										<Search
 											class="deliberation-status-icon"
@@ -509,13 +529,13 @@ async function toggle() {
 											aria-hidden="true"
 										/>
 									{/if}
-								{:else if seg.status === 'running'}
-									<span class="tool-dot-inline"></span>
-							{:else}
-				<Check class="check-icon" size={12} strokeWidth={1.5} aria-hidden="true" />
-								{/if}
-								<span class="status-step-label">{isDeliberationStatus ? formatDeliberationStatusLabel(seg) : seg.label}</span>
-							</div>
+									{:else if statusSeg.status === 'running'}
+										<span class="tool-dot-inline"></span>
+								{:else}
+					<Check class="check-icon" size={12} strokeWidth={1.5} aria-hidden="true" />
+									{/if}
+									<span class="status-step-label">{isDeliberationStatus ? formatDeliberationStatusLabel(statusSeg) : statusSeg.label}</span>
+								</div>
 					{:else}
 						{@const fetchedSources = getFetchedSources(seg)}
 						{#if fetchedSources.length > 0}

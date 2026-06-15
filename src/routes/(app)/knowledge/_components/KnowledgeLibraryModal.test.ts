@@ -18,7 +18,6 @@ describe("KnowledgeLibraryModal", () => {
 			updatedAt: Date.now(),
 			displayArtifactId: "artifact-display",
 			promptArtifactId: "artifact-prompt",
-			previewUrl: "/api/knowledge/artifact-prompt/preview",
 			familyArtifactIds: ["artifact-display", "artifact-prompt"],
 			conversationId: null,
 			summary: null,

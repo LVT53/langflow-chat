@@ -1,9 +1,21 @@
 import { lookup } from "node:dns/promises";
+import { createRequire } from "node:module";
 import { isIP } from "node:net";
 import { Readability } from "@mozilla/readability";
-import { JSDOM } from "jsdom";
 import TurndownService from "turndown";
-import { gfm } from "turndown-plugin-gfm";
+
+const require = createRequire(import.meta.url);
+const { JSDOM } = require("jsdom") as {
+	JSDOM: new (
+		html: string,
+		options?: Record<string, unknown>,
+	) => {
+		window: { document: Document };
+	};
+};
+const { gfm } = require("turndown-plugin-gfm") as {
+	gfm: (service: TurndownService) => void;
+};
 
 export type WebResearchExtractorMode = "readability" | "basic" | "auto";
 
@@ -447,7 +459,7 @@ function extractWithReadability(
 		plainText,
 		excerpt: article.excerpt ? normalizeWhitespace(article.excerpt) : null,
 		metadata: {
-			byline: article.byline ?? article.meta?.author ?? null,
+			byline: article.byline ?? null,
 			siteName: article.siteName ?? null,
 			publishedTime: article.publishedTime ?? null,
 		},

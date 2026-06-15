@@ -30,7 +30,7 @@ type MockDb = {
 type DeleteChain = {
 	where: ReturnType<typeof vi.fn>;
 };
-const mockDb = db as MockDb;
+const mockDb = db as unknown as MockDb;
 
 function makeDeleteChain(): DeleteChain {
 	const chain = {} as DeleteChain;
@@ -43,7 +43,7 @@ function makeEvent(sessionToken: string | null): LogoutEvent {
 		get: vi.fn(() => sessionToken),
 		delete: vi.fn(),
 	};
-	return { cookies: mockCookies } as LogoutEvent;
+	return { cookies: mockCookies } as unknown as LogoutEvent;
 }
 
 describe("POST /api/auth/logout", () => {

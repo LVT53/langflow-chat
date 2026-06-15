@@ -63,7 +63,7 @@ describe("Normal Chat JSON control model sender", () => {
 	});
 
 	it("sends schema-guided JSON through the selected OpenAI-compatible normal-chat provider", async () => {
-		const fetch = vi.fn(
+		const fetch = vi.fn<typeof globalThis.fetch>(
 			async () =>
 				new Response(
 					JSON.stringify({
@@ -180,7 +180,7 @@ describe("Normal Chat JSON control model sender", () => {
 				thinkingType: null,
 			},
 		});
-		const fetch = vi.fn(
+		const fetch = vi.fn<typeof globalThis.fetch>(
 			async () =>
 				new Response(
 					JSON.stringify({
@@ -262,7 +262,7 @@ describe("Normal Chat JSON control model sender", () => {
 				thinkingType: null,
 			},
 		});
-		const fetch = vi.fn(
+		const fetch = vi.fn<typeof globalThis.fetch>(
 			async () =>
 				new Response(
 					JSON.stringify({
@@ -300,7 +300,7 @@ describe("Normal Chat JSON control model sender", () => {
 	});
 
 	it("can opt into reasoning fallback for schema-guided JSON control responses", async () => {
-		const fetch = vi.fn(
+		const fetch = vi.fn<typeof globalThis.fetch>(
 			async () =>
 				new Response(
 					JSON.stringify({

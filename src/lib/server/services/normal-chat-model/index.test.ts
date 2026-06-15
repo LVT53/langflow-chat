@@ -1,5 +1,5 @@
 import { tool } from "ai";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { createModelCapabilitySet } from "$lib/model-capabilities";
 
@@ -47,6 +47,7 @@ describe("Normal Chat Model Run provider resolution", () => {
 					displayName: "Model One",
 					maxTokens: 1234,
 					reasoningEffort: "high",
+					thinkingType: null,
 				},
 				model2: {
 					baseUrl: "https://unused.example/v1",
@@ -55,6 +56,7 @@ describe("Normal Chat Model Run provider resolution", () => {
 					displayName: "Unused",
 					maxTokens: null,
 					reasoningEffort: null,
+					thinkingType: null,
 				},
 			}),
 		).resolves.toEqual({
@@ -438,7 +440,7 @@ describe("Normal Chat Model Run usage mapping", () => {
 
 describe("Plain Normal Chat Model Run", () => {
 	it("rejects tool-required plain runs before the provider call when tools are unsupported", async () => {
-		const fetch = vi.fn();
+		const fetch = vi.fn<typeof globalThis.fetch>();
 
 		await expect(
 			runPlainNormalChatModelRun({
@@ -481,7 +483,7 @@ describe("Plain Normal Chat Model Run", () => {
 	});
 
 	it("maps generated text, usage, and model metadata from an OpenAI-compatible response", async () => {
-		const fetch = vi.fn(
+		const fetch = vi.fn<typeof globalThis.fetch>(
 			async () =>
 				new Response(
 					JSON.stringify({
@@ -560,7 +562,7 @@ describe("Plain Normal Chat Model Run", () => {
 	});
 
 	it("serializes generic reasoning effort to the outbound OpenAI-compatible body", async () => {
-		const fetch = vi.fn(
+		const fetch = vi.fn<typeof globalThis.fetch>(
 			async () =>
 				new Response(
 					JSON.stringify({
@@ -613,7 +615,7 @@ describe("Plain Normal Chat Model Run", () => {
 	});
 
 	it("serializes Kimi thinking and reasoning effort to the outbound body", async () => {
-		const fetch = vi.fn(
+		const fetch = vi.fn<typeof globalThis.fetch>(
 			async () =>
 				new Response(
 					JSON.stringify({
@@ -667,7 +669,7 @@ describe("Plain Normal Chat Model Run", () => {
 	});
 
 	it("serializes Qwen thinking options without reasoning effort", async () => {
-		const fetch = vi.fn(
+		const fetch = vi.fn<typeof globalThis.fetch>(
 			async () =>
 				new Response(
 					JSON.stringify({
@@ -721,7 +723,7 @@ describe("Plain Normal Chat Model Run", () => {
 	});
 
 	it("does not retry plain chat calls by default", async () => {
-		const fetch = vi.fn(
+		const fetch = vi.fn<typeof globalThis.fetch>(
 			async () =>
 				new Response(
 					JSON.stringify({
@@ -1078,7 +1080,7 @@ describe("Plain Normal Chat Model Run", () => {
 	});
 
 	it("sends named tool choice for required plain tool runs", async () => {
-		const fetch = vi.fn(
+		const fetch = vi.fn<typeof globalThis.fetch>(
 			async () =>
 				new Response(
 					JSON.stringify({
@@ -1153,7 +1155,7 @@ describe("Plain Normal Chat Model Run", () => {
 			apiKey: "plain-secret",
 			reasoningEffort: "high" as const,
 		};
-		const fetch = vi.fn(
+		const fetch = vi.fn<typeof globalThis.fetch>(
 			async () =>
 				new Response(
 					JSON.stringify({
@@ -1352,7 +1354,7 @@ describe("Plain Normal Chat Model Run", () => {
 	});
 
 	it("does not retry required tool-choice runs without tools", async () => {
-		const fetch = vi.fn(
+		const fetch = vi.fn<typeof globalThis.fetch>(
 			async () =>
 				new Response(
 					JSON.stringify({
@@ -1402,7 +1404,7 @@ describe("Plain Normal Chat Model Run", () => {
 	});
 
 	it("does not drop tools as a fallback when capability evidence says tools are supported", async () => {
-		const fetch = vi.fn(
+		const fetch = vi.fn<typeof globalThis.fetch>(
 			async () =>
 				new Response(
 					JSON.stringify({
@@ -1473,7 +1475,7 @@ describe("Plain Normal Chat Model Run", () => {
 			message: "tools are not supported during provider failure",
 		},
 	])("does not retry without tools for $name errors", async (errorCase) => {
-		const fetch = vi.fn(
+		const fetch = vi.fn<typeof globalThis.fetch>(
 			async () =>
 				new Response(
 					JSON.stringify({
@@ -1522,7 +1524,7 @@ describe("Plain Normal Chat Model Run", () => {
 	});
 
 	it("uses call-specific max output tokens for a plain chat run", async () => {
-		const fetch = vi.fn(
+		const fetch = vi.fn<typeof globalThis.fetch>(
 			async () =>
 				new Response(
 					JSON.stringify({
@@ -1712,7 +1714,7 @@ describe("Plain Normal Chat Model Run", () => {
 	});
 
 	it("uses a done tool summary as the plain assistant text", async () => {
-		const fetch = vi.fn(
+		const fetch = vi.fn<typeof globalThis.fetch>(
 			async () =>
 				new Response(
 					JSON.stringify({
@@ -1788,7 +1790,7 @@ describe("Plain Normal Chat Model Run", () => {
 
 describe("Streaming Normal Chat Model Run", () => {
 	it("rejects streaming runs before the provider call when streaming is unsupported", async () => {
-		const fetch = vi.fn();
+		const fetch = vi.fn<typeof globalThis.fetch>();
 
 		expect(() =>
 			runStreamingNormalChatModelRun({
@@ -1822,7 +1824,7 @@ describe("Streaming Normal Chat Model Run", () => {
 	});
 
 	it("emits neutral text, usage, and finish events from an OpenAI-compatible stream", async () => {
-		const fetch = vi.fn(
+		const fetch = vi.fn<typeof globalThis.fetch>(
 			async () =>
 				new Response(
 					[
@@ -1902,7 +1904,7 @@ describe("Streaming Normal Chat Model Run", () => {
 	});
 
 	it("emits neutral reasoning delta events when the provider streams reasoning", async () => {
-		const fetch = vi.fn(
+		const fetch = vi.fn<typeof globalThis.fetch>(
 			async () =>
 				new Response(
 					[
@@ -1951,7 +1953,7 @@ describe("Streaming Normal Chat Model Run", () => {
 	});
 
 	it("does not request streaming usage when usage reporting is unsupported", async () => {
-		const fetch = vi.fn(
+		const fetch = vi.fn<typeof globalThis.fetch>(
 			async () =>
 				new Response(
 					[
@@ -2006,7 +2008,7 @@ describe("Streaming Normal Chat Model Run", () => {
 		const consoleError = vi
 			.spyOn(console, "error")
 			.mockImplementation(() => undefined);
-		const fetch = vi.fn(
+		const fetch = vi.fn<typeof globalThis.fetch>(
 			async () =>
 				new Response(
 					JSON.stringify({
@@ -2565,7 +2567,7 @@ describe("Streaming Normal Chat Model Run", () => {
 	});
 
 	it("emits a done tool summary as assistant text without a neutral tool event", async () => {
-		const fetch = vi.fn(
+		const fetch = vi.fn<typeof globalThis.fetch>(
 			async () =>
 				new Response(
 					[
@@ -2630,7 +2632,7 @@ describe("Streaming Normal Chat Model Run", () => {
 	});
 
 	it("sends named tool choice for required streaming tool runs", async () => {
-		const fetch = vi.fn(
+		const fetch = vi.fn<typeof globalThis.fetch>(
 			async () =>
 				new Response(
 					[

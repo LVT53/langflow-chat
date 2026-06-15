@@ -14,13 +14,14 @@ export const GET: RequestHandler = async (event) => {
 
 export const POST: RequestHandler = async (event) => {
 	requireAdmin(event);
+	const createdByUserId = event.locals.user.id;
 	const body = await event.request.json().catch(() => ({}));
 	try {
 		const campaign = await createCampaignDraft({
 			type: body?.type,
 			releaseVersion: body?.releaseVersion,
 			name: body?.name,
-			createdByUserId: event.locals.user?.id,
+			createdByUserId,
 		});
 		return json({ campaign }, { status: 201 });
 	} catch (error) {

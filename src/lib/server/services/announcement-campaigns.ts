@@ -1138,13 +1138,14 @@ export async function completeCampaignForUser(
 			404,
 		);
 	}
+	const snapshot = campaign.snapshot;
 	const existing = db
 		.select()
 		.from(announcementCampaignUserStates)
 		.where(
 			and(
 				eq(announcementCampaignUserStates.userId, userId),
-				eq(announcementCampaignUserStates.snapshotId, campaign.snapshot.id),
+				eq(announcementCampaignUserStates.snapshotId, snapshot.id),
 			),
 		)
 		.get();
@@ -1165,7 +1166,7 @@ export async function completeCampaignForUser(
 				id: nextId(),
 				userId,
 				campaignId,
-				snapshotId: campaign.snapshot?.id,
+				snapshotId: snapshot.id,
 				...state,
 				createdAt: now,
 			})
@@ -1175,7 +1176,7 @@ export async function completeCampaignForUser(
 				id: nextId(),
 				userId,
 				campaignId,
-				snapshotId: campaign.snapshot?.id,
+				snapshotId: snapshot.id,
 				eventType: eventTypeForCompletion(reason),
 				createdAt: now,
 			})
@@ -1188,7 +1189,7 @@ export async function completeCampaignForUser(
 		.where(
 			and(
 				eq(announcementCampaignUserStates.userId, userId),
-				eq(announcementCampaignUserStates.snapshotId, campaign.snapshot.id),
+				eq(announcementCampaignUserStates.snapshotId, snapshot.id),
 			),
 		)
 		.get();

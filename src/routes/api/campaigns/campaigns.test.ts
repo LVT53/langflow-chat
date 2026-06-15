@@ -57,7 +57,7 @@ function makeEvent(body: unknown = {}, params: Record<string, string> = {}) {
 		params,
 		url: new URL("http://localhost/api/campaigns"),
 		route: { id: "/api/campaigns" },
-	} as unknown as Parameters<typeof ELIGIBLE>[0];
+	};
 }
 
 describe("user announcement campaign routes", () => {
@@ -72,7 +72,9 @@ describe("user announcement campaign routes", () => {
 			type: "first_run_onboarding",
 		});
 
-		const response = await ELIGIBLE(makeEvent());
+		const response = await ELIGIBLE(
+			makeEvent() as unknown as Parameters<typeof ELIGIBLE>[0],
+		);
 		const body = await response.json();
 
 		expect(response.status).toBe(200);
@@ -88,7 +90,9 @@ describe("user announcement campaign routes", () => {
 			type: "release_update",
 		});
 
-		const response = await LATEST(makeEvent());
+		const response = await LATEST(
+			makeEvent() as unknown as Parameters<typeof LATEST>[0],
+		);
 		const body = await response.json();
 
 		expect(response.status).toBe(200);
@@ -112,7 +116,7 @@ describe("user announcement campaign routes", () => {
 					metadata: { preference: "theme" },
 				},
 				{ id: "campaign-1" },
-			),
+			) as unknown as Parameters<typeof EVENT>[0],
 		);
 		const body = await response.json();
 
@@ -134,7 +138,10 @@ describe("user announcement campaign routes", () => {
 		});
 
 		const response = await COMPLETE(
-			makeEvent({ reason: "completed" }, { id: "campaign-1" }),
+			makeEvent(
+				{ reason: "completed" },
+				{ id: "campaign-1" },
+			) as unknown as Parameters<typeof COMPLETE>[0],
 		);
 		const body = await response.json();
 
@@ -147,7 +154,10 @@ describe("user announcement campaign routes", () => {
 		);
 
 		const invalid = await COMPLETE(
-			makeEvent({ reason: "later" }, { id: "campaign-1" }),
+			makeEvent(
+				{ reason: "later" },
+				{ id: "campaign-1" },
+			) as unknown as Parameters<typeof COMPLETE>[0],
 		);
 		expect(invalid.status).toBe(400);
 	});

@@ -13,10 +13,14 @@ export interface PersonalityProfile {
 }
 
 export async function listPersonalityProfiles(): Promise<PersonalityProfile[]> {
-	return db
+	const rows = await db
 		.select()
 		.from(personalityProfiles)
 		.orderBy(personalityProfiles.createdAt);
+	return rows.map((row) => ({
+		...row,
+		isBuiltIn: Boolean(row.isBuiltIn),
+	}));
 }
 
 export async function getPersonalityProfile(
@@ -26,7 +30,12 @@ export async function getPersonalityProfile(
 		.select()
 		.from(personalityProfiles)
 		.where(eq(personalityProfiles.id, id));
-	return row ?? null;
+	return row
+		? {
+				...row,
+				isBuiltIn: Boolean(row.isBuiltIn),
+			}
+		: null;
 }
 
 export async function createPersonalityProfile(params: {
@@ -72,7 +81,7 @@ export async function deletePersonalityProfile(id: string): Promise<boolean> {
 		.select()
 		.from(personalityProfiles)
 		.where(eq(personalityProfiles.id, id));
-	if (!profile || profile.isBuiltIn) return false;
+	if (!profile || Boolean(profile.isBuiltIn)) return false;
 	await db.delete(personalityProfiles).where(eq(personalityProfiles.id, id));
 	return true;
 }

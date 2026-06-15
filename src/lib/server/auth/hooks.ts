@@ -146,7 +146,11 @@ export function verifyFileProductionServiceAssertion(
 	return verifyServiceAssertion(authorizationHeader);
 }
 
-export function requireAdmin(event) {
+export function requireAdmin<T extends { locals: App.Locals }>(
+	event: T,
+): asserts event is T & {
+	locals: T["locals"] & { user: NonNullable<App.Locals["user"]> };
+} {
 	if (!event.locals.user) {
 		throw redirect(302, "/login");
 	}
@@ -155,7 +159,9 @@ export function requireAdmin(event) {
 	}
 }
 
-export function requireGuest(event) {
+export function requireGuest<T extends { locals: App.Locals }>(
+	event: T,
+): asserts event is T & { locals: T["locals"] & { user: null } } {
 	if (event.locals.user) {
 		throw redirect(302, "/");
 	}

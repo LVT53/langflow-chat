@@ -1352,7 +1352,12 @@ async function handleApproveDeepResearchPlan(jobId: string) {
 async function handleDiscussDeepResearchReport(jobId: string) {
 	try {
 		const action = await discussDeepResearchReportRequest(jobId);
-		upsertConversationLocal(action.conversation);
+		upsertConversationLocal(
+			action.conversation.id,
+			action.conversation.title,
+			action.conversation.updatedAt,
+			action.conversation.projectId,
+		);
 		if (action.seedMessage) {
 			storePendingConversationMessage(action.conversation.id, {
 				message: action.seedMessage,
@@ -1382,7 +1387,12 @@ async function handleResearchFurtherFromDeepResearchReport(
 			jobId,
 			options,
 		);
-		upsertConversationLocal(action.conversation);
+		upsertConversationLocal(
+			action.conversation.id,
+			action.conversation.title,
+			action.conversation.updatedAt,
+			action.conversation.projectId,
+		);
 		await goto(`/chat/${action.conversation.id}`);
 	} catch (err) {
 		sendError =
@@ -1708,10 +1718,11 @@ function patchSkillDraftFromResponse(
 	response: { draft?: NonNullable<ChatMessage["skillDrafts"]>[number] },
 ) {
 	if (!response.draft) return;
+	const draft = response.draft;
 	messages.update((list) =>
 		patchSkillDraftInMessageList(list, {
 			messageId,
-			draft: response.draft,
+			draft,
 		}),
 	);
 }

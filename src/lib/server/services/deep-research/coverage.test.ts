@@ -6,9 +6,15 @@ import type { ResearchPlan } from "./planning";
 const standardPlan: ResearchPlan = {
 	goal: "Compare the current state of two document automation platforms.",
 	depth: "standard",
+	reportIntent: "comparison",
 	researchBudget: {
 		sourceReviewCeiling: 40,
 		synthesisPassCeiling: 2,
+		meaningfulPassFloor: 1,
+		meaningfulPassCeiling: 2,
+		repairPassCeiling: 1,
+		sourceProcessingConcurrency: 2,
+		modelReasoningConcurrency: 1,
 	},
 	keyQuestions: [
 		"What are the current capabilities?",
@@ -157,6 +163,7 @@ describe("assessResearchCoverage", () => {
 				comparisonAxes: ["privacy"],
 				keyQuestions: ["How do the tools compare on privacy?"],
 				researchBudget: {
+					...standardPlan.researchBudget,
 					sourceReviewCeiling: 12,
 					synthesisPassCeiling: 1,
 				},

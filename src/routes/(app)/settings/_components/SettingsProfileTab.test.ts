@@ -1,12 +1,13 @@
 import { fireEvent, render, screen, within } from "@testing-library/svelte";
 import { describe, expect, it, vi } from "vitest";
+import type { ModelId } from "$lib/types";
 import SettingsProfileTab from "./SettingsProfileTab.svelte";
 
 const baseProps = {
 	userId: "user-1",
 	userDisplayName: "User",
 	userEmail: "user@example.com",
-	avatarColors: ["#000000"],
+	avatarColors: ["#000000"] as string[],
 	avatarCount: 1,
 	selectedAvatar: 1,
 	showAvatarPicker: false,
@@ -24,19 +25,19 @@ const baseProps = {
 	showConfirmPw: false,
 	onSavePassword: vi.fn(),
 	availableModels: [
-		{ id: "model1", displayName: "Model 1" },
-		{ id: "model2", displayName: "Model 2" },
+		{ id: "model1" as ModelId, displayName: "Model 1" },
+		{ id: "model2" as ModelId, displayName: "Model 2" },
 	],
-	selectedTheme: "system",
-	selectedTitleLanguage: "auto",
-	selectedUiLanguage: "en",
+	selectedTheme: "system" as const,
+	selectedTitleLanguage: "auto" as const,
+	selectedUiLanguage: "en" as const,
 	onChangeTheme: vi.fn(),
 	onChangeTitleLanguage: vi.fn(),
 	onChangeUiLanguage: vi.fn(),
 	onOpenResetModal: vi.fn(),
 	onOpenDeleteModal: vi.fn(),
 	onForgetEverything: vi.fn(),
-} as const;
+};
 
 describe("SettingsProfileTab model preference", () => {
 	it("shows System default first with the resolved model and emits null for inheritance", async () => {
@@ -90,10 +91,10 @@ describe("SettingsProfileTab model preference", () => {
 	});
 
 	it("renders many model choices in a shrink-safe responsive grid", () => {
-		const availableModels = [
-			{ id: "model1", displayName: "Model 1" },
+		const availableModels: Array<{ id: ModelId; displayName: string }> = [
+			{ id: "model1" as ModelId, displayName: "Model 1" },
 			...Array.from({ length: 12 }, (_, index) => ({
-				id: `provider:test-provider:model-${index}` as const,
+				id: `provider:test-provider:model-${index}` as ModelId,
 				displayName: `Provider Model With A Long Display Name ${index + 1}`,
 			})),
 		];

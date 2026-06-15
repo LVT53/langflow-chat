@@ -720,8 +720,6 @@ describe("user skill definitions", () => {
 			instructions: "OVERLAY_ONLY_SECRET",
 			activationExamples: ["research tersely"],
 			enabled: true,
-			durationPolicy: "next_message",
-			notesPolicy: "none",
 		});
 
 		expect(variant).toMatchObject({
@@ -757,7 +755,6 @@ describe("user skill definitions", () => {
 				displayName: "Research Pack, board style",
 				instructions: "UPDATED_OVERLAY_ONLY",
 				enabled: false,
-				questionPolicy: "none",
 			},
 		);
 		expect(updated).toMatchObject({
@@ -766,7 +763,6 @@ describe("user skill definitions", () => {
 			instructions: "UPDATED_OVERLAY_ONLY",
 			enabled: false,
 			version: 2,
-			questionPolicy: "none",
 		});
 
 		const packRow = await db

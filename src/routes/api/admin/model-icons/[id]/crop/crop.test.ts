@@ -42,7 +42,7 @@ function makeCropEvent(
 			`http://localhost/api/admin/model-icons/${sourceAssetId}/crop`,
 		),
 		route: { id: "/api/admin/model-icons/[id]/crop" },
-	} as ModelIconCropEvent;
+	} as unknown as ModelIconCropEvent;
 }
 
 describe("POST /api/admin/model-icons/[id]/crop", () => {

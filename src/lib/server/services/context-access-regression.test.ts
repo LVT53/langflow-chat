@@ -48,7 +48,14 @@ const mocks = vi.hoisted(() => {
 		messages: [],
 		summary: null,
 	}));
-	const shortlistSemanticMatchesBySubject = vi.fn(async () => []);
+	const shortlistSemanticMatchesBySubject = vi.fn(
+		async (_params: SemanticSubjectMockParams) =>
+			[] as Array<{
+				subjectId: string;
+				item: { id: string };
+				semanticScore: number;
+			}>,
+	);
 
 	return {
 		config,
@@ -58,6 +65,11 @@ const mocks = vi.hoisted(() => {
 		shortlistSemanticMatchesBySubject,
 	};
 });
+
+type SemanticSubjectMockParams = {
+	items: Array<{ id: string }>;
+	subjectType: string;
+};
 
 vi.mock("$lib/server/config-store", async (importActual) => {
 	const actual =
@@ -272,13 +284,7 @@ describe("Context Access v1 integrated regression harness", () => {
 		sqlite.close();
 
 		mocks.shortlistSemanticMatchesBySubject.mockImplementation(
-			async ({
-				items,
-				subjectType,
-			}: {
-				items: Array<{ id: string }>;
-				subjectType: string;
-			}) =>
+			async ({ items, subjectType }: SemanticSubjectMockParams) =>
 				subjectType === "artifact"
 					? items
 							.filter((item) => item.id === "doc-semantic")
@@ -340,6 +346,9 @@ describe("Context Access v1 integrated regression harness", () => {
 			status: "available",
 			source: "conversation_summaries",
 		});
+		if (history.mode !== "history") {
+			throw new Error("Expected history memory context result");
+		}
 		expect(history.conversations.map((item) => item.conversationId)).toEqual([
 			"bike-history-4",
 			"bike-history-3",

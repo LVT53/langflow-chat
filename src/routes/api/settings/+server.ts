@@ -10,35 +10,38 @@ import type { RequestHandler } from "./$types";
 
 export const GET: RequestHandler = async (event) => {
 	requireAuth(event);
-	const userId = event.locals.user?.id;
+	const currentUser = event.locals.user;
+	const userId = currentUser.id;
 
-	const [user] = await db.select().from(users).where(eq(users.id, userId));
-	if (!user) {
+	const [userRow] = await db.select().from(users).where(eq(users.id, userId));
+	if (!userRow) {
 		return json({ error: "User not found" }, { status: 404 });
 	}
 
 	const resolvedModelPreference = await resolveUserModelPreference(
-		user.preferredModel,
-		user.modelPreferenceMode,
+		userRow.preferredModel,
+		userRow.modelPreferenceMode,
 		getConfig(),
 	);
 
 	const settings: UserSettings = {
-		id: user.id,
-		email: user.email,
-		name: user.name,
-		role: user.role as "user" | "admin",
+		id: userRow.id,
+		email: userRow.email,
+		name: userRow.name,
+		role: userRow.role as "user" | "admin",
 		preferences: {
 			preferredModel: resolvedModelPreference.preference,
 			effectiveModel: resolvedModelPreference.effectiveModel,
 			systemDefaultModel: resolvedModelPreference.systemDefaultModel,
-			theme: (user.theme ?? "system") as "system" | "light" | "dark",
-			titleLanguage: (user.titleLanguage ?? "auto") as "auto" | "en" | "hu",
-			uiLanguage: (user.uiLanguage ?? "en") as "en" | "hu",
-			avatarId: user.avatarId ?? null,
-			preferredPersonalityId: user.preferredPersonalityId ?? null,
+			theme: (userRow.theme ?? "system") as "system" | "light" | "dark",
+			titleLanguage: (userRow.titleLanguage ?? "auto") as "auto" | "en" | "hu",
+			uiLanguage: (userRow.uiLanguage ?? "en") as "en" | "hu",
+			avatarId: userRow.avatarId ?? null,
+			preferredPersonalityId: userRow.preferredPersonalityId ?? null,
+			sidebarProjectsExpanded: userRow.sidebarProjectsExpanded ?? true,
+			sidebarChatsExpanded: userRow.sidebarChatsExpanded ?? true,
 		},
-		profilePicture: user.profilePicture ?? null,
+		profilePicture: userRow.profilePicture ?? null,
 	};
 
 	return json(settings);

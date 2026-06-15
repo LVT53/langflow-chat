@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { Artifact, TaskState } from "$lib/types";
 
 const {
 	mockRecordMemoryEvent,
@@ -23,7 +24,13 @@ const {
 		mockListMemoryEvents: vi.fn(async () => []),
 		mockCanUseContextSummarizer: vi.fn(() => false),
 		mockRequestStructuredControlModel: vi.fn(),
-		mockRerankItems: vi.fn(async () => null),
+		mockRerankItems: vi.fn(
+			async () =>
+				null as {
+					items: Array<{ item: Artifact; index: number; score: number }>;
+					confidence: number;
+				} | null,
+		),
 		mockCanUseTeiReranker: vi.fn(() => false),
 		insertedProjectRows: [] as Array<Record<string, unknown>>,
 		insertedLinkRows: [] as Array<Record<string, unknown>>,
@@ -44,6 +51,83 @@ type SelectChain = unknown[] & {
 	orderBy: (...args: unknown[]) => SelectChain;
 	limit: (count?: number) => Promise<unknown[]>;
 };
+
+function makeTaskState(params: {
+	taskId: string;
+	userId: string;
+	conversationId: string;
+	status: TaskState["status"];
+	objective: string;
+	confidence: number;
+	locked: boolean;
+	lastConfirmedTurnMessageId?: string | null;
+	constraints?: string[];
+	factsToPreserve?: string[];
+	decisions?: string[];
+	openQuestions?: string[];
+	activeArtifactIds?: string[];
+	nextSteps?: string[];
+	lastCheckpointAt?: number | null;
+	createdAt?: number;
+	updatedAt?: number;
+}): TaskState {
+	const timestamp = params.createdAt ?? Date.now();
+	return {
+		taskId: params.taskId,
+		userId: params.userId,
+		conversationId: params.conversationId,
+		status: params.status,
+		objective: params.objective,
+		confidence: params.confidence,
+		locked: params.locked,
+		lastConfirmedTurnMessageId: params.lastConfirmedTurnMessageId ?? null,
+		constraints: params.constraints ?? [],
+		factsToPreserve: params.factsToPreserve ?? [],
+		decisions: params.decisions ?? [],
+		openQuestions: params.openQuestions ?? [],
+		activeArtifactIds: params.activeArtifactIds ?? [],
+		nextSteps: params.nextSteps ?? [],
+		lastCheckpointAt: params.lastCheckpointAt ?? null,
+		createdAt: timestamp,
+		updatedAt: params.updatedAt ?? timestamp,
+	};
+}
+
+function makeArtifact(params: {
+	id: string;
+	type: Artifact["type"];
+	conversationId: string | null;
+	name: string;
+	summary: string | null;
+	metadata?: Artifact["metadata"];
+	updatedAt?: number;
+	userId?: string;
+	retrievalClass?: Artifact["retrievalClass"];
+	mimeType?: string;
+	sizeBytes?: number;
+	contentText?: string | null;
+	extension?: string | null;
+	storagePath?: string | null;
+}): Artifact {
+	const timestamp = params.updatedAt ?? Date.now();
+	return {
+		id: params.id,
+		userId: params.userId ?? "user-1",
+		type: params.type,
+		retrievalClass: params.retrievalClass ?? "durable",
+		name: params.name,
+		mimeType: params.mimeType ?? "text/plain",
+		sizeBytes: params.sizeBytes ?? 1024,
+		conversationId: params.conversationId,
+		summary: params.summary,
+		metadata: params.metadata ?? null,
+		contentText: params.contentText ?? null,
+		extension: params.extension ?? "txt",
+		storagePath: params.storagePath ?? null,
+		createdAt: timestamp,
+		updatedAt: timestamp,
+	};
+}
 
 function createSelectChain(rows: unknown[]) {
 	const chain = [...rows] as SelectChain;
@@ -396,7 +480,7 @@ describe("task-state learning - project continuity signals", () => {
 
 		await syncTaskContinuityFromTaskState({
 			userId: "user-1",
-			taskState: {
+			taskState: makeTaskState({
 				taskId: "task-new-project",
 				userId: "user-1",
 				conversationId: "conv-1",
@@ -404,16 +488,8 @@ describe("task-state learning - project continuity signals", () => {
 				objective: "Create the quarterly report",
 				confidence: 85,
 				locked: false,
-				constraints: [],
-				factsToPreserve: [],
-				decisions: [],
-				openQuestions: [],
-				activeArtifactIds: [],
 				nextSteps: ["Gather data", "Write analysis"],
-				lastCheckpointAt: null,
-				createdAt: Date.now(),
-				updatedAt: Date.now(),
-			},
+			}),
 		});
 
 		expect(mockRecordMemoryEvent).toHaveBeenCalledWith(
@@ -563,23 +639,15 @@ describe("task-state selected evidence policy", () => {
 			createdAt: new Date(now),
 			updatedAt: new Date(now),
 		});
-		const semanticDocument = {
+		const semanticDocument = makeArtifact({
 			id: "doc-semantic",
-			userId: "user-1",
 			type: "normalized_document",
-			retrievalClass: "durable",
-			name: "Operations handbook",
-			mimeType: "text/plain",
-			sizeBytes: 1024,
 			conversationId: "conv-2",
+			name: "Operations handbook",
 			summary: "Internal support procedures",
-			metadata: null,
 			contentText: "Escalation policy and support team operating procedures",
-			extension: "txt",
-			storagePath: null,
-			createdAt: now,
 			updatedAt: now,
-		};
+		});
 
 		const { prepareTaskContext } = await import("./task-state");
 		const prepared = await prepareTaskContext({
@@ -616,23 +684,15 @@ describe("task-state selected evidence policy", () => {
 			createdAt: new Date(now),
 			updatedAt: new Date(now),
 		});
-		const semanticDocument = {
+		const semanticDocument = makeArtifact({
 			id: "doc-semantic",
-			userId: "user-1",
 			type: "normalized_document",
-			retrievalClass: "durable",
-			name: "Operations handbook",
-			mimeType: "text/plain",
-			sizeBytes: 1024,
 			conversationId: "conv-2",
+			name: "Operations handbook",
 			summary: "Internal support procedures",
-			metadata: null,
 			contentText: "Escalation policy and support team operating procedures",
-			extension: "txt",
-			storagePath: null,
-			createdAt: now,
 			updatedAt: now,
-		};
+		});
 
 		const { prepareTaskContext } = await import("./task-state");
 		const prepared = await prepareTaskContext({
@@ -672,15 +732,11 @@ describe("task-state selected evidence policy", () => {
 			createdAt: new Date(now),
 			updatedAt: new Date(now),
 		});
-		const currentGeneratedDocument = {
+		const currentGeneratedDocument = makeArtifact({
 			id: "generated-current",
-			userId: "user-1",
 			type: "generated_output",
-			retrievalClass: "durable",
-			name: "current-report.pdf",
-			mimeType: "application/pdf",
-			sizeBytes: 1024,
 			conversationId: "conv-1",
+			name: "current-report.pdf",
 			summary: "Current generated report.",
 			metadata: {
 				documentFamilyId: "family-report",
@@ -689,31 +745,28 @@ describe("task-state selected evidence policy", () => {
 			},
 			contentText: "Current generated report draft.",
 			extension: "pdf",
-			storagePath: null,
-			createdAt: now,
+			mimeType: "application/pdf",
 			updatedAt: now,
-		};
-		const relevantDocuments = Array.from({ length: 3 }, (_, index) => ({
-			id: `semantic-${index + 1}`,
-			userId: "user-1",
-			type: "normalized_document",
-			retrievalClass: "durable",
-			name: `Reference ${index + 1}`,
-			mimeType: "text/plain",
-			sizeBytes: 1024,
-			conversationId: "conv-1",
-			summary: "Reference source.",
-			metadata: null,
-			contentText: "Supporting source material.",
-			extension: "txt",
-			storagePath: null,
-			createdAt: now,
-			updatedAt: now - index - 1,
-		}));
+		});
+		const relevantDocuments = Array.from({ length: 3 }, (_, index) =>
+			makeArtifact({
+				id: `semantic-${index + 1}`,
+				type: "normalized_document",
+				conversationId: "conv-1",
+				name: `Reference ${index + 1}`,
+				summary: "Reference source.",
+				contentText: "Supporting source material.",
+				updatedAt: now - index - 1,
+			}),
+		);
 		mockCanUseTeiReranker.mockReturnValue(true);
 		mockRerankItems.mockResolvedValue({
 			confidence: 92,
-			items: relevantDocuments.map((item) => ({ item, score: 0.9 })),
+			items: relevantDocuments.map((item, index) => ({
+				item,
+				index,
+				score: 0.9,
+			})),
 		});
 
 		const { prepareTaskContext } = await import("./task-state");
@@ -755,15 +808,11 @@ describe("task-state selected evidence policy", () => {
 			createdAt: new Date(now),
 			updatedAt: new Date(now),
 		});
-		const selectedOlderDraft = {
+		const selectedOlderDraft = makeArtifact({
 			id: "brief-v1",
-			userId: "user-1",
 			type: "generated_output",
-			retrievalClass: "durable",
-			name: "brief-v1.pdf",
-			mimeType: "application/pdf",
-			sizeBytes: 1024,
 			conversationId: "conv-1",
+			name: "brief-v1.pdf",
 			summary: "Older brief draft.",
 			metadata: {
 				documentFamilyId: "family-brief",
@@ -772,19 +821,14 @@ describe("task-state selected evidence policy", () => {
 			},
 			contentText: "Older brief draft.",
 			extension: "pdf",
-			storagePath: null,
-			createdAt: now - 10,
-			updatedAt: now - 10,
-		};
-		const newerSiblingDraft = {
-			id: "brief-v2",
-			userId: "user-1",
-			type: "generated_output",
-			retrievalClass: "durable",
-			name: "brief-v2.pdf",
 			mimeType: "application/pdf",
-			sizeBytes: 1024,
+			updatedAt: now - 10,
+		});
+		const newerSiblingDraft = makeArtifact({
+			id: "brief-v2",
+			type: "generated_output",
 			conversationId: "conv-1",
+			name: "brief-v2.pdf",
 			summary: "Newer brief draft.",
 			metadata: {
 				documentFamilyId: "family-brief",
@@ -794,10 +838,9 @@ describe("task-state selected evidence policy", () => {
 			},
 			contentText: "Newer brief draft.",
 			extension: "pdf",
-			storagePath: null,
-			createdAt: now,
+			mimeType: "application/pdf",
 			updatedAt: now,
-		};
+		});
 
 		const { prepareTaskContext } = await import("./task-state");
 		const prepared = await prepareTaskContext({

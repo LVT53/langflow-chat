@@ -110,12 +110,12 @@ async function initHighlighter() {
 				engine: () => createJavaScriptRegexEngine(),
 			});
 
-			highlighter = await createHighlighter({
+			highlighter = (await createHighlighter({
 				langs: Object.keys(HIGHLIGHT_LANGS) as Array<
 					keyof typeof HIGHLIGHT_LANGS
 				>,
 				themes: [...HIGHLIGHT_THEMES],
-			});
+			})) as Highlighter;
 		})();
 	}
 
@@ -252,11 +252,12 @@ async function renderMarkdown(
 		options,
 		inlineSourceReferences,
 	);
-	const html = marked.parse(sourceDisplayContent, {
-		renderer: renderer as Parameters<typeof marked.parse>[1]["renderer"],
+	const parseOptions = {
+		renderer,
 		breaks: true,
 		gfm: true,
-	});
+	} as Parameters<typeof marked.parse>[1];
+	const html = marked.parse(sourceDisplayContent, parseOptions);
 
 	return sanitizeHtml(
 		`${frontmatter.html}${transformCalloutHtml(wrapMarkdownTables(html as string))}`,

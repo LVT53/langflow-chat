@@ -7,7 +7,7 @@ import type { RequestHandler } from "./$types";
 export const POST: RequestHandler = async (event) => {
 	requireAdmin(event);
 	try {
-		const result = await seedFirstRunOnboardingTemplate(event.locals.user?.id);
+		const result = await seedFirstRunOnboardingTemplate(event.locals.user.id);
 		return json(result, { status: result.created ? 201 : 200 });
 	} catch (error) {
 		return campaignErrorResponse(

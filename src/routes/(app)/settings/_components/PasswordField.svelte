@@ -1,6 +1,7 @@
 <script lang="ts">
 import { t } from "$lib/i18n";
 import { Eye, EyeOff } from "@lucide/svelte";
+import type { HTMLInputAttributes } from "svelte/elements";
 
 let {
 	id,
@@ -14,7 +15,7 @@ let {
 	label: string;
 	value: string;
 	shown: boolean;
-	autocomplete?: string;
+	autocomplete?: HTMLInputAttributes["autocomplete"];
 	placeholder?: string;
 } = $props();
 </script>

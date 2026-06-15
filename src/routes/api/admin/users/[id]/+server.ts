@@ -9,6 +9,7 @@ import type { RequestHandler } from "./$types";
 
 export const PATCH: RequestHandler = async (event) => {
 	requireAdmin(event);
+	const actorUserId = event.locals.user.id;
 
 	let body: { role?: unknown };
 	try {
@@ -23,7 +24,7 @@ export const PATCH: RequestHandler = async (event) => {
 
 	try {
 		const user = await updateManagedUserRole({
-			actorUserId: event.locals.user?.id,
+			actorUserId,
 			targetUserId: event.params.id,
 			role: body.role,
 		});
@@ -35,10 +36,11 @@ export const PATCH: RequestHandler = async (event) => {
 
 export const DELETE: RequestHandler = async (event) => {
 	requireAdmin(event);
+	const actorUserId = event.locals.user.id;
 
 	try {
 		await deleteManagedUser({
-			actorUserId: event.locals.user?.id,
+			actorUserId,
 			targetUserId: event.params.id,
 		});
 		return json({ success: true });

@@ -47,7 +47,7 @@ function makeEvent(body: unknown = {}, params: Record<string, string> = {}) {
 		params,
 		url: new URL("http://localhost/api/admin/campaigns"),
 		route: { id: "/api/admin/campaigns" },
-	} as unknown as Parameters<typeof POST>[0];
+	};
 }
 
 describe("admin announcement campaign routes", () => {
@@ -61,7 +61,9 @@ describe("admin announcement campaign routes", () => {
 			{ id: "campaign-1", status: "draft" },
 		]);
 
-		const response = await GET(makeEvent());
+		const response = await GET(
+			makeEvent() as unknown as Parameters<typeof GET>[0],
+		);
 		const body = await response.json();
 
 		expect(response.status).toBe(200);
@@ -84,7 +86,7 @@ describe("admin announcement campaign routes", () => {
 				releaseVersion: "0.2.0",
 				name: "Release update",
 				identityKey: "malicious-admin-key",
-			}),
+			}) as unknown as Parameters<typeof POST>[0],
 		);
 		const body = await response.json();
 
@@ -108,7 +110,11 @@ describe("admin announcement campaign routes", () => {
 			),
 		);
 
-		const response = await PUBLISH(makeEvent({}, { id: "campaign-1" }));
+		const response = await PUBLISH(
+			makeEvent({}, { id: "campaign-1" }) as unknown as Parameters<
+				typeof PUBLISH
+			>[0],
+		);
 		const body = await response.json();
 
 		expect(response.status).toBe(400);

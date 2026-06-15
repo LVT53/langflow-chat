@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
 	ChatMessage,
 	DeepResearchJob,
+	DeepResearchPlanSummary,
 	DocumentWorkspaceItem,
 	FileProductionJob,
 } from "$lib/types";
@@ -85,7 +86,10 @@ describe("MessageArea", () => {
 	}
 
 	function makeDeepResearchJob(
-		overrides: Partial<DeepResearchJob> = {},
+		overrides: Omit<Partial<DeepResearchJob>, "plan" | "currentPlan"> & {
+			plan?: Partial<DeepResearchPlanSummary> | null;
+			currentPlan?: Partial<DeepResearchPlanSummary> | null;
+		} = {},
 	): DeepResearchJob {
 		const now = Date.now();
 		return {
@@ -102,7 +106,7 @@ describe("MessageArea", () => {
 			completedAt: overrides.completedAt ?? null,
 			cancelledAt: overrides.cancelledAt ?? null,
 			...overrides,
-		};
+		} as DeepResearchJob;
 	}
 
 	it("preserves the expanded thinking block when a streaming placeholder id is replaced", async () => {
@@ -357,7 +361,7 @@ describe("MessageArea", () => {
 
 	it("aligns the fork boundary to the top of the chat viewport on initial fork open", async () => {
 		vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
-			function () {
+			function (this: HTMLElement) {
 				const element = this as HTMLElement;
 				if (element.classList.contains("scroll-container")) {
 					return {

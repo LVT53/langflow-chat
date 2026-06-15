@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import type { Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
 	KnowledgeMemoryOverviewPayload,
@@ -101,7 +102,24 @@ const fullMemoryPayload = {
 	summary: memoryOverviewPayload.summary,
 } satisfies KnowledgeMemoryPayload;
 
-function pageData() {
+function pageData(): {
+	documents: [];
+	library: {
+		documents: [];
+		results: [];
+		workflows: [];
+		query: string;
+		sort: { key: "date"; direction: "desc" };
+		pagination: {
+			page: number;
+			pageSize: number;
+			totalItems: number;
+			totalPages: number;
+		};
+	};
+	honchoEnabled: boolean;
+	userDisplayName: string;
+} {
 	return {
 		documents: [],
 		library: {
@@ -121,6 +139,10 @@ function pageData() {
 		userDisplayName: "Test User",
 	};
 }
+
+const KnowledgePage = Page as unknown as Component<{
+	data: ReturnType<typeof pageData>;
+}>;
 
 describe("Knowledge page memory loading", () => {
 	beforeEach(() => {
@@ -144,7 +166,7 @@ describe("Knowledge page memory loading", () => {
 	});
 
 	it("loads the lightweight memory overview first and defers full memory until management opens", async () => {
-		render(Page, { data: pageData() });
+		render(KnowledgePage, { data: pageData() });
 
 		await waitFor(() => {
 			expect(fetchKnowledgeMemoryOverview).toHaveBeenCalledWith();
@@ -169,7 +191,7 @@ describe("Knowledge page memory loading", () => {
 			fallbackMemoryOverviewPayload,
 		);
 
-		render(Page, { data: pageData() });
+		render(KnowledgePage, { data: pageData() });
 
 		await waitFor(() => {
 			expect(fetchKnowledgeMemoryOverview).toHaveBeenCalledTimes(1);

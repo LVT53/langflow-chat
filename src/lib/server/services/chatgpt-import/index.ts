@@ -9,7 +9,11 @@ import {
 } from "$lib/server/db/schema";
 import { createConversation } from "$lib/server/services/conversations";
 import { generateImportEmbeddings } from "./embeddings";
-import { type ParseResult, parseConversationsJson } from "./parser";
+import {
+	type BranchInfo,
+	type ParseResult,
+	parseConversationsJson,
+} from "./parser";
 import { summarizeAndStoreConversation } from "./summarizer";
 
 interface ImportOptions {
@@ -212,7 +216,7 @@ export async function importConversations(
 
 				await db.insert(messages).values(messageRows);
 
-				const branches = conv.branches;
+				const branches: BranchInfo[] | undefined = conv.branches;
 				if (branches && branches.length > 0) {
 					await importConversationBranches(
 						userId,
