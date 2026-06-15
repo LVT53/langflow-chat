@@ -1,142 +1,37 @@
 import { createHash } from "node:crypto";
-import { rm, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-vi.mock("$lib/server/auth/hooks", () => ({
-	requireAuth: vi.fn(),
-}));
-
-vi.mock("$lib/server/services/attachment-trace", () => ({
-	createAttachmentTraceId: vi.fn(() => "trace-upload"),
-}));
-
-vi.mock("$lib/server/services/knowledge/upload-intake", () => ({
-	completeKnowledgeUploadFromStoredFile: vi.fn(),
-	isKnowledgeUploadConversationError: vi.fn(() => false),
-	resolveKnowledgeUploadLimits: vi.fn(() => ({
-		maxFileUploadSize: 100 * 1024 * 1024,
-		adapterBodySizeLimit: 100 * 1024 * 1024,
-		multipartBodyLimit: 100 * 1024 * 1024,
-		storedFileLimit: 100 * 1024 * 1024,
-		chunkFileLimit: 100 * 1024 * 1024,
-		chunkBodyLimit: 1024 * 1024,
-		multipartOverheadAllowance: 1024 * 1024,
-	})),
-	validateKnowledgeUploadConversation: vi.fn(
-		async (params: { conversationId?: string | null }) =>
-			params.conversationId?.trim() || null,
-	),
-}));
-
-import { requireAuth } from "$lib/server/auth/hooks";
+import { describe, expect, it, vi } from "vitest";
 import {
-	completeKnowledgeUploadFromStoredFile,
-	isKnowledgeUploadConversationError,
-	validateKnowledgeUploadConversation,
-} from "$lib/server/services/knowledge/upload-intake";
+	createKnowledgeUploadRouteHarness,
+	makeKnowledgeUploadEvent,
+	makeKnowledgeUploadHeaders,
+	makeKnowledgeUploadRequestEvent,
+	mockCompleteKnowledgeUploadFromStoredFile,
+	mockIsKnowledgeUploadConversationError,
+	mockValidateKnowledgeUploadConversation,
+} from "../test-helpers";
 import { POST } from "./+server";
 
-const mockRequireAuth = vi.mocked(requireAuth);
-const mockCompleteKnowledgeUploadFromStoredFile = vi.mocked(
-	completeKnowledgeUploadFromStoredFile,
-);
-const mockIsKnowledgeUploadConversationError = vi.mocked(
-	isKnowledgeUploadConversationError,
-);
-const mockValidateKnowledgeUploadConversation = vi.mocked(
-	validateKnowledgeUploadConversation,
-);
-let consoleInfoSpy: ReturnType<typeof vi.spyOn> | null = null;
-let consoleWarnSpy: ReturnType<typeof vi.spyOn> | null = null;
-type ChunkUploadEvent = Parameters<typeof POST>[0];
-
-function makeChunkEvent(
-	body: BodyInit,
-	headers: Record<string, string>,
-): ChunkUploadEvent {
-	return {
-		request: new Request("http://localhost/api/knowledge/upload/chunk", {
-			method: "POST",
-			headers,
-			body,
-		}),
-		locals: { user: { id: "user-1", email: "test@example.com" } },
-		params: {},
-		url: new URL("http://localhost/api/knowledge/upload/chunk"),
-		route: { id: "/api/knowledge/upload/chunk" },
-	} as unknown as ChunkUploadEvent;
-}
-
-function chunkHeaders(overrides: Record<string, string> = {}) {
-	return {
-		"content-type": "application/pdf",
-		"x-alfyai-upload-name": "scan.pdf",
-		"x-alfyai-upload-size": "10",
-		"x-alfyai-upload-trace-id": "upload-chunktest",
-		"x-alfyai-conversation-id": "conv-1",
-		"x-alfyai-chunk-total": "2",
-		...overrides,
-	};
-}
+const harness = createKnowledgeUploadRouteHarness({ userId: "user-1" });
 
 describe("POST /api/knowledge/upload/chunk", () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-		consoleInfoSpy = vi
-			.spyOn(console, "info")
-			.mockImplementation(() => undefined);
-		consoleWarnSpy = vi
-			.spyOn(console, "warn")
-			.mockImplementation(() => undefined);
-		mockRequireAuth.mockReturnValue(undefined);
-		mockIsKnowledgeUploadConversationError.mockReturnValue(false);
-		mockValidateKnowledgeUploadConversation.mockImplementation(
-			async (params: { conversationId?: string | null }) =>
-				params.conversationId?.trim() || null,
-		);
-		mockCompleteKnowledgeUploadFromStoredFile.mockResolvedValue({
-			artifact: {
-				id: "artifact-1",
-				type: "source_document",
-				retrievalClass: "durable",
-				name: "scan.pdf",
-				mimeType: "application/pdf",
-				sizeBytes: 5,
-				conversationId: "conv-1",
-				summary: "scan.pdf",
-				createdAt: Date.now(),
-				updatedAt: Date.now(),
-			},
-			normalizedArtifact: null,
-			reusedExistingArtifact: false,
-			honcho: { uploaded: false, mode: "none" },
-			promptReady: true,
-		});
-	});
-
-	afterEach(async () => {
-		consoleInfoSpy?.mockRestore();
-		consoleWarnSpy?.mockRestore();
-		consoleInfoSpy = null;
-		consoleWarnSpy = null;
-		await rm(join(process.cwd(), "data", "knowledge", "user-1", ".incoming"), {
-			force: true,
-			recursive: true,
-		});
-	});
-
 	it("accepts non-final chunks without starting extraction", async () => {
 		const response = await POST(
-			makeChunkEvent(
-				Buffer.from("hello"),
-				chunkHeaders({
+			makeKnowledgeUploadEvent({
+				body: Buffer.from("hello"),
+				headers: makeKnowledgeUploadHeaders({
+					"x-alfyai-upload-trace-id": "upload-chunktest",
 					"x-alfyai-chunk-index": "0",
 					"x-alfyai-chunk-start": "0",
 					"x-alfyai-chunk-size": "5",
 					"x-alfyai-chunk-final": "false",
+					"x-alfyai-chunk-total": "2",
 				}),
-			),
+				requestUrl: "http://localhost/api/knowledge/upload/chunk",
+				routeId: "/api/knowledge/upload/chunk",
+				userId: "user-1",
+			}),
 		);
 		const data = await response.json();
 
@@ -148,27 +43,37 @@ describe("POST /api/knowledge/upload/chunk", () => {
 
 	it("reports cumulative received bytes across multiple non-final chunks", async () => {
 		const firstResponse = await POST(
-			makeChunkEvent(
-				Buffer.from("hello"),
-				chunkHeaders({
+			makeKnowledgeUploadEvent({
+				body: Buffer.from("hello"),
+				headers: makeKnowledgeUploadHeaders({
+					"x-alfyai-upload-trace-id": "upload-chunktest",
 					"x-alfyai-chunk-index": "0",
 					"x-alfyai-chunk-start": "0",
 					"x-alfyai-chunk-size": "5",
 					"x-alfyai-chunk-final": "false",
+					"x-alfyai-chunk-total": "2",
 				}),
-			),
+				requestUrl: "http://localhost/api/knowledge/upload/chunk",
+				routeId: "/api/knowledge/upload/chunk",
+				userId: "user-1",
+			}),
 		);
 		const firstData = await firstResponse.json();
 		const secondResponse = await POST(
-			makeChunkEvent(
-				Buffer.from("world"),
-				chunkHeaders({
+			makeKnowledgeUploadEvent({
+				body: Buffer.from("world"),
+				headers: makeKnowledgeUploadHeaders({
+					"x-alfyai-upload-trace-id": "upload-chunktest",
 					"x-alfyai-chunk-index": "1",
 					"x-alfyai-chunk-start": "5",
 					"x-alfyai-chunk-size": "5",
 					"x-alfyai-chunk-final": "false",
+					"x-alfyai-chunk-total": "2",
 				}),
-			),
+				requestUrl: "http://localhost/api/knowledge/upload/chunk",
+				routeId: "/api/knowledge/upload/chunk",
+				userId: "user-1",
+			}),
 		);
 		const secondData = await secondResponse.json();
 
@@ -176,7 +81,7 @@ describe("POST /api/knowledge/upload/chunk", () => {
 		expect(firstData).toMatchObject({ complete: false, receivedBytes: 5 });
 		expect(secondResponse.status).toBe(200);
 		expect(secondData).toMatchObject({ complete: false, receivedBytes: 10 });
-		expect(consoleInfoSpy).toHaveBeenCalledWith(
+		expect(harness.consoleInfoSpy).toHaveBeenCalledWith(
 			"[KNOWLEDGE] Chunked upload part received",
 			expect.objectContaining({
 				chunkIndex: 1,
@@ -193,16 +98,21 @@ describe("POST /api/knowledge/upload/chunk", () => {
 		mockIsKnowledgeUploadConversationError.mockReturnValueOnce(true);
 
 		const response = await POST(
-			makeChunkEvent(
-				Buffer.from("hello"),
-				chunkHeaders({
+			makeKnowledgeUploadEvent({
+				body: Buffer.from("hello"),
+				headers: makeKnowledgeUploadHeaders({
+					"x-alfyai-upload-trace-id": "upload-chunktest",
 					"x-alfyai-conversation-id": "missing-conv",
 					"x-alfyai-chunk-index": "0",
 					"x-alfyai-chunk-start": "0",
 					"x-alfyai-chunk-size": "5",
 					"x-alfyai-chunk-final": "false",
+					"x-alfyai-chunk-total": "2",
 				}),
-			),
+				requestUrl: "http://localhost/api/knowledge/upload/chunk",
+				routeId: "/api/knowledge/upload/chunk",
+				userId: "user-1",
+			}),
 		);
 		const data = await response.json();
 		const uploadDir = await stat(
@@ -239,16 +149,21 @@ describe("POST /api/knowledge/upload/chunk", () => {
 		mockIsKnowledgeUploadConversationError.mockImplementation(
 			(candidate: unknown) => candidate === error,
 		);
-		const event = makeChunkEvent(
-			Buffer.from("hello"),
-			chunkHeaders({
+		const event = makeKnowledgeUploadEvent({
+			body: Buffer.from("hello"),
+			headers: makeKnowledgeUploadHeaders({
+				"x-alfyai-upload-trace-id": "upload-chunktest",
 				"x-alfyai-conversation-id": "missing-conv",
 				"x-alfyai-chunk-index": "0",
 				"x-alfyai-chunk-start": "0",
 				"x-alfyai-chunk-size": "5",
 				"x-alfyai-chunk-final": "false",
+				"x-alfyai-chunk-total": "2",
 			}),
-		);
+			requestUrl: "http://localhost/api/knowledge/upload/chunk",
+			routeId: "/api/knowledge/upload/chunk",
+			userId: "user-1",
+		});
 		const arrayBufferSpy = vi
 			.spyOn(event.request, "arrayBuffer")
 			.mockRejectedValue(new Error("chunk body should not be consumed"));
@@ -266,44 +181,21 @@ describe("POST /api/knowledge/upload/chunk", () => {
 		expect(mockCompleteKnowledgeUploadFromStoredFile).not.toHaveBeenCalled();
 	});
 
-	it("rejects a request content length above the chunk cap before reading the chunk body", async () => {
-		const event = makeChunkEvent(
-			Buffer.from("hello"),
-			chunkHeaders({
-				"content-length": String(1024 * 1024 + 1),
-				"x-alfyai-chunk-index": "0",
-				"x-alfyai-chunk-start": "0",
-				"x-alfyai-chunk-size": "5",
-				"x-alfyai-chunk-final": "false",
-			}),
-		);
-		const arrayBufferSpy = vi
-			.spyOn(event.request, "arrayBuffer")
-			.mockRejectedValue(new Error("chunk body should not be consumed"));
-
-		const response = await POST(event);
-		const data = await response.json();
-
-		expect(response.status).toBe(413);
-		expect(data).toMatchObject({
-			code: "upload_chunk_too_large",
-			traceId: "upload-chunktest",
-		});
-		expect(arrayBufferSpy).not.toHaveBeenCalled();
-		expect(mockCompleteKnowledgeUploadFromStoredFile).not.toHaveBeenCalled();
-	});
-
 	it("rejects declared chunk metadata above the chunk cap before reading the chunk body", async () => {
-		const event = makeChunkEvent(
-			Buffer.from("hello"),
-			chunkHeaders({
+		const event = makeKnowledgeUploadRequestEvent({
+			headers: makeKnowledgeUploadHeaders({
+				"x-alfyai-upload-trace-id": "upload-chunktest",
 				"x-alfyai-upload-size": String(3 * 1024 * 1024),
 				"x-alfyai-chunk-index": "0",
 				"x-alfyai-chunk-start": "0",
 				"x-alfyai-chunk-size": String(1024 * 1024 + 1),
 				"x-alfyai-chunk-final": "false",
+				"x-alfyai-chunk-total": "2",
 			}),
-		);
+			requestUrl: "http://localhost/api/knowledge/upload/chunk",
+			routeId: "/api/knowledge/upload/chunk",
+			userId: "user-1",
+		});
 		const arrayBufferSpy = vi
 			.spyOn(event.request, "arrayBuffer")
 			.mockRejectedValue(new Error("chunk body should not be consumed"));
@@ -320,16 +212,49 @@ describe("POST /api/knowledge/upload/chunk", () => {
 		expect(mockCompleteKnowledgeUploadFromStoredFile).not.toHaveBeenCalled();
 	});
 
+	it("rejects a request content length above the chunk cap before reading the chunk body", async () => {
+		const response = await POST(
+			makeKnowledgeUploadEvent({
+				body: Buffer.from("hello"),
+				headers: makeKnowledgeUploadHeaders({
+					"x-alfyai-upload-trace-id": "upload-chunktest",
+					"x-alfyai-chunk-index": "0",
+					"x-alfyai-chunk-start": "0",
+					"x-alfyai-chunk-size": "5",
+					"x-alfyai-chunk-final": "false",
+					"x-alfyai-chunk-total": "2",
+					"content-length": String(1024 * 1024 + 1),
+				}),
+				requestUrl: "http://localhost/api/knowledge/upload/chunk",
+				routeId: "/api/knowledge/upload/chunk",
+				userId: "user-1",
+			}),
+		);
+		const data = await response.json();
+
+		expect(response.status).toBe(413);
+		expect(data).toMatchObject({
+			code: "upload_chunk_too_large",
+			traceId: "upload-chunktest",
+		});
+		expect(mockCompleteKnowledgeUploadFromStoredFile).not.toHaveBeenCalled();
+	});
+
 	it("rejects chunk metadata with a start offset that does not match the chunk index", async () => {
-		const event = makeChunkEvent(
-			Buffer.from("hello"),
-			chunkHeaders({
+		const event = makeKnowledgeUploadEvent({
+			body: Buffer.from("hello"),
+			headers: makeKnowledgeUploadHeaders({
+				"x-alfyai-upload-trace-id": "upload-chunktest",
 				"x-alfyai-chunk-index": "0",
 				"x-alfyai-chunk-start": "5",
 				"x-alfyai-chunk-size": "5",
 				"x-alfyai-chunk-final": "false",
+				"x-alfyai-chunk-total": "2",
 			}),
-		);
+			requestUrl: "http://localhost/api/knowledge/upload/chunk",
+			routeId: "/api/knowledge/upload/chunk",
+			userId: "user-1",
+		});
 		const arrayBufferSpy = vi
 			.spyOn(event.request, "arrayBuffer")
 			.mockRejectedValue(new Error("chunk body should not be consumed"));
@@ -348,26 +273,36 @@ describe("POST /api/knowledge/upload/chunk", () => {
 
 	it("assembles all chunks and completes the knowledge upload on the final chunk", async () => {
 		await POST(
-			makeChunkEvent(
-				Buffer.from("hello"),
-				chunkHeaders({
+			makeKnowledgeUploadEvent({
+				body: Buffer.from("hello"),
+				headers: makeKnowledgeUploadHeaders({
+					"x-alfyai-upload-trace-id": "upload-chunktest",
 					"x-alfyai-chunk-index": "0",
 					"x-alfyai-chunk-start": "0",
 					"x-alfyai-chunk-size": "5",
 					"x-alfyai-chunk-final": "false",
+					"x-alfyai-chunk-total": "2",
 				}),
-			),
+				requestUrl: "http://localhost/api/knowledge/upload/chunk",
+				routeId: "/api/knowledge/upload/chunk",
+				userId: "user-1",
+			}),
 		);
 		const response = await POST(
-			makeChunkEvent(
-				Buffer.from("world"),
-				chunkHeaders({
+			makeKnowledgeUploadEvent({
+				body: Buffer.from("world"),
+				headers: makeKnowledgeUploadHeaders({
+					"x-alfyai-upload-trace-id": "upload-chunktest",
 					"x-alfyai-chunk-index": "1",
 					"x-alfyai-chunk-start": "5",
 					"x-alfyai-chunk-size": "5",
 					"x-alfyai-chunk-final": "true",
+					"x-alfyai-chunk-total": "2",
 				}),
-			),
+				requestUrl: "http://localhost/api/knowledge/upload/chunk",
+				routeId: "/api/knowledge/upload/chunk",
+				userId: "user-1",
+			}),
 		);
 		const data = await response.json();
 
@@ -390,15 +325,20 @@ describe("POST /api/knowledge/upload/chunk", () => {
 
 	it("rejects chunks whose declared size does not match the received body", async () => {
 		const response = await POST(
-			makeChunkEvent(
-				Buffer.from("nope"),
-				chunkHeaders({
+			makeKnowledgeUploadEvent({
+				body: Buffer.from("nope"),
+				headers: makeKnowledgeUploadHeaders({
+					"x-alfyai-upload-trace-id": "upload-chunktest",
 					"x-alfyai-chunk-index": "0",
 					"x-alfyai-chunk-start": "0",
 					"x-alfyai-chunk-size": "5",
 					"x-alfyai-chunk-final": "false",
+					"x-alfyai-chunk-total": "2",
 				}),
-			),
+				requestUrl: "http://localhost/api/knowledge/upload/chunk",
+				routeId: "/api/knowledge/upload/chunk",
+				userId: "user-1",
+			}),
 		);
 		const data = await response.json();
 
@@ -413,30 +353,38 @@ describe("POST /api/knowledge/upload/chunk", () => {
 		mockIsKnowledgeUploadConversationError.mockReturnValueOnce(true);
 
 		await POST(
-			makeChunkEvent(
-				Buffer.from("hello"),
-				chunkHeaders({
+			makeKnowledgeUploadEvent({
+				body: Buffer.from("hello"),
+				headers: makeKnowledgeUploadHeaders({
 					"x-alfyai-upload-trace-id": "upload-missing-conv",
 					"x-alfyai-conversation-id": "missing-conv",
 					"x-alfyai-chunk-index": "0",
 					"x-alfyai-chunk-start": "0",
 					"x-alfyai-chunk-size": "5",
 					"x-alfyai-chunk-final": "false",
+					"x-alfyai-chunk-total": "2",
 				}),
-			),
+				requestUrl: "http://localhost/api/knowledge/upload/chunk",
+				routeId: "/api/knowledge/upload/chunk",
+				userId: "user-1",
+			}),
 		);
 		const response = await POST(
-			makeChunkEvent(
-				Buffer.from("world"),
-				chunkHeaders({
+			makeKnowledgeUploadEvent({
+				body: Buffer.from("world"),
+				headers: makeKnowledgeUploadHeaders({
 					"x-alfyai-upload-trace-id": "upload-missing-conv",
 					"x-alfyai-conversation-id": "missing-conv",
 					"x-alfyai-chunk-index": "1",
 					"x-alfyai-chunk-start": "5",
 					"x-alfyai-chunk-size": "5",
 					"x-alfyai-chunk-final": "true",
+					"x-alfyai-chunk-total": "2",
 				}),
-			),
+				requestUrl: "http://localhost/api/knowledge/upload/chunk",
+				routeId: "/api/knowledge/upload/chunk",
+				userId: "user-1",
+			}),
 		);
 		const data = await response.json();
 
