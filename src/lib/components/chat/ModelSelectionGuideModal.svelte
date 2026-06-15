@@ -37,6 +37,16 @@ function handleKeydown(event: KeyboardEvent) {
 	if (event.key === "Escape") onClose?.();
 }
 
+function handleBackdropPointer(event: MouseEvent | TouchEvent) {
+	event.stopPropagation();
+	if (event.target !== event.currentTarget) return;
+	onClose?.();
+}
+
+function handleModalPointer(event: MouseEvent | TouchEvent) {
+	event.stopPropagation();
+}
+
 function modelGuideNote(model: ProviderModel): string {
 	const primary = $uiLanguage === "hu" ? model.guideNoteHu : model.guideNoteEn;
 	const fallback = $uiLanguage === "hu" ? model.guideNoteEn : model.guideNoteHu;
@@ -48,7 +58,12 @@ function dollars(micros: number): string {
 }
 
 function exactCostLabel(model: ProviderModel): string {
-	if (model.guideNoCost) return $t("modelSelector.costNoCostExact");
+	if (model.guideNoCost) {
+		return $t("modelSelector.costExact", {
+			input: dollars(0),
+			output: dollars(0),
+		});
+	}
 	if (model.inputUsdMicrosPer1m + model.outputUsdMicrosPer1m <= 0) {
 		return $t("modelSelector.costUnknownExact");
 	}
@@ -99,12 +114,22 @@ function regionTitle(provider: ModelProvider): string {
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div bind:this={backdropRef} class="model-guide-backdrop" role="presentation">
+<div
+	bind:this={backdropRef}
+	class="model-guide-backdrop"
+	role="presentation"
+	onclick={handleBackdropPointer}
+	onmousedown={handleBackdropPointer}
+	ontouchstart={handleBackdropPointer}
+>
 	<div
 		class="model-guide-modal"
 		role="dialog"
 		aria-modal="true"
 		aria-labelledby="model-guide-title"
+		tabindex="-1"
+		onmousedown={handleModalPointer}
+		ontouchstart={handleModalPointer}
 	>
 		<header class="model-guide-header">
 			<div>
@@ -140,6 +165,7 @@ function regionTitle(provider: ModelProvider): string {
 										class="model-guide-region"
 										title={regionTitle(provider)}
 										aria-label={regionTitle(provider)}
+										data-tooltip={regionTitle(provider)}
 									>
 										{regionCodeToFlag(provider.processingRegionCode)}
 									</span>
@@ -177,7 +203,7 @@ function regionTitle(provider: ModelProvider): string {
 													</span>
 												{/if}
 												<span
-													class="model-guide-pill model-guide-cost"
+													class={`model-guide-pill model-guide-cost${model.guideNoCost ? ' model-guide-cost--no-cost' : ''}`}
 													data-tooltip={exactCostLabel(model)}
 													aria-label={exactCostLabel(model)}
 												>
@@ -264,6 +290,7 @@ function regionTitle(provider: ModelProvider): string {
 	.model-guide-close,
 	.model-guide-icon-button {
 		display: inline-flex;
+		position: relative;
 		min-height: 32px;
 		min-width: 32px;
 		align-items: center;
@@ -273,17 +300,33 @@ function regionTitle(provider: ModelProvider): string {
 		background: transparent;
 		color: var(--text-secondary, #6b6b6b);
 		cursor: pointer;
+		text-decoration: none;
+		transition:
+			border-color 140ms ease,
+			background-color 140ms ease,
+			color 140ms ease,
+			transform 140ms ease,
+			box-shadow 140ms ease;
 	}
 
-	.model-guide-close:hover {
+	.model-guide-close:hover,
+	.model-guide-close:focus-visible {
 		border-color: color-mix(in srgb, var(--border-focus, #c15f3c) 42%, transparent);
 		background: color-mix(in srgb, var(--border-focus, #c15f3c) 12%, transparent);
 		color: var(--border-focus, #c15f3c);
+		transform: translateY(-1px);
 	}
 
-	.model-guide-icon-button:hover {
-		background: var(--bg-hover, #eeedea);
-		color: var(--text-primary, #1a1a1a);
+	.model-guide-icon-button:visited {
+		color: var(--text-secondary, #6b6b6b);
+	}
+
+	.model-guide-icon-button:hover,
+	.model-guide-icon-button:focus-visible {
+		border-color: color-mix(in srgb, var(--border-focus, #c15f3c) 36%, transparent);
+		background: color-mix(in srgb, var(--border-focus, #c15f3c) 10%, transparent);
+		color: var(--border-focus, #c15f3c);
+		transform: translateY(-1px);
 	}
 
 	.model-guide-close:focus-visible,
@@ -328,6 +371,9 @@ function regionTitle(provider: ModelProvider): string {
 	}
 
 	.model-guide-region {
+		display: inline-flex;
+		position: relative;
+		align-items: center;
 		font-size: 15px;
 		line-height: 1;
 	}
@@ -395,7 +441,14 @@ function regionTitle(provider: ModelProvider): string {
 		color: var(--text-secondary, #6b6b6b);
 	}
 
-	.model-guide-pill[data-tooltip]::after {
+	.model-guide-cost--no-cost {
+		border: 1px solid color-mix(in srgb, #238636 30%, transparent);
+		background: color-mix(in srgb, #238636 14%, var(--bg-primary, #fff));
+		color: #1f7a35;
+	}
+
+	.model-guide-pill[data-tooltip]::after,
+	.model-guide-region[data-tooltip]::after {
 		position: absolute;
 		z-index: 4;
 		bottom: calc(100% + 6px);
@@ -421,7 +474,13 @@ function regionTitle(provider: ModelProvider): string {
 		white-space: normal;
 	}
 
-	.model-guide-pill[data-tooltip]:hover::after {
+	.model-guide-region[data-tooltip]::after {
+		max-width: 220px;
+		white-space: nowrap;
+	}
+
+	.model-guide-pill[data-tooltip]:hover::after,
+	.model-guide-region[data-tooltip]:hover::after {
 		opacity: 1;
 		transform: translate(-50%, 0);
 	}
@@ -460,7 +519,14 @@ function regionTitle(provider: ModelProvider): string {
 		background: var(--bg-hover, #333);
 	}
 
-	:global(.dark) .model-guide-pill[data-tooltip]::after {
+	:global(.dark) .model-guide-cost--no-cost {
+		border-color: color-mix(in srgb, #57d364 34%, transparent);
+		background: color-mix(in srgb, #57d364 16%, var(--bg-primary, #1a1a1a));
+		color: #7ee787;
+	}
+
+	:global(.dark) .model-guide-pill[data-tooltip]::after,
+	:global(.dark) .model-guide-region[data-tooltip]::after {
 		background: var(--bg-primary, #1a1a1a);
 		color: var(--text-primary, #ececec);
 		border: 1px solid var(--border, rgba(255, 255, 255, 0.08));

@@ -91,8 +91,19 @@ function toggleWebSearch() {
 	onClose?.();
 }
 
+function isModelGuideTarget(target: EventTarget | null): boolean {
+	const element =
+		target instanceof Element
+			? target
+			: target instanceof Node
+				? target.parentElement
+				: null;
+	return Boolean(element?.closest(".model-guide-backdrop"));
+}
+
 onMount(() => {
 	const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+		if (isModelGuideTarget(event.target)) return;
 		if (root && !root.contains(event.target as Node)) {
 			activeDropdown = null;
 			onClose?.();

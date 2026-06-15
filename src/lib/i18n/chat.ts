@@ -601,14 +601,17 @@ const chatDict = {
 		"modelSelector.badge.fast": "Fast",
 		"modelSelector.badge.intelligent": "Intelligent",
 		"modelSelector.contextExact": "{context} context window",
-		"modelSelector.costExact": "Input {input} / output {output} per 1M tokens",
+		"modelSelector.costExact":
+			"Input/Output per 1M tokens: {input} / {output}",
 		"modelSelector.costHigh": "High cost",
 		"modelSelector.costLow": "Low cost",
 		"modelSelector.costNoCost": "No cost",
-		"modelSelector.costNoCostExact": "Marked as no-cost for users",
+		"modelSelector.costNoCostExact":
+			"Input/Output per 1M tokens: $0.0000 / $0.0000",
 		"modelSelector.costStandard": "Standard cost",
 		"modelSelector.costUnknown": "Cost unknown",
-		"modelSelector.costUnknownExact": "No price configured",
+		"modelSelector.costUnknownExact":
+			"Input/Output per 1M tokens: no price configured",
 		"modelSelector.guideDescription":
 			"Compare available models by provider, privacy region, cost, context, and short admin guidance.",
 		"modelSelector.guideEmpty": "No enabled models are available.",
@@ -1265,14 +1268,16 @@ const chatDict = {
 		"modelSelector.badge.intelligent": "Intelligens",
 		"modelSelector.contextExact": "{context} kontextusablak",
 		"modelSelector.costExact":
-			"Bemenet {input} / kimenet {output} 1M tokenenként",
+			"Bemenet/Kimenet 1M tokenenként: {input} / {output}",
 		"modelSelector.costHigh": "Magas költség",
 		"modelSelector.costLow": "Alacsony költség",
 		"modelSelector.costNoCost": "Nincs költség",
-		"modelSelector.costNoCostExact": "Felhasználóknak költségmentesként jelölve",
+		"modelSelector.costNoCostExact":
+			"Bemenet/Kimenet 1M tokenenként: $0.0000 / $0.0000",
 		"modelSelector.costStandard": "Átlagos költség",
 		"modelSelector.costUnknown": "Ismeretlen költség",
-		"modelSelector.costUnknownExact": "Nincs beállított ár",
+		"modelSelector.costUnknownExact":
+			"Bemenet/Kimenet 1M tokenenként: nincs beállított ár",
 		"modelSelector.guideDescription":
 			"Hasonlítsd össze az elérhető modelleket szolgáltató, adatfeldolgozási régió, költség, kontextus és rövid admin útmutató alapján.",
 		"modelSelector.guideEmpty": "Nincs elérhető engedélyezett modell.",

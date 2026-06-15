@@ -61,6 +61,10 @@ describe("ModelSelectionGuideModal", () => {
 			"title",
 			"Processing region: Netherlands",
 		);
+		expect(screen.getByText("🇳🇱")).toHaveAttribute(
+			"data-tooltip",
+			"Processing region: Netherlands",
+		);
 		expect(screen.getByRole("link", { name: "Provider privacy policy" }))
 			.toHaveAttribute("href", "https://example.com/privacy");
 		expect(screen.getAllByText("Fast").length).toBeGreaterThan(0);
@@ -71,15 +75,42 @@ describe("ModelSelectionGuideModal", () => {
 		expect(document.body.querySelector(".model-guide-rows")).toBeTruthy();
 		expect(
 			document.body.querySelector(
-				'[data-tooltip="Input $1.0000 / output $2.0000 per 1M tokens"]',
+				'[data-tooltip="Input/Output per 1M tokens: $1.0000 / $2.0000"]',
 			),
 		).toBeTruthy();
 		expect(
-			document.body.querySelector('[data-tooltip="Marked as no-cost for users"]'),
+			document.body.querySelector(
+				'.model-guide-cost--no-cost[data-tooltip="Input/Output per 1M tokens: $0.0000 / $0.0000"]',
+			),
 		).toBeTruthy();
 		expect(screen.queryByRole("button", { name: "Guide Model 1" })).toBeNull();
 
 		await fireEvent.click(screen.getByRole("button", { name: "Close" }));
+		expect(onClose).toHaveBeenCalledTimes(1);
+	});
+
+	it("keeps the modal open for inside clicks and closes from the backdrop", async () => {
+		uiLanguage.set("en");
+		const onClose = vi.fn();
+		render(ModelSelectionGuideModal, {
+			providers: providers(),
+			onClose,
+		});
+
+		await fireEvent.mouseDown(screen.getByRole("dialog", { name: "Model guide" }));
+		await fireEvent.click(screen.getByRole("dialog", { name: "Model guide" }));
+		expect(onClose).not.toHaveBeenCalled();
+
+		const privacyLink = screen.getByRole("link", {
+			name: "Provider privacy policy",
+		});
+		await fireEvent.mouseDown(privacyLink);
+		await fireEvent.click(privacyLink);
+		expect(onClose).not.toHaveBeenCalled();
+
+		const backdrop = document.body.querySelector(".model-guide-backdrop");
+		expect(backdrop).toBeTruthy();
+		await fireEvent.mouseDown(backdrop as HTMLElement);
 		expect(onClose).toHaveBeenCalledTimes(1);
 	});
 });

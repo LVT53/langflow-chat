@@ -75,6 +75,16 @@ function checkMobile() {
 	void updateDropdownPosition();
 }
 
+function isModelGuideTarget(target: EventTarget | null): boolean {
+	const element =
+		target instanceof Element
+			? target
+			: target instanceof Node
+				? target.parentElement
+				: null;
+	return Boolean(element?.closest(".model-guide-backdrop"));
+}
+
 onMount(() => {
 	checkMobile();
 	window.addEventListener("resize", checkMobile);
@@ -82,6 +92,7 @@ onMount(() => {
 
 	const handleClickOutside = (event: MouseEvent) => {
 		const target = event.target as Node;
+		if (isModelGuideTarget(event.target)) return;
 		if (
 			!dropdownRef ||
 			dropdownRef.contains(target) ||
