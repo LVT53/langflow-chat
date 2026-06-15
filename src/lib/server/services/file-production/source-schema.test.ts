@@ -107,6 +107,32 @@ describe("generated document source schema", () => {
 		});
 	});
 
+	it("rejects otherwise-valid chart blocks with empty data arrays", () => {
+		const result = validateGeneratedDocumentSource({
+			version: 1,
+			template: "alfyai_standard_report",
+			title: "Empty chart report",
+			blocks: [
+				{
+					type: "chart",
+					chartType: "bar",
+					title: "Empty dataset chart",
+					caption: "Caption",
+					altText: "Accessible summary.",
+					units: "items",
+					xKey: "label",
+					yKey: "value",
+					data: [],
+				},
+			],
+		});
+
+		expect(result).toMatchObject({
+			ok: false,
+			code: "unsupported_chart_data",
+		});
+	});
+
 	it("accepts model-friendly table headers with array rows", () => {
 		const result = validateGeneratedDocumentSource({
 			version: 1,
