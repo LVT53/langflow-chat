@@ -5,87 +5,17 @@ import type { DeepResearchJob } from "$lib/types";
 import {
 	cleanupDeepResearchTestDb,
 	createApprovedDeepResearchJob,
+	createApprovedPoisonedArchitectureJob,
+	seedCompletedMeaningfulPasses,
 	seedDefaultReviewedAiCopyrightSource,
 	seedDiscoveredSourceWithReview,
+	setDeepResearchJobState,
+	setDeepResearchPlanVersionRawJson,
 	setupDeepResearchTestDb,
 } from "./test-helpers";
 
 let dbPath: string;
 const createApprovedResearchJob = createApprovedDeepResearchJob;
-
-async function createApprovedPoisonedArchitectureJob() {
-	const { approveDeepResearchPlan, startDeepResearchJobShell } = await import(
-		"./index"
-	);
-	const { db } = await import("$lib/server/db");
-	const userRequest =
-		"What is the most reliable architecture for building an enterprise deep research assistant in 2026 that can search the web, inspect uploaded documents, cite evidence, and produce long-form reports without fabricating claims? Compare at least three architecture patterns, identify failure modes, recommend one design for a 50-person SaaS company, and include an implementation roadmap.";
-	const created = await startDeepResearchJobShell({
-		userId: "user-1",
-		conversationId: "conv-1",
-		triggerMessageId: "user-msg-1",
-		userRequest,
-		depth: "standard",
-		now: new Date("2026-05-05T10:01:00.000Z"),
-	});
-	const poisonedPlan = {
-		...created.currentPlan?.rawPlan,
-		goal: userRequest,
-		depth: "standard",
-		reportIntent: "comparison",
-		comparedEntities: [
-			"at least three architecture patterns",
-			"identify failure modes",
-			"recommend one design",
-		],
-		comparisonAxes: ["enterprise reliability", "implementation roadmap"],
-		planNormalizationNote:
-			"Planner treated abstract architecture instructions as comparison entities.",
-		keyQuestions: [
-			"Which manufacturers and trim differences matter most?",
-			"How do dealer listings compare across model years?",
-			"Which rider use cases fit each architecture pattern?",
-		],
-	};
-	await db
-		.update(schema.deepResearchPlanVersions)
-		.set({
-			rawPlanJson: JSON.stringify(poisonedPlan),
-			renderedPlan:
-				"Report intent: Comparison\nCompared entities:\n- at least three architecture patterns\n- identify failure modes\n- recommend one design",
-			updatedAt: new Date("2026-05-05T10:02:00.000Z"),
-		})
-		.where(eq(schema.deepResearchPlanVersions.jobId, created.id));
-	const approved = await approveDeepResearchPlan({
-		userId: "user-1",
-		jobId: created.id,
-		now: new Date("2026-05-05T10:06:00.000Z"),
-	});
-	if (!approved)
-		throw new Error("Expected poisoned plan approval to return the job");
-	return approved;
-}
-
-async function seedCompletedMeaningfulPass(jobId: string, passNumber = 1) {
-	const { upsertResearchPassCheckpoint, completeResearchPassCheckpoint } =
-		await import("./pass-state");
-	const checkpoint = await upsertResearchPassCheckpoint({
-		userId: "user-1",
-		jobId,
-		conversationId: "conv-1",
-		passNumber,
-		searchIntent: "Initial approved-plan source review",
-		reviewedSourceIds: [],
-		now: new Date("2026-05-05T10:08:30.000Z"),
-	});
-	await completeResearchPassCheckpoint({
-		userId: "user-1",
-		checkpointId: checkpoint.id,
-		nextDecision: "continue_research",
-		decisionSummary: "Continue with targeted follow-up work.",
-		now: new Date("2026-05-05T10:08:45.000Z"),
-	});
-}
 
 describe("real Deep Research workflow stepper", () => {
 	beforeEach(async () => {
@@ -205,14 +135,11 @@ describe("real Deep Research workflow stepper", () => {
 			userId: "user-1",
 			conversationId: "conv-1",
 		});
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: "running",
-				stage: "source_review",
-				updatedAt: new Date("2026-05-05T10:08:00.000Z"),
-			})
-			.where(eq(schema.deepResearchJobs.id, approved.id));
+		await setDeepResearchJobState({
+			jobId: approved.id,
+			stage: "source_review",
+			updatedAt: new Date("2026-05-05T10:08:00.000Z"),
+		});
 
 		const result = await runDeepResearchWorkflowStep({
 			userId: "user-1",
@@ -264,7 +191,6 @@ describe("real Deep Research workflow stepper", () => {
 		const approved = await createApprovedResearchJob();
 		const approvedPlan = approved.currentPlan?.rawPlan;
 		if (!approvedPlan) throw new Error("Expected approved plan");
-		const { db } = await import("$lib/server/db");
 		const singlePassPlan = {
 			...approvedPlan,
 			researchBudget: {
@@ -273,12 +199,10 @@ describe("real Deep Research workflow stepper", () => {
 				synthesisPassCeiling: 1,
 			},
 		};
-		await db
-			.update(schema.deepResearchPlanVersions)
-			.set({
-				rawPlanJson: JSON.stringify(singlePassPlan),
-			})
-			.where(eq(schema.deepResearchPlanVersions.jobId, approved.id));
+		await setDeepResearchPlanVersionRawJson({
+			jobId: approved.id,
+			rawPlanJson: singlePassPlan,
+		});
 		const primaryQuestion = singlePassPlan.keyQuestions[0];
 		const {
 			upsertResearchPassCheckpoint,
@@ -348,14 +272,11 @@ describe("real Deep Research workflow stepper", () => {
 			})),
 			now: new Date("2026-05-05T10:10:00.000Z"),
 		});
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: "running",
-				stage: "synthesis",
-				updatedAt: new Date("2026-05-05T10:11:00.000Z"),
-			})
-			.where(eq(schema.deepResearchJobs.id, approved.id));
+		await setDeepResearchJobState({
+			jobId: approved.id,
+			stage: "synthesis",
+			updatedAt: new Date("2026-05-05T10:11:00.000Z"),
+		});
 
 		const result = await runDeepResearchWorkflowStep(
 			{
@@ -447,14 +368,11 @@ describe("real Deep Research workflow stepper", () => {
 				now: new Date("2026-05-05T10:23:00.000Z"),
 			});
 		}
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: "running",
-				stage: "research_tasks",
-				updatedAt: new Date("2026-05-05T10:24:00.000Z"),
-			})
-			.where(eq(schema.deepResearchJobs.id, approved.id));
+		await setDeepResearchJobState({
+			jobId: approved.id,
+			stage: "research_tasks",
+			updatedAt: new Date("2026-05-05T10:24:00.000Z"),
+		});
 		const repairResult = await runDeepResearchWorkflowStep(
 			{
 				userId: "user-1",
@@ -515,7 +433,6 @@ describe("real Deep Research workflow stepper", () => {
 
 	it("feeds only accepted reviewed sources to research task and synthesis prompts", async () => {
 		const approved = await createApprovedResearchJob();
-		const { db } = await import("$lib/server/db");
 		const { saveDiscoveredResearchSource, markResearchSourceRejected } =
 			await import("./sources");
 		const { upsertResearchPassCheckpoint } = await import("./pass-state");
@@ -588,14 +505,11 @@ describe("real Deep Research workflow stepper", () => {
 			],
 			now: new Date("2026-05-05T10:10:00.000Z"),
 		});
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: "running",
-				stage: "research_tasks",
-				updatedAt: new Date("2026-05-05T10:10:30.000Z"),
-			})
-			.where(eq(schema.deepResearchJobs.id, approved.id));
+		await setDeepResearchJobState({
+			jobId: approved.id,
+			stage: "research_tasks",
+			updatedAt: new Date("2026-05-05T10:10:30.000Z"),
+		});
 
 		let executorReviewedSourceIds: string[] = [];
 		let executorAllSourceIds: string[] = [];
@@ -683,7 +597,7 @@ describe("real Deep Research workflow stepper", () => {
 				repairPassCeiling: 0,
 			},
 		};
-		const { db } = await import("$lib/server/db");
+		await import("$lib/server/db");
 		const {
 			saveDiscoveredResearchSource,
 			markResearchSourceRejected,
@@ -701,12 +615,10 @@ describe("real Deep Research workflow stepper", () => {
 			}),
 		);
 
-		await db
-			.update(schema.deepResearchPlanVersions)
-			.set({
-				rawPlanJson: JSON.stringify(comparisonPlan),
-			})
-			.where(eq(schema.deepResearchPlanVersions.jobId, approved.id));
+		await setDeepResearchPlanVersionRawJson({
+			jobId: approved.id,
+			rawPlanJson: comparisonPlan,
+		});
 		const assistantASource = await saveDiscoveredResearchSource({
 			userId: "user-1",
 			conversationId: "conv-1",
@@ -784,14 +696,11 @@ describe("real Deep Research workflow stepper", () => {
 			],
 			now: new Date("2026-05-05T10:10:00.000Z"),
 		});
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: "running",
-				stage: "synthesis",
-				updatedAt: new Date("2026-05-05T10:11:00.000Z"),
-			})
-			.where(eq(schema.deepResearchJobs.id, approved.id));
+		await setDeepResearchJobState({
+			jobId: approved.id,
+			stage: "synthesis",
+			updatedAt: new Date("2026-05-05T10:11:00.000Z"),
+		});
 
 		const result = await runDeepResearchWorkflowStep(
 			{
@@ -872,7 +781,7 @@ describe("real Deep Research workflow stepper", () => {
 				repairPassCeiling: 0,
 			},
 		};
-		const { db } = await import("$lib/server/db");
+		await import("$lib/server/db");
 		const { saveDiscoveredResearchSource, markResearchSourceReviewed } =
 			await import("./sources");
 		const { upsertResearchPassCheckpoint, completeResearchPassCheckpoint } =
@@ -890,12 +799,10 @@ describe("real Deep Research workflow stepper", () => {
 			}),
 		);
 
-		await db
-			.update(schema.deepResearchPlanVersions)
-			.set({
-				rawPlanJson: JSON.stringify(investigationPlan),
-			})
-			.where(eq(schema.deepResearchPlanVersions.jobId, approved.id));
+		await setDeepResearchPlanVersionRawJson({
+			jobId: approved.id,
+			rawPlanJson: investigationPlan,
+		});
 		const checkpoint = await upsertResearchPassCheckpoint({
 			userId: "user-1",
 			jobId: approved.id,
@@ -953,14 +860,11 @@ describe("real Deep Research workflow stepper", () => {
 				now: new Date(`2026-05-05T10:2${index}:00.000Z`),
 			});
 		}
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: "running",
-				stage: "synthesis",
-				updatedAt: new Date("2026-05-05T10:30:00.000Z"),
-			})
-			.where(eq(schema.deepResearchJobs.id, approved.id));
+		await setDeepResearchJobState({
+			jobId: approved.id,
+			stage: "synthesis",
+			updatedAt: new Date("2026-05-05T10:30:00.000Z"),
+		});
 
 		const result = await runDeepResearchWorkflowStep(
 			{
@@ -1027,7 +931,7 @@ describe("real Deep Research workflow stepper", () => {
 				repairPassCeiling: 0,
 			},
 		};
-		const { db } = await import("$lib/server/db");
+		await import("$lib/server/db");
 		const { saveDiscoveredResearchSource, markResearchSourceReviewed } =
 			await import("./sources");
 		const { upsertResearchPassCheckpoint, completeResearchPassCheckpoint } =
@@ -1049,12 +953,10 @@ describe("real Deep Research workflow stepper", () => {
 			}),
 		);
 
-		await db
-			.update(schema.deepResearchPlanVersions)
-			.set({
-				rawPlanJson: JSON.stringify(comparisonPlan),
-			})
-			.where(eq(schema.deepResearchPlanVersions.jobId, approved.id));
+		await setDeepResearchPlanVersionRawJson({
+			jobId: approved.id,
+			rawPlanJson: comparisonPlan,
+		});
 		const checkpoint = await upsertResearchPassCheckpoint({
 			userId: "user-1",
 			jobId: approved.id,
@@ -1129,14 +1031,11 @@ describe("real Deep Research workflow stepper", () => {
 				now: new Date("2026-05-05T10:10:00.000Z"),
 			});
 		}
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: "running",
-				stage: "synthesis",
-				updatedAt: new Date("2026-05-05T10:11:00.000Z"),
-			})
-			.where(eq(schema.deepResearchJobs.id, approved.id));
+		await setDeepResearchJobState({
+			jobId: approved.id,
+			stage: "synthesis",
+			updatedAt: new Date("2026-05-05T10:11:00.000Z"),
+		});
 
 		const result = await runDeepResearchWorkflowStep(
 			{
@@ -1200,7 +1099,7 @@ describe("real Deep Research workflow stepper", () => {
 
 	it("reviews discovered sources during the source review step and records timeline progress", async () => {
 		const approved = await createApprovedResearchJob();
-		const { db } = await import("$lib/server/db");
+		await import("$lib/server/db");
 		const { listResearchSources } = await import("./sources");
 		const { listResearchTimelineEvents } = await import("./timeline");
 		const { runDeepResearchWorkflowStep } = await import("./workflow");
@@ -1216,14 +1115,11 @@ describe("real Deep Research workflow stepper", () => {
 				"EU and US AI copyright training data rules require provenance records and rights-risk review.",
 			discoveredAt: new Date("2026-05-05T10:07:00.000Z"),
 		});
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: "running",
-				stage: "source_review",
-				updatedAt: new Date("2026-05-05T10:08:00.000Z"),
-			})
-			.where(eq(schema.deepResearchJobs.id, approved.id));
+		await setDeepResearchJobState({
+			jobId: approved.id,
+			stage: "source_review",
+			updatedAt: new Date("2026-05-05T10:08:00.000Z"),
+		});
 
 		const result = await runDeepResearchWorkflowStep({
 			userId: "user-1",
@@ -1274,7 +1170,7 @@ describe("real Deep Research workflow stepper", () => {
 
 	it("does not let duplicate or low-quality discovered sources inflate reviewed count", async () => {
 		const approved = await createApprovedResearchJob();
-		const { db } = await import("$lib/server/db");
+		await import("$lib/server/db");
 		const { saveDiscoveredResearchSource, listResearchSources } = await import(
 			"./sources"
 		);
@@ -1312,14 +1208,11 @@ describe("real Deep Research workflow stepper", () => {
 			snippet: "Unsourced listicle with no citations or methodology.",
 			discoveredAt: new Date("2026-05-05T10:08:00.000Z"),
 		});
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: "running",
-				stage: "source_review",
-				updatedAt: new Date("2026-05-05T10:08:00.000Z"),
-			})
-			.where(eq(schema.deepResearchJobs.id, approved.id));
+		await setDeepResearchJobState({
+			jobId: approved.id,
+			stage: "source_review",
+			updatedAt: new Date("2026-05-05T10:08:00.000Z"),
+		});
 
 		await runDeepResearchWorkflowStep({
 			userId: "user-1",
@@ -1358,7 +1251,7 @@ describe("real Deep Research workflow stepper", () => {
 
 	it("records a source review warning and continues to coverage handoff when review fails", async () => {
 		const approved = await createApprovedResearchJob();
-		const { db } = await import("$lib/server/db");
+		await import("$lib/server/db");
 		const { saveDiscoveredResearchSource } = await import("./sources");
 		const { triageAndReviewSources } = await import("./source-review");
 		const { listResearchTasks } = await import("./tasks");
@@ -1376,14 +1269,11 @@ describe("real Deep Research workflow stepper", () => {
 				"Methodology and data on AI copyright training data rules in the EU and US.",
 			discoveredAt: new Date("2026-05-05T10:07:00.000Z"),
 		});
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: "running",
-				stage: "source_review",
-				updatedAt: new Date("2026-05-05T10:08:00.000Z"),
-			})
-			.where(eq(schema.deepResearchJobs.id, approved.id));
+		await setDeepResearchJobState({
+			jobId: approved.id,
+			stage: "source_review",
+			updatedAt: new Date("2026-05-05T10:08:00.000Z"),
+		});
 
 		const result = await runDeepResearchWorkflowStep(
 			{
@@ -1447,14 +1337,11 @@ describe("real Deep Research workflow stepper", () => {
 			await import("./pass-state");
 		const { listResearchTimelineEvents } = await import("./timeline");
 
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: "running",
-				stage: "source_review",
-				updatedAt: new Date("2026-05-05T10:08:00.000Z"),
-			})
-			.where(eq(schema.deepResearchJobs.id, approved.id));
+		await setDeepResearchJobState({
+			jobId: approved.id,
+			stage: "source_review",
+			updatedAt: new Date("2026-05-05T10:08:00.000Z"),
+		});
 
 		const result = await runDeepResearchWorkflowStep({
 			userId: "user-1",
@@ -1556,7 +1443,7 @@ describe("real Deep Research workflow stepper", () => {
 
 	it("resumes a completed source-review pass without duplicating continuation work", async () => {
 		const approved = await createApprovedResearchJob();
-		const { db } = await import("$lib/server/db");
+		await import("$lib/server/db");
 		const { runDeepResearchWorkflowStep } = await import("./workflow");
 		const { listResearchTasks } = await import("./tasks");
 		const { listResearchPassCheckpoints, listResearchCoverageGaps } =
@@ -1564,14 +1451,11 @@ describe("real Deep Research workflow stepper", () => {
 		const { listResearchTimelineEvents } = await import("./timeline");
 		const { listResearchResumePoints } = await import("./resume-points");
 
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: "running",
-				stage: "source_review",
-				updatedAt: new Date("2026-05-05T10:08:00.000Z"),
-			})
-			.where(eq(schema.deepResearchJobs.id, approved.id));
+		await setDeepResearchJobState({
+			jobId: approved.id,
+			stage: "source_review",
+			updatedAt: new Date("2026-05-05T10:08:00.000Z"),
+		});
 
 		const firstResult = await runDeepResearchWorkflowStep({
 			userId: "user-1",
@@ -1579,14 +1463,11 @@ describe("real Deep Research workflow stepper", () => {
 			now: new Date("2026-05-05T10:09:00.000Z"),
 		});
 
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: "running",
-				stage: "source_review",
-				updatedAt: new Date("2026-05-05T10:09:30.000Z"),
-			})
-			.where(eq(schema.deepResearchJobs.id, approved.id));
+		await setDeepResearchJobState({
+			jobId: approved.id,
+			stage: "source_review",
+			updatedAt: new Date("2026-05-05T10:09:30.000Z"),
+		});
 
 		const retryResult = await runDeepResearchWorkflowStep({
 			userId: "user-1",
@@ -1655,7 +1536,7 @@ describe("real Deep Research workflow stepper", () => {
 
 	it("does not complete a report from high-confidence off-topic reviewed sources", async () => {
 		const approved = await createApprovedResearchJob();
-		const { db } = await import("$lib/server/db");
+		await import("$lib/server/db");
 		const { saveDiscoveredResearchSource, listResearchSources } = await import(
 			"./sources"
 		);
@@ -1674,14 +1555,11 @@ describe("real Deep Research workflow stepper", () => {
 				"Volkswagen ID electric car prices, dealer discounts, Hungarian EV market changes, and battery trim details.",
 			discoveredAt: new Date("2026-05-05T10:07:00.000Z"),
 		});
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: "running",
-				stage: "source_review",
-				updatedAt: new Date("2026-05-05T10:08:00.000Z"),
-			})
-			.where(eq(schema.deepResearchJobs.id, approved.id));
+		await setDeepResearchJobState({
+			jobId: approved.id,
+			stage: "source_review",
+			updatedAt: new Date("2026-05-05T10:08:00.000Z"),
+		});
 
 		const result = await runDeepResearchWorkflowStep(
 			{
@@ -1736,7 +1614,7 @@ describe("real Deep Research workflow stepper", () => {
 
 	it("completes as Research Plan Revision Needed for a high-reviewed zero-topic poisoned plan", async () => {
 		const approved = await createApprovedPoisonedArchitectureJob();
-		const { db } = await import("$lib/server/db");
+		await import("$lib/server/db");
 		const { saveDiscoveredResearchSource, markResearchSourceRejected } =
 			await import("./sources");
 		const { listResearchTimelineEvents } = await import("./timeline");
@@ -1767,14 +1645,11 @@ describe("real Deep Research workflow stepper", () => {
 					"The source discusses vehicle product details, not enterprise research assistant architecture.",
 			});
 		}
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: "running",
-				stage: "source_review",
-				updatedAt: new Date("2026-05-05T10:08:00.000Z"),
-			})
-			.where(eq(schema.deepResearchJobs.id, approved.id));
+		await setDeepResearchJobState({
+			jobId: approved.id,
+			stage: "source_review",
+			updatedAt: new Date("2026-05-05T10:08:00.000Z"),
+		});
 
 		const result = await runDeepResearchWorkflowStep(
 			{
@@ -2164,7 +2039,7 @@ describe("real Deep Research workflow stepper", () => {
 			approveDeepResearchPlan,
 			completeDeepResearchJobWithPlanRevisionNeeded,
 		} = await import("./index");
-		const { db } = await import("$lib/server/db");
+		await import("$lib/server/db");
 		const { saveDeepResearchEvidenceNotes } = await import("./evidence-notes");
 		const { completeResearchPassCheckpoint, upsertResearchPassCheckpoint } =
 			await import("./pass-state");
@@ -2274,24 +2149,17 @@ describe("real Deep Research workflow stepper", () => {
 		}
 		const { markResearchSourceReviewed, saveDiscoveredResearchSource } =
 			await import("./sources");
-		await db
-			.update(schema.deepResearchPlanVersions)
-			.set({
-				rawPlanJson: JSON.stringify({
-					...correctedPlan,
-					researchBudget: {
-						...correctedPlan.researchBudget,
-						meaningfulPassFloor: 1,
-						repairPassCeiling: 1,
-					},
-				}),
-			})
-			.where(
-				eq(
-					schema.deepResearchPlanVersions.id,
-					correctedApproval.currentPlan.id,
-				),
-			);
+		await setDeepResearchPlanVersionRawJson({
+			planVersionId: correctedApproval.currentPlan.id,
+			rawPlanJson: {
+				...correctedPlan,
+				researchBudget: {
+					...correctedPlan.researchBudget,
+					meaningfulPassFloor: 1,
+					repairPassCeiling: 1,
+				},
+			},
+		});
 		const { runDeepResearchWorkflowStep } = await import("./workflow");
 
 		const correctedSource = await saveDiscoveredResearchSource({
@@ -2353,14 +2221,11 @@ describe("real Deep Research workflow stepper", () => {
 			],
 			now: new Date("2026-05-05T10:29:00.000Z"),
 		});
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: "running",
-				stage: "synthesis",
-				updatedAt: new Date("2026-05-05T10:29:30.000Z"),
-			})
-			.where(eq(schema.deepResearchJobs.id, approved.id));
+		await setDeepResearchJobState({
+			jobId: approved.id,
+			stage: "synthesis",
+			updatedAt: new Date("2026-05-05T10:29:30.000Z"),
+		});
 
 		const completeDeepResearchJobWithAuditedReport = vi.fn(
 			async (): Promise<DeepResearchJob> => ({
@@ -2406,7 +2271,7 @@ describe("real Deep Research workflow stepper", () => {
 
 	it("completes with report limitations when source review budget is exhausted after reviewed evidence", async () => {
 		const approved = await createApprovedResearchJob();
-		const { db } = await import("$lib/server/db");
+		await import("$lib/server/db");
 		const { listResearchTimelineEvents } = await import("./timeline");
 		const { runDeepResearchWorkflowStep } = await import("./workflow");
 		const { getArtifactForUser } = await import(
@@ -2428,14 +2293,11 @@ describe("real Deep Research workflow stepper", () => {
 					"EU and US AI copyright training data rules require provenance records and rights-risk review.",
 			},
 		});
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: "running",
-				stage: "source_review",
-				updatedAt: new Date("2026-05-05T10:08:00.000Z"),
-			})
-			.where(eq(schema.deepResearchJobs.id, approved.id));
+		await setDeepResearchJobState({
+			jobId: approved.id,
+			stage: "source_review",
+			updatedAt: new Date("2026-05-05T10:08:00.000Z"),
+		});
 
 		const result = await runDeepResearchWorkflowStep(
 			{
@@ -2534,21 +2396,18 @@ describe("real Deep Research workflow stepper", () => {
 
 	it("completes with an Evidence Limitation Memo when source review budget is exhausted without reviewed evidence", async () => {
 		const approved = await createApprovedResearchJob();
-		const { db } = await import("$lib/server/db");
+		await import("$lib/server/db");
 		const { listResearchTimelineEvents } = await import("./timeline");
 		const { runDeepResearchWorkflowStep } = await import("./workflow");
 		const { getArtifactForUser } = await import(
 			"$lib/server/services/knowledge/store"
 		);
 
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: "running",
-				stage: "source_review",
-				updatedAt: new Date("2026-05-05T10:08:00.000Z"),
-			})
-			.where(eq(schema.deepResearchJobs.id, approved.id));
+		await setDeepResearchJobState({
+			jobId: approved.id,
+			stage: "source_review",
+			updatedAt: new Date("2026-05-05T10:08:00.000Z"),
+		});
 
 		const result = await runDeepResearchWorkflowStep(
 			{
@@ -2657,8 +2516,8 @@ describe("real Deep Research workflow stepper", () => {
 
 	it("completes pending Research Tasks and finishes an audited report from the task pass", async () => {
 		const approved = await createApprovedResearchJob();
-		await seedCompletedMeaningfulPass(approved.id, 1);
-		const { db } = await import("$lib/server/db");
+		await seedCompletedMeaningfulPasses(approved.id, 1);
+		await import("$lib/server/db");
 		const { createResearchTasksFromCoverageGaps, listResearchTasks } =
 			await import("./tasks");
 		const { listResearchTimelineEvents } = await import("./timeline");
@@ -2699,14 +2558,11 @@ describe("real Deep Research workflow stepper", () => {
 			],
 			now: new Date("2026-05-05T10:09:00.000Z"),
 		});
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: "running",
-				stage: "research_tasks",
-				updatedAt: new Date("2026-05-05T10:09:00.000Z"),
-			})
-			.where(eq(schema.deepResearchJobs.id, approved.id));
+		await setDeepResearchJobState({
+			jobId: approved.id,
+			stage: "research_tasks",
+			updatedAt: new Date("2026-05-05T10:09:00.000Z"),
+		});
 
 		const result = await runDeepResearchWorkflowStep({
 			userId: "user-1",
@@ -2763,7 +2619,7 @@ describe("real Deep Research workflow stepper", () => {
 
 	it("does not complete a Research Task pass while required work is running or critically failed", async () => {
 		const approved = await createApprovedResearchJob();
-		const { db } = await import("$lib/server/db");
+		await import("$lib/server/db");
 		const {
 			claimResearchTasks,
 			createResearchTasksFromCoverageGaps,
@@ -2800,14 +2656,11 @@ describe("real Deep Research workflow stepper", () => {
 			claimToken: "external-worker",
 			now: new Date("2026-05-05T10:10:00.000Z"),
 		});
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: "running",
-				stage: "research_tasks",
-				updatedAt: new Date("2026-05-05T10:10:00.000Z"),
-			})
-			.where(eq(schema.deepResearchJobs.id, approved.id));
+		await setDeepResearchJobState({
+			jobId: approved.id,
+			stage: "research_tasks",
+			updatedAt: new Date("2026-05-05T10:10:00.000Z"),
+		});
 
 		const result = await runDeepResearchWorkflowStep(
 			{
@@ -2854,7 +2707,7 @@ describe("real Deep Research workflow stepper", () => {
 
 	it("claims no more Research Tasks than the task-stage runtime cap", async () => {
 		const approved = await createApprovedResearchJob();
-		const { db } = await import("$lib/server/db");
+		await import("$lib/server/db");
 		const { createResearchTasksFromCoverageGaps, listResearchTasks } =
 			await import("./tasks");
 		const { runDeepResearchWorkflowStep } = await import("./workflow");
@@ -2897,14 +2750,11 @@ describe("real Deep Research workflow stepper", () => {
 			],
 			now: new Date("2026-05-05T10:09:00.000Z"),
 		});
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: "running",
-				stage: "research_tasks",
-				updatedAt: new Date("2026-05-05T10:10:00.000Z"),
-			})
-			.where(eq(schema.deepResearchJobs.id, approved.id));
+		await setDeepResearchJobState({
+			jobId: approved.id,
+			stage: "research_tasks",
+			updatedAt: new Date("2026-05-05T10:10:00.000Z"),
+		});
 
 		const result = await runDeepResearchWorkflowStep(
 			{
@@ -2950,7 +2800,7 @@ describe("real Deep Research workflow stepper", () => {
 		process.env.DEEP_RESEARCH_JOB_RUNTIME_LIMIT_MS = "60000";
 		vi.resetModules();
 		const approved = await createApprovedResearchJob();
-		const { db } = await import("$lib/server/db");
+		await import("$lib/server/db");
 		const { runDeepResearchWorkflowStep } = await import("./workflow");
 		const createResearchTasksFromCoverageGaps = vi.fn(async () => []);
 		const completeDeepResearchJobWithEvidenceLimitationMemo = vi.fn(
@@ -2960,14 +2810,11 @@ describe("real Deep Research workflow stepper", () => {
 				stage: "evidence_limitation_memo_completed",
 			}),
 		);
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: "running",
-				stage: "source_review",
-				updatedAt: new Date("2026-05-05T10:02:00.000Z"),
-			})
-			.where(eq(schema.deepResearchJobs.id, approved.id));
+		await setDeepResearchJobState({
+			jobId: approved.id,
+			stage: "source_review",
+			updatedAt: new Date("2026-05-05T10:02:00.000Z"),
+		});
 
 		try {
 			const result = await runDeepResearchWorkflowStep(
@@ -3067,8 +2914,8 @@ describe("real Deep Research workflow stepper", () => {
 
 	it("resumes a workflow-owned running Research Task after a crash at claim time", async () => {
 		const approved = await createApprovedResearchJob();
-		await seedCompletedMeaningfulPass(approved.id, 1);
-		const { db } = await import("$lib/server/db");
+		await seedCompletedMeaningfulPasses(approved.id, 1);
+		await import("$lib/server/db");
 		const {
 			claimResearchTasks,
 			createResearchTasksFromCoverageGaps,
@@ -3116,14 +2963,11 @@ describe("real Deep Research workflow stepper", () => {
 			claimToken: `workflow:${approved.id}:2`,
 			now: new Date("2026-05-05T10:10:00.000Z"),
 		});
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: "running",
-				stage: "research_tasks",
-				updatedAt: new Date("2026-05-05T10:10:00.000Z"),
-			})
-			.where(eq(schema.deepResearchJobs.id, approved.id));
+		await setDeepResearchJobState({
+			jobId: approved.id,
+			stage: "research_tasks",
+			updatedAt: new Date("2026-05-05T10:10:00.000Z"),
+		});
 
 		const result = await runDeepResearchWorkflowStep({
 			userId: "user-1",
@@ -3170,8 +3014,7 @@ describe("real Deep Research workflow stepper", () => {
 
 	it("reattaches an assembled report artifact on retry without creating duplicates", async () => {
 		const approved = await createApprovedResearchJob();
-		await seedCompletedMeaningfulPass(approved.id, 1);
-		await seedCompletedMeaningfulPass(approved.id, 2);
+		await seedCompletedMeaningfulPasses(approved.id, 2);
 		const { db } = await import("$lib/server/db");
 		const { runDeepResearchWorkflowStep } = await import("./workflow");
 
@@ -3190,30 +3033,22 @@ describe("real Deep Research workflow stepper", () => {
 					"EU and US AI copyright training data rules require provenance records and rights-risk review.",
 			},
 		});
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: "running",
-				stage: "synthesis",
-				updatedAt: new Date("2026-05-05T10:10:00.000Z"),
-			})
-			.where(eq(schema.deepResearchJobs.id, approved.id));
+		await setDeepResearchJobState({
+			jobId: approved.id,
+			stage: "synthesis",
+			updatedAt: new Date("2026-05-05T10:10:00.000Z"),
+		});
 
 		const firstResult = await runDeepResearchWorkflowStep({
 			userId: "user-1",
 			jobId: approved.id,
 			now: new Date("2026-05-05T10:20:00.000Z"),
 		});
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: "running",
-				stage: "report_assembly",
-				reportArtifactId: null,
-				completedAt: null,
-				updatedAt: new Date("2026-05-05T10:20:30.000Z"),
-			})
-			.where(eq(schema.deepResearchJobs.id, approved.id));
+		await setDeepResearchJobState({
+			jobId: approved.id,
+			stage: "report_assembly",
+			updatedAt: new Date("2026-05-05T10:20:30.000Z"),
+		});
 
 		const retryResult = await runDeepResearchWorkflowStep({
 			userId: "user-1",
@@ -3246,7 +3081,7 @@ describe("real Deep Research workflow stepper", () => {
 
 	it("does not complete a Research Task pass when required tasks remain pending", async () => {
 		const approved = await createApprovedResearchJob();
-		const { db } = await import("$lib/server/db");
+		await import("$lib/server/db");
 		const { createResearchTasksFromCoverageGaps, listResearchTasks } =
 			await import("./tasks");
 		const { runDeepResearchWorkflowStep } = await import("./workflow");
@@ -3266,14 +3101,11 @@ describe("real Deep Research workflow stepper", () => {
 			],
 			now: new Date("2026-05-05T10:09:00.000Z"),
 		});
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: "running",
-				stage: "research_tasks",
-				updatedAt: new Date("2026-05-05T10:10:00.000Z"),
-			})
-			.where(eq(schema.deepResearchJobs.id, approved.id));
+		await setDeepResearchJobState({
+			jobId: approved.id,
+			stage: "research_tasks",
+			updatedAt: new Date("2026-05-05T10:10:00.000Z"),
+		});
 
 		const result = await runDeepResearchWorkflowStep(
 			{
@@ -3311,7 +3143,7 @@ describe("real Deep Research workflow stepper", () => {
 
 	it("claims focused Research Task work above the plan model-concurrency floor", async () => {
 		const approved = await createApprovedResearchJob();
-		const { db } = await import("$lib/server/db");
+		await import("$lib/server/db");
 		const { createResearchTasksFromCoverageGaps } = await import("./tasks");
 		const { runDeepResearchWorkflowStep } = await import("./workflow");
 		const claimResearchTasks = vi.fn(async () => []);
@@ -3329,14 +3161,11 @@ describe("real Deep Research workflow stepper", () => {
 			})),
 			now: new Date("2026-05-05T10:09:00.000Z"),
 		});
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: "running",
-				stage: "research_tasks",
-				updatedAt: new Date("2026-05-05T10:10:00.000Z"),
-			})
-			.where(eq(schema.deepResearchJobs.id, approved.id));
+		await setDeepResearchJobState({
+			jobId: approved.id,
+			stage: "research_tasks",
+			updatedAt: new Date("2026-05-05T10:10:00.000Z"),
+		});
 
 		await runDeepResearchWorkflowStep(
 			{
@@ -3379,14 +3208,11 @@ describe("real Deep Research workflow stepper", () => {
 			],
 			now: new Date("2026-05-05T10:09:00.000Z"),
 		});
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: "running",
-				stage: "research_tasks",
-				updatedAt: new Date("2026-05-05T10:10:00.000Z"),
-			})
-			.where(eq(schema.deepResearchJobs.id, approved.id));
+		await setDeepResearchJobState({
+			jobId: approved.id,
+			stage: "research_tasks",
+			updatedAt: new Date("2026-05-05T10:10:00.000Z"),
+		});
 
 		const result = await runDeepResearchWorkflowStep(
 			{
@@ -3414,8 +3240,8 @@ describe("real Deep Research workflow stepper", () => {
 
 	it("turns non-critical failed Research Tasks into audited report limitations", async () => {
 		const approved = await createApprovedResearchJob();
-		await seedCompletedMeaningfulPass(approved.id, 1);
-		const { db } = await import("$lib/server/db");
+		await seedCompletedMeaningfulPasses(approved.id, 1);
+		await import("$lib/server/db");
 		const { createResearchTasksFromCoverageGaps, recordResearchTaskFailure } =
 			await import("./tasks");
 		const { runDeepResearchWorkflowStep } = await import("./workflow");
@@ -3460,14 +3286,11 @@ describe("real Deep Research workflow stepper", () => {
 			failureReason: "Low-quality duplicate sources only.",
 			now: new Date("2026-05-05T10:10:00.000Z"),
 		});
-		await db
-			.update(schema.deepResearchJobs)
-			.set({
-				status: "running",
-				stage: "research_tasks",
-				updatedAt: new Date("2026-05-05T10:10:00.000Z"),
-			})
-			.where(eq(schema.deepResearchJobs.id, approved.id));
+		await setDeepResearchJobState({
+			jobId: approved.id,
+			stage: "research_tasks",
+			updatedAt: new Date("2026-05-05T10:10:00.000Z"),
+		});
 
 		const result = await runDeepResearchWorkflowStep({
 			userId: "user-1",

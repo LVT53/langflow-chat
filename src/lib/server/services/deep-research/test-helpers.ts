@@ -148,6 +148,47 @@ export function mockTimelineEvent(event: ResearchTimelineEvent) {
 	};
 }
 
+export async function setDeepResearchJobState(input: {
+	jobId: string;
+	stage: DeepResearchJob["stage"];
+	status?: DeepResearchJob["status"];
+	updatedAt?: Date;
+}): Promise<void> {
+	const { db } = await import("$lib/server/db");
+	await db
+		.update(schema.deepResearchJobs)
+		.set({
+			status: input.status ?? "running",
+			stage: input.stage,
+			updatedAt: input.updatedAt ?? new Date(),
+		})
+		.where(eq(schema.deepResearchJobs.id, input.jobId));
+}
+
+export async function setDeepResearchPlanVersionRawJson(input: {
+	jobId?: string;
+	planVersionId?: string;
+	rawPlanJson: unknown;
+	renderedPlan?: string;
+	updatedAt?: Date;
+}): Promise<void> {
+	if (!input.jobId && !input.planVersionId) {
+		throw new Error("Expected jobId or planVersionId");
+	}
+	const { db } = await import("$lib/server/db");
+	const planVersionWhere = input.planVersionId
+		? eq(schema.deepResearchPlanVersions.id, input.planVersionId)
+		: eq(schema.deepResearchPlanVersions.jobId, input.jobId);
+	await db
+		.update(schema.deepResearchPlanVersions)
+		.set({
+			rawPlanJson: JSON.stringify(input.rawPlanJson),
+			...(input.renderedPlan ? { renderedPlan: input.renderedPlan } : {}),
+			...(input.updatedAt ? { updatedAt: input.updatedAt } : {}),
+		})
+		.where(planVersionWhere);
+}
+
 export function createDeepResearchTestDbPath(
 	prefix = deepResearchDefaultDbPrefix,
 ): string {
@@ -405,6 +446,57 @@ export async function seedCompletedMeaningfulPasses(
 			),
 		});
 	}
+}
+
+export async function createApprovedPoisonedArchitectureJob() {
+	const { approveDeepResearchPlan, startDeepResearchJobShell } = await import(
+		"./index"
+	);
+	const userRequest =
+		"What is the most reliable architecture for building an enterprise deep research assistant in 2026 that can search the web, inspect uploaded documents, cite evidence, and produce long-form reports without fabricating claims? Compare at least three architecture patterns, identify failure modes, recommend one design for a 50-person SaaS company, and include an implementation roadmap.";
+	const created = await startDeepResearchJobShell({
+		userId: deepResearchDefaultUserId,
+		conversationId: deepResearchDefaultConversationId,
+		triggerMessageId: deepResearchDefaultMessageId,
+		userRequest,
+		depth: "standard",
+		now: new Date("2026-05-05T10:01:00.000Z"),
+	});
+	const poisonedPlan = {
+		...created.currentPlan?.rawPlan,
+		goal: userRequest,
+		depth: "standard",
+		reportIntent: "comparison",
+		comparedEntities: [
+			"at least three architecture patterns",
+			"identify failure modes",
+			"recommend one design",
+		],
+		comparisonAxes: ["enterprise reliability", "implementation roadmap"],
+		planNormalizationNote:
+			"Planner treated abstract architecture instructions as comparison entities.",
+		keyQuestions: [
+			"Which manufacturers and trim differences matter most?",
+			"How do dealer listings compare across model years?",
+			"Which rider use cases fit each architecture pattern?",
+		],
+	};
+	await setDeepResearchPlanVersionRawJson({
+		jobId: created.id,
+		rawPlanJson: poisonedPlan,
+		renderedPlan:
+			"Report intent: Comparison\nCompared entities:\n- at least three architecture patterns\n- identify failure modes\n- recommend one design",
+		updatedAt: new Date("2026-05-05T10:02:00.000Z"),
+	});
+	const approved = await approveDeepResearchPlan({
+		userId: deepResearchDefaultUserId,
+		jobId: created.id,
+		now: new Date("2026-05-05T10:06:00.000Z"),
+	});
+	if (!approved) {
+		throw new Error("Expected poisoned plan approval to return the job");
+	}
+	return approved;
 }
 
 function makeSupportedFinding(input: {
