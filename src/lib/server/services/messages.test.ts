@@ -262,6 +262,37 @@ describe("messages Honcho metadata", () => {
 		]);
 	});
 
+	it("falls back to the configured model display name when usage metadata omits one", async () => {
+		mockRows.push({
+			id: "assistant-model-fallback-1",
+			conversationId: "conv-1",
+			role: "assistant",
+			content: "Stored answer",
+			thinking: null,
+			toolCalls: null,
+			createdAt: new Date("2026-03-29T12:00:00.000Z"),
+			metadataJson: null,
+		});
+		mockUsageRows.push({
+			messageId: "assistant-model-fallback-1",
+			modelId: "model1",
+			generationTimeMs: 250,
+			completionTokens: 12,
+			reasoningTokens: 3,
+			totalTokens: 15,
+		});
+
+		const { listMessages } = await import("./messages");
+
+		await expect(listMessages("conv-1")).resolves.toEqual([
+			expect.objectContaining({
+				id: "assistant-model-fallback-1",
+				modelId: "model1",
+				modelDisplayName: "Model 1",
+			}),
+		]);
+	});
+
 	it("hydrates Depth Clarification metadata when listing messages", async () => {
 		mockRows.push({
 			id: "assistant-depth-clarification-1",

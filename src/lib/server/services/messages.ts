@@ -175,6 +175,90 @@ function readDepthMetadataFromMetadata(
 	return undefined;
 }
 
+function projectMessageModel(
+	metadata: PersistedMessageMetadata | null,
+	modelId?: string | null,
+): Pick<
+	ChatMessage,
+	"modelId" | "modelDisplayName" | "providerDisplayName" | "providerIconUrl"
+> {
+	return {
+		modelId: modelId as ChatMessage["modelId"],
+		modelDisplayName:
+			metadata?.modelDisplayName ?? getModelDisplayName(modelId),
+		providerDisplayName: metadata?.providerDisplayName ?? undefined,
+		providerIconUrl: metadata?.providerIconUrl ?? undefined,
+	};
+}
+
+function projectMessageUsage(
+	generationTimeMs?: number | null,
+	costUsdMicros?: number | null,
+	usageTokens?: {
+		completionTokens?: number | null;
+		reasoningTokens?: number | null;
+		totalTokens?: number | null;
+	},
+): Pick<
+	ChatMessage,
+	| "generationDurationMs"
+	| "thinkingTokenCount"
+	| "responseTokenCount"
+	| "totalTokenCount"
+	| "costUsd"
+> {
+	return {
+		generationDurationMs: generationTimeMs ?? undefined,
+		thinkingTokenCount: usageTokens?.reasoningTokens ?? undefined,
+		responseTokenCount: usageTokens?.completionTokens ?? undefined,
+		totalTokenCount: usageTokens?.totalTokens ?? undefined,
+		costUsd: costUsdMicros != null ? costUsdMicros / 1_000_000 : undefined,
+	};
+}
+
+function projectMessageMetadata(
+	row: typeof messages.$inferSelect,
+	metadata: PersistedMessageMetadata | null,
+): Pick<
+	ChatMessage,
+	| "evidenceSummary"
+	| "webCitationAudit"
+	| "evidencePending"
+	| "wasStopped"
+	| "depthMetadata"
+	| "honchoContext"
+	| "skillQuestion"
+	| "pendingSkillNoteIntents"
+	| "skillDrafts"
+	| "skillControl"
+	| "forkCopy"
+	| "forkEvidenceSnapshot"
+	| "importSource"
+> {
+	const evidenceSummary =
+		readEvidenceSummaryFromMetadata(metadata) ?? undefined;
+	const evidencePending =
+		metadata?.evidenceStatus === "pending" && !evidenceSummary;
+
+	return {
+		evidenceSummary,
+		webCitationAudit: metadata?.webCitationAudit ?? undefined,
+		evidencePending,
+		wasStopped: metadata?.wasStopped === true ? true : undefined,
+		depthMetadata: readDepthMetadataFromMetadata(metadata),
+		honchoContext: metadata?.honchoContext ?? undefined,
+		skillQuestion: metadata?.skillQuestion || undefined,
+		pendingSkillNoteIntents: metadata?.pendingSkillNoteIntents,
+		skillDrafts: Array.isArray(metadata?.skillDrafts)
+			? metadata.skillDrafts
+			: undefined,
+		skillControl: metadata?.skillControl,
+		forkCopy: metadata?.forkCopy,
+		forkEvidenceSnapshot: metadata?.forkEvidenceSnapshot,
+		importSource: row.importSource ?? undefined,
+	};
+}
+
 function mapRowToChatMessage(
 	row: typeof messages.$inferSelect,
 	modelId?: string | null,
@@ -187,11 +271,6 @@ function mapRowToChatMessage(
 	},
 ): ChatMessage {
 	const metadata = parseMetadata(row.metadataJson);
-	const evidenceSummary =
-		readEvidenceSummaryFromMetadata(metadata) ?? undefined;
-	const evidencePending =
-		metadata?.evidenceStatus === "pending" && !evidenceSummary;
-	const depthMetadata = readDepthMetadataFromMetadata(metadata);
 
 	return {
 		id: row.id,
@@ -200,31 +279,9 @@ function mapRowToChatMessage(
 		thinking: row.thinking ?? undefined,
 		thinkingSegments: readThinkingSegmentsFromRow(row),
 		timestamp: row.createdAt.getTime(),
-		modelId: modelId as ChatMessage["modelId"],
-		modelDisplayName:
-			metadata?.modelDisplayName ?? getModelDisplayName(modelId),
-		providerDisplayName: metadata?.providerDisplayName ?? undefined,
-		providerIconUrl: metadata?.providerIconUrl ?? undefined,
-		generationDurationMs: generationTimeMs ?? undefined,
-		thinkingTokenCount: usageTokens?.reasoningTokens ?? undefined,
-		responseTokenCount: usageTokens?.completionTokens ?? undefined,
-		totalTokenCount: usageTokens?.totalTokens ?? undefined,
-		costUsd: costUsdMicros != null ? costUsdMicros / 1_000_000 : undefined,
-		evidenceSummary,
-		webCitationAudit: metadata?.webCitationAudit ?? undefined,
-		evidencePending,
-		wasStopped: metadata?.wasStopped === true ? true : undefined,
-		depthMetadata,
-		honchoContext: metadata?.honchoContext ?? undefined,
-		skillQuestion: metadata?.skillQuestion || undefined,
-		pendingSkillNoteIntents: metadata?.pendingSkillNoteIntents,
-		skillDrafts: Array.isArray(metadata?.skillDrafts)
-			? metadata.skillDrafts
-			: undefined,
-		skillControl: metadata?.skillControl,
-		forkCopy: metadata?.forkCopy,
-		forkEvidenceSnapshot: metadata?.forkEvidenceSnapshot,
-		importSource: row.importSource ?? undefined,
+		...projectMessageModel(metadata, modelId),
+		...projectMessageUsage(generationTimeMs, costUsdMicros, usageTokens),
+		...projectMessageMetadata(row, metadata),
 	};
 }
 
