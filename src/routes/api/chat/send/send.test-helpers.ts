@@ -1,3 +1,6 @@
+import type { RequestEvent } from "@sveltejs/kit";
+import type { vi } from "vitest";
+
 const defaultConversationFixture = {
 	id: "conv-1",
 	title: "Test",
@@ -161,13 +164,7 @@ export const skillControlEnvelope = (operations: unknown[]) =>
 export function makeEvent(
 	body: unknown,
 	user = { id: "user-1", email: "test@example.com" },
-): {
-	request: Request;
-	locals: { user: { id: string; email: string } };
-	params: Record<string, never>;
-	url: URL;
-	route: { id: string };
-} {
+): RequestEvent<Record<string, never>, "/api/chat/send"> {
 	return {
 		request: new Request("http://localhost/api/chat/send", {
 			method: "POST",
@@ -178,10 +175,12 @@ export function makeEvent(
 		params: {},
 		url: new URL("http://localhost/api/chat/send"),
 		route: { id: "/api/chat/send" },
-	};
+	} as RequestEvent<Record<string, never>, "/api/chat/send">;
 }
 
-function makeInvalidJsonEvent(body: string) {
+function makeInvalidJsonEvent(
+	body: string,
+): RequestEvent<Record<string, never>, "/api/chat/send"> {
 	return {
 		request: new Request("http://localhost/api/chat/send", {
 			method: "POST",
@@ -192,7 +191,7 @@ function makeInvalidJsonEvent(body: string) {
 		params: {},
 		url: new URL("http://localhost/api/chat/send"),
 		route: { id: "/api/chat/send" },
-	};
+	} as RequestEvent<Record<string, never>, "/api/chat/send">;
 }
 
 export const buildInvalidJsonEvent = makeInvalidJsonEvent;
@@ -219,7 +218,7 @@ export function buildReasoningDepthMetadata(request: {
 }
 
 export function seedConversation(
-	mockGetConversation: (...args: unknown[]) => Promise<unknown>,
+	mockGetConversation: ReturnType<typeof vi.fn>,
 	overrides: Partial<typeof defaultConversationFixture> = {},
 ) {
 	mockGetConversation.mockResolvedValue({
@@ -229,7 +228,7 @@ export function seedConversation(
 }
 
 export function seedDefaultConversationMessages(
-	mockCreateMessage: (...args: unknown[]) => Promise<unknown>,
+	mockCreateMessage: ReturnType<typeof vi.fn>,
 	input: {
 		userMessage?: Partial<typeof testUserMessage>;
 		assistantMessage?: Partial<typeof testAssistantMessage>;
@@ -253,7 +252,7 @@ export function seedDefaultConversationMessages(
 }
 
 export function seedUserConversationMessage(
-	mockCreateMessage: (...args: unknown[]) => Promise<unknown>,
+	mockCreateMessage: ReturnType<typeof vi.fn>,
 	content: string,
 	id = "user-msg",
 ) {

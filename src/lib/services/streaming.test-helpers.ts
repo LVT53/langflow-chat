@@ -1,3 +1,4 @@
+import { vi } from "vitest";
 import { encodeAiSdkUiFixtureFrame } from "../../../tests/fixtures/ai-sdk-ui-stream-contract";
 import type { StreamCallbacks, StreamMetadata } from "./streaming";
 import { streamChat } from "./streaming";
