@@ -14,6 +14,13 @@ This file is the canonical engineering map for AlfyAI. Read it before changing c
 - The goal is to avoid stale code, deprecated patterns, and implementations that drift away from the real versions used in this repo.
 - If the Svelte MCP/docs tool is unavailable in the current session, use the best available official docs path before coding and call out that fallback explicitly.
 
+## Fallow Audit Gate
+
+- Before calling a patch finished, run Fallow against the current worktree, for example `npx fallow --no-cache --format json --quiet --score --output-file /tmp/alfyai-fallow.json`.
+- Treat new Fallow findings as regressions unless they are intentional public API, dynamic entry points, or known architectural debt documented in `.fallowrc.json`.
+- Do not add broad `ignoreExports`, `ignorePatterns`, or rule suppressions just to make the report green. Every new ignore must describe a real public boundary, dynamic loader, standalone script, or false positive.
+- If a change intentionally affects the remaining circular-dependency debt, rerun Fallow and report whether the five known cycle findings changed.
+
 ## Svelte 5 Migration Rules
 
 - Prefer Svelte 5 callback props over `createEventDispatcher` for component-to-parent communication.

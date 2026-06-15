@@ -5,6 +5,7 @@
   },
   "include": [
     "scripts/**/*.ts",
-    "../src/**/*.ts"
+    "src/**/*.ts",
+    "src/**/*.svelte"
   ]
 }

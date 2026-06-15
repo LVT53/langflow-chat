@@ -39,6 +39,19 @@ function performRequest(
 	return init === undefined ? fetchImpl(input) : fetchImpl(input, init);
 }
 
+async function throwRequestError(
+	response: Response,
+	errorMessage: string,
+): Promise<never> {
+	const error = await readErrorPayload(response, errorMessage);
+	throw new ApiError(error.message, {
+		code: error.code,
+		errorKey: error.errorKey,
+		fieldErrors: error.fieldErrors,
+		status: response.status,
+	});
+}
+
 export async function readErrorPayload(
 	response: Response,
 	fallback: string,
@@ -92,13 +105,7 @@ export async function requestJson<T>(
 ): Promise<T> {
 	const response = await performRequest(fetchImpl, input, init);
 	if (!response.ok) {
-		const error = await readErrorPayload(response, errorMessage);
-		throw new ApiError(error.message, {
-			code: error.code,
-			errorKey: error.errorKey,
-			fieldErrors: error.fieldErrors,
-			status: response.status,
-		});
+		await throwRequestError(response, errorMessage);
 	}
 
 	try {
@@ -118,13 +125,7 @@ export async function requestVoid(
 ): Promise<void> {
 	const response = await performRequest(fetchImpl, input, init);
 	if (!response.ok) {
-		const error = await readErrorPayload(response, errorMessage);
-		throw new ApiError(error.message, {
-			code: error.code,
-			errorKey: error.errorKey,
-			fieldErrors: error.fieldErrors,
-			status: response.status,
-		});
+		await throwRequestError(response, errorMessage);
 	}
 }
 
@@ -144,13 +145,7 @@ export async function requestText(
 ): Promise<string> {
 	const response = await performRequest(fetchImpl, input, init);
 	if (!response.ok) {
-		const error = await readErrorPayload(response, errorMessage);
-		throw new ApiError(error.message, {
-			code: error.code,
-			errorKey: error.errorKey,
-			fieldErrors: error.fieldErrors,
-			status: response.status,
-		});
+		await throwRequestError(response, errorMessage);
 	}
 	return response.text();
 }

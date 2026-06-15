@@ -205,12 +205,9 @@ function setMoveDropEffect(event: DragEvent) {
 }
 
 function moveId(ids: string[], sourceId: string, targetId: string) {
-	if (sourceId === targetId) return ids;
-	const next = ids.filter((id) => id !== sourceId);
-	const targetIndex = next.indexOf(targetId);
-	if (targetIndex === -1) return ids;
-	next.splice(targetIndex, 0, sourceId);
-	return next;
+	return moveIdToPosition(ids, sourceId, targetId, "before", {
+		returnOriginalWhenUnchanged: false,
+	});
 }
 
 function areIdsEqual(left: string[], right: string[]) {
@@ -225,16 +222,19 @@ function moveIdToPosition(
 	sourceId: string,
 	targetId: string,
 	position: ReorderInsertPosition,
+	options: { returnOriginalWhenUnchanged?: boolean } = {},
 ) {
 	if (sourceId === targetId) return ids;
 	const next = ids.filter((id) => id !== sourceId);
 	const targetIndex = next.indexOf(targetId);
 	if (targetIndex === -1) return ids;
+
 	next.splice(
 		position === "after" ? targetIndex + 1 : targetIndex,
 		0,
 		sourceId,
 	);
+	if (options.returnOriginalWhenUnchanged === false) return next;
 	return areIdsEqual(next, ids) ? ids : next;
 }
 

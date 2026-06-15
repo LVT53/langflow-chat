@@ -1139,12 +1139,21 @@ function beginDocumentSourceJsonSuppression(
 	return consumeDocumentSourceJsonLine(line.slice(startIndex), state);
 }
 
-function isFileProductionPayloadRawOutputPrefix(value: string): boolean {
-	if (/^\s/.test(value)) return false;
+function getRawOutputPrefixCandidate(
+	value: string,
+): { candidate: string; compact: string } | null {
+	if (/^\s/.test(value)) return null;
 	const candidate = value.trimStart();
-	if (!candidate) return false;
+	if (!candidate) return null;
 
-	const compact = candidate.toLowerCase().replace(/\s+/g, "");
+	return { candidate, compact: candidate.toLowerCase().replace(/\s+/g, "") };
+}
+
+function isFileProductionPayloadRawOutputPrefix(value: string): boolean {
+	const candidateParts = getRawOutputPrefixCandidate(value);
+	if (candidateParts === null) return false;
+
+	const compact = candidateParts.compact;
 	return (
 		compact.length >= 4 &&
 		[
@@ -1423,11 +1432,11 @@ function isPlainSourceReferenceMarkerPrefix(value: string): boolean {
 }
 
 function isDocumentSourceRawOutputPrefix(value: string): boolean {
-	if (/^\s/.test(value)) return false;
-	const candidate = value.trimStart();
-	if (!candidate) return false;
+	const candidateParts = getRawOutputPrefixCandidate(value);
+	if (candidateParts === null) return false;
 
-	const compact = candidate.toLowerCase().replace(/\s+/g, "");
+	const compact = candidateParts.compact;
+	const { candidate } = candidateParts;
 	if (
 		compact.length >= 1 &&
 		(['{"type":', '[{"type":'] as const).some((prefix) =>

@@ -155,6 +155,20 @@ const EXTENSION_CONTENT_TYPES: Record<string, string> = {
 	zip: "application/zip",
 };
 
+function getTrustedPreviewTypeFromExtension(
+	ext: string | null,
+): PreviewFileType | null {
+	if (!ext) return null;
+	if (ext === "pdf") return "pdf";
+	if (ext === "docx") return "docx";
+	if (ext === "xlsx") return "xlsx";
+	if (ext === "pptx") return "pptx";
+	if (ext === "odt") return "odt";
+	if (IMAGE_EXTENSIONS.has(ext)) return "image";
+	if (ext === "html" || ext === "htm") return "html";
+	return null;
+}
+
 function getExtension(name: string): string | null {
 	const ext = name.split(".").pop()?.toLowerCase().trim();
 	return ext ? ext : null;
@@ -187,26 +201,13 @@ export function determinePreviewFileType(
 ): PreviewFileType {
 	const ext = getExtension(filename);
 	const mime = normalizeMimeType(mimeType);
+	const trustedType = getTrustedPreviewTypeFromExtension(ext);
+	if (trustedType) return trustedType;
 
 	if (!mime) {
-		if (ext === "pdf") return "pdf";
-		if (ext === "docx") return "docx";
-		if (ext === "xlsx") return "xlsx";
-		if (ext === "pptx") return "pptx";
-		if (ext === "odt") return "odt";
-		if (ext && IMAGE_EXTENSIONS.has(ext)) return "image";
-		if (ext === "html" || ext === "htm") return "html";
 		if (ext && TEXT_EXTENSIONS.has(ext)) return "text";
 		return "unsupported";
 	}
-
-	if (ext === "pdf") return "pdf";
-	if (ext === "docx") return "docx";
-	if (ext === "xlsx") return "xlsx";
-	if (ext === "pptx") return "pptx";
-	if (ext === "odt") return "odt";
-	if (ext && IMAGE_EXTENSIONS.has(ext)) return "image";
-	if (ext === "html" || ext === "htm") return "html";
 
 	if (mime.includes("pdf")) return "pdf";
 	if (mime.includes("wordprocessingml")) return "docx";

@@ -68,40 +68,19 @@ export function buildContextPacket(
 	const _systemTokens = estimateTokenCount(systemPrompt);
 	budgetInstance.reserve("system", systemPrompt);
 
-	const historyParts: string[] = [];
-	for (const section of historySections) {
-		const sectionText = section.body.trim();
-		if (!sectionText) continue;
+	const { parts: historyParts } = reserveContextSections({
+		sections: historySections,
+		prefix: "history",
+		budget: budgetInstance,
+	});
 
-		const candidate = buildContextSection(section.title, sectionText);
-		const candidateTokens = estimateTokenCount(candidate);
-
-		if (budgetInstance.remaining() >= candidateTokens) {
-			budgetInstance.reserve(`history:${section.title}`, candidate);
-			historyParts.push(candidate);
-		} else {
-			break;
-		}
-	}
-
-	const docParts: string[] = [];
-	let compactionApplied = false;
-	for (const section of docSections) {
-		const sectionText = section.body.trim();
-		if (!sectionText) continue;
-
-		const candidate = buildContextSection(section.title, sectionText);
-		const candidateTokens = estimateTokenCount(candidate);
-
-		if (budgetInstance.remaining() >= candidateTokens) {
-			budgetInstance.reserve(`doc:${section.title}`, candidate);
-			docParts.push(candidate);
-		} else {
-			compactionApplied = true;
-			break;
-		}
-	}
-
+	const { parts: docReservationParts, compactionApplied } =
+		reserveContextSections({
+			sections: docSections,
+			prefix: "doc",
+			budget: budgetInstance,
+			markCompactionApplied: true,
+		});
 	const parts: string[] = [];
 	if (systemPrompt.trim()) {
 		parts.push(systemPrompt.trim());
@@ -109,8 +88,8 @@ export function buildContextPacket(
 	if (historyParts.length > 0) {
 		parts.push(...historyParts);
 	}
-	if (docParts.length > 0) {
-		parts.push(...docParts);
+	if (docReservationParts.length > 0) {
+		parts.push(...docReservationParts);
 	}
 	if (userMessage.trim()) {
 		parts.push(`## Current User Message\n${userMessage.trim()}`);
@@ -128,4 +107,44 @@ export function buildContextPacket(
 
 function buildContextSection(title: string, body: string): string {
 	return `## ${title}\n${body}`;
+}
+
+type ReserveContextSectionsParams = {
+	sections: PromptContextSection[];
+	prefix: string;
+	budget: TokenBudget;
+	markCompactionApplied?: boolean;
+};
+
+function reserveContextSections({
+	sections,
+	prefix,
+	budget,
+	markCompactionApplied = false,
+}: ReserveContextSectionsParams): {
+	parts: string[];
+	compactionApplied: boolean;
+} {
+	const parts: string[] = [];
+	let compactionApplied = false;
+
+	for (const section of sections) {
+		const sectionText = section.body.trim();
+		if (!sectionText) continue;
+
+		const candidate = buildContextSection(section.title, sectionText);
+		const candidateTokens = estimateTokenCount(candidate);
+
+		if (budget.remaining() >= candidateTokens) {
+			budget.reserve(`${prefix}:${section.title}`, candidate);
+			parts.push(candidate);
+		} else {
+			if (markCompactionApplied) {
+				compactionApplied = true;
+			}
+			break;
+		}
+	}
+
+	return { parts, compactionApplied };
 }

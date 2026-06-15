@@ -282,45 +282,37 @@ function extractListItems(text: string): string[] {
 	return lines.slice(0, 3).map((line) => clipText(line, 140));
 }
 
-function extractDecisionCandidates(text: string): string[] {
+function extractSentenceCandidates(
+	text: string,
+	filter?: (sentence: string) => boolean,
+): string[] {
 	const sentences = text
 		.replace(/\s+/g, " ")
 		.split(/(?<=[.!?])\s+/)
 		.map((sentence) => sentence.trim())
 		.filter(Boolean);
-	return sentences
-		.filter((sentence) =>
-			/\b(should|recommend|decide|best|need to|will|let's|prefer)\b/i.test(
-				sentence,
-			),
-		)
-		.slice(0, 3)
-		.map((sentence) => clipText(sentence, 180));
+	const selected = filter ? sentences.filter(filter) : sentences;
+	return selected.slice(0, 3).map((sentence) => clipText(sentence, 180));
+}
+
+function extractDecisionCandidates(text: string): string[] {
+	return extractSentenceCandidates(text, (sentence) =>
+		/\b(should|recommend|decide|best|need to|will|let's|prefer)\b/i.test(
+			sentence,
+		),
+	);
 }
 
 function extractConstraintCandidates(text: string): string[] {
-	const sentences = text
-		.replace(/\s+/g, " ")
-		.split(/(?<=[.!?])\s+/)
-		.map((sentence) => sentence.trim())
-		.filter(Boolean);
-	return sentences
-		.filter((sentence) =>
-			/\b(must|should not|cannot|can't|need to|have to|without|limit|constraint)\b/i.test(
-				sentence,
-			),
-		)
-		.slice(0, 3)
-		.map((sentence) => clipText(sentence, 180));
+	return extractSentenceCandidates(text, (sentence) =>
+		/\b(must|should not|cannot|can't|need to|have to|without|limit|constraint)\b/i.test(
+			sentence,
+		),
+	);
 }
 
 function extractFactCandidates(text: string): string[] {
-	const sentences = text
-		.replace(/\s+/g, " ")
-		.split(/(?<=[.!?])\s+/)
-		.map((sentence) => sentence.trim())
-		.filter(Boolean);
-	return sentences.slice(0, 3).map((sentence) => clipText(sentence, 180));
+	return extractSentenceCandidates(text);
 }
 
 async function summarizeTaskStateUpdate(params: {

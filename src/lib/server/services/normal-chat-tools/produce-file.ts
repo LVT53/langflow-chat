@@ -617,10 +617,7 @@ const DOCUMENT_SOURCE_METADATA_KEYS = new Set([
 
 function hasSubstantiveDocumentSource(value: unknown): boolean {
 	if (!isRecord(value)) return false;
-	return Object.entries(value).some(([key, item]) => {
-		if (DOCUMENT_SOURCE_METADATA_KEYS.has(key)) return false;
-		return hasSubstantiveDocumentValue(item);
-	});
+	return hasSubstantiveDocumentValue(value);
 }
 
 function hasSubstantiveDocumentValue(value: unknown): boolean {

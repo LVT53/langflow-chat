@@ -160,6 +160,47 @@ function average(values: number[]): number {
 	return present.reduce((sum, value) => sum + value, 0) / present.length;
 }
 
+type UsageAccumulator = {
+	promptTokens: number;
+	cachedInputTokens: number;
+	outputTokens: number;
+	reasoningTokens: number;
+	totalTokens: number;
+	totalCostMicros: number;
+};
+
+function createUsageAccumulator(): UsageAccumulator {
+	return {
+		promptTokens: 0,
+		cachedInputTokens: 0,
+		outputTokens: 0,
+		reasoningTokens: 0,
+		totalTokens: 0,
+		totalCostMicros: 0,
+	};
+}
+
+function addUsageRowUsage(rowAccumulator: UsageAccumulator, row: UsageRow) {
+	rowAccumulator.promptTokens += row.promptTokens;
+	rowAccumulator.cachedInputTokens += row.cachedInputTokens;
+	rowAccumulator.outputTokens += row.completionTokens;
+	rowAccumulator.reasoningTokens += row.reasoningTokens;
+	rowAccumulator.totalTokens += row.totalTokens;
+	rowAccumulator.totalCostMicros += row.costUsdMicros;
+}
+
+function materializeUsageBreakdown<T extends { totalCostMicros: number }>(
+	grouped: Map<string, T>,
+	sort: (
+		left: T & { totalCostUsd: number },
+		right: T & { totalCostUsd: number },
+	) => number,
+) {
+	return [...grouped.values()]
+		.map((row) => ({ ...row, totalCostUsd: usd(row.totalCostMicros) }))
+		.sort(sort);
+}
+
 async function modelBreakdown(rows: UsageRow[]) {
 	const grouped = new Map<
 		string,
@@ -215,26 +256,17 @@ async function modelBreakdown(rows: UsageRow[]) {
 			displayName: resolvedName,
 			providerDisplayName: row.providerDisplayName,
 			msgCount: 0,
-			promptTokens: 0,
-			cachedInputTokens: 0,
-			outputTokens: 0,
-			reasoningTokens: 0,
-			totalTokens: 0,
-			totalCostMicros: 0,
+			...createUsageAccumulator(),
 		};
 		current.msgCount += 1;
-		current.promptTokens += row.promptTokens;
-		current.cachedInputTokens += row.cachedInputTokens;
-		current.outputTokens += row.completionTokens;
-		current.reasoningTokens += row.reasoningTokens;
-		current.totalTokens += row.totalTokens;
-		current.totalCostMicros += row.costUsdMicros;
+		addUsageRowUsage(current, row);
 		grouped.set(key, current);
 	}
 
-	return [...grouped.values()]
-		.map((row) => ({ ...row, totalCostUsd: usd(row.totalCostMicros) }))
-		.sort((left, right) => right.msgCount - left.msgCount);
+	return materializeUsageBreakdown(
+		grouped,
+		(left, right) => right.msgCount - left.msgCount,
+	);
 }
 
 async function providerBreakdown(rows: UsageRow[]) {
@@ -283,29 +315,20 @@ async function providerBreakdown(rows: UsageRow[]) {
 			providerId: row.providerId,
 			displayName: resolvedName,
 			msgCount: 0,
-			promptTokens: 0,
-			cachedInputTokens: 0,
-			outputTokens: 0,
-			reasoningTokens: 0,
-			totalTokens: 0,
-			totalCostMicros: 0,
+			...createUsageAccumulator(),
 		};
 		current.msgCount += 1;
-		current.promptTokens += row.promptTokens;
-		current.cachedInputTokens += row.cachedInputTokens;
-		current.outputTokens += row.completionTokens;
-		current.reasoningTokens += row.reasoningTokens;
-		current.totalTokens += row.totalTokens;
-		current.totalCostMicros += row.costUsdMicros;
+		addUsageRowUsage(current, row);
 		if (current.providerId === null && row.providerId) {
 			current.providerId = row.providerId;
 		}
 		grouped.set(key, current);
 	}
 
-	return [...grouped.values()]
-		.map((row) => ({ ...row, totalCostUsd: usd(row.totalCostMicros) }))
-		.sort((left, right) => right.totalCostMicros - left.totalCostMicros);
+	return materializeUsageBreakdown(
+		grouped,
+		(left, right) => right.totalCostMicros - left.totalCostMicros,
+	);
 }
 
 function monthlyBreakdown(rows: UsageRow[]) {
@@ -327,26 +350,16 @@ function monthlyBreakdown(rows: UsageRow[]) {
 		const current = grouped.get(row.billingMonth) ?? {
 			month: row.billingMonth,
 			messages: 0,
-			promptTokens: 0,
-			cachedInputTokens: 0,
-			outputTokens: 0,
-			reasoningTokens: 0,
-			totalTokens: 0,
-			totalCostMicros: 0,
+			...createUsageAccumulator(),
 		};
 		current.messages += 1;
-		current.promptTokens += row.promptTokens;
-		current.cachedInputTokens += row.cachedInputTokens;
-		current.outputTokens += row.completionTokens;
-		current.reasoningTokens += row.reasoningTokens;
-		current.totalTokens += row.totalTokens;
-		current.totalCostMicros += row.costUsdMicros;
+		addUsageRowUsage(current, row);
 		grouped.set(row.billingMonth, current);
 	}
 
-	return [...grouped.values()]
-		.map((row) => ({ ...row, totalCostUsd: usd(row.totalCostMicros) }))
-		.sort((left, right) => left.month.localeCompare(right.month));
+	return materializeUsageBreakdown(grouped, (left, right) =>
+		left.month.localeCompare(right.month),
+	);
 }
 
 function computeTimeline(
