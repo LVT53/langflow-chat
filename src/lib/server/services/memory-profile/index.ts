@@ -274,6 +274,13 @@ function assertOneOf<T extends readonly string[]>(
 	}
 }
 
+function isOneOf<T extends readonly string[]>(
+	value: string,
+	allowed: T,
+): value is T[number] {
+	return allowed.includes(value);
+}
+
 function parseJsonArray(value: string | null): unknown[] {
 	if (!value) return [];
 	try {
@@ -2016,6 +2023,35 @@ export async function reconcileMemoryProfileDirtyLedgerForUser(params: {
 		if (!row) break;
 		attemptedIds.add(row.id);
 		result.claimed += 1;
+
+		if (!isOneOf(row.reason, MEMORY_DIRTY_REASONS)) {
+			const metadata = parseJsonRecord(row.reasonMetadataJson);
+			const completed = await completeClaimedMemoryDirtyLedgerRow({
+				userId: params.userId,
+				resetGeneration,
+				id: row.id,
+			});
+			if (completed) {
+				result.completed += 1;
+			} else {
+				result.skipped += 1;
+			}
+			await recordMemoryReworkTelemetry({
+				userId: params.userId,
+				eventFamily: "error_fallback",
+				eventName: "dirty_ledger_invalid_reason_skipped",
+				reason: row.reason,
+				status: "skipped",
+				count: row.count,
+				subjectId: telemetrySubjectIdForDirtyMetadata(metadata) ?? undefined,
+				metadata: {
+					ledgerEntryId: row.id,
+					scopeType: row.scopeType,
+					scopeId: row.scopeId,
+				},
+			});
+			continue;
+		}
 
 		try {
 			await handleClaimedMemoryDirtyLedgerRow({

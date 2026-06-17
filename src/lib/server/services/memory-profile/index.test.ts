@@ -1662,7 +1662,7 @@ describe("memory profile foundation", () => {
 		expect(JSON.stringify(telemetry)).not.toContain("Inactive goal.");
 	});
 
-	it("requeues a failed claimed dirty row and records privacy-safe error telemetry", async () => {
+	it("completes an unsupported dirty row and records privacy-safe skipped telemetry", async () => {
 		const {
 			listMemoryReworkTelemetry,
 			listPendingMemoryDirtyEntries,
@@ -1694,28 +1694,30 @@ describe("memory profile foundation", () => {
 			reconcileMemoryProfileDirtyLedgerForUser({ userId: "user-1" }),
 		).resolves.toEqual({
 			claimed: 1,
-			completed: 0,
-			failed: 1,
+			completed: 1,
+			failed: 0,
 			skipped: 0,
 			timedOut: false,
 		});
 
 		await expect(
 			listPendingMemoryDirtyEntries({ userId: "user-1" }),
-		).rejects.toThrow("Unsupported memory dirty reason: unsupported_reason");
+		).resolves.toEqual([]);
 		const rows = await db
 			.select({
 				id: schema.memoryDirtyLedger.id,
 				status: schema.memoryDirtyLedger.status,
 				claimedAt: schema.memoryDirtyLedger.claimedAt,
+				completedAt: schema.memoryDirtyLedger.completedAt,
 			})
 			.from(schema.memoryDirtyLedger)
 			.where(eq(schema.memoryDirtyLedger.id, ledgerId));
 		expect(rows).toEqual([
 			{
 				id: ledgerId,
-				status: "pending",
-				claimedAt: null,
+				status: "completed",
+				claimedAt: expect.any(Date),
+				completedAt: expect.any(Date),
 			},
 		]);
 
@@ -1723,13 +1725,14 @@ describe("memory profile foundation", () => {
 		expect(telemetry).toEqual([
 			expect.objectContaining({
 				eventFamily: "error_fallback",
-				eventName: "dirty_ledger_reconciliation_failed",
+				eventName: "dirty_ledger_invalid_reason_skipped",
 				reason: "unsupported_reason",
-				status: "retry_pending",
+				status: "skipped",
 				subjectId: "subject-1",
 				metadata: {
 					ledgerEntryId: ledgerId,
-					errorName: "Error",
+					scopeType: "global",
+					scopeId: "",
 				},
 			}),
 		]);

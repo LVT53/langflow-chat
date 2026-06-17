@@ -482,3 +482,93 @@ describe("pruneOrphanHonchoSessions", () => {
 		expect(result.errors).toBe(0);
 	});
 });
+
+describe("listLegacyPersonaMemoryCandidates", () => {
+	beforeEach(() => {
+		dbPath = `/tmp/alfyai-honcho-legacy-${randomUUID()}.db`;
+		process.env.DATABASE_PATH = dbPath;
+		vi.resetModules();
+		vi.clearAllMocks();
+		mocks.config.honchoEnabled = true;
+		mocks.registeredSessions.clear();
+		mocks.peers.clear();
+	});
+
+	afterEach(async () => {
+		try {
+			const { sqlite } = await import("$lib/server/db");
+			sqlite.close();
+		} catch {
+			// The DB module may not have been imported if a test failed early.
+		}
+		try {
+			unlinkSync(dbPath);
+		} catch {
+			// Temporary DB cleanup is best-effort.
+		}
+	});
+
+	it("keeps page candidates from both Honcho scopes before advancing the shared cursor", async () => {
+		const { sqlite, db } = openSeedDatabase();
+		db.insert(schema.users)
+			.values({
+				id: "user-1",
+				email: "legacy-user@example.com",
+				passwordHash: "hash",
+				createdAt: new Date("2026-06-01T08:00:00.000Z"),
+				updatedAt: new Date("2026-06-01T08:00:00.000Z"),
+			})
+			.run();
+		sqlite.close();
+		const {
+			getHonchoAssistantPeerId,
+			getHonchoUserPeerId,
+			listLegacyPersonaMemoryCandidates,
+		} = await import("./honcho");
+		const userPeer = mocks.getOrCreatePeer(getHonchoUserPeerId("user-1", 0));
+		const assistantPeer = mocks.getOrCreatePeer(
+			getHonchoAssistantPeerId("user-1", 0),
+		);
+		const assistantAboutUserScope = {
+			list: vi.fn(async () => ({
+				total: 1,
+				items: [
+					{
+						id: "assistant-about-user-1",
+						content: "User prefers implementation notes.",
+						sessionId: "conv-1",
+						createdAt: "2026-06-01T10:00:00.000Z",
+					},
+				],
+			})),
+			delete: vi.fn(async () => undefined),
+		};
+		userPeer.conclusions.list = vi.fn(async () => ({
+			total: 1,
+			items: [
+				{
+					id: "self-1",
+					content: "User is working on memory maintenance.",
+					sessionId: "conv-1",
+					createdAt: "2026-06-01T09:00:00.000Z",
+				},
+			],
+		})) as unknown as typeof userPeer.conclusions.list;
+		assistantPeer.conclusionsOf = vi.fn(
+			() => assistantAboutUserScope,
+		) as unknown as typeof assistantPeer.conclusionsOf;
+
+		const batch = await listLegacyPersonaMemoryCandidates("user-1", {
+			limit: 1,
+			startPage: 1,
+			maxPages: 1,
+		});
+
+		expect(batch.candidates.map((candidate) => candidate.id)).toEqual([
+			"assistant-about-user-1",
+			"self-1",
+		]);
+		expect(batch.nextPage).toBeNull();
+		expect(batch.exhausted).toBe(true);
+	});
+});

@@ -829,9 +829,7 @@ export async function listLegacyPersonaMemoryCandidates(
 	const candidates = [
 		...selfPage.candidates,
 		...assistantAboutUserPage.candidates,
-	]
-		.sort((a, b) => b.createdAt - a.createdAt)
-		.slice(0, limit);
+	].sort((a, b) => b.createdAt - a.createdAt);
 
 	return {
 		totalAvailable: selfPage.total + assistantAboutUserPage.total,
