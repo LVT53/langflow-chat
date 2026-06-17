@@ -142,7 +142,8 @@ describe("hooks.server.ts", () => {
 						values: [
 							{
 								type: "Error",
-								value: "'Redirect' captured as exception with keys: location, status",
+								value:
+									"'Redirect' captured as exception with keys: location, status",
 							},
 						],
 					},
@@ -166,6 +167,15 @@ describe("hooks.server.ts", () => {
 				values: [{ type: "Error", value: "Database unavailable" }],
 			},
 		});
+	});
+
+	it("disables OpenTelemetry setup and ESM loader hooks to prevent import-in-the-middle crashes", async () => {
+		await import("./hooks.server");
+
+		const initOptions = mockSentryInit.mock.calls[0]?.[0];
+
+		expect(initOptions?.skipOpenTelemetrySetup).toBe(true);
+		expect(initOptions?.registerEsmLoaderHooks).toBe(false);
 	});
 
 	it("runs config-dependent startup work after runtime config is refreshed", async () => {
