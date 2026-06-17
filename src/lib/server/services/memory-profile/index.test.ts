@@ -558,6 +558,34 @@ describe("memory profile foundation", () => {
 		expect(after.projectionRevision).toBe(before.projectionRevision + 1);
 	});
 
+	it("shows the proposed memory text for review items with generic legacy labels", async () => {
+		const { createOrUpdateMemoryReviewItem, getMemoryProfileReadModel } =
+			await import("./index");
+
+		const review = await createOrUpdateMemoryReviewItem({
+			userId: "user-1",
+			subjectKey: "legacy-memory-curation:review-display",
+			subjectLabel: "Legacy memory candidate",
+			question: "Should AlfyAI remember this?",
+			reason: "Needs user confirmation before becoming active memory.",
+			metadata: {
+				category: "preferences",
+				proposedStatement: "Prefers Hungarian labels.",
+			},
+		});
+
+		const profile = await getMemoryProfileReadModel({ userId: "user-1" });
+		expect(profile.review.visibleItems).toEqual([
+			{
+				id: review.id,
+				subject: "Prefers Hungarian labels.",
+				question: "Should AlfyAI remember this?",
+				reason: "Needs user confirmation before becoming active memory.",
+				canAccept: true,
+			},
+		]);
+	});
+
 	it("uses a deterministic category fallback when review metadata has no category", async () => {
 		const {
 			applyMemoryReviewItemWithRevision,
@@ -1410,7 +1438,7 @@ describe("memory profile foundation", () => {
 			visibleItems: [
 				{
 					id: expect.any(String),
-					subject: "Legacy memory candidate",
+					subject: "Prefers Hungarian labels.",
 					question: "Should AlfyAI remember this?",
 					reason: "Needs confirmation before becoming active.",
 					canAccept: true,
@@ -1510,7 +1538,7 @@ describe("memory profile foundation", () => {
 		const profile = await getMemoryProfileReadModel({ userId: "user-1" });
 		expect(profile.review.openCount).toBe(1);
 		expect(profile.review.visibleItems[0]).toMatchObject({
-			subject: "Legacy memory candidate",
+			subject: "Might prefer careful migration reports.",
 			canAccept: true,
 		});
 

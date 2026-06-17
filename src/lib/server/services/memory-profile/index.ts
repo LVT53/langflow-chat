@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { and, asc, desc, eq, lt, sql } from "drizzle-orm";
+import { getConfig } from "$lib/server/config-store";
 import { db } from "$lib/server/db";
 import {
 	memoryDirtyLedger,
@@ -453,13 +454,14 @@ function readReviewProposedStatement(metadata: JsonRecord): string | null {
 }
 
 function toPublicReviewItem(row: typeof memoryReviewItems.$inferSelect) {
+	const metadata = parseJsonRecord(row.metadataJson);
+	const proposedStatement = readReviewProposedStatement(metadata);
 	return {
 		id: row.id,
-		subject: row.subjectLabel,
+		subject: proposedStatement ?? row.subjectLabel,
 		question: row.question,
 		reason: row.reason,
-		canAccept:
-			readReviewProposedStatement(parseJsonRecord(row.metadataJson)) !== null,
+		canAccept: proposedStatement !== null,
 	};
 }
 
@@ -1691,7 +1693,7 @@ async function defaultLegacyMemoryCurator(
 	if (items.length === 0) return [];
 	const response = await sendJsonControlMessage(
 		JSON.stringify({ items }),
-		undefined,
+		getConfig().memoryLegacyCurationModel,
 		{
 			systemPrompt: [
 				"You curate preserved legacy memory candidates for a user's long-term memory profile.",
@@ -1932,7 +1934,7 @@ async function applyReviewLegacyCurationDecision(params: {
 	await createOrUpdateMemoryReviewItem({
 		userId: params.userId,
 		subjectKey: `legacy-memory-curation:${stableMemoryMaintenanceDigest(params.row.id)}`,
-		subjectLabel: "Legacy memory candidate",
+		subjectLabel: params.decision.statement,
 		question: "Should AlfyAI remember this?",
 		reason:
 			params.decision.reason ??

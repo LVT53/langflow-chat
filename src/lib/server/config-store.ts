@@ -124,6 +124,7 @@ export const ADMIN_CONFIG_KEYS = [
 	"MODEL_TIMEOUT_FAILOVER_TIMEOUT_MS",
 	"MODEL_TIMEOUT_FAILOVER_TARGET_MODEL",
 	"DEFAULT_NEW_USER_MODEL",
+	"MEMORY_LEGACY_CURATION_MODEL",
 	"REASONING_DEPTH_CLASSIFIER_MODEL",
 	"FILE_PRODUCTION_MAX_OUTPUTS",
 	"FILE_PRODUCTION_MAX_SOURCE_JSON_BYTES",
@@ -188,6 +189,7 @@ export interface RuntimeConfig {
 	modelTimeoutFailoverTimeoutMs: number;
 	modelTimeoutFailoverTargetModel: ModelId;
 	defaultNewUserModel: ModelId;
+	memoryLegacyCurationModel: ModelId;
 	reasoningDepthClassifierModel: string | null;
 	maxMessageLength: number;
 	maxModelContext: number;
@@ -272,6 +274,7 @@ function buildDefaultConfig(): RuntimeConfig {
 		appVersionOverride: null,
 		model1IconAssetId: null,
 		model2IconAssetId: null,
+		memoryLegacyCurationModel: envConfig.memoryLegacyCurationModel,
 		reasoningDepthClassifierModel:
 			envConfig.reasoningDepthClassifierModel?.trim() || null,
 		composerCommandRegistryEnabled:
@@ -428,6 +431,36 @@ function validateReasoningDepthClassifierModel(config: RuntimeConfig): void {
 		`[CONFIG] Invalid reasoning depth classifier model format: "${modelId}". Expected "model1", "model2", or "provider:<providerId>:<modelId>". Clearing config.`,
 	);
 	config.reasoningDepthClassifierModel = null;
+}
+
+function validateMemoryLegacyCurationModel(config: RuntimeConfig): void {
+	const modelId = config.memoryLegacyCurationModel?.trim();
+	if (!modelId) {
+		config.memoryLegacyCurationModel = "model1";
+		return;
+	}
+
+	if (modelId === "model1" || modelId === "model2") {
+		if (!isModelEnabled(modelId, config)) {
+			console.warn(
+				`[CONFIG] Memory legacy curation model "${modelId}" is not enabled. Falling back to "model1".`,
+			);
+			config.memoryLegacyCurationModel = "model1";
+		}
+		return;
+	}
+
+	if (modelId.startsWith("provider:")) {
+		const parts = modelId.split(":");
+		if (parts.length === 3 && parts[1] && parts[2]) {
+			return;
+		}
+	}
+
+	console.warn(
+		`[CONFIG] Invalid memory legacy curation model format: "${modelId}". Expected "model1", "model2", or "provider:<providerId>:<modelId>". Falling back to "model1".`,
+	);
+	config.memoryLegacyCurationModel = "model1";
 }
 
 function validateContextLimitTriples(config: RuntimeConfig): void {
@@ -864,6 +897,9 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 	DEFAULT_NEW_USER_MODEL: (config, value) => {
 		config.defaultNewUserModel = normalizeConfiguredModelId(value);
 	},
+	MEMORY_LEGACY_CURATION_MODEL: (config, value) => {
+		config.memoryLegacyCurationModel = normalizeConfiguredModelId(value);
+	},
 	REASONING_DEPTH_CLASSIFIER_MODEL: (config, value) => {
 		config.reasoningDepthClassifierModel = value.trim() || null;
 	},
@@ -967,6 +1003,7 @@ export async function refreshConfig(): Promise<void> {
 	validateContextLimitTriples(base);
 	applyDerivedMaxMessageLengthDefaults(base, overrides);
 	validateReasoningDepthClassifierModel(base);
+	validateMemoryLegacyCurationModel(base);
 
 	if (!hasMaxMessageLengthOverride) {
 		base.maxMessageLength = await resolveLowestModelMaxMessageLength(base);
@@ -1256,6 +1293,7 @@ export function getResolvedAdminConfigValues(
 		),
 		MODEL_TIMEOUT_FAILOVER_TARGET_MODEL: config.modelTimeoutFailoverTargetModel,
 		DEFAULT_NEW_USER_MODEL: config.defaultNewUserModel,
+		MEMORY_LEGACY_CURATION_MODEL: config.memoryLegacyCurationModel,
 		REASONING_DEPTH_CLASSIFIER_MODEL:
 			config.reasoningDepthClassifierModel ?? "",
 		FILE_PRODUCTION_MAX_OUTPUTS: String(config.fileProductionMaxOutputs),

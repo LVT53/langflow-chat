@@ -2,6 +2,7 @@
 // Centralized environment configuration module
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
+import type { ModelId } from "$lib/types";
 import {
 	DEEP_RESEARCH_MODEL_ROLES,
 	type DeepResearchDepthBudgetPolicy,
@@ -70,8 +71,9 @@ interface Config {
 	requestTimeoutMs: number;
 	modelTimeoutFailoverEnabled: boolean;
 	modelTimeoutFailoverTimeoutMs: number;
-	modelTimeoutFailoverTargetModel: import("$lib/types").ModelId;
-	defaultNewUserModel: import("$lib/types").ModelId;
+	modelTimeoutFailoverTargetModel: ModelId;
+	defaultNewUserModel: ModelId;
+	memoryLegacyCurationModel: ModelId;
 	reasoningDepthClassifierModel: string | null;
 	maxMessageLength: number;
 	maxModelContext: number;
@@ -207,6 +209,31 @@ function validateReasoningDepthClassifierModel(
 		`[CONFIG] Invalid REASONING_DEPTH_CLASSIFIER_MODEL format: "${value}". Expected "model1", "model2", or "provider:<providerId>:<modelId>". Using null.`,
 	);
 	return null;
+}
+
+function validateConfiguredModelIdEnv(
+	value: string | undefined,
+	key: string,
+	fallback: ModelId = "model1",
+): ModelId {
+	const trimmed = value?.trim();
+	if (!trimmed) return fallback;
+
+	if (trimmed === "model1" || trimmed === "model2") {
+		return trimmed;
+	}
+
+	if (trimmed.startsWith("provider:")) {
+		const parts = trimmed.split(":");
+		if (parts.length === 3 && parts[1] && parts[2]) {
+			return trimmed as ModelId;
+		}
+	}
+
+	console.warn(
+		`[CONFIG] Invalid ${key} format: "${value}". Expected "model1", "model2", or "provider:<providerId>:<modelId>". Using "${fallback}".`,
+	);
+	return fallback;
 }
 
 function parseIntegerEnv(value: string | undefined, fallback: number): number {
@@ -479,6 +506,10 @@ function readConfig(): Config {
 		),
 		defaultNewUserModel: normalizeConfiguredModelId(
 			process.env.DEFAULT_NEW_USER_MODEL || "model1",
+		),
+		memoryLegacyCurationModel: validateConfiguredModelIdEnv(
+			process.env.MEMORY_LEGACY_CURATION_MODEL,
+			"MEMORY_LEGACY_CURATION_MODEL",
 		),
 		reasoningDepthClassifierModel: validateReasoningDepthClassifierModel(
 			process.env.REASONING_DEPTH_CLASSIFIER_MODEL,
