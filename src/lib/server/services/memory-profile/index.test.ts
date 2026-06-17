@@ -156,6 +156,51 @@ describe("memory profile foundation", () => {
 		);
 	});
 
+	it("replaces Honcho peer ids with the user's display name in profile and review text", async () => {
+		const {
+			createMemoryProfileItem,
+			createOrUpdateMemoryReviewItem,
+			getMemoryProfileReadModel,
+		} = await import("./index");
+		const { getHonchoAssistantPeerId, getHonchoUserPeerId } = await import(
+			"../honcho-identifiers"
+		);
+		const userPeerId = getHonchoUserPeerId("user-1");
+		const assistantPeerId = getHonchoAssistantPeerId("user-1");
+
+		await createMemoryProfileItem({
+			userId: "user-1",
+			category: "preferences",
+			scope: { type: "global" },
+			statement: `${userPeerId} prefers concise answers from ${assistantPeerId}.`,
+		});
+		await createOrUpdateMemoryReviewItem({
+			userId: "user-1",
+			subjectKey: "honcho-id-review",
+			subjectLabel: "Honcho id review",
+			question: "Should AlfyAI remember this?",
+			reason: "Needs user confirmation before becoming active memory.",
+			metadata: {
+				category: "preferences",
+				proposedStatement:
+					"U-86dc59c7f2 prefers memory profile wording without raw ids.",
+			},
+		});
+
+		const profile = await getMemoryProfileReadModel({ userId: "user-1" });
+		const serialized = JSON.stringify(profile);
+
+		expect(profile.categories[1]?.items[0]?.statement).toBe(
+			"Memory Profile User prefers concise answers from Memory Profile User.",
+		);
+		expect(profile.review.visibleItems[0]?.subject).toBe(
+			"Memory Profile User prefers memory profile wording without raw ids.",
+		);
+		expect(serialized).not.toContain(userPeerId);
+		expect(serialized).not.toContain(assistantPeerId);
+		expect(serialized).not.toContain("U-86dc59c7f2");
+	});
+
 	it("keeps one active profile item for duplicate creates with the same stable item key", async () => {
 		const { createMemoryProfileItem, getMemoryProfileReadModel } = await import(
 			"./index"
@@ -586,6 +631,60 @@ describe("memory profile foundation", () => {
 		]);
 	});
 
+	it("deduplicates repeated legacy review candidates in the public read model", async () => {
+		const {
+			applyMemoryReviewItemWithRevision,
+			createOrUpdateMemoryReviewItem,
+			getMemoryProfileReadModel,
+		} = await import("./index");
+
+		await createOrUpdateMemoryReviewItem({
+			userId: "user-1",
+			subjectKey: "legacy-memory-curation:source-a",
+			subjectLabel: "Prefers concise implementation plans.",
+			question: "Should AlfyAI remember this?",
+			reason: "Needs user confirmation before becoming active memory.",
+			metadata: {
+				category: "preferences",
+				proposedStatement: "Prefers concise implementation plans.",
+			},
+		});
+		await createOrUpdateMemoryReviewItem({
+			userId: "user-1",
+			subjectKey: "legacy-memory-curation:source-b",
+			subjectLabel: "Prefers concise implementation plans.",
+			question: "Should AlfyAI remember this?",
+			reason: "Needs user confirmation before becoming active memory.",
+			metadata: {
+				category: "preferences",
+				proposedStatement: "  Prefers concise implementation plans.  ",
+			},
+		});
+
+		const profile = await getMemoryProfileReadModel({ userId: "user-1" });
+
+		expect(profile.review.openCount).toBe(1);
+		expect(profile.review.overflowCount).toBe(0);
+		expect(profile.review.items).toEqual([
+			expect.objectContaining({
+				subject: "Prefers concise implementation plans.",
+				canAccept: true,
+			}),
+		]);
+
+		await expect(
+			applyMemoryReviewItemWithRevision({
+				userId: "user-1",
+				reviewItemId: profile.review.items[0]?.id ?? "",
+				expectedProjectionRevision: profile.projectionRevision,
+				action: "dismiss",
+			}),
+		).resolves.toMatchObject({ status: "updated" });
+
+		const afterDismiss = await getMemoryProfileReadModel({ userId: "user-1" });
+		expect(afterDismiss.review.openCount).toBe(0);
+	});
+
 	it("uses a deterministic category fallback when review metadata has no category", async () => {
 		const {
 			applyMemoryReviewItemWithRevision,
@@ -620,6 +719,49 @@ describe("memory profile foundation", () => {
 			expect.objectContaining({
 				category: "constraints_boundaries",
 				statement: "Avoid diagnostic memory tables.",
+			}),
+		]);
+	});
+
+	it("accepts legacy review candidates into their curated category", async () => {
+		const {
+			applyMemoryReviewItemWithRevision,
+			createOrUpdateMemoryReviewItem,
+			getMemoryProfileReadModel,
+		} = await import("./index");
+
+		const review = await createOrUpdateMemoryReviewItem({
+			userId: "user-1",
+			subjectKey: "legacy-memory-curation:category-preservation",
+			subjectLabel: "Working on the memory rework rollout.",
+			question: "Should AlfyAI remember this?",
+			reason: "Needs user confirmation before becoming active memory.",
+			metadata: {
+				source: "legacy_memory_curation",
+				category: "goals_ongoing_work",
+				proposedStatement: "Working on the memory rework rollout.",
+			},
+		});
+		const before = await getMemoryProfileReadModel({ userId: "user-1" });
+
+		await expect(
+			applyMemoryReviewItemWithRevision({
+				userId: "user-1",
+				reviewItemId: review.id,
+				expectedProjectionRevision: before.projectionRevision,
+				action: "accept",
+			}),
+		).resolves.toMatchObject({
+			status: "updated",
+			category: "goals_ongoing_work",
+		});
+
+		const after = await getMemoryProfileReadModel({ userId: "user-1" });
+		expect(after.categories[0]?.items).toEqual([]);
+		expect(after.categories[2]?.items).toEqual([
+			expect.objectContaining({
+				category: "goals_ongoing_work",
+				statement: "Working on the memory rework rollout.",
 			}),
 		]);
 	});

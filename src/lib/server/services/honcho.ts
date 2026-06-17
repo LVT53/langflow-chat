@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Message, Peer } from "@honcho-ai/sdk";
@@ -22,6 +21,13 @@ import { getConfig } from "../config-store";
 import { db } from "../db";
 import { conversations, users } from "../db/schema";
 import type { ContextCompressionSourceMessage } from "./context-compression";
+import {
+	getHonchoAssistantPeerId as buildHonchoAssistantPeerId,
+	getHonchoSessionId as buildHonchoSessionId,
+	getHonchoUserPeerId as buildHonchoUserPeerId,
+	getLegacyHonchoAssistantPeerId,
+	getLegacyHonchoUserPeerId,
+} from "./honcho-identifiers";
 import { getLatestHonchoMetadata, listMessages } from "./messages";
 
 let client: Honcho | null = null;
@@ -35,8 +41,6 @@ const peerContextCache = new Map<
 	{ value: string | null; expiresAt: number }
 >();
 const PEER_CONTEXT_CACHE_TTL_MS = 30_000;
-const HONCHO_PEER_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
-const HONCHO_SAFE_ID_MAX_LENGTH = 48;
 const HONCHO_LIVE_CONTEXT_TOKENS = 2_000;
 const HONCHO_NATIVE_UPLOAD_ALLOWED_MIME_PREFIXES = ["text/"];
 const HONCHO_NATIVE_UPLOAD_ALLOWED_MIME_TYPES = new Set([
@@ -44,54 +48,12 @@ const HONCHO_NATIVE_UPLOAD_ALLOWED_MIME_TYPES = new Set([
 	"application/json",
 ]);
 const HONCHO_NATIVE_UPLOAD_MAX_BYTES = 5 * 1024 * 1024;
-const HONCHO_ID_HASH_LENGTH = 32;
 const HONCHO_MAX_MESSAGE_LENGTH = 25_000;
 
 // Authority note:
 // - Honcho is a semantic mirror/integration layer for sessions, peers, conclusions, and overview text
 // - local persona-memory, task-state, and document-resolution remain authoritative for freshness-sensitive
 //   truth, task continuity, and working-document identity
-
-function normalizePeerIdFragment(rawId: string): string {
-	const trimmed = rawId.trim();
-	if (
-		trimmed &&
-		trimmed.length <= HONCHO_SAFE_ID_MAX_LENGTH &&
-		HONCHO_PEER_ID_PATTERN.test(trimmed)
-	) {
-		return trimmed;
-	}
-
-	const digest = createHash("sha256").update(rawId).digest("hex").slice(0, 32);
-	return `h_${digest}`;
-}
-
-function buildHonchoPeerSeed(userId: string, version: number): string {
-	return version > 0 ? `${userId}_v${version}` : userId;
-}
-
-function buildNamespacedHonchoId(
-	prefix: "u" | "a" | "s",
-	parts: string[],
-): string {
-	const config = getConfig();
-	const digest = createHash("sha256")
-		.update([config.honchoIdentityNamespace, ...parts].join("\0"))
-		.digest("hex")
-		.slice(0, HONCHO_ID_HASH_LENGTH);
-	return `${prefix}_${digest}`;
-}
-
-function getLegacyHonchoUserPeerId(userId: string, version: number): string {
-	return normalizePeerIdFragment(buildHonchoPeerSeed(userId, version));
-}
-
-function getLegacyHonchoAssistantPeerId(
-	userId: string,
-	version: number,
-): string {
-	return `assistant_${normalizePeerIdFragment(buildHonchoPeerSeed(userId, version))}`;
-}
 
 function getCachedHonchoPeerVersion(userId: string): number {
 	return honchoPeerVersionCache.get(userId) ?? 0;
@@ -124,14 +86,14 @@ export function getHonchoUserPeerId(
 	userId: string,
 	version = getCachedHonchoPeerVersion(userId),
 ): string {
-	return buildNamespacedHonchoId("u", ["user", userId, String(version)]);
+	return buildHonchoUserPeerId(userId, version);
 }
 
 export function getHonchoAssistantPeerId(
 	userId: string,
 	version = getCachedHonchoPeerVersion(userId),
 ): string {
-	return buildNamespacedHonchoId("a", ["assistant", userId, String(version)]);
+	return buildHonchoAssistantPeerId(userId, version);
 }
 
 export function getHonchoSessionId(
@@ -139,12 +101,7 @@ export function getHonchoSessionId(
 	conversationId: string,
 	version = getCachedHonchoPeerVersion(userId),
 ): string {
-	return buildNamespacedHonchoId("s", [
-		"session",
-		userId,
-		String(version),
-		conversationId,
-	]);
+	return buildHonchoSessionId(userId, conversationId, version);
 }
 
 function roleForMessage(

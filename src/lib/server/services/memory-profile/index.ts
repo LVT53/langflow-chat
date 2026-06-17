@@ -11,8 +11,13 @@ import {
 	memoryReviewItems,
 	memoryReviewResolutions,
 	memoryReworkTelemetry,
+	users,
 } from "$lib/server/db/schema";
 import { estimateTokenCount } from "$lib/utils/tokens";
+import {
+	getHonchoAssistantPeerId,
+	getHonchoUserPeerId,
+} from "../honcho-identifiers";
 import { sendJsonControlMessage } from "../normal-chat-control-model";
 import {
 	type LegacyPersonaMemoryCandidateBatch,
@@ -453,16 +458,116 @@ function readReviewProposedStatement(metadata: JsonRecord): string | null {
 	return trimmed.length > 0 ? trimmed : null;
 }
 
-function toPublicReviewItem(row: typeof memoryReviewItems.$inferSelect) {
+function normalizeReviewDeduplicationText(value: string): string {
+	return value.toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+function legacyReviewSubjectKey(params: {
+	category: MemoryProfileCategory;
+	statement: string;
+}): string {
+	return `legacy-memory-curation:${stableMemoryMaintenanceDigest(
+		`${params.category}\u001f${normalizeReviewDeduplicationText(params.statement)}`,
+	)}`;
+}
+
+function sanitizePublicMemoryText(
+	text: string,
+	sanitizer: MemoryProfileTextSanitizer,
+): string {
+	return sanitizer(text);
+}
+
+type MemoryProfileTextSanitizer = (text: string) => string;
+
+function createIdentityTextSanitizer(params: {
+	userId: string;
+	displayName: string;
+	honchoPeerVersion: number;
+}): MemoryProfileTextSanitizer {
+	const replacement = params.displayName.trim() || "the user";
+	const candidateIds = new Set<string>([
+		params.userId,
+		getHonchoUserPeerId(params.userId, params.honchoPeerVersion),
+		getHonchoAssistantPeerId(params.userId, params.honchoPeerVersion),
+		getHonchoUserPeerId(params.userId, 0),
+		getHonchoAssistantPeerId(params.userId, 0),
+	]);
+	const broadLegacyPeerIdPattern = /\b[UA]-[A-Za-z0-9_-]{8,}\b/g;
+
+	return (text: string) => {
+		let sanitized = text.trim();
+		for (const candidateId of candidateIds) {
+			if (!candidateId) continue;
+			sanitized = sanitized.split(candidateId).join(replacement);
+		}
+		return sanitized
+			.replace(broadLegacyPeerIdPattern, replacement)
+			.replace(/\s+/g, " ")
+			.trim();
+	};
+}
+
+async function getMemoryProfileIdentity(userId: string): Promise<{
+	displayName: string;
+	honchoPeerVersion: number;
+}> {
+	const [user] = await db
+		.select({
+			name: users.name,
+			honchoPeerVersion: users.honchoPeerVersion,
+		})
+		.from(users)
+		.where(eq(users.id, userId))
+		.limit(1);
+	return {
+		displayName: user?.name?.trim() || "the user",
+		honchoPeerVersion: user?.honchoPeerVersion ?? 0,
+	};
+}
+
+function toPublicReviewItem(
+	row: typeof memoryReviewItems.$inferSelect,
+	sanitizer: MemoryProfileTextSanitizer,
+) {
 	const metadata = parseJsonRecord(row.metadataJson);
 	const proposedStatement = readReviewProposedStatement(metadata);
 	return {
 		id: row.id,
-		subject: proposedStatement ?? row.subjectLabel,
-		question: row.question,
-		reason: row.reason,
+		subject: sanitizePublicMemoryText(
+			proposedStatement ?? row.subjectLabel,
+			sanitizer,
+		),
+		question: sanitizePublicMemoryText(row.question, sanitizer),
+		reason: sanitizePublicMemoryText(row.reason, sanitizer),
 		canAccept: proposedStatement !== null,
 	};
+}
+
+function reviewDeduplicationKey(
+	row: typeof memoryReviewItems.$inferSelect,
+): string {
+	const metadata = parseJsonRecord(row.metadataJson);
+	const proposedStatement = readReviewProposedStatement(metadata);
+	const category =
+		readMemoryProfileCategory(metadata.category) ?? "uncategorized";
+	return [
+		category,
+		normalizeReviewDeduplicationText(proposedStatement ?? row.subjectLabel),
+	].join("\u001f");
+}
+
+function dedupeReviewRows(
+	rows: Array<typeof memoryReviewItems.$inferSelect>,
+): Array<typeof memoryReviewItems.$inferSelect> {
+	const deduped = new Map<string, typeof memoryReviewItems.$inferSelect>();
+	for (const row of rows) {
+		const key = reviewDeduplicationKey(row);
+		if (!deduped.has(key)) {
+			deduped.set(key, row);
+		}
+	}
+	return [...deduped.values()];
 }
 
 function assertPrivacySafeMetadata(metadata: JsonRecord | undefined): void {
@@ -503,13 +608,14 @@ function assertPrivacySafeMetadata(metadata: JsonRecord | undefined): void {
 
 function toCardItem(
 	row: typeof memoryProfileItems.$inferSelect,
+	sanitizer: MemoryProfileTextSanitizer,
 ): MemoryProfileCardItem {
 	assertMemoryProfileCategory(row.category);
 	return {
 		id: row.id,
 		itemKey: row.itemKey,
 		category: row.category,
-		statement: row.statement,
+		statement: sanitizePublicMemoryText(row.statement, sanitizer),
 		scope: fromScopeColumns(row.scopeType, row.scopeId),
 		status: "active",
 		revision: row.revision,
@@ -845,6 +951,12 @@ export async function getMemoryProfileReadModel(params: {
 	userId: string;
 }): Promise<MemoryProfileReadModel> {
 	const resetGeneration = await getCurrentMemoryResetGeneration(params.userId);
+	const identity = await getMemoryProfileIdentity(params.userId);
+	const sanitizer = createIdentityTextSanitizer({
+		userId: params.userId,
+		displayName: identity.displayName,
+		honchoPeerVersion: identity.honchoPeerVersion,
+	});
 	const projection = await ensureProjectionState({
 		userId: params.userId,
 		resetGeneration,
@@ -865,7 +977,7 @@ export async function getMemoryProfileReadModel(params: {
 			),
 		)
 		.orderBy(desc(memoryProfileItems.updatedAt));
-	const cards = rows.map(toCardItem);
+	const cards = rows.map((row) => toCardItem(row, sanitizer));
 	const reviewRows = await db
 		.select()
 		.from(memoryReviewItems)
@@ -877,8 +989,13 @@ export async function getMemoryProfileReadModel(params: {
 			),
 		)
 		.orderBy(asc(memoryReviewItems.updatedAt));
-	const visibleReviews = reviewRows.slice(0, 3).map(toPublicReviewItem);
-	const allReviews = reviewRows.map(toPublicReviewItem);
+	const dedupedReviewRows = dedupeReviewRows(reviewRows);
+	const visibleReviews = dedupedReviewRows
+		.slice(0, 3)
+		.map((row) => toPublicReviewItem(row, sanitizer));
+	const allReviews = dedupedReviewRows.map((row) =>
+		toPublicReviewItem(row, sanitizer),
+	);
 
 	return {
 		resetGeneration,
@@ -890,8 +1007,11 @@ export async function getMemoryProfileReadModel(params: {
 		review: {
 			items: allReviews,
 			visibleItems: visibleReviews,
-			openCount: reviewRows.length,
-			overflowCount: Math.max(0, reviewRows.length - visibleReviews.length),
+			openCount: dedupedReviewRows.length,
+			overflowCount: Math.max(
+				0,
+				dedupedReviewRows.length - visibleReviews.length,
+			),
 		},
 	};
 }
@@ -923,6 +1043,12 @@ export async function getMemoryProfileItemDetail(params: {
 		)
 		.limit(1);
 	if (!item) return null;
+	const identity = await getMemoryProfileIdentity(params.userId);
+	const sanitizer = createIdentityTextSanitizer({
+		userId: params.userId,
+		displayName: identity.displayName,
+		honchoPeerVersion: identity.honchoPeerVersion,
+	});
 
 	const provenance = await db
 		.select()
@@ -938,14 +1064,18 @@ export async function getMemoryProfileItemDetail(params: {
 		.limit(3);
 
 	return {
-		...toCardItem(item),
+		...toCardItem(item, sanitizer),
 		sourceChips: provenance.map((row) => ({
 			id: row.id,
 			sourceType: row.sourceType,
-			label: row.label,
-			summary: row.summary,
+			label: sanitizePublicMemoryText(row.label, sanitizer),
+			summary: row.summary
+				? sanitizePublicMemoryText(row.summary, sanitizer)
+				: null,
 		})),
-		whyRemembered: provenance[0]?.summary ?? null,
+		whyRemembered: provenance[0]?.summary
+			? sanitizePublicMemoryText(provenance[0].summary, sanitizer)
+			: null,
 	};
 }
 
@@ -1290,6 +1420,19 @@ export async function applyMemoryReviewItemWithRevision(params: {
 	if (!review) return { status: "not_found" };
 
 	const metadata = parseJsonRecord(review.metadataJson);
+	const duplicateReviewKey = reviewDeduplicationKey(review);
+	const duplicateReviewRows = (
+		await db
+			.select()
+			.from(memoryReviewItems)
+			.where(
+				and(
+					eq(memoryReviewItems.userId, params.userId),
+					eq(memoryReviewItems.resetGeneration, resetGeneration),
+					eq(memoryReviewItems.status, "open"),
+				),
+			)
+	).filter((row) => reviewDeduplicationKey(row) === duplicateReviewKey);
 	const proposedStatement = readReviewProposedStatement(metadata);
 	const candidateStatement = params.statement ?? proposedStatement ?? "";
 	const category =
@@ -1393,32 +1536,35 @@ export async function applyMemoryReviewItemWithRevision(params: {
 				: params.action === "edit"
 					? "edit_fact"
 					: "do_not_remember";
-		tx.insert(memoryReviewResolutions)
-			.values({
-				id: randomUUID(),
-				reviewItemId: review.id,
-				userId: params.userId,
-				resetGeneration,
-				resolutionType,
-				editedStatement: params.action === "edit" ? statement : undefined,
-				metadataJson: JSON.stringify({
-					action: params.action,
-					category,
-				}),
-				createdAt: now,
-			})
-			.onConflictDoNothing({
-				target: memoryReviewResolutions.reviewItemId,
-			})
-			.run();
-		tx.update(memoryReviewItems)
-			.set({
-				status: "resolved",
-				resolvedAt: now,
-				updatedAt: now,
-			})
-			.where(eq(memoryReviewItems.id, review.id))
-			.run();
+		for (const duplicateReview of duplicateReviewRows) {
+			tx.insert(memoryReviewResolutions)
+				.values({
+					id: randomUUID(),
+					reviewItemId: duplicateReview.id,
+					userId: params.userId,
+					resetGeneration,
+					resolutionType,
+					editedStatement: params.action === "edit" ? statement : undefined,
+					metadataJson: JSON.stringify({
+						action: params.action,
+						category,
+						resolvedWithReviewItemId: review.id,
+					}),
+					createdAt: now,
+				})
+				.onConflictDoNothing({
+					target: memoryReviewResolutions.reviewItemId,
+				})
+				.run();
+			tx.update(memoryReviewItems)
+				.set({
+					status: "resolved",
+					resolvedAt: now,
+					updatedAt: now,
+				})
+				.where(eq(memoryReviewItems.id, duplicateReview.id))
+				.run();
+		}
 
 		return {
 			status: "updated" as const,
@@ -1933,7 +2079,10 @@ async function applyReviewLegacyCurationDecision(params: {
 
 	await createOrUpdateMemoryReviewItem({
 		userId: params.userId,
-		subjectKey: `legacy-memory-curation:${stableMemoryMaintenanceDigest(params.row.id)}`,
+		subjectKey: legacyReviewSubjectKey({
+			category: params.decision.category,
+			statement: params.decision.statement,
+		}),
 		subjectLabel: params.decision.statement,
 		question: "Should AlfyAI remember this?",
 		reason:

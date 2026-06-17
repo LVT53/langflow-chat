@@ -170,6 +170,40 @@ describe("KnowledgeMemoryView", () => {
 		).not.toBeInTheDocument();
 	});
 
+	it("keeps active category sections visually capped after four items", () => {
+		renderMemoryView({
+			profile: {
+				...profile,
+				categories: profile.categories.map((group) =>
+					group.category === "about_you"
+						? {
+								...group,
+								items: Array.from({ length: 5 }, (_, index) => ({
+									id: `about-${index + 1}`,
+									itemKey: `about-${index + 1}`,
+									category: "about_you" as const,
+									statement: `About memory ${index + 1}.`,
+									scope: { type: "global" as const },
+									status: "active" as const,
+									revision: 1,
+									updatedAt: "2026-06-17T09:00:00.000Z",
+									canEdit: true,
+									canDelete: true,
+									canSuppress: true,
+								})),
+							}
+						: group,
+				),
+			},
+		});
+
+		const fifthItem = screen.getByText("About memory 5.");
+		const scrollList = fifthItem.closest(".grid");
+
+		expect(fifthItem).toBeInTheDocument();
+		expect(scrollList).toHaveClass("overflow-y-auto");
+	});
+
 	it("sends projection revision protected actions from icon controls", async () => {
 		const onAction = vi.fn();
 		renderMemoryView({ onAction });
@@ -213,6 +247,9 @@ describe("KnowledgeMemoryView", () => {
 		expect(
 			within(dialog).getByText("Open documents from search."),
 		).toBeInTheDocument();
+		expect(
+			within(dialog).queryByText("Workflow signal."),
+		).not.toBeInTheDocument();
 
 		await fireEvent.click(
 			within(dialog).getAllByRole("button", {

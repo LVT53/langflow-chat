@@ -375,7 +375,7 @@ $effect(() => {
 					{#if items.length === 0}
 						<p class="mt-3 text-sm font-sans leading-[1.5] text-text-muted">{definition.empty}</p>
 					{:else}
-						<div class="mt-3 grid gap-2">
+						<div class={`mt-3 grid gap-2 ${items.length > 4 ? "max-h-[356px] overflow-y-auto pr-1" : ""}`}>
 							{#each items as item (item.id)}
 								{@const scopeLabel = formatScope(item.scope)}
 								<div class="flex items-start justify-between gap-3 rounded-[0.75rem] border border-border bg-surface-page px-3 py-3">
@@ -489,11 +489,6 @@ $effect(() => {
 								<p class="break-words text-sm font-sans text-text-primary">{item.subject}</p>
 								{#if item.question}
 									<p class="mt-1 text-sm font-sans text-text-muted">{item.question}</p>
-								{/if}
-								{#if item.reason}
-									<div class="mt-2 inline-flex max-w-full rounded-full border border-border px-2 py-0.5 text-xs font-sans text-text-muted">
-										<span class="truncate">{item.reason}</span>
-									</div>
 								{/if}
 							</div>
 							<div class="flex shrink-0 items-center gap-1">
