@@ -292,13 +292,13 @@ $effect(() => {
 		</div>
 
 		{#if profile && profile.review.openCount > 0}
-			<div class="rounded-[1rem] border border-border bg-surface-elevated px-4 py-4 shadow-sm">
+			<div class="rounded-[1rem] border border-[color-mix(in_srgb,var(--accent)_34%,var(--border)_66%)] bg-[color-mix(in_srgb,var(--accent)_11%,var(--surface-elevated)_89%)] px-4 py-4 shadow-sm">
 				<div class="flex flex-wrap items-center justify-between gap-3">
-					<h3 class="text-lg font-sans font-semibold text-text-primary">Needs Review</h3>
+					<h3 class="text-lg font-sans font-semibold text-[color-mix(in_srgb,var(--accent)_72%,var(--text-primary)_28%)]">Needs Review</h3>
 					{#if reviewOverflowCount > 0}
 						<button
 							type="button"
-							class="cursor-pointer rounded-full border border-border px-3 py-1 text-xs font-sans text-text-secondary transition hover:bg-surface-page"
+							class="cursor-pointer rounded-full border border-[color-mix(in_srgb,var(--accent)_42%,var(--border)_58%)] bg-[color-mix(in_srgb,var(--accent)_8%,var(--surface-page)_92%)] px-3 py-1 text-xs font-sans font-medium text-[color-mix(in_srgb,var(--accent)_72%,var(--text-primary)_28%)] transition hover:bg-[color-mix(in_srgb,var(--accent)_14%,var(--surface-page)_86%)]"
 							onclick={() => (reviewOverflowOpen = true)}
 						>
 							+{reviewOverflowCount} more
@@ -307,7 +307,7 @@ $effect(() => {
 				</div>
 				<div class="mt-3 grid gap-2">
 					{#each visibleReviewItems as item (item.id)}
-						<div class="flex items-start justify-between gap-3 rounded-[0.75rem] border border-border bg-surface-page px-3 py-3">
+						<div class="flex items-start justify-between gap-3 rounded-[0.75rem] border border-[color-mix(in_srgb,var(--accent)_28%,var(--border)_72%)] bg-[color-mix(in_srgb,var(--surface-page)_84%,var(--accent)_16%)] px-3 py-3">
 							<div class="min-w-0">
 								<p class="break-words text-sm font-sans leading-[1.5] text-text-primary">{item.subject}</p>
 								{#if item.reason}

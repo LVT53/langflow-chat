@@ -152,10 +152,12 @@ describe("KnowledgeMemoryView", () => {
 		expect(screen.queryByText("Global")).not.toBeInTheDocument();
 		expect(screen.getByText("Project")).toBeInTheDocument();
 
-		const review = screen
-			.getByRole("heading", { name: "Needs Review" })
-			.closest("div");
+		const review = screen.getByRole("heading", { name: "Needs Review" })
+			.parentElement?.parentElement;
 		expect(review).not.toBeNull();
+		expect(review).toHaveClass(
+			"bg-[color-mix(in_srgb,var(--accent)_11%,var(--surface-elevated)_89%)]",
+		);
 		expect(screen.getByText("Remember Hungarian labels.")).toBeInTheDocument();
 		expect(screen.getByText("Prefer icon actions.")).toBeInTheDocument();
 		expect(
