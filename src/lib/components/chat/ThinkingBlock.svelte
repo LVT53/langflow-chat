@@ -373,6 +373,7 @@ async function toggle() {
 								loading="lazy"
 								decoding="async"
 								referrerpolicy="no-referrer"
+								onerror={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
 							/>
 						{/if}
 					{/each}
@@ -392,6 +393,7 @@ async function toggle() {
 							loading="lazy"
 							decoding="async"
 							referrerpolicy="no-referrer"
+							onerror={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
 						/>
 					{/if}
 					<a
