@@ -62,12 +62,16 @@ describe("POST /api/settings/account/archive", () => {
 		mockRequireAuth.mockReturnValue(undefined);
 	});
 
-	it("returns transient ZIP bytes with neutral archive headers", async () => {
+	it("returns transient ZIP stream with neutral archive headers", async () => {
 		const zipBytes = Buffer.from("zip-bytes");
+		const zipStream = new Response(zipBytes).body;
+		if (!zipStream) {
+			throw new Error("Expected ZIP response body stream");
+		}
 		mockCreateAccountDataArchive.mockResolvedValue({
 			status: "ok",
 			filename: "AlfyAI Data Archive 2026-06-15.zip",
-			zipBytes,
+			zipStream,
 		});
 
 		const response = await POST(makeEvent({ password: "secret" }));

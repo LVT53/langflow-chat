@@ -57,7 +57,7 @@ let {
 	onRetryLoadMemory: () => void | Promise<void>;
 	onAction: (
 		payload: MemoryProfileActionPayload,
-	) => boolean | void | Promise<boolean | void>;
+	) => boolean | undefined | Promise<boolean | undefined>;
 } = $props();
 
 let selectedItem = $state<MemoryProfilePublicItem | null>(null);
@@ -76,7 +76,9 @@ let activeItemCount = $derived.by(() =>
 		0,
 	),
 );
-let reviewItems = $derived(profile?.review.items ?? profile?.review.visibleItems ?? []);
+let reviewItems = $derived(
+	profile?.review.items ?? profile?.review.visibleItems ?? [],
+);
 let visibleReviewItems = $derived(
 	profile?.review.visibleItems ?? reviewItems.slice(0, 3),
 );
@@ -88,8 +90,13 @@ let reviewOverflowCount = $derived(
 	),
 );
 
-function getCategoryItems(category: MemoryProfileCategory): MemoryProfilePublicItem[] {
-	return profile?.categories.find((group) => group.category === category)?.items ?? [];
+function getCategoryItems(
+	category: MemoryProfileCategory,
+): MemoryProfilePublicItem[] {
+	return (
+		profile?.categories.find((group) => group.category === category)?.items ??
+		[]
+	);
 }
 
 function formatScope(scope: MemoryProfilePublicItem["scope"]): string | null {
@@ -99,11 +106,17 @@ function formatScope(scope: MemoryProfilePublicItem["scope"]): string | null {
 	return "Document";
 }
 
-function actionKey(itemId: string, action: MemoryProfileActionPayload["action"]): string {
+function actionKey(
+	itemId: string,
+	action: MemoryProfileActionPayload["action"],
+): string {
 	return `${itemId}:${action}`;
 }
 
-function submitAction(item: MemoryProfilePublicItem, action: "delete" | "suppress") {
+function submitAction(
+	item: MemoryProfilePublicItem,
+	action: "delete" | "suppress",
+) {
 	void onAction({
 		target: "profile_item",
 		action,
@@ -304,12 +317,12 @@ $effect(() => {
 								{/if}
 							</div>
 							<div class="flex shrink-0 items-center gap-1">
-								{#if item.canAccept}
-									<button
-										type="button"
-										class="btn-icon-bare h-9 w-9 cursor-pointer rounded-full text-icon-muted hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
-										onclick={() => useReviewItem(item)}
-										disabled={pendingActionKey === actionKey(item.id, "accept")}
+									{#if item.canAccept}
+										<button
+											type="button"
+											class="btn-icon-bare btn-icon-sm cursor-pointer rounded-full text-icon-muted hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+											onclick={() => useReviewItem(item)}
+											disabled={pendingActionKey === actionKey(item.id, "accept")}
 										aria-label="Remember this item"
 										title="Remember"
 									>
@@ -319,11 +332,11 @@ $effect(() => {
 											<Check size={17} strokeWidth={2.1} aria-hidden="true" />
 										{/if}
 									</button>
-								{/if}
-								<button
-									type="button"
-									class="btn-icon-bare h-9 w-9 cursor-pointer rounded-full text-icon-muted hover:text-text-primary"
-									onclick={() => openReviewEditor(item)}
+									{/if}
+									<button
+										type="button"
+										class="btn-icon-bare btn-icon-sm cursor-pointer rounded-full text-icon-muted hover:text-text-primary"
+										onclick={() => openReviewEditor(item)}
 									aria-label="Edit review item"
 									title="Edit"
 								>
@@ -331,7 +344,7 @@ $effect(() => {
 								</button>
 								<button
 									type="button"
-									class="btn-icon-bare h-9 w-9 cursor-pointer rounded-full text-icon-muted hover:text-danger disabled:cursor-not-allowed disabled:opacity-50"
+									class="btn-icon-bare btn-icon-sm cursor-pointer rounded-full text-icon-muted hover:text-danger disabled:cursor-not-allowed disabled:opacity-50"
 									onclick={() =>
 										onAction({
 											target: "review_item",
@@ -378,7 +391,7 @@ $effect(() => {
 										{#if item.canEdit}
 											<button
 												type="button"
-												class="btn-icon-bare h-9 w-9 cursor-pointer rounded-full text-icon-muted hover:text-text-primary"
+												class="btn-icon-bare btn-icon-sm cursor-pointer rounded-full text-icon-muted hover:text-text-primary"
 												onclick={() => (selectedItem = item)}
 												aria-label="Edit memory item"
 												title="Edit"
@@ -389,7 +402,7 @@ $effect(() => {
 										{#if item.canSuppress}
 											<button
 												type="button"
-												class="btn-icon-bare h-9 w-9 cursor-pointer rounded-full text-icon-muted hover:text-danger disabled:cursor-not-allowed disabled:opacity-50"
+												class="btn-icon-bare btn-icon-sm cursor-pointer rounded-full text-icon-muted hover:text-danger disabled:cursor-not-allowed disabled:opacity-50"
 												onclick={() => submitAction(item, "suppress")}
 												disabled={pendingActionKey === actionKey(item.id, "suppress")}
 												aria-label="Do not remember memory item"
@@ -401,7 +414,7 @@ $effect(() => {
 										{#if item.canDelete}
 											<button
 												type="button"
-												class="btn-icon-bare h-9 w-9 cursor-pointer rounded-full text-icon-muted hover:text-danger disabled:cursor-not-allowed disabled:opacity-50"
+												class="btn-icon-bare btn-icon-sm cursor-pointer rounded-full text-icon-muted hover:text-danger disabled:cursor-not-allowed disabled:opacity-50"
 												onclick={() => submitAction(item, "delete")}
 												disabled={pendingActionKey === actionKey(item.id, "delete")}
 												aria-label="Delete memory item"
@@ -460,7 +473,7 @@ $effect(() => {
 				<h3 id="memory-review-overflow-title" class="text-xl font-serif text-text-primary">Needs Review</h3>
 				<button
 					type="button"
-					class="btn-icon-bare h-10 w-10 cursor-pointer rounded-full text-icon-muted hover:text-text-primary"
+					class="btn-icon-bare cursor-pointer rounded-full text-icon-muted hover:text-text-primary"
 					onclick={closeReviewOverflow}
 					aria-label="Close needs review"
 					title="Close"
@@ -484,12 +497,12 @@ $effect(() => {
 								{/if}
 							</div>
 							<div class="flex shrink-0 items-center gap-1">
-								{#if item.canAccept}
-									<button
-										type="button"
-										class="btn-icon-bare h-9 w-9 cursor-pointer rounded-full text-icon-muted hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
-										onclick={() => useReviewItem(item)}
-										disabled={pendingActionKey === actionKey(item.id, "accept")}
+									{#if item.canAccept}
+										<button
+											type="button"
+											class="btn-icon-bare btn-icon-sm cursor-pointer rounded-full text-icon-muted hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+											onclick={() => useReviewItem(item)}
+											disabled={pendingActionKey === actionKey(item.id, "accept")}
 										aria-label="Remember this item"
 										title="Remember"
 									>
@@ -499,11 +512,11 @@ $effect(() => {
 											<Check size={17} strokeWidth={2.1} aria-hidden="true" />
 										{/if}
 									</button>
-								{/if}
-								<button
-									type="button"
-									class="btn-icon-bare h-9 w-9 cursor-pointer rounded-full text-icon-muted hover:text-text-primary"
-									onclick={() => openReviewEditor(item)}
+									{/if}
+									<button
+										type="button"
+										class="btn-icon-bare btn-icon-sm cursor-pointer rounded-full text-icon-muted hover:text-text-primary"
+										onclick={() => openReviewEditor(item)}
 									aria-label="Edit review item"
 									title="Edit"
 								>
@@ -511,7 +524,7 @@ $effect(() => {
 								</button>
 								<button
 									type="button"
-									class="btn-icon-bare h-9 w-9 cursor-pointer rounded-full text-icon-muted hover:text-danger disabled:cursor-not-allowed disabled:opacity-50"
+									class="btn-icon-bare btn-icon-sm cursor-pointer rounded-full text-icon-muted hover:text-danger disabled:cursor-not-allowed disabled:opacity-50"
 									onclick={() =>
 										onAction({
 											target: "review_item",
@@ -571,7 +584,7 @@ $effect(() => {
 				<div class="mt-4 flex justify-end gap-2">
 					<button
 						type="button"
-						class="btn-icon-bare h-10 w-10 cursor-pointer rounded-full text-icon-muted hover:text-text-primary"
+						class="btn-icon-bare cursor-pointer rounded-full text-icon-muted hover:text-text-primary"
 						onclick={closeReviewEditor}
 						aria-label="Cancel review edit"
 						title="Cancel"
@@ -580,7 +593,7 @@ $effect(() => {
 					</button>
 					<button
 						type="button"
-						class="btn-icon h-10 w-10 cursor-pointer rounded-full bg-primary text-white disabled:cursor-not-allowed disabled:opacity-50"
+						class="btn-icon cursor-pointer rounded-full bg-primary text-white disabled:cursor-not-allowed disabled:opacity-50"
 						onclick={submitReviewEdit}
 						disabled={reviewStatement.trim().length === 0}
 						aria-label="Save review item"
