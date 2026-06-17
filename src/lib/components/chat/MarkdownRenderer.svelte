@@ -53,6 +53,7 @@ let sourceTooltipElement = $state<HTMLDivElement | null>(null);
 let sourceTooltip = $state<SourceLinkTooltip | null>(null);
 let prevWordCount = 0;
 let prevLastBlockEl: HTMLElement | null = null;
+let wasStreaming = false;
 let renderVersion = 0;
 let resizeObserver: ResizeObserver | null = null;
 let resizeFrame = 0;
@@ -64,8 +65,11 @@ const SOURCE_TOOLTIP_OFFSET = 6;
 
 // Throttle rendering during streaming so each visual update is large
 // enough that new blocks are perceivable with the fade-in animation.
+// The Token Display Buffer in the runtime already aligns store updates
+// to animation frames; this throttle controls render frequency to avoid
+// excessive markdown re-parses.
 let pendingContent: string | null = null;
-let throttleTimer: ReturnType<typeof setTimeout> | null = null;
+let renderTimer: ReturnType<typeof setTimeout> | null = null;
 const STREAM_THROTTLE_MS = 40;
 
 async function collectFullMessageSourceReferences(
@@ -88,9 +92,9 @@ function scheduleRender(
 	compactLinks: boolean,
 ) {
 	pendingContent = src;
-	if (throttleTimer !== null) return;
-	throttleTimer = setTimeout(() => {
-		throttleTimer = null;
+	if (renderTimer !== null) return;
+	renderTimer = setTimeout(() => {
+		renderTimer = null;
 		const latest = pendingContent;
 		pendingContent = null;
 		if (latest === null) return;
@@ -186,8 +190,39 @@ async function renderContent(
 	}
 	const newBlocks = await splitMarkdownBlocks(src, darkMode, compactLinks);
 	if (currentRender !== renderVersion) return;
-	const oldCount = prevBlockCount;
 
+	if (streaming && blocks.length > 0 && newBlocks.length === blocks.length) {
+		// Same block count during streaming: update the last block's HTML
+		// in-place to avoid tearing down and recreating the entire {#each}
+		// list, which causes screen flicker.
+		const lastIdx = newBlocks.length - 1;
+		const updated = newBlocks[lastIdx];
+		const oldLast = blocks[lastIdx];
+		if (
+			updated.type === "html" &&
+			oldLast.type === "html" &&
+			updated.html === oldLast.html
+		) {
+			// Content unchanged — skip entirely
+			return;
+		}
+		blocks = blocks.map((b, i) =>
+			i === lastIdx
+				? updated.type === "html"
+					? { type: "html", html: updated.html, isNew: b.isNew }
+					: {
+							type: "code",
+							code: updated.code,
+							language: updated.language,
+							html: updated.html,
+							isNew: b.isNew,
+						}
+				: b,
+		);
+		return;
+	}
+
+	const oldCount = prevBlockCount;
 	blocks = newBlocks.map((b, i) => ({
 		...b,
 		isNew: streaming && i >= oldCount,
@@ -215,21 +250,13 @@ $effect(() => {
 	}
 
 	// Flush any pending throttled render immediately when streaming stops.
-	if (throttleTimer !== null) {
-		clearTimeout(throttleTimer);
-		throttleTimer = null;
+	if (renderTimer !== null) {
+		clearTimeout(renderTimer);
+		renderTimer = null;
 		pendingContent = null;
 	}
 
 	void renderContent(nextContent, darkMode, streaming, compactLinks);
-});
-
-$effect(() => {
-	if (!isStreaming) {
-		prevWordCount = 0;
-		prevLastBlockEl = null;
-		prevBlockCount = 0;
-	}
 });
 
 // Walk the last html block's DOM and wrap newly arrived words in animated spans.
@@ -597,9 +624,9 @@ onMount(() => {
 	return () => {
 		resizeObserver?.disconnect();
 		resizeObserver = null;
-		if (throttleTimer !== null) {
-			clearTimeout(throttleTimer);
-			throttleTimer = null;
+		if (renderTimer !== null) {
+			clearTimeout(renderTimer);
+			renderTimer = null;
 		}
 		if (resizeFrame) {
 			cancelAnimationFrame(resizeFrame);
@@ -640,7 +667,9 @@ async function runPostRenderEffects(version: number) {
 	scheduleTableEnhancement();
 	scheduleSourceTooltipPosition();
 
-	if (!isStreaming) return;
+	const shouldAnimateWords = isStreaming || wasStreaming;
+	wasStreaming = isStreaming;
+	if (!shouldAnimateWords) return;
 
 	const blockEls = container.querySelectorAll<HTMLElement>(
 		":scope > .markdown-html",
@@ -654,6 +683,13 @@ async function runPostRenderEffects(version: number) {
 	}
 
 	prevWordCount = wrapNewWords(lastBlockEl, prevWordCount);
+
+	// Reset word tracking after the final batch when streaming has ended
+	if (!isStreaming) {
+		prevWordCount = 0;
+		prevLastBlockEl = null;
+		prevBlockCount = 0;
+	}
 }
 
 $effect(() => {
@@ -722,7 +758,7 @@ $effect(() => {
   }
 
   :global(.word-new) {
-    animation: wordFadeIn 200ms ease-out forwards;
+    animation: wordFadeIn 300ms ease-out forwards;
   }
 
   :global(.source-link-chip) {
@@ -841,8 +877,8 @@ $effect(() => {
   }
 
   @keyframes wordFadeIn {
-    from { opacity: 0.3; }
-    to   { opacity: 1; }
+    from { opacity: 0; transform: translateY(2px); }
+    to   { opacity: 1; transform: translateY(0); }
   }
 
   @media (prefers-reduced-motion: reduce) {

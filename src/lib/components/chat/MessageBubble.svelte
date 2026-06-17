@@ -550,7 +550,7 @@ function toggleForkDetails() {
 		{isUser && !isEditing
 			? 'max-w-[85%] min-w-0 rounded-md bg-[var(--surface-message-user)] p-md text-text-primary md:max-w-[80%]'
 			: isUser
-				? 'w-full min-w-0 max-w-[85%] rounded-md bg-[var(--surface-message-user)] p-md text-text-primary md:max-w-[80%]'
+				? 'w-full min-w-0 max-w-full rounded-md bg-[var(--surface-message-user)] p-md text-text-primary'
 			: 'w-full min-w-0 max-w-full rounded-none bg-surface-page p-sm text-text-primary'}"
 	>
 		{#if !isUser && reasoningDepthIndicatorLabel && (hasThinking || hasVisibleThinkingSegments || hasToolCalls)}
