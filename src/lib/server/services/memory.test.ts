@@ -5,6 +5,7 @@ const mockMarkMemoryDirty = vi.fn();
 const mockRecordMemoryReworkTelemetry = vi.fn();
 const mockUpdateMemoryProfileItemWithRevision = vi.fn();
 const mockApplyMemoryReviewItemWithRevision = vi.fn();
+const mockRunUserMemoryMaintenance = vi.fn();
 const mockListPersonaMemories = vi.fn();
 const mockListTaskMemoryItems = vi.fn();
 const mockListFocusContinuityItems = vi.fn();
@@ -16,6 +17,10 @@ vi.mock("./memory-profile", () => ({
 	markMemoryDirty: mockMarkMemoryDirty,
 	recordMemoryReworkTelemetry: mockRecordMemoryReworkTelemetry,
 	updateMemoryProfileItemWithRevision: mockUpdateMemoryProfileItemWithRevision,
+}));
+
+vi.mock("./memory-maintenance", () => ({
+	runUserMemoryMaintenance: mockRunUserMemoryMaintenance,
 }));
 
 vi.mock("./honcho", () => ({
@@ -80,6 +85,20 @@ const publicProfile = {
 	})),
 };
 
+const emptyProjectionProfile = {
+	...projectionProfile,
+	projectionRevision: 1,
+	categories: projectionProfile.categories.map((group) => ({
+		...group,
+		items: [],
+	})),
+	review: {
+		visibleItems: [],
+		openCount: 0,
+		overflowCount: 0,
+	},
+};
+
 describe("knowledge memory service", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -100,6 +119,7 @@ describe("knowledge memory service", () => {
 			itemId: "item-review-1",
 			category: "preferences",
 		});
+		mockRunUserMemoryMaintenance.mockResolvedValue(undefined);
 	});
 
 	it("returns the projection-backed memory profile and marks stale projection work without loading legacy memory", async () => {
@@ -124,12 +144,45 @@ describe("knowledge memory service", () => {
 		expect(mockListPersonaMemories).not.toHaveBeenCalled();
 		expect(mockListTaskMemoryItems).not.toHaveBeenCalled();
 		expect(mockListFocusContinuityItems).not.toHaveBeenCalled();
+		expect(mockRunUserMemoryMaintenance).not.toHaveBeenCalled();
 		expect(payloadJson).not.toContain("taskMemories");
 		expect(payloadJson).not.toContain("focusContinuities");
 		expect(payloadJson).not.toContain("personaMemories");
 		expect(payloadJson).not.toContain("honcho");
 		expect(payloadJson).not.toContain("confidence");
 		expect(payloadJson).not.toContain("debug");
+	});
+
+	it("bootstraps legacy migration when the projection-backed memory profile is empty", async () => {
+		mockGetMemoryProfileReadModel
+			.mockResolvedValueOnce(emptyProjectionProfile)
+			.mockResolvedValueOnce(projectionProfile);
+		const { getKnowledgeMemory } = await import("./memory");
+
+		const payload = await getKnowledgeMemory("user-1", "Test User");
+
+		expect(payload).toEqual(publicProfile);
+		expect(mockMarkMemoryDirty).toHaveBeenCalledWith({
+			userId: "user-1",
+			reason: "stale_projection",
+			scope: { type: "global" },
+			metadata: {
+				source: "knowledge_memory_read",
+			},
+		});
+		expect(mockMarkMemoryDirty).toHaveBeenCalledWith({
+			userId: "user-1",
+			reason: "legacy_migration",
+			scope: { type: "global" },
+			metadata: {
+				source: "knowledge_memory_read",
+			},
+		});
+		expect(mockRunUserMemoryMaintenance).toHaveBeenCalledWith(
+			"user-1",
+			"knowledge_memory_read",
+		);
+		expect(mockGetMemoryProfileReadModel).toHaveBeenCalledTimes(2);
 	});
 
 	it("keeps forced overview refresh cheap by reading the projection and marking stale work", async () => {

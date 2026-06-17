@@ -1,5 +1,6 @@
 <script lang="ts">
 import { goto, invalidate } from "$app/navigation";
+import PageSwitcher from "$lib/components/ui/PageSwitcher.svelte";
 import ProfilePictureEditor from "$lib/components/ui/ProfilePictureEditor.svelte";
 import { clearConversationSessionState } from "$lib/client/conversation-session";
 import {
@@ -86,6 +87,19 @@ const initialPreferences = initialUserSettings.preferences;
 const initialCurrentConfigValues = (getData() as SettingsPageData)
 	.currentConfigValues;
 const isAdmin = initialUserSettings.role === "admin";
+const settingsTabs = $derived.by(() => {
+	const tabs: Array<{ id: Tab; label: string }> = [
+		{ id: "profile", label: $t("settingsProfile") },
+		{ id: "analytics", label: $t("settingsAnalytics") },
+	];
+	if (isAdmin) {
+		tabs.push({
+			id: "administration",
+			label: $t("settingsAdministration"),
+		});
+	}
+	return tabs;
+});
 const modelNames = (getData() as SettingsPageData).modelNames ?? {
 	model1: "Model 1",
 	model2: "Model 2",
@@ -434,6 +448,12 @@ async function handleTabChange(tab: Tab) {
 	}
 }
 
+function handlePageSwitcherChange(tab: string) {
+	if (tab === "profile" || tab === "analytics" || tab === "administration") {
+		void handleTabChange(tab);
+	}
+}
+
 $effect(() => {
 	if (activeTab === "profile" && personalityProfiles.length === 0) {
 		void fetchPublicPersonalityProfiles()
@@ -458,30 +478,13 @@ $effect(() => {
 	<div class="settings-shell mx-auto w-full px-4 py-8" class:settings-shell-admin={activeTab === 'administration' && isAdmin}>
 		<h1 class="mb-6 text-2xl font-semibold text-text-primary">{$t('settings')}</h1>
 
-		<div class="mb-6 flex gap-1 rounded-lg border border-border bg-surface-overlay p-1">
-			<button
-				class="tab-btn flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors duration-150"
-				class:tab-active={activeTab === 'profile'}
-				onclick={() => handleTabChange('profile')}
-			>
-				{$t('settingsProfile')}
-			</button>
-			<button
-				class="tab-btn flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors duration-150"
-				class:tab-active={activeTab === 'analytics'}
-				onclick={() => handleTabChange('analytics')}
-			>
-				{$t('settingsAnalytics')}
-			</button>
-			{#if isAdmin}
-				<button
-					class="tab-btn flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors duration-150"
-					class:tab-active={activeTab === 'administration'}
-					onclick={() => handleTabChange('administration')}
-				>
-					{$t('settingsAdministration')}
-				</button>
-			{/if}
+		<div class="mb-6">
+			<PageSwitcher
+				items={settingsTabs}
+				activeId={activeTab}
+				ariaLabel={$t('settings')}
+				onChange={handlePageSwitcherChange}
+			/>
 		</div>
 
 		{#if activeTab === 'profile'}
@@ -644,25 +647,6 @@ $effect(() => {
 	:global(.settings-input:focus) {
 		outline: none;
 		border-color: var(--accent);
-	}
-
-	.tab-btn {
-		color: var(--text-secondary);
-		background: transparent;
-		border: none;
-		cursor: pointer;
-	}
-
-	.tab-btn:hover {
-		color: var(--text-primary);
-		background: var(--surface-elevated);
-	}
-
-	.tab-active {
-		color: var(--text-primary) !important;
-		background: var(--surface-page) !important;
-		font-weight: 600;
-		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 	}
 
 	:global(.pref-pill) {

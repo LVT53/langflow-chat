@@ -11,6 +11,7 @@ import {
 import { ApiError } from "$lib/client/api/http";
 import { buildChatSourceMessageHref } from "$lib/client/document-workspace-navigation";
 import ConfirmDialog from "$lib/components/ui/ConfirmDialog.svelte";
+import PageSwitcher from "$lib/components/ui/PageSwitcher.svelte";
 import { t } from "$lib/i18n";
 
 import KnowledgeMemoryView from "./_components/KnowledgeMemoryView.svelte";
@@ -87,6 +88,30 @@ let documentSortDirection = $state<SortDirection>(
 let documentDeleteCandidateId = $state<string | null>(null);
 let bulkDeleteCandidateIds = $state<string[] | null>(null);
 let bulkDeleteSuccessVersion = $state(0);
+let knowledgeTabs = $derived<
+	Array<{
+		id: KnowledgeTab;
+		label: string;
+		href: string;
+		tabId: string;
+		panelId: string;
+	}>
+>([
+	{
+		id: "memory",
+		label: "Memory Profile",
+		href: "/knowledge",
+		tabId: "memory-profile-tab",
+		panelId: "memory-profile-panel",
+	},
+	{
+		id: "documents",
+		label: "Documents",
+		href: buildKnowledgeLibraryUrl({ tab: "documents" }),
+		tabId: "documents-tab",
+		panelId: "documents-panel",
+	},
+]);
 
 function getKnowledgeTabFromUrl(url: URL): KnowledgeTab {
 	const searchParams = url.searchParams;
@@ -213,6 +238,12 @@ function handleTabChange(tab: KnowledgeTab) {
 		keepFocus: true,
 		noScroll: true,
 	});
+}
+
+function handlePageSwitcherChange(tab: string) {
+	if (tab === "memory" || tab === "documents") {
+		handleTabChange(tab);
+	}
 }
 
 function handleDocumentPaginationLimitChange(limit: number) {
@@ -510,44 +541,12 @@ $effect(() => {
 				</div>
 			{/if}
 
-			<div class="flex border-b border-border" role="tablist" aria-label="Knowledge Base sections">
-				<a
-					id="memory-profile-tab"
-					href="/knowledge"
-					class={`cursor-pointer border-b-2 px-3 py-2 text-sm font-sans font-medium transition ${
-						activeTab === "memory"
-							? "border-primary text-text-primary"
-							: "border-transparent text-text-muted hover:text-text-primary"
-					}`}
-					role="tab"
-					aria-selected={activeTab === "memory"}
-					aria-controls="memory-profile-panel"
-					onclick={(event) => {
-						event.preventDefault();
-						handleTabChange("memory");
-					}}
-				>
-					Memory Profile
-				</a>
-				<a
-					id="documents-tab"
-					href={buildKnowledgeLibraryUrl({ tab: "documents" })}
-					class={`cursor-pointer border-b-2 px-3 py-2 text-sm font-sans font-medium transition ${
-						activeTab === "documents"
-							? "border-primary text-text-primary"
-							: "border-transparent text-text-muted hover:text-text-primary"
-					}`}
-					role="tab"
-					aria-selected={activeTab === "documents"}
-					aria-controls="documents-panel"
-					onclick={(event) => {
-						event.preventDefault();
-						handleTabChange("documents");
-					}}
-				>
-					Documents
-				</a>
-			</div>
+			<PageSwitcher
+				items={knowledgeTabs}
+				activeId={activeTab}
+				ariaLabel="Knowledge Base sections"
+				onChange={handlePageSwitcherChange}
+			/>
 
 			{#if activeTab === "memory"}
 				<div id="memory-profile-panel" role="tabpanel" aria-labelledby="memory-profile-tab">

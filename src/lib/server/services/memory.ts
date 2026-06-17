@@ -64,6 +64,42 @@ async function markStaleProjectionRead(userId: string, source: string) {
 	});
 }
 
+async function markLegacyMigrationRead(userId: string, source: string) {
+	await markMemoryDirty({
+		userId,
+		reason: "legacy_migration",
+		scope: { type: "global" },
+		metadata: { source },
+	});
+}
+
+function hasActiveMemoryProfileItems(profile: MemoryProfileReadModel): boolean {
+	return profile.categories.some((group) => group.items.length > 0);
+}
+
+async function bootstrapEmptyMemoryProfile(
+	userId: string,
+	source: string,
+	profile: MemoryProfileReadModel,
+): Promise<MemoryProfileReadModel> {
+	if (hasActiveMemoryProfileItems(profile)) return profile;
+
+	await markLegacyMigrationRead(userId, source);
+	try {
+		const { runUserMemoryMaintenance } = await import("./memory-maintenance");
+		await runUserMemoryMaintenance(userId, source);
+	} catch (error) {
+		console.error("[KNOWLEDGE_MEMORY] Empty profile bootstrap failed", {
+			userId,
+			source,
+			error,
+		});
+		return profile;
+	}
+
+	return getMemoryProfileReadModel({ userId });
+}
+
 function isNonEmptyString(value: unknown): value is string {
 	return typeof value === "string" && value.trim().length > 0;
 }
@@ -244,10 +280,14 @@ export async function getKnowledgeMemory(
 	userId: string,
 	_userDisplayName: string,
 ): Promise<MemoryProfilePublicPayload> {
-	await markStaleProjectionRead(userId, "knowledge_memory_read");
-	return serializeMemoryProfileReadModel(
+	const source = "knowledge_memory_read";
+	await markStaleProjectionRead(userId, source);
+	const profile = await bootstrapEmptyMemoryProfile(
+		userId,
+		source,
 		await getMemoryProfileReadModel({ userId }),
 	);
+	return serializeMemoryProfileReadModel(profile);
 }
 
 function buildCompatibilitySummary(
@@ -289,7 +329,11 @@ export async function getKnowledgeMemoryOverview(
 		: "knowledge_memory_overview_read";
 	await markStaleProjectionRead(userId, source);
 	const profile = serializeMemoryProfileReadModel(
-		await getMemoryProfileReadModel({ userId }),
+		await bootstrapEmptyMemoryProfile(
+			userId,
+			source,
+			await getMemoryProfileReadModel({ userId }),
+		),
 	);
 	return {
 		summary: buildCompatibilitySummary(profile),
