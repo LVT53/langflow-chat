@@ -390,7 +390,8 @@ onMount(() => {
 
 	.model-selector {
 		position: relative;
-		display: inline-block;
+		display: flex;
+		justify-content: flex-end;
 	}
 
 	.model-selector__trigger {

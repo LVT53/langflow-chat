@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
 	getProviderWithSecrets: vi.fn(),
 	listEnabledProviderModels: vi.fn(),
 	sendJsonControlMessage: vi.fn(),
+	dbSelectResult: [] as Array<Record<string, unknown>>,
 }));
 
 vi.mock("$lib/server/config-store", () => ({
@@ -23,6 +24,20 @@ vi.mock("$lib/server/services/normal-chat-control-model", () => ({
 	sendJsonControlMessage: mocks.sendJsonControlMessage,
 }));
 
+vi.mock("$lib/server/db", () => ({
+	db: {
+		select: vi.fn().mockReturnValue({
+			from: vi.fn().mockReturnValue({
+				where: vi.fn().mockReturnValue({
+					orderBy: vi.fn().mockReturnValue({
+						limit: vi.fn().mockImplementation(() => mocks.dbSelectResult),
+					}),
+				}),
+			}),
+		}),
+	},
+}));
+
 describe("Reasoning Depth Auto selection", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -31,15 +46,18 @@ describe("Reasoning Depth Auto selection", () => {
 		});
 		mocks.getProviderWithSecrets.mockResolvedValue(null);
 		mocks.listEnabledProviderModels.mockResolvedValue([]);
+		mocks.dbSelectResult = [];
 	});
 
-	it("resolves Auto to the classifier-selected profile with bounded structured output", async () => {
+	it("resolves Auto to the classifier-selected profile with schema-in-prompt and skipStructuredOutputs", async () => {
 		mocks.sendJsonControlMessage.mockResolvedValueOnce({
 			text: JSON.stringify({
 				appliedProfile: "extended",
 				reason: "The request asks for a careful comparison with tradeoffs.",
 			}),
-			rawResponse: {},
+			rawResponse: {
+				choices: [{ finish_reason: "stop" }],
+			},
 			modelId: "model1",
 			modelDisplayName: "Model One",
 		});
@@ -80,8 +98,9 @@ describe("Reasoning Depth Auto selection", () => {
 			expect.stringContaining("Compare two rollout strategies"),
 			"model1",
 			expect.objectContaining({
-				maxTokens: expect.any(Number),
+				maxTokens: 256,
 				temperature: 0,
+				skipStructuredOutputs: true,
 				jsonSchema: expect.objectContaining({
 					name: "reasoning_depth_selection",
 					strict: true,
@@ -101,7 +120,9 @@ describe("Reasoning Depth Auto selection", () => {
 				outputRoom: "expanded",
 				toolUse: "source_heavy",
 			}),
-			rawResponse: {},
+			rawResponse: {
+				choices: [{ finish_reason: "stop" }],
+			},
 			modelId: "model1",
 			modelDisplayName: "Model One",
 		});
@@ -175,7 +196,9 @@ describe("Reasoning Depth Auto selection", () => {
 				appliedProfile: "standard",
 				reason: "The request is direct.",
 			}),
-			rawResponse: {},
+			rawResponse: {
+				choices: [{ finish_reason: "stop" }],
+			},
 			modelId: "provider:provider-1:classifier-1",
 			modelDisplayName: "Classifier Mini",
 		});
@@ -233,7 +256,9 @@ describe("Reasoning Depth Auto selection", () => {
 				appliedProfile: "extended",
 				reason: "The request needs careful planning.",
 			}),
-			rawResponse: {},
+			rawResponse: {
+				choices: [{ finish_reason: "stop" }],
+			},
 			modelId: "model2",
 			modelDisplayName: "Answer Model",
 		});
@@ -282,7 +307,9 @@ describe("Reasoning Depth Auto selection", () => {
 				appliedProfile: "standard",
 				reason: "The request is direct.",
 			}),
-			rawResponse: {},
+			rawResponse: {
+				choices: [{ finish_reason: "stop" }],
+			},
 			modelId: "model1",
 			modelDisplayName: "Model One",
 		});
@@ -322,7 +349,7 @@ describe("Reasoning Depth Auto selection", () => {
 		});
 	});
 
-	it("bypasses the classifier for explicit Off and Max selections", async () => {
+	it("bypasses the classifier for explicit Off and Max selections with default signals for Max", async () => {
 		const { resolveReasoningDepthSelection } = await import(
 			"./depth-selection"
 		);
@@ -369,6 +396,108 @@ describe("Reasoning Depth Auto selection", () => {
 			fallback: false,
 			classifierSource: "deterministic_bypass",
 			constraintNote: "explicit_max",
+			signals: {
+				groundingNeed: "useful",
+				contextBreadth: "broad",
+				outputRoom: "expanded",
+				toolUse: "normal",
+			},
+		});
+		expect(mocks.sendJsonControlMessage).not.toHaveBeenCalled();
+	});
+
+	it("reuses previous turn signals for Max when previous was extended", async () => {
+		const previousSignals = {
+			groundingNeed: "required",
+			contextBreadth: "narrow",
+			outputRoom: "concise",
+			toolUse: "source_heavy",
+		};
+		mocks.dbSelectResult = [
+			{
+				metadataJson: JSON.stringify({
+					depthMetadata: {
+						appliedProfile: "extended",
+						signals: previousSignals,
+					},
+				}),
+			},
+		];
+		const { resolveReasoningDepthSelection } = await import(
+			"./depth-selection"
+		);
+
+		const result = await resolveReasoningDepthSelection({
+			userId: "user-1",
+			conversationId: "conv-1",
+			request: {
+				normalizedMessage: "Prove the migration is safe.",
+				reasoningDepth: "max",
+				modelId: "model1",
+				modelDisplayName: "Model One",
+				attachmentIds: [],
+				linkedSources: [],
+				pendingSkill: null,
+				forceWebSearch: false,
+			},
+		});
+
+		expect(result.metadata).toMatchObject({
+			requested: "max",
+			appliedProfile: "maximum",
+			classifierSource: "deterministic_bypass",
+			constraintNote: "explicit_max",
+			signals: previousSignals,
+		});
+		expect(mocks.sendJsonControlMessage).not.toHaveBeenCalled();
+	});
+
+	it("uses default signals for Max when previous turn was standard", async () => {
+		mocks.dbSelectResult = [
+			{
+				metadataJson: JSON.stringify({
+					depthMetadata: {
+						appliedProfile: "standard",
+						signals: {
+							groundingNeed: "none",
+							contextBreadth: "normal",
+							outputRoom: "normal",
+							toolUse: "normal",
+						},
+					},
+				}),
+			},
+		];
+		const { resolveReasoningDepthSelection } = await import(
+			"./depth-selection"
+		);
+
+		const result = await resolveReasoningDepthSelection({
+			userId: "user-1",
+			conversationId: "conv-1",
+			request: {
+				normalizedMessage: "Prove the migration is safe.",
+				reasoningDepth: "max",
+				modelId: "model1",
+				modelDisplayName: "Model One",
+				attachmentIds: [],
+				linkedSources: [],
+				pendingSkill: null,
+				forceWebSearch: false,
+			},
+		});
+
+		expect(result.metadata).toMatchObject({
+			requested: "max",
+			appliedProfile: "maximum",
+			classifierSource: "deterministic_bypass",
+			constraintNote: "explicit_max",
+			signals: {
+				groundingNeed: "useful",
+				contextBreadth: "broad",
+				outputRoom: "expanded",
+				toolUse: "normal",
+			},
 		});
 		expect(mocks.sendJsonControlMessage).not.toHaveBeenCalled();
 	});
@@ -404,10 +533,12 @@ describe("Reasoning Depth Auto selection", () => {
 		expect(mocks.sendJsonControlMessage).not.toHaveBeenCalled();
 	});
 
-	it("falls back to Standard when the classifier returns an invalid profile", async () => {
+	it("falls back to deterministic keyword classifier when the classifier returns an invalid profile", async () => {
 		mocks.sendJsonControlMessage.mockResolvedValueOnce({
 			text: JSON.stringify({ appliedProfile: "off", reason: "invalid" }),
-			rawResponse: {},
+			rawResponse: {
+				choices: [{ finish_reason: "stop" }],
+			},
 			modelId: "model1",
 			modelDisplayName: "Model One",
 		});
@@ -436,11 +567,11 @@ describe("Reasoning Depth Auto selection", () => {
 			appliedProfile: "standard",
 			fallback: true,
 			fallbackReason: "invalid_classifier_response",
-			classifierSource: "control_model_fallback",
+			classifierSource: "deterministic_fallback",
 		});
 	});
 
-	it("falls back to Standard when the control model fails", async () => {
+	it("falls back to deterministic keyword classifier when the control model fails", async () => {
 		mocks.sendJsonControlMessage.mockRejectedValueOnce(
 			new Error("provider unavailable"),
 		);
@@ -469,7 +600,324 @@ describe("Reasoning Depth Auto selection", () => {
 			appliedProfile: "standard",
 			fallback: true,
 			fallbackReason: "control_model_error",
-			classifierSource: "control_model_fallback",
+			classifierSource: "deterministic_fallback",
+		});
+	});
+
+	it("retries with larger token budget on finish_reason length", async () => {
+		mocks.sendJsonControlMessage
+			.mockResolvedValueOnce({
+				text: "{",
+				rawResponse: {
+					choices: [{ finish_reason: "length" }],
+				},
+				modelId: "model1",
+				modelDisplayName: "Model One",
+			})
+			.mockResolvedValueOnce({
+				text: JSON.stringify({
+					appliedProfile: "extended",
+					reason: "Multi-step analysis needed.",
+				}),
+				rawResponse: {
+					choices: [{ finish_reason: "stop" }],
+				},
+				modelId: "model1",
+				modelDisplayName: "Model One",
+			});
+		const { resolveReasoningDepthSelection } = await import(
+			"./depth-selection"
+		);
+
+		const result = await resolveReasoningDepthSelection({
+			userId: "user-1",
+			conversationId: "conv-1",
+			request: {
+				normalizedMessage: "Compare and analyze the tradeoffs.",
+				reasoningDepth: "auto",
+				modelId: "model1",
+				modelDisplayName: "Model One",
+				attachmentIds: [],
+				linkedSources: [],
+				pendingSkill: null,
+				forceWebSearch: false,
+			},
+			listRecentMessages: async () => [],
+		});
+
+		expect(result.metadata).toMatchObject({
+			appliedProfile: "extended",
+			classifierSource: "control_model",
+		});
+		expect(mocks.sendJsonControlMessage).toHaveBeenCalledTimes(2);
+		expect(mocks.sendJsonControlMessage).toHaveBeenNthCalledWith(
+			1,
+			expect.any(String),
+			"model1",
+			expect.objectContaining({ maxTokens: 256 }),
+		);
+		expect(mocks.sendJsonControlMessage).toHaveBeenNthCalledWith(
+			2,
+			expect.any(String),
+			"model1",
+			expect.objectContaining({ maxTokens: 640 }),
+		);
+	});
+
+	it("retries with larger token budget on truncated JSON", async () => {
+		mocks.sendJsonControlMessage
+			.mockResolvedValueOnce({
+				text: '{"appliedProfile": "extended", "reason": "incomplete',
+				rawResponse: {
+					choices: [{ finish_reason: "stop" }],
+				},
+				modelId: "model1",
+				modelDisplayName: "Model One",
+			})
+			.mockResolvedValueOnce({
+				text: JSON.stringify({
+					appliedProfile: "extended",
+					reason: "Multi-step analysis needed.",
+				}),
+				rawResponse: {
+					choices: [{ finish_reason: "stop" }],
+				},
+				modelId: "model1",
+				modelDisplayName: "Model One",
+			});
+		const { resolveReasoningDepthSelection } = await import(
+			"./depth-selection"
+		);
+
+		const result = await resolveReasoningDepthSelection({
+			userId: "user-1",
+			conversationId: "conv-1",
+			request: {
+				normalizedMessage: "Compare and analyze the tradeoffs.",
+				reasoningDepth: "auto",
+				modelId: "model1",
+				modelDisplayName: "Model One",
+				attachmentIds: [],
+				linkedSources: [],
+				pendingSkill: null,
+				forceWebSearch: false,
+			},
+			listRecentMessages: async () => [],
+		});
+
+		expect(result.metadata).toMatchObject({
+			appliedProfile: "extended",
+			classifierSource: "control_model",
+		});
+		expect(mocks.sendJsonControlMessage).toHaveBeenCalledTimes(2);
+	});
+
+	it("accepts field aliases in classifier response", async () => {
+		mocks.sendJsonControlMessage.mockResolvedValueOnce({
+			text: JSON.stringify({
+				reasoning_depth: "extended",
+				reason: "Multi-step analysis needed.",
+			}),
+			rawResponse: {
+				choices: [{ finish_reason: "stop" }],
+			},
+			modelId: "model1",
+			modelDisplayName: "Model One",
+		});
+		const { resolveReasoningDepthSelection } = await import(
+			"./depth-selection"
+		);
+
+		const result = await resolveReasoningDepthSelection({
+			userId: "user-1",
+			conversationId: "conv-1",
+			request: {
+				normalizedMessage: "Compare and analyze the tradeoffs.",
+				reasoningDepth: "auto",
+				modelId: "model1",
+				modelDisplayName: "Model One",
+				attachmentIds: [],
+				linkedSources: [],
+				pendingSkill: null,
+				forceWebSearch: false,
+			},
+			listRecentMessages: async () => [],
+		});
+
+		expect(result.metadata).toMatchObject({
+			appliedProfile: "extended",
+			classifierSource: "control_model",
+		});
+	});
+
+	it("maps non-standard profile values to valid enum values", async () => {
+		mocks.sendJsonControlMessage.mockResolvedValueOnce({
+			text: JSON.stringify({
+				appliedProfile: "deep",
+				reason: "Deep analysis needed.",
+			}),
+			rawResponse: {
+				choices: [{ finish_reason: "stop" }],
+			},
+			modelId: "model1",
+			modelDisplayName: "Model One",
+		});
+		const { resolveReasoningDepthSelection } = await import(
+			"./depth-selection"
+		);
+
+		const result = await resolveReasoningDepthSelection({
+			userId: "user-1",
+			conversationId: "conv-1",
+			request: {
+				normalizedMessage: "Deep analysis needed.",
+				reasoningDepth: "auto",
+				modelId: "model1",
+				modelDisplayName: "Model One",
+				attachmentIds: [],
+				linkedSources: [],
+				pendingSkill: null,
+				forceWebSearch: false,
+			},
+			listRecentMessages: async () => [],
+		});
+
+		expect(result.metadata).toMatchObject({
+			appliedProfile: "extended",
+			classifierSource: "control_model",
+		});
+	});
+
+	it("maps 'max' value to 'maximum' profile", async () => {
+		mocks.sendJsonControlMessage.mockResolvedValueOnce({
+			text: JSON.stringify({
+				appliedProfile: "max",
+				reason: "Maximum effort needed.",
+			}),
+			rawResponse: {
+				choices: [{ finish_reason: "stop" }],
+			},
+			modelId: "model1",
+			modelDisplayName: "Model One",
+		});
+		const { resolveReasoningDepthSelection } = await import(
+			"./depth-selection"
+		);
+
+		const result = await resolveReasoningDepthSelection({
+			userId: "user-1",
+			conversationId: "conv-1",
+			request: {
+				normalizedMessage: "Maximum effort needed.",
+				reasoningDepth: "auto",
+				modelId: "model1",
+				modelDisplayName: "Model One",
+				attachmentIds: [],
+				linkedSources: [],
+				pendingSkill: null,
+				forceWebSearch: false,
+			},
+			listRecentMessages: async () => [],
+		});
+
+		expect(result.metadata).toMatchObject({
+			appliedProfile: "maximum",
+			classifierSource: "control_model",
+		});
+	});
+
+	it("deterministic keyword classifier detects extended from keywords", async () => {
+		mocks.sendJsonControlMessage.mockRejectedValueOnce(
+			new Error("provider unavailable"),
+		);
+		const { resolveReasoningDepthSelection } = await import(
+			"./depth-selection"
+		);
+
+		const result = await resolveReasoningDepthSelection({
+			userId: "user-1",
+			conversationId: "conv-1",
+			request: {
+				normalizedMessage:
+					"Please compare and analyze the tradeoffs between these two architectures and evaluate which one is better.",
+				reasoningDepth: "auto",
+				modelId: "model1",
+				modelDisplayName: "Model One",
+				attachmentIds: [],
+				linkedSources: [],
+				pendingSkill: null,
+				forceWebSearch: false,
+			},
+			listRecentMessages: async () => [],
+		});
+
+		expect(result.metadata).toMatchObject({
+			appliedProfile: "extended",
+			classifierSource: "deterministic_fallback",
+			fallback: true,
+		});
+	});
+
+	it("deterministic keyword classifier detects maximum from keywords", async () => {
+		mocks.sendJsonControlMessage.mockRejectedValueOnce(
+			new Error("provider unavailable"),
+		);
+		const { resolveReasoningDepthSelection } = await import(
+			"./depth-selection"
+		);
+
+		const result = await resolveReasoningDepthSelection({
+			userId: "user-1",
+			conversationId: "conv-1",
+			request: {
+				normalizedMessage:
+					"Provide a comprehensive security audit covering all edge cases and failure modes for this production system.",
+				reasoningDepth: "auto",
+				modelId: "model1",
+				modelDisplayName: "Model One",
+				attachmentIds: [],
+				linkedSources: [],
+				pendingSkill: null,
+				forceWebSearch: false,
+			},
+			listRecentMessages: async () => [],
+		});
+
+		expect(result.metadata).toMatchObject({
+			appliedProfile: "maximum",
+			classifierSource: "deterministic_fallback",
+			fallback: true,
+		});
+	});
+
+	it("deterministic keyword classifier defaults to standard for simple messages", async () => {
+		mocks.sendJsonControlMessage.mockRejectedValueOnce(
+			new Error("provider unavailable"),
+		);
+		const { resolveReasoningDepthSelection } = await import(
+			"./depth-selection"
+		);
+
+		const result = await resolveReasoningDepthSelection({
+			userId: "user-1",
+			conversationId: "conv-1",
+			request: {
+				normalizedMessage: "Hello, how are you?",
+				reasoningDepth: "auto",
+				modelId: "model1",
+				modelDisplayName: "Model One",
+				attachmentIds: [],
+				linkedSources: [],
+				pendingSkill: null,
+				forceWebSearch: false,
+			},
+			listRecentMessages: async () => [],
+		});
+
+		expect(result.metadata).toMatchObject({
+			appliedProfile: "standard",
+			classifierSource: "deterministic_fallback",
+			fallback: true,
 		});
 	});
 

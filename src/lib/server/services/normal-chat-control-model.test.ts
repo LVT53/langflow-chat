@@ -370,6 +370,61 @@ describe("Normal Chat JSON control model sender", () => {
 		expect(body).not.toHaveProperty("reasoningEffort");
 	});
 
+	it("uses json_object mode when skipStructuredOutputs is true", async () => {
+		const fetch = vi.fn<typeof globalThis.fetch>(
+			async () =>
+				new Response(
+					JSON.stringify({
+						id: "chatcmpl-1",
+						model: "provider-returned-model",
+						created: 1_717_171_717,
+						choices: [
+							{
+								index: 0,
+								message: {
+									role: "assistant",
+									content: JSON.stringify({ ok: true }),
+								},
+								finish_reason: "stop",
+							},
+						],
+						usage: {
+							prompt_tokens: 11,
+							completion_tokens: 7,
+							total_tokens: 18,
+						},
+					}),
+					{
+						status: 200,
+						headers: { "Content-Type": "application/json" },
+					},
+				),
+		);
+
+		await sendJsonControlMessage("Return JSON", "model1", {
+			systemPrompt: "context-compression",
+			thinkingMode: "off",
+			fetch,
+			skipStructuredOutputs: true,
+			jsonSchema: {
+				name: "control_result",
+				strict: true,
+				schema: {
+					type: "object",
+					properties: { ok: { type: "boolean" } },
+					required: ["ok"],
+					additionalProperties: false,
+				},
+			},
+		});
+
+		const body = JSON.parse(String(fetch.mock.calls[0]?.[1]?.body));
+		expect(body.response_format).toMatchObject({
+			type: "json_object",
+		});
+		expect(body).not.toHaveProperty("strictJsonSchema");
+	});
+
 	it("can opt into reasoning fallback for schema-guided JSON control responses", async () => {
 		const fetch = vi.fn<typeof globalThis.fetch>(
 			async () =>
