@@ -6,7 +6,7 @@ import { formatMediumDateTime } from "$lib/utils/time";
 import { t } from "$lib/i18n";
 import {
 	Archive,
-	ChevronDown,
+	Bot,
 	ChevronLeft,
 	ChevronRight,
 	Code,
@@ -943,38 +943,19 @@ async function handleBulkDelete(): Promise<boolean> {
 										<Icon size={18} strokeWidth={1.5} aria-hidden="true" />
 									</div>
 								</td>
-								<td class="col-name">
-									<div class="document-name">
-										{#if document.normalizedAvailable && document.promptArtifactId}
-											<button
-												type="button"
-												class="ai-version-toggle"
-												aria-label={expandedAiVersions.has(document.id)
-													? $t('knowledge.hideAiVersion')
-													: $t('knowledge.viewAiVersion')}
-												onclick={(e) => {
-													e.stopPropagation();
-													toggleAiVersion(document.id, document.promptArtifactId!);
-												}}
-											>
-											{#if expandedAiVersions.has(document.id)}
-													<ChevronDown size={14} strokeWidth={2} aria-hidden="true" />
-												{:else}
-													<ChevronRight size={14} strokeWidth={2} aria-hidden="true" />
-												{/if}
-											</button>
-										{/if}
-										{document.name}
+							<td class="col-name">
+								<div class="document-name">
 									{#if document.isOriginal}
 										<span class="original-badge">{$t('knowledge.original')}</span>
 									{:else if document.versionNumber != null && document.documentFamilyId}
 										<span class="version-badge">v{document.versionNumber}</span>
 									{/if}
+									{document.name}
 									{#if document.documentFamilyStatus === 'historical'}
 										<span class="historical-badge">{$t('knowledge.historical')}</span>
 									{/if}
-									</div>
-								</td>
+								</div>
+							</td>
 								<td class="col-type" data-mobile-label={$t('knowledge.type')}>
 								{#if document.documentOrigin === 'skill_note' || document.type === 'skill_note'}
 									<span class="type-badge type-skill-note">{$t('knowledge.skillNote')}</span>
@@ -990,9 +971,25 @@ async function handleBulkDelete(): Promise<boolean> {
 								<td class="col-date" data-mobile-label={$t('knowledge.date')}>
 									{formatMediumDateTime(document.createdAt)}
 								</td>
-								<td class="col-actions">
-									<div class="action-buttons">
+							<td class="col-actions">
+								<div class="action-buttons">
+									{#if document.normalizedAvailable && document.promptArtifactId}
 										<button
+											type="button"
+											class="action-btn action-btn-ai"
+											aria-label={expandedAiVersions.has(document.id)
+												? $t('knowledge.hideAiVersion')
+												: $t('knowledge.viewAiVersion')}
+											title={$t('knowledge.viewAiVersion')}
+											onclick={(e) => {
+												e.stopPropagation();
+												toggleAiVersion(document.id, document.promptArtifactId!);
+											}}
+										>
+											<Bot size={16} strokeWidth={2} aria-hidden="true" />
+										</button>
+									{/if}
+									<button
 											type="button"
 											class="action-btn"
 											aria-label={$t('filePreview.download', { filename: document.name })}
@@ -1401,7 +1398,7 @@ async function handleBulkDelete(): Promise<boolean> {
 	}
 
 	.col-icon {
-		width: 40px;
+		width: 20px;
 	}
 
 	.file-icon {
@@ -1497,37 +1494,7 @@ async function handleBulkDelete(): Promise<boolean> {
 		border: 1px solid color-mix(in srgb, var(--success) 30%, transparent);
 	}
 
-	/* AI-facing version toggle */
-	.ai-version-toggle {
-		display: inline-flex;
-		align-items: center;
-		justify-content: center;
-		width: 18px;
-		height: 18px;
-		padding: 0;
-		border: 1px solid var(--border-default);
-		border-radius: 4px;
-		background: var(--surface-page);
-		color: var(--icon-muted);
-		cursor: pointer;
-		flex-shrink: 0;
-		transition:
-			background-color var(--duration-standard) var(--ease-out),
-			border-color var(--duration-standard) var(--ease-out),
-			color var(--duration-standard) var(--ease-out);
-	}
-
-	.ai-version-toggle:hover {
-		border-color: var(--accent);
-		color: var(--accent);
-		background: color-mix(in srgb, var(--accent) 8%, var(--surface-page) 92%);
-	}
-
-	.ai-version-toggle:focus-visible {
-		outline: 2px solid var(--focus-ring);
-		outline-offset: 1px;
-	}
-
+	/* AI-facing version expand row */
 	.ai-version-row {
 		background: color-mix(in srgb, var(--surface-page) 94%, var(--accent) 6%);
 	}
@@ -1605,7 +1572,7 @@ async function handleBulkDelete(): Promise<boolean> {
 	}
 
 	.col-actions {
-		width: 80px;
+		width: 112px;
 	}
 
 	.action-buttons {
@@ -1637,6 +1604,15 @@ async function handleBulkDelete(): Promise<boolean> {
 	.action-btn-danger:hover {
 		background: color-mix(in srgb, var(--danger) 12%, transparent);
 		color: var(--danger);
+	}
+
+	.action-btn-ai:hover {
+		background: color-mix(in srgb, var(--accent) 12%, transparent);
+		color: var(--accent);
+	}
+
+	.action-btn-ai:active {
+		background: color-mix(in srgb, var(--accent) 20%, transparent);
 	}
 
 	.pagination {
@@ -1902,7 +1878,7 @@ async function handleBulkDelete(): Promise<boolean> {
 
 		.documents-table .document-list-item {
 			display: grid;
-			grid-template-columns: 26px 28px minmax(0, 1fr) auto;
+			grid-template-columns: 26px 20px minmax(0, 1fr) auto;
 			grid-template-areas:
 				"check icon name actions"
 				"check icon type actions"
@@ -1930,7 +1906,7 @@ async function handleBulkDelete(): Promise<boolean> {
 
 		.documents-table .col-icon {
 			grid-area: icon;
-			width: 28px;
+			width: 20px;
 			align-self: start;
 			padding-top: 0.05rem;
 		}
