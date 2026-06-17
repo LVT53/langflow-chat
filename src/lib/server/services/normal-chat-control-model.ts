@@ -44,18 +44,20 @@ export type JsonControlMessageOptions = {
 	signal?: AbortSignal;
 	jsonSchema?: JsonControlResponseSchema;
 	allowReasoningFallback?: boolean;
+	skipStructuredOutputs?: boolean;
 	fetch?: typeof fetch;
 };
 
 function createControlModelProvider(params: {
 	provider: NormalChatModelRunProvider;
 	fetch?: typeof fetch;
+	skipStructuredOutputs?: boolean;
 }) {
 	return createOpenAICompatibleProviderForNormalChatModelRun({
 		provider: params.provider,
 		fetch: params.fetch,
 		includeUsage: true,
-		supportsStructuredOutputs: true,
+		supportsStructuredOutputs: params.skipStructuredOutputs ? false : true,
 		normalizeStreaming: false,
 	});
 }
@@ -89,9 +91,13 @@ function buildProviderOptions(params: {
 	};
 }
 
-function buildOutput(options: Pick<JsonControlMessageOptions, "jsonSchema">) {
-	if (!options.jsonSchema) {
-		return Output.json({ name: "json_control_message" });
+function buildOutput(
+	options: Pick<JsonControlMessageOptions, "jsonSchema" | "skipStructuredOutputs">,
+) {
+	if (!options.jsonSchema || options.skipStructuredOutputs) {
+		return Output.json({
+			name: options.jsonSchema?.name ?? "json_control_message",
+		});
 	}
 
 	return Output.object({
@@ -196,6 +202,7 @@ export async function sendJsonControlMessage(
 	const openaiCompatible = createControlModelProvider({
 		provider,
 		fetch: options.fetch,
+		skipStructuredOutputs: options.skipStructuredOutputs,
 	});
 	const messages: ModelMessage[] = [{ role: "user", content: message }];
 	const generate = (params: { useJsonFallbackOutput?: boolean }) =>
@@ -205,7 +212,10 @@ export async function sendJsonControlMessage(
 			messages,
 			output: params.useJsonFallbackOutput
 				? buildJsonFallbackOutput(options)
-				: buildOutput(options),
+				: buildOutput({
+						jsonSchema: options.jsonSchema,
+						skipStructuredOutputs: options.skipStructuredOutputs,
+					}),
 			temperature: options.temperature ?? CONTROL_MODEL_TEMPERATURE,
 			maxOutputTokens:
 				options.maxTokens ??

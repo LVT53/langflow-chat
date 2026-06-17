@@ -9,6 +9,8 @@ import type { HistoryMemoryContextResult } from "./memory-context";
 
 const mockGetProjectContext = vi.fn();
 const mockRecallPersonaMemory = vi.fn();
+const mockGetActiveMemoryProfileContext = vi.fn();
+const mockRecordMemoryReworkTelemetry = vi.fn();
 let dbPath: string;
 
 vi.mock("$lib/server/services/memory-context/project", () => ({
@@ -18,6 +20,16 @@ vi.mock("$lib/server/services/memory-context/project", () => ({
 vi.mock("./honcho", () => ({
 	recallPersonaMemory: mockRecallPersonaMemory,
 }));
+
+vi.mock("./memory-profile", async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import("./memory-profile")>();
+	return {
+		...actual,
+		getActiveMemoryProfileContext: mockGetActiveMemoryProfileContext,
+		recordMemoryReworkTelemetry: mockRecordMemoryReworkTelemetry,
+	};
+});
 
 function openSeedDatabase() {
 	const sqlite = new Database(dbPath);
@@ -32,7 +44,10 @@ describe("memory context service", () => {
 		dbPath = `/tmp/alfyai-memory-context-${randomUUID()}.db`;
 		process.env.DATABASE_PATH = dbPath;
 		vi.resetModules();
-		vi.clearAllMocks();
+		mockGetProjectContext.mockReset();
+		mockRecallPersonaMemory.mockReset();
+		mockGetActiveMemoryProfileContext.mockReset();
+		mockRecordMemoryReworkTelemetry.mockReset();
 		mockGetProjectContext.mockResolvedValue({
 			success: true,
 			mode: "summary",
@@ -55,6 +70,22 @@ describe("memory context service", () => {
 			source: "honcho_peer_chat",
 			content: "The user prefers concise answers and cares about cycling gear.",
 		});
+		mockGetActiveMemoryProfileContext.mockResolvedValue({
+			resetGeneration: 0,
+			projectionRevision: 3,
+			items: [
+				{
+					id: "memory-active-1",
+					itemKey: "memory-profile-item:v1:preferences:global:active",
+					category: "preferences",
+					statement: "The user prefers active profile answers.",
+					scope: { type: "global" },
+					revision: 1,
+					updatedAt: new Date("2026-06-01T00:00:00.000Z"),
+				},
+			],
+		});
+		mockRecordMemoryReworkTelemetry.mockResolvedValue({ id: "telemetry-1" });
 	});
 
 	afterEach(async () => {
@@ -152,7 +183,7 @@ describe("memory context service", () => {
 		);
 	});
 
-	it("returns Honcho-led persona recall with a memory evidence candidate", async () => {
+	it("returns active projection persona memory with a memory evidence candidate", async () => {
 		const { getMemoryContext } = await import("./memory-context");
 
 		const result = await getMemoryContext({
@@ -167,8 +198,8 @@ describe("memory context service", () => {
 			success: true,
 			mode: "persona",
 			status: "available",
-			source: "honcho_peer_chat",
-			content: "The user prefers concise answers and cares about cycling gear.",
+			source: "active_memory_profile",
+			content: "- preferences (global): The user prefers active profile answers.",
 			audit: {
 				conversationId: "conv-current",
 				query: "What should I remember about the user?",
@@ -177,20 +208,129 @@ describe("memory context service", () => {
 		expect(result.evidenceCandidates).toEqual([
 			{
 				id: "memory-context:persona:user-1",
-				title: "Honcho persona recall",
+				title: "Active memory profile",
 				snippet:
-					"The user prefers concise answers and cares about cycling gear.",
+					"- preferences (global): The user prefers active profile answers.",
 				sourceType: "memory",
 			},
 		]);
-		expect(mockRecallPersonaMemory).toHaveBeenCalledWith({
+		expect(mockGetActiveMemoryProfileContext).toHaveBeenCalledWith({
 			userId: "user-1",
-			userDisplayName: "Test User",
-			query: "What should I remember about the user?",
 		});
+		expect(mockRecallPersonaMemory).not.toHaveBeenCalled();
 	});
 
-	it("defaults omitted mode to Honcho-led persona recall", async () => {
+	it("returns active projection memory for ordinary persona context without raw Honcho recall", async () => {
+		const { getMemoryContext } = await import("./memory-context");
+
+		const result = await getMemoryContext({
+			userId: "user-1",
+			conversationId: "conv-current",
+			mode: "persona",
+			query: "What durable preferences matter right now?",
+			userDisplayName: "Test User",
+		});
+
+		expect(result).toMatchObject({
+			success: true,
+			mode: "persona",
+			status: "available",
+			source: "active_memory_profile",
+			content: "- preferences (global): The user prefers active profile answers.",
+			audit: {
+				conversationId: "conv-current",
+				query: "What durable preferences matter right now?",
+			},
+		});
+		if (result.mode !== "persona") {
+			throw new Error(`Expected persona mode, got ${result.mode}`);
+		}
+		expect(result.content).not.toContain("cycling gear");
+		expect(result.evidenceCandidates).toEqual([
+			{
+				id: "memory-context:persona:user-1",
+				title: "Active memory profile",
+				snippet:
+					"- preferences (global): The user prefers active profile answers.",
+				sourceType: "memory",
+			},
+		]);
+		expect(mockGetActiveMemoryProfileContext).toHaveBeenCalledWith({
+			userId: "user-1",
+		});
+		expect(mockRecallPersonaMemory).not.toHaveBeenCalled();
+		expect(JSON.stringify(mockRecordMemoryReworkTelemetry.mock.calls)).not.toContain(
+			"The user prefers active profile answers.",
+		);
+	});
+
+	it("bounds active projection persona memory newest-first with omitted counts", async () => {
+		mockGetActiveMemoryProfileContext.mockResolvedValueOnce({
+			resetGeneration: 0,
+			projectionRevision: 4,
+			items: [
+				{
+					id: "stale-memory",
+					itemKey: "memory-profile-item:v1:preferences:global:stale",
+					category: "preferences",
+					statement: `STALE_PERSONA_MEMORY_SHOULD_NOT_SURVIVE ${"stale ".repeat(40_000)}`,
+					scope: { type: "global" },
+					revision: 1,
+					updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+				},
+				{
+					id: "fresh-memory",
+					itemKey: "memory-profile-item:v1:preferences:global:fresh",
+					category: "preferences",
+					statement: "FRESH_PERSONA_MEMORY_SHOULD_SURVIVE.",
+					scope: { type: "global" },
+					revision: 1,
+					updatedAt: new Date("2026-06-01T00:00:00.000Z"),
+				},
+			],
+		});
+		const { getMemoryContext } = await import("./memory-context");
+
+		const result = await getMemoryContext({
+			userId: "user-1",
+			conversationId: "conv-current",
+			mode: "persona",
+			query: "What durable preferences matter right now?",
+		});
+
+		expect(result).toMatchObject({
+			success: true,
+			mode: "persona",
+			status: "available",
+			source: "active_memory_profile",
+			content:
+				"- preferences (global): FRESH_PERSONA_MEMORY_SHOULD_SURVIVE.\nOmitted active memory profile items: 1.",
+		});
+		if (result.mode !== "persona") {
+			throw new Error(`Expected persona mode, got ${result.mode}`);
+		}
+		expect(result.content).not.toContain(
+			"STALE_PERSONA_MEMORY_SHOULD_NOT_SURVIVE",
+		);
+		expect(result.evidenceCandidates[0]?.snippet).toContain(
+			"FRESH_PERSONA_MEMORY_SHOULD_SURVIVE.",
+		);
+		expect(result.evidenceCandidates[0]?.snippet).not.toContain(
+			"STALE_PERSONA_MEMORY_SHOULD_NOT_SURVIVE",
+		);
+		expect(mockRecordMemoryReworkTelemetry).toHaveBeenCalledWith(
+			expect.objectContaining({
+				eventName: "memory_context_persona_active_profile_included",
+				count: 1,
+				metadata: expect.objectContaining({
+					totalItemCount: 2,
+					omittedItemCount: 1,
+				}),
+			}),
+		);
+	});
+
+	it("defaults omitted mode to active projection persona memory", async () => {
 		const { getMemoryContext } = await import("./memory-context");
 
 		const result = await getMemoryContext({
@@ -203,21 +343,20 @@ describe("memory context service", () => {
 			success: true,
 			mode: "persona",
 			status: "available",
-			source: "honcho_peer_chat",
+			source: "active_memory_profile",
 			audit: {
 				conversationId: "conv-current",
 				query: "What durable preferences matter?",
 			},
 		});
-		expect(mockRecallPersonaMemory).toHaveBeenCalledWith({
+		expect(mockGetActiveMemoryProfileContext).toHaveBeenCalledWith({
 			userId: "user-1",
-			userDisplayName: undefined,
-			query: "What durable preferences matter?",
 		});
+		expect(mockRecallPersonaMemory).not.toHaveBeenCalled();
 		expect(mockGetProjectContext).not.toHaveBeenCalled();
 	});
 
-	it("degrades clearly when Honcho persona recall is disabled", async () => {
+	it("does not degrade ordinary persona memory when Honcho recall is disabled", async () => {
 		mockRecallPersonaMemory.mockResolvedValueOnce({
 			status: "disabled",
 			source: "none",
@@ -235,14 +374,42 @@ describe("memory context service", () => {
 		expect(result).toMatchObject({
 			success: true,
 			mode: "persona",
-			status: "disabled",
-			source: "none",
-			content: null,
-			evidenceCandidates: [],
+			status: "available",
+			source: "active_memory_profile",
+			content: "- preferences (global): The user prefers active profile answers.",
 		});
+		expect(mockRecallPersonaMemory).not.toHaveBeenCalled();
 	});
 
-	it("degrades clearly when Honcho persona recall errors", async () => {
+	it("does not route broad earlier persona questions to raw Honcho evidence", async () => {
+		const { getMemoryContext } = await import("./memory-context");
+
+		const result = await getMemoryContext({
+			userId: "user-1",
+			conversationId: "conv-current",
+			mode: "persona",
+			query: "What preferences did I mention earlier?",
+			userDisplayName: "Test User",
+		});
+
+		expect(result).toMatchObject({
+			success: true,
+			mode: "persona",
+			status: "available",
+			source: "active_memory_profile",
+			content: "- preferences (global): The user prefers active profile answers.",
+		});
+		if (result.mode !== "persona") {
+			throw new Error(`Expected persona mode, got ${result.mode}`);
+		}
+		expect(result.content).not.toContain("cycling gear");
+		expect(mockGetActiveMemoryProfileContext).toHaveBeenCalledWith({
+			userId: "user-1",
+		});
+		expect(mockRecallPersonaMemory).not.toHaveBeenCalled();
+	});
+
+	it("does not degrade ordinary persona memory when Honcho recall errors", async () => {
 		mockRecallPersonaMemory.mockResolvedValueOnce({
 			status: "error",
 			source: "none",
@@ -261,12 +428,53 @@ describe("memory context service", () => {
 		expect(result).toMatchObject({
 			success: true,
 			mode: "persona",
-			status: "error",
-			source: "none",
-			content: null,
-			error: "Honcho unavailable",
-			evidenceCandidates: [],
+			status: "available",
+			source: "active_memory_profile",
+			content: "- preferences (global): The user prefers active profile answers.",
 		});
+		expect(mockRecallPersonaMemory).not.toHaveBeenCalled();
+	});
+
+	it("frames explicit persona source questions as historical evidence instead of current profile truth", async () => {
+		const { getMemoryContext } = await import("./memory-context");
+
+		const result = await getMemoryContext({
+			userId: "user-1",
+			conversationId: "conv-current",
+			mode: "persona",
+			query: "What source says I care about cycling gear?",
+		});
+
+		expect(result).toMatchObject({
+			success: true,
+			mode: "persona",
+			status: "available",
+			source: "historical_honcho_evidence",
+			content:
+				"Historical persona evidence (not current profile truth): The user prefers concise answers and cares about cycling gear.",
+		});
+		if (result.mode !== "persona") {
+			throw new Error(`Expected persona mode, got ${result.mode}`);
+		}
+		expect(result.content).not.toContain("Active memory profile");
+		expect(result.evidenceCandidates).toEqual([
+			{
+				id: "memory-context:persona:user-1",
+				title: "Historical persona evidence",
+				snippet:
+					"Historical persona evidence (not current profile truth): The user prefers concise answers and cares about cycling gear.",
+				sourceType: "memory",
+			},
+		]);
+		expect(mockRecallPersonaMemory).toHaveBeenCalledWith({
+			userId: "user-1",
+			userDisplayName: undefined,
+			query: "What source says I care about cycling gear?",
+		});
+		expect(mockGetActiveMemoryProfileContext).not.toHaveBeenCalled();
+		expect(JSON.stringify(mockRecordMemoryReworkTelemetry.mock.calls)).not.toContain(
+			"cycling gear",
+		);
 	});
 
 	it("returns multiple older non-project history hits for a topic without leaking other users or projects", async () => {

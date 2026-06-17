@@ -1,10 +1,17 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import type { Component } from "svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
-	KnowledgeMemoryOverviewPayload,
-	KnowledgeMemoryPayload,
+	MemoryProfilePublicPayload,
 } from "$lib/types";
+import { ApiError } from "$lib/client/api/http";
+
+const mockPageState = vi.hoisted(() => ({
+	page: {
+		url: new URL("http://localhost/knowledge"),
+		state: {},
+	},
+}));
 
 vi.mock("$app/environment", () => ({
 	browser: true,
@@ -19,12 +26,7 @@ vi.mock("$app/navigation", () => ({
 	replaceState: vi.fn(),
 }));
 
-vi.mock("$app/state", () => ({
-	page: {
-		url: new URL("http://localhost/knowledge"),
-		state: {},
-	},
-}));
+vi.mock("$app/state", () => mockPageState);
 
 vi.mock("$lib/client/api/knowledge", async () => {
 	const actual = await vi.importActual<
@@ -32,75 +34,71 @@ vi.mock("$lib/client/api/knowledge", async () => {
 	>("$lib/client/api/knowledge");
 	return {
 		...actual,
+		fetchMemoryProfile: vi.fn(),
 		fetchKnowledgeMemory: vi.fn(),
 		fetchKnowledgeMemoryOverview: vi.fn(),
 		recordDocumentWorkspaceOpen: vi.fn(),
+		submitKnowledgeMemoryAction: vi.fn(),
 	};
 });
 
 import {
+	fetchMemoryProfile,
 	fetchKnowledgeMemory,
 	fetchKnowledgeMemoryOverview,
+	submitKnowledgeMemoryAction,
 } from "$lib/client/api/knowledge";
 import Page from "./+page.svelte";
 
-const memoryOverviewPayload = {
-	summary: {
-		personaCount: 2,
-		taskCount: 0,
-		focusContinuityCount: 0,
-		activeConstraintCount: 0,
-		currentProjectContextCount: 0,
-		overview: "The user prefers concise memory behavior.",
-		overviewBullets: ["The user prefers concise memory behavior."],
-		overviewSource: "honcho_scoped",
-		overviewStatus: "ready",
-		overviewUpdatedAt: 1_700_000_000_000,
-		overviewLastAttemptAt: 1_700_000_000_000,
-		durablePersonaCount: 2,
-	},
-} satisfies KnowledgeMemoryOverviewPayload;
-
-const fallbackMemoryOverviewPayload = {
-	summary: {
-		...memoryOverviewPayload.summary,
-		overview: "Fallback memory.",
-		overviewBullets: ["Fallback memory."],
-		overviewSource: "persona_fallback",
-		overviewStatus: "temporarily_unavailable",
-	},
-} satisfies KnowledgeMemoryOverviewPayload;
-
-const fullMemoryPayload = {
-	personaMemories: [
+const memoryProfilePayload = {
+	resetGeneration: 1,
+	projectionRevision: 7,
+	categories: [
 		{
-			id: "persona-1",
-			canonicalText: "The user prefers concise responses.",
-			rawCanonicalText: "The user prefers concise responses.",
-			domain: "persona",
-			memoryClass: "long_term_context",
-			state: "active",
-			salienceScore: 50,
-			sourceCount: 1,
-			conversationTitles: [],
-			firstSeenAt: 1_700_000_000_000,
-			lastSeenAt: 1_700_000_000_000,
-			pinned: false,
-			temporal: null,
-			activeConstraint: false,
-			topicKey: null,
-			topicStatus: "active",
-			supersededById: null,
-			supersessionReason: null,
-			members: [],
+			category: "about_you",
+			items: [
+				{
+					id: "item-about",
+					itemKey: "about-you",
+					category: "about_you",
+					statement: "Levi prefers concise memory behavior.",
+					scope: { type: "global" },
+					status: "active",
+					revision: 1,
+					updatedAt: "2026-06-17T09:00:00.000Z",
+					canEdit: true,
+					canDelete: true,
+					canSuppress: true,
+				},
+			],
+		},
+		{
+			category: "preferences",
+			items: [],
+		},
+		{
+			category: "goals_ongoing_work",
+			items: [],
+		},
+		{
+			category: "constraints_boundaries",
+			items: [],
 		},
 	],
-	activeConstraints: [],
-	currentProjectContext: [],
-	taskMemories: [],
-	focusContinuities: [],
-	summary: memoryOverviewPayload.summary,
-} satisfies KnowledgeMemoryPayload;
+	review: {
+		visibleItems: [
+			{
+				id: "review-1",
+				subject: "Remember Hungarian labels.",
+				question: "Should this be remembered?",
+				reason: "Repeated in settings work.",
+				canAccept: true,
+			},
+		],
+		openCount: 1,
+		overflowCount: 0,
+	},
+} satisfies MemoryProfilePublicPayload;
 
 function pageData(): {
 	documents: [];
@@ -119,6 +117,7 @@ function pageData(): {
 	};
 	honchoEnabled: boolean;
 	userDisplayName: string;
+	initialTab: "memory" | "documents";
 } {
 	return {
 		documents: [],
@@ -137,6 +136,7 @@ function pageData(): {
 		},
 		honchoEnabled: true,
 		userDisplayName: "Test User",
+		initialTab: "memory",
 	};
 }
 
@@ -147,10 +147,10 @@ const KnowledgePage = Page as unknown as Component<{
 describe("Knowledge page memory loading", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
-		vi.mocked(fetchKnowledgeMemoryOverview).mockResolvedValue(
-			memoryOverviewPayload,
-		);
-		vi.mocked(fetchKnowledgeMemory).mockResolvedValue(fullMemoryPayload);
+		mockPageState.page.url = new URL("http://localhost/knowledge");
+		vi.mocked(fetchMemoryProfile).mockResolvedValue(memoryProfilePayload);
+		vi.mocked(fetchKnowledgeMemory).mockResolvedValue(memoryProfilePayload);
+		vi.mocked(submitKnowledgeMemoryAction).mockResolvedValue(memoryProfilePayload);
 		Object.defineProperty(document, "hidden", {
 			configurable: true,
 			value: false,
@@ -165,47 +165,141 @@ describe("Knowledge page memory loading", () => {
 		vi.useRealTimers();
 	});
 
-	it("loads the lightweight memory overview first and defers full memory until management opens", async () => {
+	it("loads the projection-backed memory profile on entry and makes it the first tab", async () => {
 		render(KnowledgePage, { data: pageData() });
 
 		await waitFor(() => {
-			expect(fetchKnowledgeMemoryOverview).toHaveBeenCalledWith();
+			expect(fetchMemoryProfile).toHaveBeenCalledWith();
 		});
+		expect(fetchKnowledgeMemoryOverview).not.toHaveBeenCalled();
 		expect(fetchKnowledgeMemory).not.toHaveBeenCalled();
-		expect(
-			screen.getByText("The user prefers concise memory behavior."),
-		).toBeInTheDocument();
 
-		await fireEvent.click(
-			screen.getByRole("button", { name: "Manage persona memory" }),
+		const tabs = screen.getAllByRole("tab");
+		expect(tabs.map((tab) => tab.textContent?.trim())).toEqual([
+			"Memory Profile",
+			"Documents",
+		]);
+		expect(
+			screen.getByText("Levi prefers concise memory behavior."),
+		).toBeInTheDocument();
+		expect(
+			screen.queryByRole("button", { name: /refresh|reload/i }),
+		).not.toBeInTheDocument();
+		expect(
+			screen.queryByText(/Focus Continuity|task memory|raw/i),
+		).not.toBeInTheDocument();
+	});
+
+	it("selects the documents tab from the SvelteKit route URL query", () => {
+		mockPageState.page.url = new URL("http://localhost/knowledge?q=report");
+
+		render(KnowledgePage, { data: pageData() });
+
+		expect(screen.getByRole("tab", { name: "Documents" })).toHaveAttribute(
+			"aria-selected",
+			"true",
 		);
+		expect(screen.getByRole("tabpanel", { name: "Documents" })).toBeInTheDocument();
+	});
+
+	it("submits review item accept actions from the Needs Review controls", async () => {
+		render(KnowledgePage, { data: pageData() });
 
 		await waitFor(() => {
-			expect(fetchKnowledgeMemory).toHaveBeenCalledTimes(1);
+			expect(screen.getByText("Remember Hungarian labels.")).toBeInTheDocument();
+		});
+
+		await fireEvent.click(screen.getByRole("button", { name: "Remember this item" }));
+
+		expect(submitKnowledgeMemoryAction).toHaveBeenCalledWith({
+			target: "review_item",
+			action: "accept",
+			itemId: "review-1",
+			expectedProjectionRevision: 7,
 		});
 	});
 
-	it("lets the 20 second timer drive live overview polling instead of retrying on state flips", async () => {
-		vi.useFakeTimers();
-		vi.mocked(fetchKnowledgeMemoryOverview).mockResolvedValue(
-			fallbackMemoryOverviewPayload,
+	it("reloads the memory profile after stale projection conflicts", async () => {
+		vi.mocked(submitKnowledgeMemoryAction).mockRejectedValueOnce(
+			new ApiError("stale projection", {
+				code: "stale_projection",
+				status: 409,
+			}),
 		);
-
 		render(KnowledgePage, { data: pageData() });
 
 		await waitFor(() => {
-			expect(fetchKnowledgeMemoryOverview).toHaveBeenCalledTimes(1);
+			expect(screen.getByText("Remember Hungarian labels.")).toBeInTheDocument();
 		});
+		await fireEvent.click(screen.getByRole("button", { name: "Remember this item" }));
 
-		await vi.advanceTimersByTimeAsync(19_999);
-		expect(fetchKnowledgeMemoryOverview).toHaveBeenCalledTimes(1);
-
-		await vi.advanceTimersByTimeAsync(1);
 		await waitFor(() => {
-			expect(fetchKnowledgeMemoryOverview).toHaveBeenCalledTimes(2);
+			expect(fetchMemoryProfile).toHaveBeenCalledTimes(2);
 		});
+		expect(
+			screen.getByText(
+				"Memory profile was updated. Review the latest profile and try again.",
+			),
+		).toBeInTheDocument();
+	});
 
-		await vi.advanceTimersByTimeAsync(1);
-		expect(fetchKnowledgeMemoryOverview).toHaveBeenCalledTimes(2);
+	it("shows stale projection feedback inside an open memory item dialog", async () => {
+		vi.mocked(submitKnowledgeMemoryAction).mockRejectedValueOnce(
+			new ApiError("stale projection", {
+				code: "stale_projection",
+				status: 409,
+			}),
+		);
+		render(KnowledgePage, { data: pageData() });
+
+		await waitFor(() => {
+			expect(screen.getByText("Levi prefers concise memory behavior.")).toBeInTheDocument();
+		});
+		await fireEvent.click(screen.getByRole("button", { name: "Edit memory item" }));
+
+		const dialog = screen.getByRole("dialog", { name: "Memory item" });
+		const textarea = within(dialog).getByLabelText("Statement");
+		await fireEvent.input(textarea, {
+			target: { value: "Levi prefers concise memory behavior with local stale feedback." },
+		});
+		await fireEvent.click(within(dialog).getByRole("button", { name: "Save memory item" }));
+
+		await waitFor(() => {
+			expect(fetchMemoryProfile).toHaveBeenCalledTimes(2);
+		});
+		expect(screen.getByRole("dialog", { name: "Memory item" })).toBeInTheDocument();
+		expect(
+			within(dialog).getByRole("alert"),
+		).toHaveTextContent("Memory profile was updated. Review the latest profile and try again.");
+	});
+
+	it("shows stale projection feedback inside an open review edit dialog", async () => {
+		vi.mocked(submitKnowledgeMemoryAction).mockRejectedValueOnce(
+			new ApiError("stale projection", {
+				code: "stale_projection",
+				status: 409,
+			}),
+		);
+		render(KnowledgePage, { data: pageData() });
+
+		await waitFor(() => {
+			expect(screen.getByText("Remember Hungarian labels.")).toBeInTheDocument();
+		});
+		await fireEvent.click(screen.getByRole("button", { name: "Edit review item" }));
+
+		const dialog = screen.getByRole("dialog", { name: "Edit review item" });
+		const textarea = within(dialog).getByLabelText("Statement");
+		await fireEvent.input(textarea, {
+			target: { value: "Remember Hungarian labels in UI settings." },
+		});
+		await fireEvent.click(within(dialog).getByRole("button", { name: "Save review item" }));
+
+		await waitFor(() => {
+			expect(fetchMemoryProfile).toHaveBeenCalledTimes(2);
+		});
+		expect(screen.getByRole("dialog", { name: "Edit review item" })).toBeInTheDocument();
+		expect(
+			within(dialog).getByRole("alert"),
+		).toHaveTextContent("Memory profile was updated. Review the latest profile and try again.");
 	});
 });

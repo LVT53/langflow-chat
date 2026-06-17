@@ -32,6 +32,8 @@ const mocks = vi.hoisted(() => ({
 	rerankItems: vi.fn(),
 	resolveWorkingDocumentSelection: vi.fn(),
 	getLatestValidContextCompressionSnapshot: vi.fn(),
+	getActiveMemoryProfileContext: vi.fn(),
+	recordMemoryReworkTelemetry: vi.fn(),
 }));
 
 vi.mock("../honcho", () => ({
@@ -137,6 +139,15 @@ vi.mock("../context-compression", () => ({
 			.join("\n\n"),
 }));
 
+vi.mock("../memory-profile", async (importOriginal) => {
+	const actual = await importOriginal<typeof import("../memory-profile")>();
+	return {
+		...actual,
+		getActiveMemoryProfileContext: mocks.getActiveMemoryProfileContext,
+		recordMemoryReworkTelemetry: mocks.recordMemoryReworkTelemetry,
+	};
+});
+
 function artifact(overrides: {
 	id: string;
 	name: string;
@@ -192,7 +203,7 @@ function resetConstructedContextMocks() {
 			},
 		],
 		summary: "The session is about launch readiness.",
-		peerContext: "The user prefers concise operational plans.",
+		peerContext: "The user prefers a suppressed raw Honcho preference.",
 		honchoContext: {
 			source: "live",
 			waitedMs: 12,
@@ -266,6 +277,22 @@ function resetConstructedContextMocks() {
 	mocks.embedTexts.mockResolvedValue([]);
 	mocks.canUseTeiReranker.mockReturnValue(false);
 	mocks.getLatestValidContextCompressionSnapshot.mockResolvedValue(null);
+	mocks.getActiveMemoryProfileContext.mockResolvedValue({
+		resetGeneration: 0,
+		projectionRevision: 7,
+		items: [
+			{
+				id: "memory-active-1",
+				itemKey: "memory-profile-item:v1:preferences:global:active",
+				category: "preferences",
+				statement: "The user prefers projection-gated launch briefs.",
+				scope: { type: "global" },
+				revision: 1,
+				updatedAt: new Date("2026-06-01T00:00:00.000Z"),
+			},
+		],
+	});
+	mocks.recordMemoryReworkTelemetry.mockResolvedValue({ id: "telemetry-1" });
 	mocks.resolveWorkingDocumentSelection.mockReturnValue({
 		documentFocused: true,
 		retrieval: {
@@ -420,6 +447,15 @@ describe("buildConstructedContext", () => {
 			"Earlier question about the launch plan.",
 		);
 		expect(constructed.inputValue).toContain("## Baseline Memory Profile");
+		expect(constructed.inputValue).toContain(
+			"The user prefers projection-gated launch briefs.",
+		);
+		expect(constructed.inputValue).not.toContain(
+			"The user prefers a suppressed raw Honcho preference.",
+		);
+		expect(mocks.getActiveMemoryProfileContext).toHaveBeenCalledWith({
+			userId: "user-1",
+		});
 		expect(constructed.taskState).toBeNull();
 		expect(constructed.contextTraceSections).toEqual(
 			expect.arrayContaining([
@@ -458,6 +494,64 @@ describe("buildConstructedContext", () => {
 				workingSetApplied: false,
 				workingSetArtifactIds: [],
 				promptArtifactCount: 0,
+			}),
+		);
+	});
+
+	it("keeps fresh active memory profile items before stale items when the profile budget is constrained", async () => {
+		resetConstructedContextMocks();
+		mocks.getActiveMemoryProfileContext.mockResolvedValue({
+			resetGeneration: 0,
+			projectionRevision: 8,
+			items: [
+				{
+					id: "stale-memory",
+					itemKey: "memory-profile-item:v1:preferences:global:stale",
+					category: "preferences",
+					statement: `STALE_MEMORY_SHOULD_NOT_SURVIVE ${"stale ".repeat(40_000)}`,
+					scope: { type: "global" },
+					revision: 1,
+					updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+				},
+				{
+					id: "fresh-memory",
+					itemKey: "memory-profile-item:v1:preferences:global:fresh",
+					category: "preferences",
+					statement: "FRESH_MEMORY_SHOULD_SURVIVE.",
+					scope: { type: "global" },
+					revision: 1,
+					updatedAt: new Date("2026-06-01T00:00:00.000Z"),
+				},
+			],
+		});
+
+		const constructed = await buildConstructedContext({
+			userId: "user-1",
+			conversationId: "conversation-1",
+			message: "Thanks, that helps.",
+			modelId: "local-model",
+			contextLimits: {
+				maxModelContext: 16_000,
+				compactionUiThreshold: 12_000,
+				targetConstructedContext: 8_000,
+			},
+		});
+
+		expect(constructed.inputValue).toContain("FRESH_MEMORY_SHOULD_SURVIVE.");
+		expect(constructed.inputValue).not.toContain(
+			"STALE_MEMORY_SHOULD_NOT_SURVIVE",
+		);
+		expect(constructed.inputValue).toContain(
+			"Omitted active memory profile items: 1.",
+		);
+		expect(mocks.recordMemoryReworkTelemetry).toHaveBeenCalledWith(
+			expect.objectContaining({
+				eventName: "active_memory_profile_included",
+				count: 1,
+				metadata: expect.objectContaining({
+					totalItemCount: 2,
+					omittedItemCount: 1,
+				}),
 			}),
 		);
 	});
@@ -749,7 +843,10 @@ describe("buildConstructedContext", () => {
 		);
 		expect(constructed.inputValue).toContain("## Baseline Memory Profile");
 		expect(constructed.inputValue).toContain(
-			"The user prefers concise operational plans.",
+			"The user prefers projection-gated launch briefs.",
+		);
+		expect(constructed.inputValue).not.toContain(
+			"The user prefers a suppressed raw Honcho preference.",
 		);
 		expect(constructed.honchoContext).toEqual(
 			expect.objectContaining({ source: "live" }),

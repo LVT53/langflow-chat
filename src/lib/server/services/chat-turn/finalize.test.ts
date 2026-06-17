@@ -12,12 +12,16 @@ import type { ChatMessage } from "$lib/types";
 const {
 	mockMirrorMessage,
 	mockMirrorWorkCapsuleConclusion,
+	mockMemoryIntake,
+	mockIsCurrentMemoryResetGeneration,
 	mockRefreshConversationSummary,
 	mockResolveWorkingDocumentSelection,
 	mockRunUserMemoryMaintenance,
 } = vi.hoisted(() => ({
 	mockMirrorMessage: vi.fn(async () => undefined),
 	mockMirrorWorkCapsuleConclusion: vi.fn(async () => undefined),
+	mockMemoryIntake: vi.fn(async () => ({ status: "rejected" })),
+	mockIsCurrentMemoryResetGeneration: vi.fn(async () => true),
 	mockRefreshConversationSummary: vi.fn(async () => undefined),
 	mockResolveWorkingDocumentSelection: vi.fn(() => ({
 		documentFocused: false,
@@ -93,6 +97,14 @@ vi.mock("$lib/server/services/memory-maintenance", () => ({
 	runUserMemoryMaintenance: mockRunUserMemoryMaintenance,
 }));
 
+vi.mock("$lib/server/services/memory-profile", () => ({
+	isCurrentMemoryResetGeneration: mockIsCurrentMemoryResetGeneration,
+}));
+
+vi.mock("$lib/server/services/memory-profile/intake", () => ({
+	intakePostTurnMemory: mockMemoryIntake,
+}));
+
 vi.mock("$lib/server/services/message-evidence", () => ({
 	buildAssistantEvidenceSummary: vi.fn(async () => null),
 }));
@@ -164,6 +176,7 @@ function makeChatFile(params: {
 describe("runPostTurnTasks", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mockIsCurrentMemoryResetGeneration.mockResolvedValue(true);
 	});
 
 	it("logs summary refresh failures without rejecting post-turn tasks", async () => {
@@ -204,6 +217,94 @@ describe("runPostTurnTasks", () => {
 		);
 
 		errorSpy.mockRestore();
+	});
+
+	it("routes user and assistant post-turn text through memory intake without raw Honcho transcript mirroring", async () => {
+		const { runPostTurnTasks } = await import("./finalize");
+
+		await runPostTurnTasks({
+			logPrefix: "[SEND]",
+			userId: "user-1",
+			conversationId: "conv-1",
+			upstreamMessage: "upstream prompt payload",
+			userMessage: "Please remember that I prefer concise answers.",
+			userMessageId: "user-message-1",
+			assistantResponse: "I will keep that in mind.",
+			assistantMirrorContent: "assistant mirror text",
+			assistantMessageId: "assistant-message-1",
+			workCapsule: {
+				workflowSummary: "Finished the brief.",
+				taskSummary: "Brief update",
+				artifact: { name: "brief.md" },
+			},
+			maintenanceReason: "chat_send",
+		});
+
+		expect(mockMemoryIntake).toHaveBeenCalledWith(
+			expect.objectContaining({
+				userId: "user-1",
+				conversationId: "conv-1",
+				userMessage: "Please remember that I prefer concise answers.",
+				assistantMessage: "assistant mirror text",
+				userMessageId: "user-message-1",
+				assistantMessageId: "assistant-message-1",
+			}),
+		);
+		expect(mockMirrorMessage).not.toHaveBeenCalled();
+		expect(mockMirrorWorkCapsuleConclusion).toHaveBeenCalledWith({
+			userId: "user-1",
+			conversationId: "conv-1",
+			content: "Brief update\nFinished the brief.",
+		});
+		expect(mockRefreshConversationSummary).toHaveBeenCalledWith({
+			userId: "user-1",
+			conversationId: "conv-1",
+			userMessage: "Please remember that I prefer concise answers.",
+			assistantResponse: "I will keep that in mind.",
+		});
+		expect(mockRunUserMemoryMaintenance).toHaveBeenCalledWith(
+			"user-1",
+			"chat_send",
+		);
+	});
+
+	it("passes the started reset generation to intake and skips work-capsule mirroring after reset", async () => {
+		mockIsCurrentMemoryResetGeneration.mockResolvedValueOnce(false);
+		const { runPostTurnTasks } = await import("./finalize");
+
+		await runPostTurnTasks({
+			logPrefix: "[SEND]",
+			userId: "user-1",
+			conversationId: "conv-1",
+			upstreamMessage: "upstream prompt payload",
+			userMessage: "Please remember that I prefer concise answers.",
+			userMessageId: "user-message-1",
+			assistantResponse: "I will keep that in mind.",
+			assistantMirrorContent: "assistant mirror text",
+			assistantMessageId: "assistant-message-1",
+			workCapsule: {
+				workflowSummary: "Finished the brief.",
+				taskSummary: "Brief update",
+				artifact: { name: "brief.md" },
+			},
+			maintenanceReason: "chat_send",
+			startedResetGeneration: 7,
+		});
+
+		expect(mockMemoryIntake).toHaveBeenCalledWith(
+			expect.objectContaining({
+				startedResetGeneration: 7,
+			}),
+		);
+		expect(mockIsCurrentMemoryResetGeneration).toHaveBeenCalledWith({
+			userId: "user-1",
+			resetGeneration: 7,
+		});
+		expect(mockMirrorWorkCapsuleConclusion).not.toHaveBeenCalled();
+		expect(mockRunUserMemoryMaintenance).toHaveBeenCalledWith(
+			"user-1",
+			"chat_send",
+		);
 	});
 });
 

@@ -186,44 +186,152 @@ export async function runNormalChatDeliberationPasses(
 	let usage = emptyUsage();
 	const constraints: string[] = [];
 
-	for (const passSpec of passPlan) {
-		if (params.abortSignal?.aborted) {
-			break;
+	// RD-15: Find consecutive local-only passes at the start of the plan.
+	// Local-only passes return immediately without a model call, so their
+	// individual status labels flash by uselessly. Aggregate them instead.
+	const localOnlyEnd = findLocalOnlyPrefixEnd(passPlan, params);
+
+	if (localOnlyEnd > 0) {
+		emitPreparingWorkspaceStatus(params, "running", passPlan.length);
+		for (let i = 0; i < localOnlyEnd; i++) {
+			if (params.abortSignal?.aborted) break;
+			const result = await runDeliberationPass({
+				...params,
+				passSpec: passPlan[i],
+				previousBriefs: briefs,
+				workspaceReport,
+				tools,
+			});
+			usage = sumUsage(usage, result.usage);
+			if (result.brief) {
+				briefs.push(result.brief);
+				workspaceReport = reduceWorkspaceReport(workspaceReport, result.brief);
+			}
+			if (result.constrained) {
+				constraints.push(
+					`deliberation_pass_${passPlan[i].pass}_constrained`,
+				);
+			}
+			if (result.degraded) {
+				constraints.push(`deliberation_pass_${passPlan[i].pass}_degraded`);
+			}
 		}
-		params.onStatus?.(
-			deliberationStatusEntry({
-				passSpec,
-				passTotal: passPlan.length,
-				status: "running",
-				language: params.language,
+		emitPreparingWorkspaceStatus(params, "done", passPlan.length);
+	}
+
+	const remaining = passPlan.slice(localOnlyEnd);
+	if (remaining.length === 0) {
+		return {
+			briefs,
+			usage,
+			depthMetadata: withDeliberationMetadata({
+				effort: params.depthEffort,
+				attemptedPasses: passPlan.length,
+				completedPasses: briefs.length,
+				constraints,
 			}),
-		);
-		const result = await runDeliberationPass({
-			...params,
-			passSpec,
-			previousBriefs: briefs,
+			toolCalls: deliberationRecorder.getEntries(),
+		};
+	}
+
+	// RD-14: Run remaining passes with parallel mid-pipeline execution.
+	// When localOnlyEnd === 0, remaining[0] is context_source_gap_review
+	// (the first pass) and must run sequentially to build the workspace report.
+	// When localOnlyEnd > 0, the first pass already ran in the prefix, so all
+	// remaining passes except the last are mid-pipeline and can run in parallel.
+	// The last pass (viable_alternatives_preservation) always runs sequentially
+	// because it aggregates all prior briefs.
+	if (remaining.length === 1) {
+		const passSpec = remaining[0];
+		if (!params.abortSignal?.aborted) {
+			const result = await runSinglePassWithStatus(
+				passSpec,
+				params,
+				passPlan.length,
+				briefs,
+				workspaceReport,
+				tools,
+			);
+			usage = sumUsage(usage, result.usage);
+			if (result.brief) {
+				briefs.push(result.brief);
+				workspaceReport = reduceWorkspaceReport(workspaceReport, result.brief);
+			}
+			if (result.constrained) {
+				constraints.push(`deliberation_pass_${passSpec.pass}_constrained`);
+			}
+			if (result.degraded) {
+				constraints.push(`deliberation_pass_${passSpec.pass}_degraded`);
+			}
+		}
+	} else if (localOnlyEnd === 0) {
+		// First pass (remaining[0]) is context_source_gap_review — sequential.
+		await runRemainingSequentialPass(
+			remaining[0],
+			params,
+			passPlan.length,
+			briefs,
 			workspaceReport,
+			usage,
+			constraints,
 			tools,
-		});
-		params.onStatus?.(
-			deliberationStatusEntry({
-				passSpec,
-				passTotal: passPlan.length,
-				status: result.constrained ? "error" : "done",
-				language: params.language,
-			}),
 		);
-		usage = sumUsage(usage, result.usage);
-		if (result.brief) {
-			briefs.push(result.brief);
-			workspaceReport = reduceWorkspaceReport(workspaceReport, result.brief);
+
+		// Mid-pipeline: remaining[1 .. n-2] — parallel.
+		const midStart = 1;
+		const midEnd = remaining.length - 1;
+		if (midStart < midEnd) {
+			await runRemainingParallelPasses(
+				remaining.slice(midStart, midEnd),
+				params,
+				passPlan.length,
+				briefs,
+				workspaceReport,
+				usage,
+				constraints,
+				tools,
+			);
 		}
-		if (result.constrained) {
-			constraints.push(`deliberation_pass_${passSpec.pass}_constrained`);
+
+		// Last pass: remaining[n-1] — sequential.
+		await runRemainingSequentialPass(
+			remaining[remaining.length - 1],
+			params,
+			passPlan.length,
+			briefs,
+			workspaceReport,
+			usage,
+			constraints,
+			tools,
+		);
+	} else {
+		// First pass already ran in the local-only prefix.
+		// Mid-pipeline: remaining[0 .. n-2] — parallel.
+		const midEnd = remaining.length - 1;
+		if (midEnd > 0) {
+			await runRemainingParallelPasses(
+				remaining.slice(0, midEnd),
+				params,
+				passPlan.length,
+				briefs,
+				workspaceReport,
+				usage,
+				constraints,
+				tools,
+			);
 		}
-		if (result.degraded) {
-			constraints.push(`deliberation_pass_${passSpec.pass}_degraded`);
-		}
+
+		// Last pass: remaining[n-1] — sequential.
+		await runRemainingSequentialPass(
+			remaining[remaining.length - 1],
+			params,
+			passPlan.length,
+			briefs,
+			workspaceReport,
+			usage,
+			constraints,
+			tools,
+		);
 	}
 
 	return {
@@ -261,6 +369,215 @@ function deliberationStatusEntry(params: {
 		passKind: params.passSpec.kind,
 		occurredAt,
 	};
+}
+
+function isLocalOnlyPass(
+	passSpec: PlannedDeliberationPass,
+	params: NormalChatDeliberationParams,
+): boolean {
+	if (passSpec.kind === "context_source_gap_review") {
+		return params.depthEffort?.depthMetadata.appliedProfile !== "maximum";
+	}
+	if (passSpec.kind === "viable_alternatives_preservation") return true;
+	if (passSpec.kind === "missed_user_need_check") return true;
+	if (passSpec.kind === "contradiction_risk_check") return true;
+	if (passSpec.kind === "final_format_style_check") return true;
+	if (passSpec.kind === "hungarian_parity_check") return true;
+	return false;
+}
+
+function findLocalOnlyPrefixEnd(
+	passPlan: PlannedDeliberationPass[],
+	params: NormalChatDeliberationParams,
+): number {
+	let end = 0;
+	while (end < passPlan.length && isLocalOnlyPass(passPlan[end], params)) {
+		end++;
+	}
+	return end;
+}
+
+function emitPreparingWorkspaceStatus(
+	params: NormalChatDeliberationParams,
+	status: ResponseActivityEntry["status"],
+	passTotal: number,
+): void {
+	params.onStatus?.({
+		id: "deliberation-pass-preparing",
+		kind: "deliberation",
+		status,
+		label:
+			params.language === "hu"
+				? status === "running"
+					? "Munkaterület előkészítése"
+					: "Munkaterület előkészítve"
+				: status === "running"
+					? "Preparing workspace"
+					: "Prepared workspace",
+		passIndex: 0,
+		passTotal,
+		passKind: "context_source_gap_review",
+		occurredAt: Date.now(),
+	});
+}
+
+async function runSinglePassWithStatus(
+	passSpec: PlannedDeliberationPass,
+	params: NormalChatDeliberationParams,
+	passTotal: number,
+	previousBriefs: NormalChatDeliberationBrief[],
+	workspaceReport: DeliberationWorkspaceReport,
+	tools: ReturnType<typeof createDeliberationTools>,
+): Promise<RunPassResult> {
+	// Issue 2: Suppress per-pass status for local-only passes outside the prefix.
+	// The local prefix already handles aggregate status; non-prefix local passes
+	// (e.g. micro-checks in Maximum mode) should be silent.
+	const silent = isLocalOnlyPass(passSpec, params);
+	if (!silent) {
+		params.onStatus?.(
+			deliberationStatusEntry({
+				passSpec,
+				passTotal,
+				status: "running",
+				language: params.language,
+			}),
+		);
+	}
+	const result = await runDeliberationPass({
+		...params,
+		passSpec,
+		previousBriefs,
+		workspaceReport,
+		tools,
+	});
+	if (!silent) {
+		params.onStatus?.(
+			deliberationStatusEntry({
+				passSpec,
+				passTotal,
+				status: result.constrained ? "error" : "done",
+				language: params.language,
+			}),
+		);
+	}
+	return result;
+}
+
+async function runRemainingSequentialPass(
+	passSpec: PlannedDeliberationPass,
+	params: NormalChatDeliberationParams,
+	passTotal: number,
+	briefs: NormalChatDeliberationBrief[],
+	workspaceReport: DeliberationWorkspaceReport,
+	usage: NormalChatModelRunUsage,
+	constraints: string[],
+	tools: ReturnType<typeof createDeliberationTools>,
+): Promise<void> {
+	if (params.abortSignal?.aborted) return;
+	const result = await runSinglePassWithStatus(
+		passSpec,
+		params,
+		passTotal,
+		briefs,
+		workspaceReport,
+		tools,
+	);
+	Object.assign(usage, sumUsage(usage, result.usage));
+	if (result.brief) {
+		briefs.push(result.brief);
+		Object.assign(
+			workspaceReport,
+			reduceWorkspaceReport(workspaceReport, result.brief),
+		);
+	}
+	if (result.constrained) {
+		constraints.push(`deliberation_pass_${passSpec.pass}_constrained`);
+	}
+	if (result.degraded) {
+		constraints.push(`deliberation_pass_${passSpec.pass}_degraded`);
+	}
+}
+
+async function runRemainingParallelPasses(
+	midPasses: PlannedDeliberationPass[],
+	params: NormalChatDeliberationParams,
+	passTotal: number,
+	briefs: NormalChatDeliberationBrief[],
+	workspaceReport: DeliberationWorkspaceReport,
+	usage: NormalChatModelRunUsage,
+	constraints: string[],
+	tools: ReturnType<typeof createDeliberationTools>,
+): Promise<void> {
+	if (midPasses.length === 0 || params.abortSignal?.aborted) return;
+
+	// Emit "running" for non-local parallel passes at once.
+	for (const passSpec of midPasses) {
+		if (isLocalOnlyPass(passSpec, params)) continue;
+		params.onStatus?.(
+			deliberationStatusEntry({
+				passSpec,
+				passTotal,
+				status: "running",
+				language: params.language,
+			}),
+		);
+	}
+
+	const midResults = await Promise.allSettled(
+		midPasses.map((passSpec) =>
+			runDeliberationPass({
+				...params,
+				passSpec,
+				previousBriefs: briefs,
+				workspaceReport,
+				tools,
+			}),
+		),
+	);
+
+	for (let i = 0; i < midResults.length; i++) {
+		const settled = midResults[i];
+		const passSpec = midPasses[i];
+		if (settled.status === "fulfilled") {
+			const result = settled.value;
+			if (!isLocalOnlyPass(passSpec, params)) {
+				params.onStatus?.(
+					deliberationStatusEntry({
+						passSpec,
+						passTotal,
+						status: result.constrained ? "error" : "done",
+						language: params.language,
+					}),
+				);
+			}
+			Object.assign(usage, sumUsage(usage, result.usage));
+			if (result.brief) {
+				briefs.push(result.brief);
+				Object.assign(
+					workspaceReport,
+					reduceWorkspaceReport(workspaceReport, result.brief),
+				);
+			}
+			if (result.constrained) {
+				constraints.push(`deliberation_pass_${passSpec.pass}_constrained`);
+			}
+			if (result.degraded) {
+				constraints.push(`deliberation_pass_${passSpec.pass}_degraded`);
+			}
+		} else {
+			if (!isLocalOnlyPass(passSpec, params)) {
+				params.onStatus?.(
+					deliberationStatusEntry({
+						passSpec,
+						passTotal,
+						status: "error",
+						language: params.language,
+					}),
+				);
+			}
+			constraints.push(`deliberation_pass_${passSpec.pass}_failed`);
+		}
+	}
 }
 
 function createFocusedWorkspaceBrief(
@@ -1058,12 +1375,19 @@ async function runDeliberationPass(
 		tools: ReturnType<typeof createDeliberationTools>;
 	},
 ): Promise<RunPassResult> {
+	// RD-13: context_source_gap_review is a model call for Maximum profile,
+	// local keyword extraction for all other profiles.
 	if (params.passSpec.kind === "context_source_gap_review") {
-		return {
-			brief: createFocusedWorkspaceBrief(params.passSpec, params),
-			usage: emptyUsage(),
-			constrained: false,
-		};
+		const isMaximum =
+			params.depthEffort?.depthMetadata.appliedProfile === "maximum";
+		if (!isMaximum) {
+			return {
+				brief: createFocusedWorkspaceBrief(params.passSpec, params),
+				usage: emptyUsage(),
+				constrained: false,
+			};
+		}
+		// Maximum: fall through to model-call path below.
 	}
 
 	if (params.passSpec.kind === "viable_alternatives_preservation") {
@@ -1088,6 +1412,15 @@ async function runDeliberationPass(
 
 	const promptText = deliberationUserPrompt(params);
 	if (shouldDegradePassBeforeModelCall(params.passSpec, promptText, params)) {
+		// RD-13: Fall back to local brief when Maximum's first pass degrades.
+		if (params.passSpec.kind === "context_source_gap_review") {
+			return {
+				brief: createFocusedWorkspaceBrief(params.passSpec, params),
+				usage: emptyUsage(),
+				constrained: false,
+				degraded: true,
+			};
+		}
 		return {
 			brief: createDegradedModelPassBrief(params.passSpec, params),
 			usage: emptyUsage(),
@@ -1133,6 +1466,15 @@ async function runDeliberationPass(
 	} catch (error) {
 		if (error instanceof Error && error.name === "AbortError") {
 			throw error;
+		}
+		// RD-13: Fall back to local brief when Maximum's first pass model call fails.
+		if (params.passSpec.kind === "context_source_gap_review") {
+			return {
+				brief: createFocusedWorkspaceBrief(params.passSpec, params),
+				usage: emptyUsage(),
+				constrained: false,
+				degraded: true,
+			};
 		}
 		return {
 			brief: null,

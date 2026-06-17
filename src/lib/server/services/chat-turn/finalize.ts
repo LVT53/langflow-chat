@@ -10,7 +10,6 @@ import {
 	listConversationFileProductionJobs,
 } from "$lib/server/services/file-production";
 import {
-	mirrorMessage,
 	mirrorWorkCapsuleConclusion,
 } from "$lib/server/services/honcho";
 import {
@@ -25,6 +24,8 @@ import {
 import { parseWorkingDocumentMetadata } from "$lib/server/services/knowledge/store";
 import { recordMemoryEvent } from "$lib/server/services/memory-events";
 import { runUserMemoryMaintenance } from "$lib/server/services/memory-maintenance";
+import { isCurrentMemoryResetGeneration } from "$lib/server/services/memory-profile";
+import { intakePostTurnMemory } from "$lib/server/services/memory-profile/intake";
 import { buildAssistantEvidenceSummary } from "$lib/server/services/message-evidence";
 import {
 	createMessage,
@@ -159,6 +160,7 @@ export type FinalizeChatTurnParams = {
 	honchoSnapshot: PersistAssistantTurnStateParams["honchoSnapshot"];
 	assistantMirrorContent: string;
 	maintenanceReason: RunPostTurnTasksParams["maintenanceReason"];
+	startedResetGeneration?: number;
 	linkedSources?: LinkedContextSource[];
 	toolCalls?: PersistAssistantEvidenceParams["toolCalls"];
 	contextTraceSections?: PersistAssistantEvidenceParams["contextTraceSections"];
@@ -614,10 +616,13 @@ export async function finalizeChatTurn(
 							conversationId: params.conversationId,
 							upstreamMessage: params.upstreamMessage,
 							userMessage: params.normalizedMessage,
+							userMessageId: userMessage?.id ?? null,
 							assistantResponse: params.assistantResponse,
 							assistantMirrorContent: params.assistantMirrorContent,
+							assistantMessageId: assistantMessage.id,
 							workCapsule: turnState.workCapsule,
 							maintenanceReason: params.maintenanceReason,
+							startedResetGeneration: params.startedResetGeneration,
 						}),
 					)
 				: runPostTurnTasksImpl({
@@ -626,10 +631,13 @@ export async function finalizeChatTurn(
 						conversationId: params.conversationId,
 						upstreamMessage: params.upstreamMessage,
 						userMessage: params.normalizedMessage,
+						userMessageId: userMessage?.id ?? null,
 						assistantResponse: params.assistantResponse,
 						assistantMirrorContent: params.assistantMirrorContent,
+						assistantMessageId: assistantMessage.id,
 						workCapsule: turnState.workCapsule,
 						maintenanceReason: params.maintenanceReason,
+						startedResetGeneration: params.startedResetGeneration,
 					})
 			: Promise.resolve();
 
@@ -897,36 +905,38 @@ export async function runPostTurnTasks(
 	params: RunPostTurnTasksParams,
 ): Promise<void> {
 	const honchoTasks: Promise<unknown>[] = [
-		mirrorMessage(
-			params.userId,
-			params.conversationId,
-			"user",
-			params.upstreamMessage,
-		).catch((err) =>
-			console.error("[HONCHO] Mirror user message failed:", err),
+		intakePostTurnMemory({
+			userId: params.userId,
+			conversationId: params.conversationId,
+			userMessage: params.userMessage,
+			assistantMessage: params.assistantMirrorContent ?? params.assistantResponse,
+			userMessageId: params.userMessageId ?? null,
+			assistantMessageId: params.assistantMessageId ?? null,
+			startedResetGeneration: params.startedResetGeneration,
+		}).catch((err) =>
+			console.error("[MEMORY_INTAKE] Post-turn intake failed:", err),
 		),
 	];
 
-	if (params.assistantMirrorContent?.trim()) {
+	const workCapsule = params.workCapsule;
+	if (workCapsule?.workflowSummary) {
 		honchoTasks.push(
-			mirrorMessage(
-				params.userId,
-				params.conversationId,
-				"assistant",
-				params.assistantMirrorContent,
-			).catch((err) =>
-				console.error("[HONCHO] Mirror assistant message failed:", err),
-			),
-		);
-	}
-
-	if (params.workCapsule?.workflowSummary) {
-		honchoTasks.push(
-			mirrorWorkCapsuleConclusion({
-				userId: params.userId,
-				conversationId: params.conversationId,
-				content: `${params.workCapsule.taskSummary ?? params.workCapsule.artifact.name}\n${params.workCapsule.workflowSummary}`,
-			}).catch((err) =>
+			(async () => {
+				if (
+					params.startedResetGeneration !== undefined &&
+					!(await isCurrentMemoryResetGeneration({
+						userId: params.userId,
+						resetGeneration: params.startedResetGeneration,
+					}))
+				) {
+					return;
+				}
+				await mirrorWorkCapsuleConclusion({
+					userId: params.userId,
+					conversationId: params.conversationId,
+					content: `${workCapsule.taskSummary ?? workCapsule.artifact.name}\n${workCapsule.workflowSummary}`,
+				});
+			})().catch((err) =>
 				console.error("[HONCHO] Mirror work capsule failed:", err),
 			),
 		);

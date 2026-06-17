@@ -296,3 +296,154 @@ This is intentionally HITL because final visual fit cannot be judged from unit t
 - Are the dependency relationships correct?
 - Should RD-09 stay as a separate hardening issue, or should its acceptance criteria be distributed into earlier slices?
 - Are the AFK/HITL labels correct?
+
+## Post-implementation hardening
+
+The original RD-01 through RD-10 slices shipped the Reasoning Depth feature. The slices below address reliability and architectural gaps discovered after implementation through live production diagnosis.
+
+### Diagnosis summary
+
+Live testing against the production instance confirmed two root causes for Auto always defaulting to Standard:
+
+1. **Reasoning token exhaustion:** The classifier uses `CLASSIFIER_MAX_TOKENS = 192`. Reasoning-capable models (Qwen 3.5 122B via vLLM, DeepSeek V4 Pro via DeepSeek API) generate reasoning/thinking tokens that count against the `max_tokens` budget. With 192 tokens, the entire budget is consumed by reasoning, leaving zero tokens for the structured JSON content. `finish_reason: "length"` → truncated JSON → parse failure → `control_model_error` fallback to `standard`.
+
+2. **Structured output incompatibility:** The control model creates the provider with `supportsStructuredOutputs: true`, sending `response_format: {type: "json_schema", strict: true}`. DeepSeek API rejects this with HTTP 400 `"This response_format type is unavailable now"`. The fallback path uses `Output.json()` (non-strict, `json_object` mode), which succeeds but doesn't enforce the schema. The model returns its own JSON shape (e.g., `{"reasoning_depth": "deep"}`) which doesn't match the expected `appliedProfile` field. `parseClassifierResult()` returns `null` → `invalid_classifier_response` fallback to `standard`.
+
+Additionally, the Max mode signal gap was confirmed: Max bypasses the classifier via `deterministic_bypass`, producing no `DepthSelectionSignals`. Without signals, the signal-aware deliberation planner falls back to the baseline all-local pass plan, causing Max to produce fewer model-calling deliberation passes than Auto resolved to Extended with signals.
+
+### Hardening slices
+
+| ID | Title | Type | Blocked by | Suggested owner scope |
+| --- | --- | --- | --- | --- |
+| RD-11 | Depth Classifier Resilience: defense-in-depth | AFK | None | `depth-selection.ts`, `normal-chat-control-model.ts` |
+| RD-12 | Close the Max Signal Gap | AFK | None | `depth-selection.ts`, `deliberation-pass-catalogue.ts` |
+| RD-13 | Model-calling first pass for Maximum | AFK | RD-12 | `deliberation-runner.ts`, `deliberation-pass-catalogue.ts` |
+| RD-14 | Parallel mid-pipeline deliberation passes | AFK | RD-12 | `deliberation-runner.ts` |
+| RD-15 | Honest Deliberation Status Line for local passes | AFK | None | `deliberation-runner.ts`, status/UI components |
+
+### RD-11: Depth Classifier Resilience: defense-in-depth
+
+**Type:** AFK
+**Blocked by:** None — can start immediately
+
+#### What to build
+
+Make Automatic Depth Selection degrade through progressively cheaper fallbacks rather than collapsing every Auto turn to `standard` on any classifier failure. Four layers:
+
+1. **Adaptive token budget with retry on truncation:** Start with 256 tokens. If `finish_reason === "length"`, retry with 640, then 1280. Only give up on the LLM after all three attempts.
+2. **Schema-in-prompt with lenient parsing:** Stop relying on `response_format: {type: "json_schema"}`. The depth classifier should call `sendJsonControlMessage` with a per-call flag (e.g., `skipStructuredOutputs: true`) so the control model provider uses `supportsStructuredOutputs: false` for this call only — other control model callers (context summarization, title generation) keep strict schema enforcement on providers that support it. Use `json_object` mode and embed the schema in the system prompt. Parse leniently — accept field aliases (`appliedProfile`, `applied_profile`, `profile`, `reasoning_depth`, `depth`) and value mappings (`"deep"` → `"extended"`, `"high"` → `"extended"`, `"max"` → `"maximum"`).
+3. **Deterministic keyword heuristic fallback:** When all LLM attempts fail, run a keyword-based classifier using the same patterns already in `deliberation-runner.ts` (`selectSalientSentences`, keyword matching for "compare", "analyze", "comprehensive", "edge cases", etc.). Not as smart as the LLM, but never fails.
+4. **Structured logging:** Log classifier source (`control_model`, `deterministic_fallback`, `control_model_error`), applied profile, attempt count, finish reason, and reasoning token count so failures are diagnosable.
+
+#### Acceptance criteria
+
+- [ ] Classifier retries on `finish_reason: "length"` with progressively larger token budgets
+- [ ] Schema is embedded in the system prompt, not sent via `response_format: {type: "json_schema"}`
+- [ ] `parseClassifierResult()` accepts field aliases and maps non-standard values to valid enum values
+- [ ] Deterministic keyword classifier runs when all LLM attempts fail, producing a best-effort profile
+- [ ] Classifier results are logged with source, profile, attempts, and failure reason
+- [ ] DeepSeek V4 Pro returns `extended` for complex prompts instead of falling back to `standard`
+- [ ] Qwen 3.5 122B (vLLM) returns `extended` for complex prompts instead of falling back to `standard`
+- [ ] Tests cover token exhaustion retry, schema-in-prompt parsing, alias mapping, deterministic fallback, and logging
+
+#### Orchestrator notes
+
+This is the highest-priority slice. It fixes the confirmed production regression where Auto always defaults to Standard. Layers 1-2 can be built in parallel; layer 3 depends on nothing new. Layer 4 should be added throughout.
+
+### RD-12: Close the Max Signal Gap
+
+**Type:** AFK
+**Blocked by:** None — can start immediately
+
+#### What to build
+
+When `reasoningDepth === "max"` bypasses the classifier via `deterministic_bypass`, assign conservative default `DepthSelectionSignals` instead of leaving them undefined. This allows the signal-aware deliberation planner (`planDeliberationPassKinds`) to add model-calling passes (e.g., `evidence_gap_review`, `workspace_synthesis`) instead of falling to the all-local baseline.
+
+Default signals for Max:
+- `groundingNeed: "useful"` — triggers `evidence_gap_review` (1 model call)
+- `contextBreadth: "broad"` — triggers `workspace_synthesis` (1 model call)
+- `outputRoom: "expanded"`
+- `toolUse: "normal"`
+
+Optionally, if the previous turn had classifier signals and was also high-cost (extended or maximum), reuse those signals instead of the defaults. Do not reuse signals from a previous standard turn — a user who asked a simple question then switches to Max for a complex one should not inherit stale `groundingNeed: "none"` signals that would suppress evidence-gathering passes. The check: `if (previousDepthMetadata?.signals && (previousDepthMetadata.appliedProfile === "extended" || previousDepthMetadata.appliedProfile === "maximum"))` → reuse signals, else → use defaults.
+
+#### Acceptance criteria
+
+- [ ] Max mode produces non-empty `DepthSelectionSignals` in `DepthMetadata`
+- [ ] The deliberation planner adds signal-aware model-calling passes for Max
+- [ ] Max mode has more model-calling deliberation passes than the all-local baseline
+- [ ] Previous-turn signal reuse works when the previous turn was high-cost (extended/maximum), falls back to defaults otherwise
+- [ ] Tests cover default signal assignment, high-cost previous-turn reuse, stale-simple-signal rejection, and deliberation plan expansion
+
+#### Orchestrator notes
+
+This can run in parallel with RD-11. The default signals are conservative to avoid making Max 3x slower than Extended — the goal is ~1.5x Extended, not 3x.
+
+### RD-13: Model-calling first pass for Maximum
+
+**Type:** AFK
+**Blocked by:** RD-12 (needs signals to inform the pass)
+
+#### What to build
+
+Make the first deliberation pass (`context_source_gap_review`) a real model call for Maximum profile instead of local keyword extraction. The model call produces a richer workspace report through actual reasoning about user intent, assumptions, evidence needs, and edge cases. Extended's first pass remains local to avoid adding latency.
+
+#### Acceptance criteria
+
+- [ ] `context_source_gap_review` uses `runPlainNormalChatModelRun()` when profile is `maximum`
+- [ ] The model call uses `useDepthProviderOptions: true` and the Max depth effort
+- [ ] Extended's first pass remains local (`createFocusedWorkspaceBrief`)
+- [ ] The workspace report from the model call is richer than the local keyword extraction
+- [ ] Graceful degradation: if the model call fails, fall back to the local brief
+- [ ] Tests cover model-call path, local fallback, and Extended/Max divergence
+
+#### Orchestrator notes
+
+This adds one model call to Max's deliberation pipeline. Combined with RD-12's signal-aware passes, Max would have: 1 model-calling pass 1 + 1-2 signal-aware passes + 1 final answer = 3-4 model calls total, vs Extended's 1-3.
+
+### RD-14: Parallel mid-pipeline deliberation passes
+
+**Type:** AFK
+**Blocked by:** RD-12 (needs signals to determine which passes to parallelize)
+
+#### What to build
+
+Run independent mid-pipeline deliberation passes in parallel after pass 1 completes. The sequence:
+1. `context_source_gap_review` (sequential — builds workspace report)
+2. `evidence_gap_review` + `source_reconciliation` + `workspace_synthesis` (parallel — all consume workspace report)
+3. `viable_alternatives_preservation` (sequential — aggregates all briefs)
+
+Use `Promise.allSettled()` for parallel passes so one failure doesn't block the others.
+
+#### Acceptance criteria
+
+- [ ] Independent mid-pipeline passes run in parallel via `Promise.allSettled()`
+- [ ] `viable_alternatives_preservation` waits for all prior passes to complete
+- [ ] A failed parallel pass doesn't block other parallel passes or the final answer
+- [ ] Combined usage is still aggregated correctly across parallel passes
+- [ ] Tests cover parallel execution, partial failure, and usage aggregation
+
+#### Orchestrator notes
+
+This primarily benefits Extended (which has 2-3 model-calling passes that currently run sequentially). For Max, it depends on RD-12 and RD-13 landing first.
+
+### RD-15: Honest Deliberation Status Line for local passes
+
+**Type:** AFK
+**Blocked by:** None — can start immediately
+
+#### What to build
+
+Show a single aggregate "Preparing workspace" status while local-only deliberation passes run, instead of individual per-pass labels that flash by instantly. Only show per-pass labels for model-calling passes where the user actually waits for each pass.
+
+#### Acceptance criteria
+
+- [ ] Local-only passes emit a single "Preparing workspace" status, not per-pass labels
+- [ ] Model-calling passes emit per-pass labels as before
+- [ ] The transition from aggregate to per-pass is smooth
+- [ ] Completed Thought still records which passes ran
+- [ ] Tests cover status emission for local-only, mixed, and all-model-calling pass plans
+
+#### Orchestrator notes
+
+This is a UI/status fix, not a logic change. It can run in parallel with all other slices.

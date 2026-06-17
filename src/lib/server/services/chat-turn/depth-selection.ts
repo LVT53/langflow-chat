@@ -17,7 +17,7 @@ import type {
 	ReasoningDepth,
 } from "$lib/types";
 
-const CLASSIFIER_MAX_TOKENS = 192;
+const CLASSIFIER_TOKEN_BUDGETS = [256, 640, 1280];
 const MAX_REQUEST_CHARS = 2_000;
 const MAX_RECENT_MESSAGES = 4;
 const MAX_RECENT_MESSAGE_CHARS = 500;
@@ -66,16 +66,43 @@ const DEPTH_CLASSIFICATION_SCHEMA = {
 
 const DEPTH_CLASSIFIER_SYSTEM_PROMPT = [
 	"You classify the reasoning depth needed for one normal chat turn.",
-	"Return only JSON matching the schema.",
-	"Allowed appliedProfile values: standard, extended, maximum.",
+	"Return only JSON matching this schema:",
+	"{",
+	'  "appliedProfile": "standard" | "extended" | "maximum",',
+	'  "reason": "brief explanation",',
+	'  "groundingNeed": "none" | "possible" | "useful" | "required",',
+	'  "contextBreadth": "narrow" | "normal" | "broad",',
+	'  "outputRoom": "concise" | "normal" | "expanded",',
+	'  "toolUse": "none" | "normal" | "source_heavy"',
+	"}",
 	"Never choose off. Off is only available through explicit user selection outside this classifier.",
 	"Prefer standard for ordinary direct answers, transformations, summaries, and simple coding help.",
 	"Use extended for multi-step analysis, comparisons, debugging, planning, or requests with several constraints.",
 	"Reserve maximum for clearly hard, high-value, ambiguous, long-horizon, or failure-sensitive work.",
-	"Also return compact effort signals: groundingNeed, contextBreadth, outputRoom, and toolUse.",
 	"Set groundingNeed to useful or required only when external/current/source-backed evidence is materially useful.",
 	"Set outputRoom to expanded only when the task likely needs more answer room; higher depth does not imply verbosity.",
 ].join("\n");
+
+const MAX_DEFAULT_SIGNALS: DepthSelectionSignals = {
+	groundingNeed: "useful",
+	contextBreadth: "broad",
+	outputRoom: "expanded",
+	toolUse: "normal",
+};
+
+const EXTENDED_KEYWORDS = [
+	"compare", "analyze", "multi-step", "planning", "debug",
+	"evaluate", "tradeoff", "trade-off", "trade off",
+	"review", "assess", "refactor", "optimize", "migrate",
+	"design", "architecture", "strategy", "recommend",
+];
+
+const MAXIMUM_KEYWORDS = [
+	"comprehensive", "exhaustive", "edge case", "edge cases",
+	"failure mode", "failure modes", "critical", "production",
+	"regulatory", "compliance", "security", "audit",
+	"prove", "verify", "validate", "guarantee",
+];
 
 type DepthSelectionTurnInput = {
 	normalizedMessage: string;
@@ -165,10 +192,12 @@ export async function resolveReasoningDepthSelection(
 		};
 	}
 	if (request.reasoningDepth === "max") {
+		const maxSignals = await resolveMaxSignals(params);
 		return {
 			metadata: buildDepthMetadata({
 				request,
 				appliedProfile: "maximum",
+				signals: maxSignals,
 				classifierSource: "deterministic_bypass",
 				constraintNote: "explicit_max",
 			}),
@@ -196,51 +225,133 @@ export async function resolveReasoningDepthSelection(
 		recentMessages,
 	});
 	const classifierModel = await resolveDepthClassifierModel(request);
-	let text: string;
-	try {
-		const result = await sendJsonControlMessage(
-			formatDepthClassificationPrompt(context),
-			classifierModel.modelId,
-			{
-				systemPrompt: DEPTH_CLASSIFIER_SYSTEM_PROMPT,
-				thinkingMode: "off",
-				maxTokens: CLASSIFIER_MAX_TOKENS,
-				temperature: 0,
-				jsonSchema: {
-					name: "reasoning_depth_selection",
-					strict: true,
-					schema: DEPTH_CLASSIFICATION_SCHEMA,
+
+	const prompt = formatDepthClassificationPrompt(context);
+	let lastError: unknown;
+	let lastErrorKind: "network" | "invalid_response" | undefined;
+	let attemptCount = 0;
+	let finishReason: string | undefined;
+	let hadReasoningTokens = false;
+
+	for (const tokenBudget of CLASSIFIER_TOKEN_BUDGETS) {
+		attemptCount++;
+		try {
+			const result = await sendJsonControlMessage(
+				prompt,
+				classifierModel.modelId,
+				{
+					systemPrompt: DEPTH_CLASSIFIER_SYSTEM_PROMPT,
+					thinkingMode: "off",
+					maxTokens: tokenBudget,
+					temperature: 0,
+					skipStructuredOutputs: true,
+					jsonSchema: {
+						name: "reasoning_depth_selection",
+						strict: true,
+						schema: DEPTH_CLASSIFICATION_SCHEMA,
+					},
 				},
-			},
+			);
+
+			const rawResponse = result.rawResponse as Record<string, unknown> | undefined;
+			const choices = Array.isArray(rawResponse?.choices) ? rawResponse.choices : [];
+			const firstChoice = choices[0] as Record<string, unknown> | undefined;
+			finishReason =
+				typeof firstChoice?.finish_reason === "string"
+					? firstChoice.finish_reason
+					: undefined;
+
+			const usage = rawResponse?.usage as Record<string, unknown> | undefined;
+			const completionTokensDetails =
+				usage?.completion_tokens_details as Record<string, unknown> | undefined;
+			hadReasoningTokens =
+				typeof completionTokensDetails?.reasoning_tokens === "number" &&
+				completionTokensDetails.reasoning_tokens > 0;
+
+			const text = result.text;
+			const classification = parseClassifierResult(text);
+
+			if (classification) {
+				logClassifierResult({
+					source: "control_model",
+					appliedProfile: classification.appliedProfile,
+					attemptCount,
+					finishReason,
+					hadReasoningTokens,
+				});
+				return {
+					metadata: buildDepthMetadata({
+						request,
+						appliedProfile: classification.appliedProfile,
+						signals: classification.signals,
+						classifierSource: "control_model",
+						classifierModel,
+					}),
+				};
+			}
+
+			if (finishReason === "length" || isTruncatedJson(text)) {
+				continue;
+			}
+
+			lastError = new Error("invalid_classifier_response");
+			lastErrorKind = "invalid_response";
+			break;
+		} catch (error) {
+			lastError = error;
+			lastErrorKind = "network";
+			break;
+		}
+	}
+
+	if (lastError) {
+		const keywordResult = runDeterministicKeywordClassifier(
+			request.normalizedMessage,
 		);
-		text = result.text;
-	} catch {
+		const fallbackReason =
+			lastErrorKind === "invalid_response"
+				? "invalid_classifier_response"
+				: "control_model_error";
+		logClassifierResult({
+			source: "deterministic_fallback",
+			appliedProfile: keywordResult.appliedProfile,
+			attemptCount,
+			finishReason,
+			hadReasoningTokens,
+			error: String(lastError),
+		});
 		return {
-			metadata: buildFallbackDepthMetadata(
+			metadata: buildDepthMetadata({
 				request,
-				"control_model_error",
+				appliedProfile: keywordResult.appliedProfile,
+				signals: keywordResult.signals,
+				classifierSource: "deterministic_fallback",
+				fallback: true,
+				fallbackReason,
 				classifierModel,
-			),
+			}),
 		};
 	}
 
-	const classification = parseClassifierResult(text);
-	if (!classification) {
-		return {
-			metadata: buildFallbackDepthMetadata(
-				request,
-				"invalid_classifier_response",
-				classifierModel,
-			),
-		};
-	}
-
+	const keywordResult = runDeterministicKeywordClassifier(
+		request.normalizedMessage,
+	);
+	logClassifierResult({
+		source: "deterministic_fallback",
+		appliedProfile: keywordResult.appliedProfile,
+		attemptCount,
+		finishReason,
+		hadReasoningTokens,
+		error: "invalid_classifier_response",
+	});
 	return {
 		metadata: buildDepthMetadata({
 			request,
-			appliedProfile: classification.appliedProfile,
-			signals: classification.signals,
-			classifierSource: "control_model",
+			appliedProfile: keywordResult.appliedProfile,
+			signals: keywordResult.signals,
+			classifierSource: "deterministic_fallback",
+			fallback: true,
+			fallbackReason: "invalid_classifier_response",
 			classifierModel,
 		}),
 	};
@@ -472,15 +583,53 @@ function parseClassifierResult(text: string): {
 		return null;
 	}
 	if (!parsed || typeof parsed !== "object") return null;
-	const profile = (parsed as { appliedProfile?: unknown }).appliedProfile;
-	const appliedProfile =
-		profile === "standard" || profile === "extended" || profile === "maximum"
-			? profile
-			: null;
+
+	const record = parsed as Record<string, unknown>;
+	const appliedProfile = resolveAppliedProfile(record);
 	if (!appliedProfile) return null;
-	const signals = parseClassifierSignals(parsed as Record<string, unknown>);
+
+	const signals = parseClassifierSignals(record);
 	if (!signals) return null;
 	return { appliedProfile, signals };
+}
+
+function resolveAppliedProfile(
+	record: Record<string, unknown>,
+): DepthAppliedProfile | null {
+	const raw =
+		record.appliedProfile ??
+		record.applied_profile ??
+		record.profile ??
+		record.reasoning_depth ??
+		record.depth;
+
+	if (typeof raw !== "string") return null;
+
+	const normalized = raw.toLowerCase().trim();
+	const mapped = mapProfileValue(normalized);
+	if (
+		mapped === "standard" ||
+		mapped === "extended" ||
+		mapped === "maximum"
+	) {
+		return mapped;
+	}
+	return null;
+}
+
+function mapProfileValue(value: string): string {
+	switch (value) {
+		case "deep":
+		case "high":
+			return "extended";
+		case "max":
+			return "maximum";
+		case "low":
+		case "moderate":
+			return "standard";
+		default:
+			return value;
+	}
 }
 
 function parseClassifierSignals(
@@ -530,6 +679,133 @@ function parseClassifierSignals(
 		outputRoom,
 		toolUse,
 	};
+}
+
+function isTruncatedJson(text: string): boolean {
+	const trimmed = text.trim();
+	if (!trimmed) return true;
+	try {
+		JSON.parse(trimmed);
+		return false;
+	} catch {
+		return true;
+	}
+}
+
+type ClassifierLogEntry = {
+	source: "control_model" | "deterministic_fallback" | "control_model_error";
+	appliedProfile: DepthAppliedProfile;
+	attemptCount: number;
+	finishReason?: string;
+	hadReasoningTokens?: boolean;
+	error?: string;
+};
+
+function logClassifierResult(entry: ClassifierLogEntry): void {
+	const parts = [
+		`source=${entry.source}`,
+		`profile=${entry.appliedProfile}`,
+		`attempts=${entry.attemptCount}`,
+	];
+	if (entry.finishReason) {
+		parts.push(`finish_reason=${entry.finishReason}`);
+	}
+	if (entry.hadReasoningTokens !== undefined) {
+		parts.push(`reasoning_tokens=${entry.hadReasoningTokens}`);
+	}
+	if (entry.error) {
+		parts.push(`error=${entry.error}`);
+	}
+	console.log(`[DEPTH_CLASSIFIER] ${parts.join(" ")}`);
+}
+
+function runDeterministicKeywordClassifier(
+	normalizedMessage: string,
+): {
+	appliedProfile: DepthAppliedProfile;
+	signals: DepthSelectionSignals;
+} {
+	const lower = normalizedMessage.toLowerCase();
+	const wordCount = normalizedMessage.split(/\s+/).filter(Boolean).length;
+
+	let extendedScore = 0;
+	for (const keyword of EXTENDED_KEYWORDS) {
+		if (lower.includes(keyword)) extendedScore++;
+	}
+
+	let maximumScore = 0;
+	for (const keyword of MAXIMUM_KEYWORDS) {
+		if (lower.includes(keyword)) maximumScore++;
+	}
+
+	let appliedProfile: DepthAppliedProfile = "standard";
+	let groundingNeed: DepthSelectionSignals["groundingNeed"] = "none";
+	let contextBreadth: DepthSelectionSignals["contextBreadth"] = "normal";
+	let outputRoom: DepthSelectionSignals["outputRoom"] = "normal";
+	let toolUse: DepthSelectionSignals["toolUse"] = "normal";
+
+	if (maximumScore >= 2 || (maximumScore >= 1 && wordCount > 200)) {
+		appliedProfile = "maximum";
+		groundingNeed = "useful";
+		contextBreadth = "broad";
+		outputRoom = "expanded";
+	} else if (extendedScore >= 2 || (extendedScore >= 1 && wordCount > 100)) {
+		appliedProfile = "extended";
+		groundingNeed = extendedScore >= 3 ? "useful" : "possible";
+		contextBreadth = extendedScore >= 3 ? "broad" : "normal";
+		outputRoom = wordCount > 150 ? "expanded" : "normal";
+	}
+
+	return {
+		appliedProfile,
+		signals: { groundingNeed, contextBreadth, outputRoom, toolUse },
+	};
+}
+
+async function resolveMaxSignals(
+	params: ResolveReasoningDepthSelectionParams,
+): Promise<DepthSelectionSignals> {
+	try {
+		const rows = await db
+			.select({
+				metadataJson: messages.metadataJson,
+			})
+			.from(messages)
+			.where(eq(messages.conversationId, params.conversationId))
+			.orderBy(...messageOrderDesc())
+			.limit(1);
+
+		const lastRow = rows[0];
+		if (lastRow?.metadataJson) {
+			let parsed: unknown;
+			try {
+				parsed = JSON.parse(lastRow.metadataJson);
+			} catch (error) {
+				console.warn(
+					"[DEPTH_CLASSIFIER] Failed to parse previous message metadataJson",
+					error,
+				);
+			}
+			if (parsed && typeof parsed === "object") {
+				const meta = parsed as Record<string, unknown>;
+				const depthMeta = meta.depthMetadata as DepthMetadata | undefined;
+				if (
+					depthMeta?.signals &&
+					(depthMeta.appliedProfile === "extended" ||
+						depthMeta.appliedProfile === "maximum")
+				) {
+					return depthMeta.signals;
+				}
+			}
+		}
+	} catch (error) {
+		console.warn(
+			"[DEPTH_CLASSIFIER] Failed to read previous message depth metadata",
+			error,
+		);
+	}
+
+	return { ...MAX_DEFAULT_SIGNALS };
 }
 
 function truncate(value: string, maxChars: number): string {

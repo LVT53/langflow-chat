@@ -531,7 +531,7 @@ async function listScopeConclusions(
 
 async function getScopeConclusionsPage(
 	scope: ConclusionScope,
-	options: { size: number },
+	options: { page?: number; size: number },
 ): Promise<{
 	total: number;
 	items: Array<{
@@ -542,7 +542,7 @@ async function getScopeConclusionsPage(
 	}>;
 }> {
 	try {
-		const page = await scope.list({ size: options.size });
+		const page = await scope.list({ page: options.page ?? 1, size: options.size });
 		return {
 			total: page.total,
 			items: page.items.map((item) => ({
@@ -673,6 +673,61 @@ export type HonchoPersonaMemoryRecord = {
 	createdAt: number;
 };
 
+export type LegacyPersonaMemoryCandidate = HonchoPersonaMemoryRecord;
+
+async function collectLegacyPersonaMemoryCandidatesFromScope(
+	scope: ConclusionScope,
+	candidateScope: LegacyPersonaMemoryCandidate["scope"],
+	options: {
+		limit: number;
+		pageSize: number;
+		excludeSourceIds: Set<string>;
+		startPage: number;
+		maxPages: number;
+	},
+): Promise<{
+	total: number;
+	candidates: LegacyPersonaMemoryCandidate[];
+	nextPage: number | null;
+	exhausted: boolean;
+}> {
+	let pageNumber = options.startPage;
+	let total = 0;
+	let pagesScanned = 0;
+	const candidates: LegacyPersonaMemoryCandidate[] = [];
+	let nextPage: number | null = null;
+	let exhausted = true;
+
+	while (candidates.length < options.limit && pagesScanned < options.maxPages) {
+		const page = await getScopeConclusionsPage(scope, {
+			page: pageNumber,
+			size: options.pageSize,
+		});
+		total = page.total;
+		pagesScanned += 1;
+		for (const item of page.items) {
+			if (options.excludeSourceIds.has(item.id)) continue;
+			candidates.push({
+				id: item.id,
+				content: item.content,
+				scope: candidateScope,
+				sessionId: item.sessionId,
+				createdAt: normalizeConclusionTimestamp(item.createdAt),
+			});
+		}
+		if (pageNumber * options.pageSize >= page.total) {
+			nextPage = null;
+			exhausted = true;
+			break;
+		}
+		pageNumber += 1;
+		nextPage = pageNumber;
+		exhausted = false;
+	}
+
+	return { total, candidates, nextPage, exhausted };
+}
+
 async function listVisiblePersonaMemoryRecords(
 	userId: string,
 ): Promise<HonchoPersonaMemoryRecord[]> {
@@ -711,6 +766,80 @@ export async function listPersonaMemories(
 	userId: string,
 ): Promise<HonchoPersonaMemoryRecord[]> {
 	return listVisiblePersonaMemoryRecords(userId);
+}
+
+export async function listLegacyPersonaMemoryCandidates(
+	userId: string,
+	options: {
+		limit: number;
+		excludeSourceIds?: string[];
+		startPage?: number;
+		maxPages?: number;
+	},
+): Promise<{
+	totalAvailable: number;
+	candidates: LegacyPersonaMemoryCandidate[];
+	nextPage: number | null;
+	exhausted: boolean;
+}> {
+	if (!isHonchoEnabled()) {
+		return {
+			totalAvailable: 0,
+			candidates: [],
+			nextPage: null,
+			exhausted: true,
+		};
+	}
+
+	const limit = Math.max(1, Math.min(10, Math.floor(options.limit)));
+	const startPage = Math.max(1, Math.floor(options.startPage ?? 1));
+	const maxPages = Math.max(1, Math.min(10, Math.floor(options.maxPages ?? 4)));
+	const excludeSourceIds = new Set(
+		(options.excludeSourceIds ?? [])
+			.map((id) => id.trim())
+			.filter(Boolean),
+	);
+	const pageSize = limit;
+	const [userPeer, assistantPeer] = await Promise.all([
+		getUserPeer(userId),
+		getAssistantPeer(userId),
+	]);
+	const assistantAboutUserScope = assistantPeer.conclusionsOf(userPeer);
+	const [selfPage, assistantAboutUserPage] = await Promise.all([
+		collectLegacyPersonaMemoryCandidatesFromScope(userPeer.conclusions, "self", {
+			limit,
+			pageSize,
+			excludeSourceIds,
+			startPage,
+			maxPages,
+		}),
+		collectLegacyPersonaMemoryCandidatesFromScope(
+			assistantAboutUserScope,
+			"assistant_about_user",
+			{
+				limit,
+				pageSize,
+				excludeSourceIds,
+				startPage,
+				maxPages,
+			},
+		),
+	]);
+
+	const candidates = [
+		...selfPage.candidates,
+		...assistantAboutUserPage.candidates,
+	].sort((a, b) => b.createdAt - a.createdAt);
+
+	return {
+		totalAvailable: selfPage.total + assistantAboutUserPage.total,
+		candidates,
+		nextPage:
+			[selfPage.nextPage, assistantAboutUserPage.nextPage]
+				.filter((page): page is number => page !== null)
+				.sort((left, right) => left - right)[0] ?? null,
+		exhausted: selfPage.exhausted && assistantAboutUserPage.exhausted,
+	};
 }
 
 export async function getPersonaMemoryOverviewSummary(
