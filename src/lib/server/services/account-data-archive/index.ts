@@ -157,6 +157,9 @@ export async function createAccountDataArchive(
 		compression: "DEFLATE",
 		compressionOptions: { level: 6 },
 	});
+	nodeStream.on("error", (error) => {
+		console.error("[ACCOUNT_DATA_ARCHIVE] Stream error:", error);
+	});
 	const zipStream = Readable.toWeb(nodeStream) as ReadableStream<Uint8Array>;
 	return { status: "ok", filename, zipStream };
 }
