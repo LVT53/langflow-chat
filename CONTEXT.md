@@ -279,7 +279,7 @@ A `requestAnimationFrame`-aligned batching layer inside the **Normal Chat Client
 _Avoid_: content buffer, token cache, render throttle, display queue, MarkdownRenderer throttle
 
 **Render Coalescing Cadence**:
-The frame-aligned minimum interval between markdown re-renders during streaming, owned by `MarkdownRenderer.svelte`. It is distinct from the **Token Display Buffer**: the buffer controls when accumulated text reaches reactive state, the cadence controls when that state is re-parsed and painted. Both are needed — the buffer prevents reactive pressure, the cadence prevents render-cost pressure from full markdown re-parses.
+The minimum interval between markdown re-renders during streaming, owned by `MarkdownRenderer.svelte`. It is distinct from the **Token Display Buffer**: the buffer controls when accumulated text reaches reactive state (aligned to animation frames), the cadence controls when that state is re-parsed and painted (throttled via `setTimeout`). Both are needed — the buffer prevents reactive pressure, the cadence prevents render-cost pressure from full markdown re-parses. When the block count is unchanged during streaming, only the last block's HTML is updated in-place to avoid tearing down and recreating the entire block list.
 _Avoid_: render throttle, display buffer, frame skip, debounce
 
 **Word Reveal Animation**:

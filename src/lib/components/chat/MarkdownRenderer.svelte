@@ -65,15 +65,12 @@ const SOURCE_TOOLTIP_OFFSET = 6;
 
 // Throttle rendering during streaming so each visual update is large
 // enough that new blocks are perceivable with the fade-in animation.
-// Uses requestAnimationFrame for initial frame alignment, then setTimeout
-// for the remaining throttle delay to avoid infinite rAF loops in test
-// environments where rAF fires without sufficient time advancement.
-// Falls back to setTimeout when requestAnimationFrame is unavailable (SSR).
+// The Token Display Buffer in the runtime already aligns store updates
+// to animation frames; this throttle controls render frequency to avoid
+// excessive markdown re-parses.
 let pendingContent: string | null = null;
-let rafId: number | null = null;
-let lastRenderTime = 0;
+let renderTimer: ReturnType<typeof setTimeout> | null = null;
 const STREAM_THROTTLE_MS = 40;
-const HAS_RAF = typeof requestAnimationFrame !== "undefined";
 
 async function collectFullMessageSourceReferences(
 	source: string,
@@ -88,20 +85,6 @@ async function collectFullMessageSourceReferences(
 	}
 }
 
-function flushPendingRender(
-	darkMode: boolean,
-	streaming: boolean,
-	compactLinks: boolean,
-) {
-	rafId = null;
-	const latest = pendingContent;
-	pendingContent = null;
-	if (latest !== null) {
-		lastRenderTime = performance.now();
-		void renderContent(latest, darkMode, streaming, compactLinks);
-	}
-}
-
 function scheduleRender(
 	src: string,
 	darkMode: boolean,
@@ -109,26 +92,14 @@ function scheduleRender(
 	compactLinks: boolean,
 ) {
 	pendingContent = src;
-	if (rafId !== null) return;
-
-	if (HAS_RAF) {
-		rafId = requestAnimationFrame(() => {
-			const elapsed = performance.now() - lastRenderTime;
-			if (elapsed >= STREAM_THROTTLE_MS) {
-				flushPendingRender(darkMode, streaming, compactLinks);
-			} else {
-				rafId = setTimeout(
-					() => flushPendingRender(darkMode, streaming, compactLinks),
-					STREAM_THROTTLE_MS - elapsed,
-				) as unknown as number;
-			}
-		});
-	} else {
-		rafId = setTimeout(
-			() => flushPendingRender(darkMode, streaming, compactLinks),
-			STREAM_THROTTLE_MS,
-		) as unknown as number;
-	}
+	if (renderTimer !== null) return;
+	renderTimer = setTimeout(() => {
+		renderTimer = null;
+		const latest = pendingContent;
+		pendingContent = null;
+		if (latest === null) return;
+		void renderContent(latest, darkMode, streaming, compactLinks);
+	}, STREAM_THROTTLE_MS);
 }
 
 async function splitMarkdownBlocks(
@@ -219,8 +190,39 @@ async function renderContent(
 	}
 	const newBlocks = await splitMarkdownBlocks(src, darkMode, compactLinks);
 	if (currentRender !== renderVersion) return;
-	const oldCount = prevBlockCount;
 
+	if (streaming && blocks.length > 0 && newBlocks.length === blocks.length) {
+		// Same block count during streaming: update the last block's HTML
+		// in-place to avoid tearing down and recreating the entire {#each}
+		// list, which causes screen flicker.
+		const lastIdx = newBlocks.length - 1;
+		const updated = newBlocks[lastIdx];
+		const oldLast = blocks[lastIdx];
+		if (
+			updated.type === "html" &&
+			oldLast.type === "html" &&
+			updated.html === oldLast.html
+		) {
+			// Content unchanged — skip entirely
+			return;
+		}
+		blocks = blocks.map((b, i) =>
+			i === lastIdx
+				? updated.type === "html"
+					? { type: "html", html: updated.html, isNew: b.isNew }
+					: {
+							type: "code",
+							code: updated.code,
+							language: updated.language,
+							html: updated.html,
+							isNew: b.isNew,
+						}
+				: b,
+		);
+		return;
+	}
+
+	const oldCount = prevBlockCount;
 	blocks = newBlocks.map((b, i) => ({
 		...b,
 		isNew: streaming && i >= oldCount,
@@ -248,10 +250,9 @@ $effect(() => {
 	}
 
 	// Flush any pending throttled render immediately when streaming stops.
-	if (rafId !== null) {
-		cancelAnimationFrame(rafId);
-		clearTimeout(rafId);
-		rafId = null;
+	if (renderTimer !== null) {
+		clearTimeout(renderTimer);
+		renderTimer = null;
 		pendingContent = null;
 	}
 
@@ -623,10 +624,9 @@ onMount(() => {
 	return () => {
 		resizeObserver?.disconnect();
 		resizeObserver = null;
-		if (rafId !== null) {
-			cancelAnimationFrame(rafId);
-			clearTimeout(rafId);
-			rafId = null;
+		if (renderTimer !== null) {
+			clearTimeout(renderTimer);
+			renderTimer = null;
 		}
 		if (resizeFrame) {
 			cancelAnimationFrame(resizeFrame);
