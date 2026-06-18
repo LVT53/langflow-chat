@@ -949,7 +949,7 @@ async function handleBulkDelete(): Promise<boolean> {
 										{:else if document.versionNumber != null && document.documentFamilyId}
 											<span class="version-badge">v{document.versionNumber}</span>
 										{/if}
-										{document.name}
+										<span class="document-title">{document.name}</span>
 										{#if document.documentFamilyStatus === 'historical'}
 											<span class="historical-badge">{$t('knowledge.historical')}</span>
 										{/if}
@@ -1903,17 +1903,17 @@ async function handleBulkDelete(): Promise<boolean> {
 
 		.documents-table .document-list-item {
 			display: grid;
-			grid-template-columns: 28px minmax(0, 1fr);
+			grid-template-columns: 28px 28px minmax(0, 1fr);
 			grid-template-areas:
-				"check name"
-				"icon type"
-				". size"
-				". date"
-				"actions actions";
-			column-gap: 0.62rem;
-			row-gap: 0.48rem;
+				"check icon name"
+				"type type type"
+				"size size size"
+				"date date date"
+				"actions actions actions";
+			column-gap: 0.58rem;
+			row-gap: 0;
 			align-items: start;
-			padding: 0.8rem;
+			padding: 0.78rem;
 			border: 1px solid var(--border-default);
 			border-radius: var(--radius-md);
 			background: var(--surface-elevated);
@@ -1933,7 +1933,7 @@ async function handleBulkDelete(): Promise<boolean> {
 		.documents-table .col-icon {
 			grid-area: icon;
 			width: 28px;
-			padding-top: 0.12rem;
+			padding-top: 0.06rem;
 			justify-self: center;
 		}
 
@@ -1943,10 +1943,18 @@ async function handleBulkDelete(): Promise<boolean> {
 		}
 
 		.document-name {
+			display: flex;
+			flex-wrap: wrap;
+			align-items: flex-start;
 			min-width: 0;
-			gap: 0.32rem;
+			gap: 0.32rem 0.42rem;
 			font-size: 0.92rem;
 			line-height: 1.32;
+		}
+
+		.document-title {
+			flex: 1 1 12rem;
+			min-width: 0;
 			overflow-wrap: anywhere;
 		}
 
@@ -1954,23 +1962,29 @@ async function handleBulkDelete(): Promise<boolean> {
 			grid-area: type;
 			width: auto;
 			min-width: 0;
+			margin-top: 0.72rem;
+			border-top-left-radius: var(--radius-md);
+			border-top-right-radius: var(--radius-md);
 		}
 
 		.documents-table .col-size {
 			grid-area: size;
 			width: auto;
+			border-top: 1px solid var(--border-subtle);
 		}
 
 		.documents-table .col-date {
 			grid-area: date;
 			width: auto;
+			border-top: 1px solid var(--border-subtle);
+			border-bottom-right-radius: var(--radius-md);
+			border-bottom-left-radius: var(--radius-md);
 		}
 
 		.documents-table .col-actions {
 			grid-area: actions;
 			width: 100%;
-			padding-top: 0.22rem;
-			border-top: 1px solid var(--border-subtle);
+			padding-top: 0.68rem;
 		}
 
 		.documents-table .col-type,
@@ -1980,7 +1994,9 @@ async function handleBulkDelete(): Promise<boolean> {
 			align-items: center;
 			justify-content: space-between;
 			gap: var(--space-sm);
-			font-size: 0.74rem;
+			padding: 0.5rem 0.62rem;
+			background: var(--surface-page);
+			font-size: 0.76rem;
 			line-height: 1.2;
 			min-width: 0;
 			color: var(--text-secondary);
@@ -2039,6 +2055,8 @@ async function handleBulkDelete(): Promise<boolean> {
 		.original-badge,
 		.historical-badge {
 			letter-spacing: 0.02em;
+			white-space: nowrap;
+			flex: 0 0 auto;
 		}
 
 		.action-buttons {
