@@ -41,6 +41,7 @@ vi.mock("$lib/client/api/knowledge", async () => {
 		fetchMemoryProfile: vi.fn(),
 		fetchKnowledgeMemory: vi.fn(),
 		fetchKnowledgeMemoryOverview: vi.fn(),
+		fetchMemoryProfileItemDetail: vi.fn(),
 		recordDocumentWorkspaceOpen: vi.fn(),
 		submitKnowledgeMemoryAction: vi.fn(),
 	};
@@ -50,6 +51,7 @@ import {
 	fetchKnowledgeMemory,
 	fetchKnowledgeMemoryOverview,
 	fetchMemoryProfile,
+	fetchMemoryProfileItemDetail,
 	submitKnowledgeMemoryAction,
 } from "$lib/client/api/knowledge";
 import Page from "./+page.svelte";
@@ -154,6 +156,11 @@ describe("Knowledge page memory loading", () => {
 		mockPageState.page.url = new URL("http://localhost/knowledge");
 		vi.mocked(fetchMemoryProfile).mockResolvedValue(memoryProfilePayload);
 		vi.mocked(fetchKnowledgeMemory).mockResolvedValue(memoryProfilePayload);
+		vi.mocked(fetchMemoryProfileItemDetail).mockResolvedValue({
+			...memoryProfilePayload.categories[0].items[0],
+			sourceChips: [],
+			whyRemembered: null,
+		});
 		vi.mocked(submitKnowledgeMemoryAction).mockResolvedValue(
 			memoryProfilePayload,
 		);
