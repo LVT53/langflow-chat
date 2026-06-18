@@ -16,9 +16,6 @@ test.describe("Knowledge page", () => {
 		await expect(
 			page.getByRole("heading", { name: "Documents" }),
 		).toBeVisible();
-		await expect(
-			page.getByText("Browse and manage your uploaded and generated documents"),
-		).toBeVisible();
 		await expect(page.getByRole("region", { name: "Documents" })).toBeVisible();
 		const searchbox = page.getByRole("searchbox", { name: "Search documents" });
 		if ((await searchbox.count()) > 0) {

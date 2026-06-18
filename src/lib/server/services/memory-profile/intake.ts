@@ -323,17 +323,28 @@ async function markIntakeDirty(params: {
 	reason: "honcho_reconciliation" | "possible_duplicate" | "deferred_intake";
 	status: MemoryIntakeStatus;
 	itemId?: string;
+	scope?: MemoryProfileScope;
 }): Promise<void> {
 	await markMemoryDirty({
 		userId: params.intake.userId,
 		reason: params.reason,
-		scope: GLOBAL_SCOPE,
+		scope: params.scope ?? GLOBAL_SCOPE,
 		expectedResetGeneration: params.resetGeneration,
 		metadata: safeSourceMetadata(params.intake, {
 			intakeStatus: params.status,
 			...(params.itemId ? { itemId: params.itemId } : {}),
 		}),
 	});
+}
+
+function scopeForAdmittedMemory(params: {
+	category: MemoryProfileCategory;
+	conversationId: string;
+}): MemoryProfileScope {
+	if (params.category === "goals_ongoing_work" && params.conversationId) {
+		return { type: "conversation", id: params.conversationId };
+	}
+	return GLOBAL_SCOPE;
 }
 
 async function recordIntakeTelemetry(params: {
@@ -414,6 +425,7 @@ export async function intakePostTurnMemory(
 				resetGeneration,
 				reason: "deferred_intake",
 				status: "deferred",
+				scope: { type: "conversation", id: params.conversationId },
 			});
 			await recordIntakeTelemetry({
 				intake: params,
@@ -430,10 +442,14 @@ export async function intakePostTurnMemory(
 		}
 
 		const before = await getMemoryProfileReadModel({ userId: params.userId });
+		const scope = scopeForAdmittedMemory({
+			category: parsed.category,
+			conversationId: params.conversationId,
+		});
 		const item = await createMemoryProfileItem({
 			userId: params.userId,
 			category: parsed.category,
-			scope: GLOBAL_SCOPE,
+			scope,
 			statement: parsed.statement,
 			expectedResetGeneration: resetGeneration,
 		});
@@ -445,6 +461,7 @@ export async function intakePostTurnMemory(
 				resetGeneration,
 				reason: "deferred_intake",
 				status: "deferred",
+				scope,
 			});
 			await recordIntakeTelemetry({
 				intake: params,
@@ -477,6 +494,7 @@ export async function intakePostTurnMemory(
 			reason: "honcho_reconciliation",
 			status: "admitted",
 			itemId: item.id,
+			scope,
 		});
 		if (duplicate) {
 			await markIntakeDirty({
@@ -485,6 +503,7 @@ export async function intakePostTurnMemory(
 				reason: "possible_duplicate",
 				status: "admitted",
 				itemId: item.id,
+				scope,
 			});
 		}
 		await recordIntakeTelemetry({

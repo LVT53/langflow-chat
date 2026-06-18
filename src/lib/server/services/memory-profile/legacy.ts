@@ -8,7 +8,6 @@ import {
 	memoryResetGenerations,
 	memoryReworkTelemetry,
 } from "$lib/server/db/schema";
-import type { MemoryProfileItemStatus } from "./index";
 
 type LegacyMigrationCategory =
 	| "about_you"
@@ -85,18 +84,14 @@ function stableDigest(value: string, length = 24): string {
 
 function legacyItemKey(params: {
 	category: LegacyMigrationCategory;
-	status: MemoryProfileItemStatus;
 	statement: string;
-	sourceId: string;
 }): string {
 	const normalizedStatement = params.statement
 		.trim()
 		.replace(/\s+/g, " ")
 		.toLowerCase();
 	const digest = stableDigest(
-		[params.category, params.status, normalizedStatement, params.sourceId].join(
-			"\u001f",
-		),
+		[params.category, normalizedStatement].join("\u001f"),
 		32,
 	);
 	return `${ITEM_KEY_VERSION}:${params.category}:global:global:${digest}`;
@@ -124,12 +119,19 @@ function looksDocumentDerived(text: string): boolean {
 	);
 }
 
+type LegacyClassificationWithoutSource =
+	| Omit<
+			Extract<LegacyMigrationClassification, { decision: "activate" }>,
+			"sourceId"
+	  >
+	| Omit<
+			Extract<LegacyMigrationClassification, { decision: "preserve" }>,
+			"sourceId"
+	  >;
+
 function classifyHighConfidence(
 	text: string,
-): Omit<
-	Extract<LegacyMigrationClassification, { decision: "activate" }>,
-	"sourceId"
-> | null {
+): LegacyClassificationWithoutSource | null {
 	const preference =
 		/^(?:the\s+)?user prefers\s+(.+)$/i.exec(text) ??
 		/^prefers\s+(.+)$/i.exec(text);
@@ -146,7 +148,7 @@ function classifyHighConfidence(
 		/^working on\s+(.+)$/i.exec(text);
 	if (working?.[1]) {
 		return {
-			decision: "activate",
+			decision: "preserve",
 			category: "goals_ongoing_work",
 			statement: sentence(`Working on ${lowerInitial(working[1])}`),
 		};
@@ -304,9 +306,7 @@ function applyLegacyMigrationRows(params: {
 					resetGeneration: params.resetGeneration,
 					itemKey: legacyItemKey({
 						category: classification.category,
-						status,
 						statement: classification.statement,
-						sourceId: classification.sourceId,
 					}),
 					category: classification.category,
 					scopeType: "global",
@@ -330,12 +330,48 @@ function applyLegacyMigrationRows(params: {
 				})
 				.run() as { changes?: number };
 
-			if ((insertResult.changes ?? 0) !== 1) continue;
-			inserted += 1;
+			let provenanceItemId: string = itemId;
+			if ((insertResult.changes ?? 0) === 1) {
+				inserted += 1;
+			} else {
+				const [existing] = tx
+					.select()
+					.from(memoryProfileItems)
+					.where(
+						and(
+							eq(memoryProfileItems.userId, params.userId),
+							eq(memoryProfileItems.resetGeneration, params.resetGeneration),
+							eq(
+								memoryProfileItems.itemKey,
+								legacyItemKey({
+									category: classification.category,
+									statement: classification.statement,
+								}),
+							),
+						),
+					)
+					.limit(1)
+					.all();
+				if (!existing) continue;
+				provenanceItemId = existing.id;
+				if (
+					status === "active" &&
+					existing.status === "preserved_legacy"
+				) {
+					tx.update(memoryProfileItems)
+						.set({
+							status: "active",
+							updatedAt: now,
+						})
+						.where(eq(memoryProfileItems.id, existing.id))
+						.run();
+					inserted += 1;
+				}
+			}
 			tx.insert(memoryProfileItemProvenance)
 				.values({
 					id: randomUUID(),
-					itemId,
+					itemId: provenanceItemId,
 					userId: params.userId,
 					resetGeneration: params.resetGeneration,
 					sourceType: "legacy_persona_memory",

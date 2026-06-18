@@ -9,7 +9,7 @@ import type {
 } from "$lib/types";
 import { t, type I18nKey } from "$lib/i18n";
 import { fetchMemoryProfileItemDetail } from "$lib/client/api/knowledge";
-import { Check, Loader, Pencil, Trash2, X } from "@lucide/svelte";
+import { Check, Eye, Loader, Pencil, Trash2, X } from "@lucide/svelte";
 import KnowledgeMemoryModal from "./KnowledgeMemoryModal.svelte";
 
 type CategoryDefinition = {
@@ -87,12 +87,12 @@ let reviewItems = $derived(
 let visibleReviewItems = $derived(
 	(profile?.review.visibleItems ?? reviewItems).slice(0, 3),
 );
+let additionalReviewItems = $derived.by(() => {
+	const visibleIds = new Set(visibleReviewItems.map((item) => item.id));
+	return reviewItems.filter((item) => !visibleIds.has(item.id));
+});
 let reviewOverflowCount = $derived(
-	Math.max(
-		profile?.review.overflowCount ?? 0,
-		(profile?.review.openCount ?? 0) - visibleReviewItems.length,
-		reviewItems.length - visibleReviewItems.length,
-	),
+	Math.max(0, additionalReviewItems.length),
 );
 
 function getCategoryItems(
@@ -320,7 +320,7 @@ $effect(() => {
 					{#if reviewOverflowCount > 0}
 						<button
 							type="button"
-							class="memory-review-more cursor-pointer rounded-full px-3 py-1 text-xs font-sans font-medium transition"
+							class="memory-review-more min-h-11 cursor-pointer rounded-full px-4 py-1 text-xs font-sans font-medium transition"
 							onclick={() => (reviewOverflowOpen = true)}
 						>
 							{$t("memoryProfile.more", { count: reviewOverflowCount })}
@@ -343,7 +343,7 @@ $effect(() => {
 								{#if item.canAccept}
 									<button
 										type="button"
-										class="btn-icon-bare btn-icon-sm memory-review-accept h-9 w-9 cursor-pointer rounded-full disabled:cursor-not-allowed disabled:opacity-50"
+										class="btn-icon-bare btn-icon-sm memory-review-accept h-11 w-11 cursor-pointer rounded-full disabled:cursor-not-allowed disabled:opacity-50"
 										onclick={() => useReviewItem(item)}
 										disabled={pendingActionKey === actionKey(item.id, "accept")}
 										aria-label={$t("memoryProfile.rememberThisItem")}
@@ -358,7 +358,7 @@ $effect(() => {
 								{/if}
 								<button
 									type="button"
-									class="btn-icon-bare btn-icon-sm h-9 w-9 cursor-pointer rounded-full text-icon-muted hover:text-text-primary"
+									class="btn-icon-bare btn-icon-sm h-11 w-11 cursor-pointer rounded-full text-icon-muted hover:text-text-primary"
 									onclick={() => openReviewEditor(item)}
 									aria-label={$t("memoryProfile.editReviewItem")}
 									title={$t("memoryProfile.edit")}
@@ -367,7 +367,7 @@ $effect(() => {
 								</button>
 								<button
 									type="button"
-									class="btn-icon-bare btn-icon-sm cursor-pointer rounded-full text-icon-muted hover:text-danger disabled:cursor-not-allowed disabled:opacity-50"
+									class="btn-icon-bare btn-icon-sm h-11 w-11 cursor-pointer rounded-full text-icon-muted hover:text-danger disabled:cursor-not-allowed disabled:opacity-50"
 									onclick={() =>
 										onAction({
 											target: "review_item",
@@ -411,21 +411,27 @@ $effect(() => {
 										{/if}
 									</div>
 									<div class="flex shrink-0 items-center gap-1">
-										{#if item.canEdit}
-											<button
-												type="button"
-												class="btn-icon-bare btn-icon-sm cursor-pointer rounded-full text-icon-muted hover:text-text-primary"
-												onclick={() => openMemoryItem(item)}
-												aria-label={$t("memoryProfile.editMemoryItem")}
-												title={$t("memoryProfile.edit")}
-											>
+										<button
+											type="button"
+											class="btn-icon-bare btn-icon-sm h-11 w-11 cursor-pointer rounded-full text-icon-muted hover:text-text-primary"
+											onclick={() => openMemoryItem(item)}
+											aria-label={item.canEdit
+												? $t("memoryProfile.editMemoryItem")
+												: $t("memoryProfile.itemTitle")}
+											title={item.canEdit
+												? $t("memoryProfile.edit")
+												: $t("memoryProfile.itemTitle")}
+										>
+											{#if item.canEdit}
 												<Pencil size={17} strokeWidth={2.1} aria-hidden="true" />
-											</button>
-										{/if}
+											{:else}
+												<Eye size={17} strokeWidth={2.1} aria-hidden="true" />
+											{/if}
+										</button>
 										{#if item.canSuppress}
 											<button
 												type="button"
-												class="btn-icon-bare btn-icon-sm cursor-pointer rounded-full text-icon-muted hover:text-danger disabled:cursor-not-allowed disabled:opacity-50"
+												class="btn-icon-bare btn-icon-sm h-11 w-11 cursor-pointer rounded-full text-icon-muted hover:text-danger disabled:cursor-not-allowed disabled:opacity-50"
 												onclick={() => submitAction(item, "suppress")}
 												disabled={pendingActionKey === actionKey(item.id, "suppress")}
 												aria-label={$t("memoryProfile.doNotRememberMemoryItem")}
@@ -437,7 +443,7 @@ $effect(() => {
 										{#if item.canDelete}
 											<button
 												type="button"
-												class="btn-icon-bare btn-icon-sm cursor-pointer rounded-full text-icon-muted hover:text-danger disabled:cursor-not-allowed disabled:opacity-50"
+												class="btn-icon-bare btn-icon-sm h-11 w-11 cursor-pointer rounded-full text-icon-muted hover:text-danger disabled:cursor-not-allowed disabled:opacity-50"
 												onclick={() => submitAction(item, "delete")}
 												disabled={pendingActionKey === actionKey(item.id, "delete")}
 												aria-label={$t("memoryProfile.deleteMemoryItem")}
@@ -496,7 +502,7 @@ $effect(() => {
 				<h3 id="memory-review-overflow-title" class="text-xl font-serif text-text-primary">{$t("memoryProfile.needsReview")}</h3>
 				<button
 					type="button"
-					class="btn-icon-bare cursor-pointer rounded-full text-icon-muted hover:text-text-primary"
+					class="btn-icon-bare h-11 w-11 cursor-pointer rounded-full text-icon-muted hover:text-text-primary"
 					onclick={closeReviewOverflow}
 					aria-label={$t("memoryProfile.closeNeedsReview")}
 					title={$t("memoryProfile.close")}
@@ -506,7 +512,7 @@ $effect(() => {
 			</div>
 			<div class="max-h-[calc(88vh-80px)] overflow-y-auto px-5 py-5">
 				<div class="grid gap-2">
-					{#each reviewItems as item (item.id)}
+					{#each additionalReviewItems as item (item.id)}
 						<div class="flex items-start justify-between gap-3 rounded-[0.75rem] border border-border bg-surface-page px-3 py-3">
 							<div class="min-w-0">
 								<p class="break-words text-xs font-sans leading-[1.45] text-text-muted">{item.subject}</p>
@@ -521,7 +527,7 @@ $effect(() => {
 								{#if item.canAccept}
 									<button
 										type="button"
-										class="btn-icon-bare btn-icon-sm memory-review-accept h-9 w-9 cursor-pointer rounded-full disabled:cursor-not-allowed disabled:opacity-50"
+										class="btn-icon-bare btn-icon-sm memory-review-accept h-11 w-11 cursor-pointer rounded-full disabled:cursor-not-allowed disabled:opacity-50"
 										onclick={() => useReviewItem(item)}
 										disabled={pendingActionKey === actionKey(item.id, "accept")}
 										aria-label={$t("memoryProfile.rememberThisItem")}
@@ -536,7 +542,7 @@ $effect(() => {
 								{/if}
 								<button
 									type="button"
-									class="btn-icon-bare btn-icon-sm h-9 w-9 cursor-pointer rounded-full text-icon-muted hover:text-text-primary"
+									class="btn-icon-bare btn-icon-sm h-11 w-11 cursor-pointer rounded-full text-icon-muted hover:text-text-primary"
 									onclick={() => openReviewEditor(item)}
 									aria-label={$t("memoryProfile.editReviewItem")}
 									title={$t("memoryProfile.edit")}
@@ -545,7 +551,7 @@ $effect(() => {
 								</button>
 								<button
 									type="button"
-									class="btn-icon-bare btn-icon-sm cursor-pointer rounded-full text-icon-muted hover:text-danger disabled:cursor-not-allowed disabled:opacity-50"
+									class="btn-icon-bare btn-icon-sm h-11 w-11 cursor-pointer rounded-full text-icon-muted hover:text-danger disabled:cursor-not-allowed disabled:opacity-50"
 									onclick={() =>
 										onAction({
 											target: "review_item",
@@ -656,7 +662,7 @@ $effect(() => {
 				<div class="mt-4 flex justify-end gap-2">
 					<button
 						type="button"
-						class="btn-icon-bare cursor-pointer rounded-full text-icon-muted hover:text-text-primary"
+						class="btn-icon-bare h-11 w-11 cursor-pointer rounded-full text-icon-muted hover:text-text-primary"
 						onclick={closeReviewEditor}
 						aria-label={$t("memoryProfile.cancelReviewEdit")}
 						title={$t("memoryProfile.cancel")}
@@ -665,7 +671,7 @@ $effect(() => {
 					</button>
 					<button
 						type="button"
-						class="btn-icon cursor-pointer rounded-full bg-primary text-white disabled:cursor-not-allowed disabled:opacity-50"
+						class="btn-icon h-11 w-11 cursor-pointer rounded-full bg-primary text-white disabled:cursor-not-allowed disabled:opacity-50"
 						onclick={submitReviewEdit}
 						disabled={reviewStatement.trim().length === 0}
 						aria-label={$t("memoryProfile.saveReviewItem")}

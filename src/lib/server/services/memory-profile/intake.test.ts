@@ -215,6 +215,70 @@ describe("memory intake gate", () => {
 		expect(JSON.stringify(telemetry)).not.toContain("Amsterdam");
 	});
 
+	it("scopes ongoing-work intake to the current conversation instead of global profile memory", async () => {
+		const {
+			getActiveMemoryProfileContext,
+			getMemoryProfileReadModel,
+			listPendingMemoryDirtyEntries,
+		} = await import("./index");
+		const { intakePostTurnMemory } = await import("./intake");
+
+		await expect(
+			intakePostTurnMemory({
+				userId: "user-1",
+				conversationId: "conv-1",
+				userMessage: "I am working on the onboarding rewrite.",
+				userMessageId: "user-message-working",
+			}),
+		).resolves.toEqual(
+			expect.objectContaining({
+				status: "admitted",
+				category: "goals_ongoing_work",
+			}),
+		);
+
+		const profile = await getMemoryProfileReadModel({ userId: "user-1" });
+		const goals = profile.categories.find(
+			(group) => group.category === "goals_ongoing_work",
+		);
+		expect(goals?.items).toEqual([
+			expect.objectContaining({
+				statement: "Working on the onboarding rewrite.",
+				scope: { type: "conversation", id: "conv-1" },
+			}),
+		]);
+
+		await expect(
+			getActiveMemoryProfileContext({ userId: "user-1" }),
+		).resolves.toMatchObject({ items: [] });
+		await expect(
+			getActiveMemoryProfileContext({
+				userId: "user-1",
+				applicableScopes: [{ type: "conversation", id: "conv-1" }],
+			}),
+		).resolves.toMatchObject({
+			items: [
+				expect.objectContaining({
+					statement: "Working on the onboarding rewrite.",
+					scope: { type: "conversation", id: "conv-1" },
+				}),
+			],
+		});
+
+		await expect(
+			listPendingMemoryDirtyEntries({ userId: "user-1" }),
+		).resolves.toEqual([
+			expect.objectContaining({
+				reason: "honcho_reconciliation",
+				scope: { type: "conversation", id: "conv-1" },
+				metadata: expect.objectContaining({
+					intakeStatus: "admitted",
+					userMessageId: "user-message-working",
+				}),
+			}),
+		]);
+	});
+
 	it("defers explicit document-related claims instead of making them user profile truth", async () => {
 		const {
 			getMemoryProfileReadModel,
@@ -426,6 +490,47 @@ describe("memory intake gate", () => {
 				}),
 			]),
 		);
+	});
+
+	it("coalesces admitted dirty work without losing item or message identifiers", async () => {
+		const { listPendingMemoryDirtyEntries } = await import("./index");
+		const { intakePostTurnMemory } = await import("./intake");
+
+		const first = await intakePostTurnMemory({
+			userId: "user-1",
+			conversationId: "conv-1",
+			userMessage: "Please remember that I prefer concise answers.",
+			userMessageId: "user-message-first",
+			assistantMessageId: "assistant-message-first",
+		});
+		const second = await intakePostTurnMemory({
+			userId: "user-1",
+			conversationId: "conv-1",
+			userMessage: "Please remember that I prefer PDF invoices.",
+			userMessageId: "user-message-second",
+			assistantMessageId: "assistant-message-second",
+		});
+		expect(first.status).toBe("admitted");
+		expect(second.status).toBe("admitted");
+
+		const dirty = await listPendingMemoryDirtyEntries({ userId: "user-1" });
+		expect(dirty).toEqual([
+			expect.objectContaining({
+				reason: "honcho_reconciliation",
+				count: 2,
+				metadata: expect.objectContaining({
+					itemIds: [
+						first.status === "admitted" ? first.itemId : "",
+						second.status === "admitted" ? second.itemId : "",
+					],
+					userMessageIds: ["user-message-first", "user-message-second"],
+					assistantMessageIds: [
+						"assistant-message-first",
+						"assistant-message-second",
+					],
+				}),
+			}),
+		]);
 	});
 
 	it("rejects normal chat and non-durable first-person prose without creating profile or review work", async () => {

@@ -1277,8 +1277,8 @@ async function handleBulkDelete(): Promise<boolean> {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		width: 32px;
-		height: 32px;
+		width: 40px;
+		height: 40px;
 		padding: 0;
 		border: 1px solid var(--accent);
 		border-radius: var(--radius-md);
@@ -1641,6 +1641,7 @@ async function handleBulkDelete(): Promise<boolean> {
 	}
 
 	.page-size-select {
+		min-height: 40px;
 		padding: 0.25rem 0.5rem;
 		border-radius: var(--radius-sm);
 		border: 1px solid var(--border-default);
@@ -1665,8 +1666,8 @@ async function handleBulkDelete(): Promise<boolean> {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		width: 32px;
-		height: 32px;
+		width: 40px;
+		height: 40px;
 		padding: 0;
 		border: 1px solid var(--border-default);
 		border-radius: var(--radius-md);
@@ -1702,13 +1703,15 @@ async function handleBulkDelete(): Promise<boolean> {
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		min-width: 44px;
+		min-height: 44px;
 		cursor: pointer;
 	}
 
 	.custom-checkbox {
 		appearance: none;
-		width: 18px;
-		height: 18px;
+		width: 20px;
+		height: 20px;
 		border: 1.5px solid var(--border-default);
 		border-radius: var(--radius-sm);
 		background: var(--surface-elevated);
@@ -1839,8 +1842,8 @@ async function handleBulkDelete(): Promise<boolean> {
 		}
 
 		.upload-btn {
-			width: 36px;
-			height: 36px;
+			width: 44px;
+			height: 44px;
 		}
 
 		.table-container {
@@ -1869,7 +1872,7 @@ async function handleBulkDelete(): Promise<boolean> {
 
 		.documents-table .document-list-item {
 			display: grid;
-			grid-template-columns: 28px 28px minmax(0, 1fr) auto;
+			grid-template-columns: 44px 28px minmax(0, 1fr) auto;
 			grid-template-areas:
 				"check icon name name"
 				". . type type"
@@ -1891,8 +1894,8 @@ async function handleBulkDelete(): Promise<boolean> {
 
 		.documents-table .col-checkbox {
 			grid-area: check;
-			width: 28px;
-			padding-top: 0.08rem;
+			width: 44px;
+			margin: -0.55rem 0 -0.45rem -0.55rem;
 		}
 
 		.documents-table .col-icon {
@@ -2027,9 +2030,20 @@ async function handleBulkDelete(): Promise<boolean> {
 
 		.action-btn {
 			width: 100%;
-			height: 36px;
+			min-height: 44px;
 			background: var(--surface-page);
 			border: 1px solid var(--border-subtle);
+		}
+
+		.page-size-select,
+		.pagination-btn,
+		.bulk-btn {
+			min-height: 44px;
+		}
+
+		.pagination-btn,
+		.bulk-btn {
+			min-width: 44px;
 		}
 
 		.bulk-action-bar,

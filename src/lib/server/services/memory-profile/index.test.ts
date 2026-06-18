@@ -918,6 +918,65 @@ describe("memory profile foundation", () => {
 		expect(after.categories.flatMap((group) => group.items)).toEqual([]);
 	});
 
+	it("dismisses review-needed active items from next-turn profile context", async () => {
+		const {
+			applyMemoryReviewItemWithRevision,
+			createMemoryProfileItem,
+			createOrUpdateMemoryReviewItem,
+			getActiveMemoryProfileContext,
+			getMemoryProfileReadModel,
+		} = await import("./index");
+
+		const first = await createMemoryProfileItem({
+			userId: "user-1",
+			category: "preferences",
+			scope: { type: "global" },
+			statement: "Prefers stale duplicate preference.",
+			slotKey: "memory-slot:test:review-dismiss-a",
+		});
+		const second = await createMemoryProfileItem({
+			userId: "user-1",
+			category: "preferences",
+			scope: { type: "global" },
+			statement: "Prefers stale duplicate preference.",
+			slotKey: "memory-slot:test:review-dismiss-b",
+		});
+		const review = await createOrUpdateMemoryReviewItem({
+			userId: "user-1",
+			subjectKey: "memory-profile:duplicate:review-dismiss",
+			subjectLabel: "Duplicate stale preference.",
+			question: "Which duplicate memory profile item should remain active?",
+			reason: "Maintenance found duplicate active memory.",
+			affectedItemIds: [first.id, second.id],
+			metadata: {
+				category: "preferences",
+				proposedStatement: "Prefers stale duplicate preference.",
+			},
+		});
+		const before = await getMemoryProfileReadModel({ userId: "user-1" });
+
+		await expect(
+			applyMemoryReviewItemWithRevision({
+				userId: "user-1",
+				reviewItemId: review.id,
+				expectedProjectionRevision: before.projectionRevision,
+				action: "dismiss",
+			}),
+		).resolves.toEqual({
+			status: "updated",
+			projectionRevision: before.projectionRevision + 1,
+			itemId: null,
+			category: null,
+		});
+
+		await expect(
+			getActiveMemoryProfileContext({ userId: "user-1" }),
+		).resolves.toMatchObject({ items: [] });
+		const after = await getMemoryProfileReadModel({ userId: "user-1" });
+		expect(after.review.visibleItems).toEqual([]);
+		expect(after.categories.flatMap((group) => group.items)).toEqual([]);
+	});
+
 	it("returns active memory profile context without deleted, suppressed, or UI-only fields", async () => {
 		const {
 			createMemoryProfileItem,
@@ -1685,21 +1744,28 @@ describe("memory profile foundation", () => {
 							createdAt: Date.now() - 1,
 						},
 						{
+							id: "legacy-unknown-scope-work",
+							content: "User is working on migration UI.",
+							scope: "assistant_about_user",
+							sessionId: null,
+							createdAt: Date.now() - 2,
+						},
+						{
 							id: "legacy-junk",
 							content:
 								"Assistant: Sure, here is the draft I can write for you.",
 							scope: "assistant_about_user",
 							sessionId: null,
-							createdAt: Date.now() - 2,
+							createdAt: Date.now() - 3,
 						},
 					],
 				},
 			}),
 		).resolves.toEqual({
 			status: "completed",
-			inspected: 3,
+			inspected: 4,
 			active: 1,
-			preserved: 1,
+			preserved: 2,
 			rejected: 1,
 			totalAvailable: 1600,
 		});
@@ -1714,6 +1780,7 @@ describe("memory profile foundation", () => {
 			}),
 		]);
 		expect(JSON.stringify(activeContext)).not.toContain("acoustic guitars");
+		expect(JSON.stringify(activeContext)).not.toContain("migration UI");
 
 		const rows = await db
 			.select({
@@ -1731,6 +1798,10 @@ describe("memory profile foundation", () => {
 				statement: "Prefers concise technical answers.",
 				status: "active",
 			},
+			{
+				statement: "Working on migration UI.",
+				status: "preserved_legacy",
+			},
 		]);
 
 		const telemetry = await listMemoryReworkTelemetry({ userId: "user-1" });
@@ -1740,11 +1811,11 @@ describe("memory profile foundation", () => {
 				eventName: "legacy_migration_completed",
 				reason: "legacy_migration",
 				status: "completed",
-				count: 3,
+				count: 4,
 				metadata: {
 					activeCount: 1,
-					inspectedCount: 3,
-					preservedCount: 1,
+					inspectedCount: 4,
+					preservedCount: 2,
 					rejectedCount: 1,
 					requestedLimit: 5,
 					totalAvailable: 1600,
@@ -1755,6 +1826,86 @@ describe("memory profile foundation", () => {
 			"concise technical answers",
 		);
 		expect(JSON.stringify(telemetry)).not.toContain("acoustic guitars");
+		expect(JSON.stringify(telemetry)).not.toContain("migration UI");
+	});
+
+	it("merges duplicate legacy migration facts into one profile item with multiple provenance links", async () => {
+		const { getActiveMemoryProfileContext, migrateLegacyMemoryForUser } =
+			await import("./index");
+		const { db } = await import("$lib/server/db");
+
+		await expect(
+			migrateLegacyMemoryForUser({
+				userId: "user-1",
+				batchSize: 5,
+				legacyBatch: {
+					totalAvailable: 2,
+					candidates: [
+						{
+							id: "legacy-duplicate-a",
+							content: "User prefers concise technical answers.",
+							scope: "assistant_about_user",
+							sessionId: null,
+							createdAt: Date.now(),
+						},
+						{
+							id: "legacy-duplicate-b",
+							content: "  prefers   concise technical answers. ",
+							scope: "self",
+							sessionId: null,
+							createdAt: Date.now() - 1,
+						},
+					],
+				},
+			}),
+		).resolves.toEqual({
+			status: "completed",
+			inspected: 2,
+			active: 2,
+			preserved: 0,
+			rejected: 0,
+			totalAvailable: 2,
+		});
+
+		await expect(
+			getActiveMemoryProfileContext({ userId: "user-1" }),
+		).resolves.toMatchObject({
+			items: [
+				expect.objectContaining({
+					category: "preferences",
+					statement: "Prefers concise technical answers.",
+				}),
+			],
+		});
+
+		const rows = await db
+			.select({
+				id: schema.memoryProfileItems.id,
+				itemKey: schema.memoryProfileItems.itemKey,
+				statement: schema.memoryProfileItems.statement,
+				status: schema.memoryProfileItems.status,
+			})
+			.from(schema.memoryProfileItems);
+		expect(rows).toEqual([
+			{
+				id: expect.any(String),
+				itemKey: expect.any(String),
+				statement: "Prefers concise technical answers.",
+				status: "active",
+			},
+		]);
+
+		const provenance = await db
+			.select({
+				itemId: schema.memoryProfileItemProvenance.itemId,
+				sourceId: schema.memoryProfileItemProvenance.sourceId,
+			})
+			.from(schema.memoryProfileItemProvenance)
+			.orderBy(schema.memoryProfileItemProvenance.sourceId);
+		expect(provenance).toEqual([
+			{ itemId: rows[0]?.id, sourceId: "legacy-duplicate-a" },
+			{ itemId: rows[0]?.id, sourceId: "legacy-duplicate-b" },
+		]);
 	});
 
 	it("curates preserved legacy memories into active profile, review, or inactive rows", async () => {
@@ -1904,6 +2055,136 @@ describe("memory profile foundation", () => {
 		expect(JSON.stringify(telemetry)).not.toContain("acoustic guitars");
 		expect(JSON.stringify(telemetry)).not.toContain("Hungarian labels");
 		expect(JSON.stringify(telemetry)).not.toContain("one-off trivia");
+	});
+
+	it("creates at most three preserved legacy review items per curation slice", async () => {
+		const {
+			curatePreservedLegacyMemoryForUser,
+			getMemoryProfileReadModel,
+			migrateLegacyMemoryForUser,
+		} = await import("./index");
+		const { db } = await import("$lib/server/db");
+
+		await migrateLegacyMemoryForUser({
+			userId: "user-1",
+			legacyBatch: {
+				totalAvailable: 5,
+				candidates: Array.from({ length: 5 }, (_, index) => ({
+					id: `legacy-slice-review-cap-${index}`,
+					content: `Maybe prefers slice review cap candidate ${index}.`,
+					scope: "assistant_about_user" as const,
+					sessionId: null,
+					createdAt: Date.now() - index,
+				})),
+			},
+		});
+
+		await expect(
+			curatePreservedLegacyMemoryForUser({
+				userId: "user-1",
+				batchSize: 5,
+				curateBatch: async (items) =>
+					items.map((item, index) => ({
+						id: item.id,
+						decision: "review",
+						category: "preferences",
+						statement: `Prefers slice review cap candidate ${index}.`,
+						reason: "Needs confirmation before becoming active.",
+					})),
+			}),
+		).resolves.toEqual({
+			status: "completed",
+			inspected: 5,
+			active: 0,
+			review: 3,
+			rejected: 0,
+			remainingPreserved: 2,
+		});
+
+		const profile = await getMemoryProfileReadModel({ userId: "user-1" });
+		expect(profile.review.openCount).toBe(3);
+
+		const rows = await db
+			.select({
+				status: schema.memoryProfileItems.status,
+			})
+			.from(schema.memoryProfileItems);
+		expect(rows.filter((row) => row.status === "review_needed")).toHaveLength(
+			3,
+		);
+		expect(
+			rows.filter((row) => row.status === "preserved_legacy"),
+		).toHaveLength(2);
+	});
+
+	it("does not create preserved legacy reviews beyond the user open-review cap", async () => {
+		const {
+			createOrUpdateMemoryReviewItem,
+			curatePreservedLegacyMemoryForUser,
+			getMemoryProfileReadModel,
+			migrateLegacyMemoryForUser,
+		} = await import("./index");
+		const { db } = await import("$lib/server/db");
+
+		for (let index = 0; index < 10; index += 1) {
+			await createOrUpdateMemoryReviewItem({
+				userId: "user-1",
+				subjectKey: `existing-review-${index}`,
+				subjectLabel: `Existing review ${index}`,
+				question: "Should this be remembered?",
+				reason: "Existing open review.",
+			});
+		}
+		await migrateLegacyMemoryForUser({
+			userId: "user-1",
+			legacyBatch: {
+				totalAvailable: 5,
+				candidates: Array.from({ length: 5 }, (_, index) => ({
+					id: `legacy-review-cap-${index}`,
+					content: `Maybe prefers review cap candidate ${index}.`,
+					scope: "assistant_about_user" as const,
+					sessionId: null,
+					createdAt: Date.now() - index,
+				})),
+			},
+		});
+
+		await expect(
+			curatePreservedLegacyMemoryForUser({
+				userId: "user-1",
+				batchSize: 5,
+				curateBatch: async (items) =>
+					items.map((item, index) => ({
+						id: item.id,
+						decision: "review",
+						category: "preferences",
+						statement: `Prefers review cap candidate ${index}.`,
+						reason: "Needs confirmation before becoming active.",
+					})),
+			}),
+		).resolves.toEqual({
+			status: "completed",
+			inspected: 5,
+			active: 0,
+			review: 2,
+			rejected: 0,
+			remainingPreserved: 3,
+		});
+
+		const profile = await getMemoryProfileReadModel({ userId: "user-1" });
+		expect(profile.review.openCount).toBe(12);
+
+		const rows = await db
+			.select({
+				status: schema.memoryProfileItems.status,
+			})
+			.from(schema.memoryProfileItems);
+		expect(rows.filter((row) => row.status === "review_needed")).toHaveLength(
+			2,
+		);
+		expect(
+			rows.filter((row) => row.status === "preserved_legacy"),
+		).toHaveLength(3);
 	});
 
 	it("falls back to review when preserved legacy curation fails", async () => {

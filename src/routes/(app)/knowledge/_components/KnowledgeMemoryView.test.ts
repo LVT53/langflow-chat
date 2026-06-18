@@ -306,9 +306,9 @@ describe("KnowledgeMemoryView", () => {
 		expect(within(dialog).getByText("Workflow signal.")).toBeInTheDocument();
 
 		await fireEvent.click(
-			within(dialog).getAllByRole("button", {
+			within(dialog).getByRole("button", {
 				name: "Do not remember review item",
-			})[3],
+			}),
 		);
 		expect(onAction).toHaveBeenCalledWith({
 			target: "review_item",
@@ -316,6 +316,29 @@ describe("KnowledgeMemoryView", () => {
 			itemId: "review-4",
 			expectedProjectionRevision: 7,
 		});
+	});
+
+	it("shows only additional review items in the overflow dialog", async () => {
+		renderMemoryView();
+
+		await fireEvent.click(screen.getByRole("button", { name: "+1 more" }));
+		const dialog = screen.getByRole("dialog", { name: "Needs Review" });
+
+		expect(
+			within(dialog).queryByText("Remember Hungarian labels."),
+		).not.toBeInTheDocument();
+		expect(
+			within(dialog).queryByText("Prefer icon actions."),
+		).not.toBeInTheDocument();
+		expect(
+			within(dialog).queryByText("Avoid diagnostic memory tables."),
+		).not.toBeInTheDocument();
+		expect(
+			within(dialog).getByText("Open documents from search."),
+		).toBeInTheDocument();
+		expect(within(dialog).getAllByText("Should this be remembered?")).toHaveLength(
+			1,
+		);
 	});
 
 	it("requires editing for review items without a safe proposed statement", () => {
@@ -406,6 +429,84 @@ describe("KnowledgeMemoryView", () => {
 		expect(
 			screen.getByRole("dialog", { name: "Memory item" }),
 		).toBeInTheDocument();
+	});
+
+	it("opens read-only memory item details without edit-only controls", async () => {
+		const readOnlyProfile: MemoryProfilePublicPayload = {
+			...profile,
+			categories: profile.categories.map((group) =>
+				group.category === "about_you"
+					? {
+							...group,
+							items: [
+								{
+									...group.items[0],
+									id: "item-readonly",
+									statement: "Read-only memory still has detail.",
+									scope: { type: "document", id: "doc-1" },
+									canEdit: false,
+									canDelete: false,
+									canSuppress: false,
+								},
+							],
+						}
+					: group,
+			),
+		};
+		fetchMemoryProfileItemDetailMock.mockResolvedValueOnce({
+			...readOnlyProfile.categories[0].items[0],
+			sourceChips: [
+				{
+					id: "source-1",
+					sourceType: "document",
+					label: "Project brief",
+					summary: "Imported project note.",
+				},
+			],
+			whyRemembered: "Document-specific workflow rule.",
+		});
+
+		renderMemoryView({ profile: readOnlyProfile });
+
+		const aboutSection = screen
+			.getByRole("heading", { name: "About You" })
+			.closest("section");
+		expect(aboutSection).not.toBeNull();
+		expect(
+			within(aboutSection as HTMLElement).queryByRole("button", {
+				name: "Edit memory item",
+			}),
+		).not.toBeInTheDocument();
+
+		await fireEvent.click(
+			within(aboutSection as HTMLElement).getByRole("button", {
+				name: "Memory item",
+			}),
+		);
+
+		const dialog = screen.getByRole("dialog", { name: "Memory item" });
+		await waitFor(() => {
+			expect(
+				within(dialog).getByText("Scope: Document doc-1"),
+			).toBeInTheDocument();
+		});
+
+		expect(
+			within(dialog).getByText("Read-only memory still has detail."),
+		).toBeInTheDocument();
+		expect(
+			within(dialog).getByText("Why: Document-specific workflow rule."),
+		).toBeInTheDocument();
+		expect(
+			within(dialog).getByText("Project brief: Imported project note."),
+		).toBeInTheDocument();
+		expect(within(dialog).queryByLabelText("Statement")).not.toBeInTheDocument();
+		expect(
+			within(dialog).queryByRole("button", { name: "Save memory item" }),
+		).not.toBeInTheDocument();
+		expect(
+			within(dialog).queryByRole("button", { name: "Delete memory item" }),
+		).not.toBeInTheDocument();
 	});
 
 	it("shows full scope, why summary, and capped expandable sources in the memory item dialog", async () => {

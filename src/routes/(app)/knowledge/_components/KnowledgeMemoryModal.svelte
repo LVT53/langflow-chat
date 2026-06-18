@@ -177,7 +177,7 @@ onDestroy(() => {
 			</div>
 			<button
 				type="button"
-				class="btn-icon-bare h-10 w-10 cursor-pointer rounded-full text-icon-muted hover:text-text-primary"
+				class="btn-icon-bare h-11 w-11 cursor-pointer rounded-full text-icon-muted hover:text-text-primary"
 				onclick={onClose}
 				aria-label={$t("memoryProfile.closeMemoryItem")}
 				title={$t("memoryProfile.close")}
@@ -187,15 +187,24 @@ onDestroy(() => {
 		</div>
 
 		<div class="max-h-[calc(88vh-84px)] overflow-y-auto px-5 py-5">
-			<label class="block text-sm font-sans font-medium text-text-primary" for="memory-profile-statement">
-				{$t("memoryProfile.statement")}
-			</label>
-			<textarea
-				bind:this={statementInputRef}
-				id="memory-profile-statement"
-				class="mt-2 min-h-36 w-full resize-y rounded-[0.75rem] border border-border bg-surface-page px-3 py-3 text-sm font-sans leading-[1.55] text-text-primary outline-none transition focus:border-primary"
-				bind:value={statement}
-			></textarea>
+			{#if item.canEdit}
+				<label class="block text-sm font-sans font-medium text-text-primary" for="memory-profile-statement">
+					{$t("memoryProfile.statement")}
+				</label>
+				<textarea
+					bind:this={statementInputRef}
+					id="memory-profile-statement"
+					class="mt-2 min-h-36 w-full resize-y rounded-[0.75rem] border border-border bg-surface-page px-3 py-3 text-sm font-sans leading-[1.55] text-text-primary outline-none transition focus:border-primary"
+					bind:value={statement}
+				></textarea>
+			{:else}
+				<div class="text-sm font-sans font-medium text-text-primary">
+					{$t("memoryProfile.statement")}
+				</div>
+				<p class="mt-2 rounded-[0.75rem] border border-border bg-surface-page px-3 py-3 text-sm font-sans leading-[1.55] text-text-primary">
+					{item.statement}
+				</p>
+			{/if}
 			{#if actionError}
 				<div class="mt-3 rounded-[0.75rem] border border-danger bg-surface-page px-3 py-2 text-sm font-sans text-danger" role="alert">
 					{actionError}
@@ -236,47 +245,57 @@ onDestroy(() => {
 			{/if}
 
 			<div class="mt-5 flex flex-wrap items-center justify-end gap-2">
-				<button
-					type="button"
-					class="btn-icon-bare h-10 w-10 cursor-pointer rounded-full text-icon-muted hover:text-text-primary"
-					onclick={onClose}
-					aria-label={$t("memoryProfile.cancelEditing")}
-					title={$t("memoryProfile.cancel")}
-				>
-					<Undo2 size={18} strokeWidth={2.1} aria-hidden="true" />
-				</button>
-				{#if item.canDelete}
+				{#if item.canEdit}
 					<button
 						type="button"
-						class="btn-icon-bare h-10 w-10 cursor-pointer rounded-full text-icon-muted hover:text-danger disabled:cursor-not-allowed disabled:opacity-50"
-						onclick={submitDelete}
-						disabled={isDeleting}
-						aria-label={$t("memoryProfile.deleteMemoryItem")}
-						title={$t("memoryProfile.delete")}
+						class="btn-icon-bare h-11 w-11 cursor-pointer rounded-full text-icon-muted hover:text-text-primary"
+						onclick={onClose}
+						aria-label={$t("memoryProfile.cancelEditing")}
+						title={$t("memoryProfile.cancel")}
 					>
-						{#if isDeleting}
+						<Undo2 size={18} strokeWidth={2.1} aria-hidden="true" />
+					</button>
+					{#if item.canDelete}
+						<button
+							type="button"
+							class="btn-icon-bare h-11 w-11 cursor-pointer rounded-full text-icon-muted hover:text-danger disabled:cursor-not-allowed disabled:opacity-50"
+							onclick={submitDelete}
+							disabled={isDeleting}
+							aria-label={$t("memoryProfile.deleteMemoryItem")}
+							title={$t("memoryProfile.delete")}
+						>
+							{#if isDeleting}
+								<Loader size={18} strokeWidth={2.1} class="animate-spin" aria-hidden="true" />
+							{:else}
+								<Trash2 size={18} strokeWidth={2.1} aria-hidden="true" />
+							{/if}
+						</button>
+					{/if}
+					<button
+						type="button"
+						class="btn-icon inline-flex h-11 w-11 cursor-pointer items-center justify-center rounded-full bg-primary text-white disabled:cursor-not-allowed disabled:opacity-50"
+						onclick={submitEdit}
+						disabled={!canSave || isSaving}
+						aria-label={$t("memoryProfile.saveMemoryItem")}
+						title={$t("memoryProfile.save")}
+					>
+						{#if isSaving}
 							<Loader size={18} strokeWidth={2.1} class="animate-spin" aria-hidden="true" />
+						{:else if canSave}
+							<Save size={18} strokeWidth={2.1} aria-hidden="true" />
 						{:else}
-							<Trash2 size={18} strokeWidth={2.1} aria-hidden="true" />
+							<Check size={18} strokeWidth={2.1} aria-hidden="true" />
 						{/if}
 					</button>
+				{:else}
+					<button
+						type="button"
+						class="btn-icon-bare h-11 min-w-11 cursor-pointer rounded-full px-3 text-sm font-sans font-medium text-text-secondary hover:text-text-primary"
+						onclick={onClose}
+					>
+						{$t("memoryProfile.close")}
+					</button>
 				{/if}
-				<button
-					type="button"
-					class="btn-icon inline-flex h-10 w-10 cursor-pointer items-center justify-center rounded-full bg-primary text-white disabled:cursor-not-allowed disabled:opacity-50"
-					onclick={submitEdit}
-					disabled={!canSave || isSaving}
-					aria-label={$t("memoryProfile.saveMemoryItem")}
-					title={$t("memoryProfile.save")}
-				>
-					{#if isSaving}
-						<Loader size={18} strokeWidth={2.1} class="animate-spin" aria-hidden="true" />
-					{:else if canSave}
-						<Save size={18} strokeWidth={2.1} aria-hidden="true" />
-					{:else}
-						<Check size={18} strokeWidth={2.1} aria-hidden="true" />
-					{/if}
-				</button>
 			</div>
 		</div>
 	</div>

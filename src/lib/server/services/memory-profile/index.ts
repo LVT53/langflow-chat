@@ -325,6 +325,60 @@ function parseJsonRecord(value: string | null): JsonRecord {
 	return {};
 }
 
+const DIRTY_METADATA_ARRAY_LIMIT = 12;
+const DIRTY_METADATA_RECONCILEABLE_ID_KEYS = [
+	"itemId",
+	"userMessageId",
+	"assistantMessageId",
+	"reviewItemId",
+	"subjectId",
+] as const;
+const DIRTY_METADATA_ARRAY_KEYS: Record<
+	(typeof DIRTY_METADATA_RECONCILEABLE_ID_KEYS)[number],
+	string
+> = {
+	itemId: "itemIds",
+	userMessageId: "userMessageIds",
+	assistantMessageId: "assistantMessageIds",
+	reviewItemId: "reviewItemIds",
+	subjectId: "subjectIds",
+};
+
+function appendBoundedUniqueStrings(values: unknown[], next: unknown): string[] {
+	const strings = values
+		.filter((value): value is string => typeof value === "string")
+		.map((value) => value.trim())
+		.filter(Boolean);
+	if (typeof next === "string" && next.trim()) {
+		strings.push(next.trim());
+	}
+	return Array.from(new Set(strings)).slice(-DIRTY_METADATA_ARRAY_LIMIT);
+}
+
+function coalesceDirtyLedgerMetadata(
+	current: JsonRecord,
+	next: JsonRecord,
+): JsonRecord {
+	const merged: JsonRecord = { ...current, ...next };
+	for (const key of DIRTY_METADATA_RECONCILEABLE_ID_KEYS) {
+		const currentValue = current[key];
+		const nextValue = next[key];
+		const arrayKey = DIRTY_METADATA_ARRAY_KEYS[key];
+		const existingArray = Array.isArray(current[arrayKey])
+			? current[arrayKey]
+			: [];
+		const values = appendBoundedUniqueStrings(existingArray, currentValue);
+		const coalesced = appendBoundedUniqueStrings(values, nextValue);
+		if (
+			coalesced.length > 1 ||
+			(Array.isArray(current[arrayKey]) && coalesced.length > 0)
+		) {
+			merged[arrayKey] = coalesced;
+		}
+	}
+	return merged;
+}
+
 function readMemoryProfileCategory(
 	value: unknown,
 ): MemoryProfileCategory | null {
@@ -1512,6 +1566,15 @@ export async function applyMemoryReviewItemWithRevision(params: {
 				),
 			)
 	).filter((row) => reviewDeduplicationKey(row) === duplicateReviewKey);
+	const affectedItemIds = Array.from(
+		new Set(
+			duplicateReviewRows.flatMap((row) =>
+				parseJsonArray(row.affectedItemIdsJson).filter(
+					(value): value is string => typeof value === "string",
+				),
+			),
+		),
+	);
 	const proposedStatement = readReviewProposedStatement(metadata);
 	const candidateStatement = params.statement ?? proposedStatement ?? "";
 	const category =
@@ -1609,6 +1672,25 @@ export async function applyMemoryReviewItemWithRevision(params: {
 			}
 		}
 
+		if (params.action === "dismiss" && affectedItemIds.length > 0) {
+			tx.update(memoryProfileItems)
+				.set({
+					status: "suppressed",
+					suppressedAt: now,
+					revision: sql`${memoryProfileItems.revision} + 1`,
+					updatedAt: now,
+				})
+				.where(
+					and(
+						eq(memoryProfileItems.userId, params.userId),
+						eq(memoryProfileItems.resetGeneration, resetGeneration),
+						eq(memoryProfileItems.status, "active"),
+						inArray(memoryProfileItems.id, affectedItemIds),
+					),
+				)
+				.run();
+		}
+
 		const resolutionType: MemoryReviewResolutionType =
 			params.action === "accept"
 				? "use_fact"
@@ -1692,10 +1774,10 @@ export async function markMemoryDirty(params: {
 			.limit(1);
 
 		if (!existing) return null;
-		const metadata = {
-			...parseJsonRecord(existing.reasonMetadataJson),
-			...(params.metadata ?? {}),
-		};
+		const metadata = coalesceDirtyLedgerMetadata(
+			parseJsonRecord(existing.reasonMetadataJson),
+			params.metadata ?? {},
+		);
 		await db
 			.update(memoryDirtyLedger)
 			.set({
@@ -1790,6 +1872,8 @@ const LEGACY_DIRTY_LEDGER_CANDIDATE_LIMIT = 5;
 const LEGACY_DIRTY_LEDGER_MAX_PAGES = 4;
 const DEFAULT_LEGACY_CURATION_BATCH_SIZE = 25;
 const MAX_LEGACY_CURATION_BATCH_SIZE = 40;
+const MAX_LEGACY_CURATION_NEW_REVIEWS_PER_SLICE = 3;
+const MAX_OPEN_MEMORY_REVIEWS_PER_USER = 12;
 
 type ClaimedDirtyLedgerRow = typeof memoryDirtyLedger.$inferSelect;
 type PreservedLegacyMemoryRow = typeof memoryProfileItems.$inferSelect & {
@@ -2018,6 +2102,24 @@ async function countPreservedLegacyMemoryRows(params: {
 				eq(memoryProfileItems.userId, params.userId),
 				eq(memoryProfileItems.resetGeneration, params.resetGeneration),
 				eq(memoryProfileItems.status, "preserved_legacy"),
+			),
+		)
+		.limit(1);
+	return Number(row?.count ?? 0);
+}
+
+async function countOpenMemoryReviewRows(params: {
+	userId: string;
+	resetGeneration: number;
+}): Promise<number> {
+	const [row] = await db
+		.select({ count: sql<number>`count(*)` })
+		.from(memoryReviewItems)
+		.where(
+			and(
+				eq(memoryReviewItems.userId, params.userId),
+				eq(memoryReviewItems.resetGeneration, params.resetGeneration),
+				eq(memoryReviewItems.status, "open"),
 			),
 		)
 		.limit(1);
@@ -2341,17 +2443,35 @@ export async function curatePreservedLegacyMemoryForUser(params: {
 	let review = 0;
 	let rejected = 0;
 	let changed = 0;
+	const openReviews = await countOpenMemoryReviewRows({
+		userId: params.userId,
+		resetGeneration,
+	});
+	let remainingReviewSlots = Math.max(
+		0,
+		Math.min(
+			MAX_LEGACY_CURATION_NEW_REVIEWS_PER_SLICE,
+			MAX_OPEN_MEMORY_REVIEWS_PER_USER - openReviews,
+		),
+	);
 	const now = new Date();
 	for (const row of rows) {
+		const decision = decisionMap.get(row.id) ?? fallbackReviewDecision(row);
+		if (decision.decision === "review" && remainingReviewSlots <= 0) {
+			continue;
+		}
 		const applied = await applyLegacyCurationDecision({
 			userId: params.userId,
 			resetGeneration,
 			row,
-			decision: decisionMap.get(row.id) ?? fallbackReviewDecision(row),
+			decision,
 			now,
 		});
 		if (applied === "active") active += 1;
-		if (applied === "review") review += 1;
+		if (applied === "review") {
+			review += 1;
+			remainingReviewSlots -= 1;
+		}
 		if (applied === "rejected") rejected += 1;
 		if (applied !== "skipped") changed += 1;
 	}
@@ -2399,10 +2519,9 @@ function mergeDirtyLedgerMetadata(
 	current: string | null,
 	next: string | null,
 ): string {
-	return JSON.stringify({
-		...parseJsonRecord(current),
-		...parseJsonRecord(next),
-	});
+	return JSON.stringify(
+		coalesceDirtyLedgerMetadata(parseJsonRecord(current), parseJsonRecord(next)),
+	);
 }
 
 function reclaimStaleClaimedMemoryDirtyLedgerRows(params: {
