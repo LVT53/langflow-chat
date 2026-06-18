@@ -127,6 +127,51 @@ describe("memory intake gate", () => {
 		);
 	});
 
+	it("admits explicit durable memory-profile fact wrappers as about-you facts", async () => {
+		const { getMemoryProfileReadModel, listMemoryReworkTelemetry } =
+			await import("./index");
+		const { intakePostTurnMemory } = await import("./intake");
+
+		await expect(
+			intakePostTurnMemory({
+				userId: "user-1",
+				conversationId: "conv-1",
+				userMessage:
+					"Please remember this as a durable Memory Profile fact: my live memory verification codeword is codex-live-memory-test.",
+				userMessageId: "user-message-codeword",
+			}),
+		).resolves.toEqual(
+			expect.objectContaining({
+				status: "admitted",
+				category: "about_you",
+			}),
+		);
+
+		const profile = await getMemoryProfileReadModel({ userId: "user-1" });
+		expect(profile.categories[0]?.items).toEqual([
+			expect.objectContaining({
+				category: "about_you",
+				statement:
+					"My live memory verification codeword is codex-live-memory-test.",
+				scope: { type: "global" },
+			}),
+		]);
+		expect(profile.review.visibleItems).toEqual([]);
+		const telemetry = await listMemoryReworkTelemetry({ userId: "user-1" });
+		expect(telemetry).toEqual([
+			expect.objectContaining({
+				eventName: "memory_intake_admitted",
+				category: "about_you",
+				status: "admitted",
+				metadata: expect.objectContaining({
+					parserRule: "remember_that",
+					userMessageId: "user-message-codeword",
+				}),
+			}),
+		]);
+		expect(JSON.stringify(telemetry)).not.toContain("codex-live-memory-test");
+	});
+
 	it("discards old-generation intake output when memory is reset before durable apply", async () => {
 		const {
 			advanceMemoryResetGeneration,

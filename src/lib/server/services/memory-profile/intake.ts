@@ -234,6 +234,22 @@ function parseStableSelfStatement(
 	return null;
 }
 
+function normalizeExplicitMemoryCandidate(candidate: string): string {
+	const text = stripTerminalPunctuation(candidate);
+	const wrapperPatterns = [
+		/^this\s+as\s+(?:an?\s+)?(?:durable\s+)?(?:memory\s+profile\s+)?(?:profile\s+)?(?:fact|memory|preference|detail|note)\s*[:,-]\s*/i,
+		/^this\s+(?:an?\s+)?(?:durable\s+)?(?:memory\s+profile\s+)?(?:profile\s+)?(?:fact|memory|preference|detail|note)\s*[:,-]\s*/i,
+		/^(?:as\s+)?(?:an?\s+)?(?:durable\s+)?(?:memory\s+profile\s+)?(?:profile\s+)?(?:fact|memory|preference|detail|note)\s*[:,-]\s*/i,
+	];
+	for (const pattern of wrapperPatterns) {
+		const normalized = text.replace(pattern, "").trim();
+		if (normalized !== text && normalized.length > 0) {
+			return cleanText(normalized);
+		}
+	}
+	return text;
+}
+
 function statementFromCandidate(
 	candidate: string,
 	parserRule: string,
@@ -249,7 +265,7 @@ function statementFromCandidate(
 		parseStableSelfStatement(text, parserRule);
 	if (structuredStatement) return structuredStatement;
 
-	if (options.allowGeneralAboutYou && /^i\b/i.test(text)) {
+	if (options.allowGeneralAboutYou && /^(?:i|my)\b/i.test(text)) {
 		return parsedStatement("about_you", text, parserRule);
 	}
 
@@ -270,12 +286,20 @@ export function parsePostTurnMemoryIntake(
 		/^can you remember(?:\s+that)?\s+(.+)$/i.exec(message);
 	if (rememberMatch?.[1]) {
 		const candidate = rememberMatch[1];
-		const statement = statementFromCandidate(candidate, "remember_that", {
-			allowGeneralAboutYou: true,
-		});
+		const normalizedCandidate = normalizeExplicitMemoryCandidate(candidate);
+		const statement = statementFromCandidate(
+			normalizedCandidate,
+			"remember_that",
+			{
+				allowGeneralAboutYou: true,
+			},
+		);
 		if (
-			looksDocumentRelated(candidate) &&
-			(!statement || looksSpecificDocumentSourceClaim(candidate))
+			(looksDocumentRelated(candidate) ||
+				looksDocumentRelated(normalizedCandidate)) &&
+			(!statement ||
+				looksSpecificDocumentSourceClaim(candidate) ||
+				looksSpecificDocumentSourceClaim(normalizedCandidate))
 		) {
 			return {
 				decision: "defer",
