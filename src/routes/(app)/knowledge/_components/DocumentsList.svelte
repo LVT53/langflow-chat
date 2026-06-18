@@ -859,17 +859,20 @@ async function handleBulkDelete(): Promise<boolean> {
 			{/if}
 
 			<div class="mobile-sort-controls">
-				<select
-					class="mobile-sort-select"
-					aria-label={$t('knowledge.sortBy')}
-					value={activeSortKey}
-					onchange={handleSortSelectChange}
-				>
-					<option value="date">{$t('knowledge.date')}</option>
-					<option value="name">{$t('knowledge.name')}</option>
-					<option value="type">{$t('knowledge.type')}</option>
-					<option value="size">{$t('knowledge.size')}</option>
-				</select>
+				<label class="mobile-sort-field">
+					<span class="mobile-sort-label">{$t('knowledge.sortBy')}</span>
+					<select
+						class="mobile-sort-select"
+						aria-label={$t('knowledge.sortBy')}
+						value={activeSortKey}
+						onchange={handleSortSelectChange}
+					>
+						<option value="date">{$t('knowledge.date')}</option>
+						<option value="name">{$t('knowledge.name')}</option>
+						<option value="type">{$t('knowledge.type')}</option>
+						<option value="size">{$t('knowledge.size')}</option>
+					</select>
+				</label>
 				<button
 					type="button"
 					class="mobile-sort-direction"
@@ -1131,7 +1134,6 @@ async function handleBulkDelete(): Promise<boolean> {
 						</label>
 					</div>
 					<div class="pagination-controls">
-						<span class="page-info">{$t('knowledge.pageInfo', { current: currentPage, total: totalPages })}</span>
 						<button
 							type="button"
 							class="pagination-btn"
@@ -1141,6 +1143,7 @@ async function handleBulkDelete(): Promise<boolean> {
 						>
 						<ChevronLeft size={16} strokeWidth={2} aria-hidden="true" />
 						</button>
+						<span class="page-info">{$t('knowledge.pageInfo', { current: currentPage, total: totalPages })}</span>
 						<button
 							type="button"
 							class="pagination-btn"
@@ -1424,6 +1427,10 @@ async function handleBulkDelete(): Promise<boolean> {
 	}
 
 	.mobile-sort-controls {
+		display: none;
+	}
+
+	.mobile-sort-field {
 		display: none;
 	}
 
@@ -1896,6 +1903,14 @@ async function handleBulkDelete(): Promise<boolean> {
 	}
 
 	@media (max-width: 720px) {
+		.documents-list-wrapper,
+		.documents-list {
+			min-width: 0;
+			width: 100%;
+			max-width: 100%;
+			overflow-x: clip;
+		}
+
 		.filter-controls {
 			flex-wrap: wrap;
 			align-items: stretch;
@@ -1922,11 +1937,29 @@ async function handleBulkDelete(): Promise<boolean> {
 			min-width: 0;
 		}
 
+		.mobile-sort-field {
+			display: grid;
+			grid-template-columns: auto minmax(0, 1fr);
+			align-items: center;
+			min-width: 0;
+			min-height: 44px;
+			gap: var(--space-xs);
+			padding-left: 0.7rem;
+			border: 1px solid var(--border-default);
+			border-radius: var(--radius-md);
+			background: var(--surface-page);
+		}
+
+		.mobile-sort-label {
+			font-size: 0.72rem;
+			font-weight: 600;
+			color: var(--text-muted);
+			white-space: nowrap;
+		}
+
 		.mobile-sort-select,
 		.mobile-sort-direction {
 			min-height: 44px;
-			border: 1px solid var(--border-default);
-			border-radius: var(--radius-md);
 			background: var(--surface-page);
 			color: var(--text-primary);
 			font-size: 0.82rem;
@@ -1934,7 +1967,10 @@ async function handleBulkDelete(): Promise<boolean> {
 
 		.mobile-sort-select {
 			min-width: 0;
+			height: 42px;
 			padding: 0 0.65rem;
+			border: 0;
+			border-radius: var(--radius-md);
 		}
 
 		.mobile-sort-direction {
@@ -1943,6 +1979,8 @@ async function handleBulkDelete(): Promise<boolean> {
 			justify-content: center;
 			width: 44px;
 			padding: 0;
+			border: 1px solid var(--border-default);
+			border-radius: var(--radius-md);
 			cursor: pointer;
 		}
 
@@ -2162,16 +2200,16 @@ async function handleBulkDelete(): Promise<boolean> {
 		.pagination {
 			display: grid;
 			grid-template-columns: 1fr;
-			gap: var(--space-sm);
+			gap: 0.7rem;
 			align-items: stretch;
 		}
 
 		.pagination-info {
 			display: grid;
-			grid-template-columns: 1fr auto;
+			grid-template-columns: 1fr;
 			width: 100%;
-			gap: var(--space-sm);
-			align-items: center;
+			gap: 0.55rem;
+			align-items: stretch;
 		}
 
 		.pagination-range {
@@ -2180,33 +2218,44 @@ async function handleBulkDelete(): Promise<boolean> {
 		}
 
 		.page-size-control {
-			gap: var(--space-xs);
+			display: flex;
+			justify-content: space-between;
+			width: 100%;
+			min-height: 44px;
+			gap: var(--space-sm);
+			padding: 0.28rem 0.32rem 0.28rem 0.72rem;
+			border: 1px solid var(--border-subtle);
+			border-radius: var(--radius-md);
+			background: var(--surface-page);
 			white-space: nowrap;
 		}
 
 		.page-size-label {
-			position: absolute;
-			width: 1px;
-			height: 1px;
-			padding: 0;
-			margin: -1px;
-			overflow: hidden;
-			clip: rect(0, 0, 0, 0);
-			white-space: nowrap;
+			position: static;
+			width: auto;
+			height: auto;
+			margin: 0;
+			overflow: visible;
+			clip: auto;
 			border: 0;
 		}
 
 		.pagination-controls {
 			display: grid;
-			grid-template-columns: 1fr 44px 44px;
+			grid-template-columns: 44px minmax(0, 1fr) 44px;
 			width: 100%;
 			gap: var(--space-xs);
 			align-items: center;
+			padding: 0.32rem;
+			border: 1px solid var(--border-subtle);
+			border-radius: var(--radius-md);
+			background: var(--surface-page);
 		}
 
 		.page-info {
 			min-width: 0;
 			overflow-wrap: anywhere;
+			text-align: center;
 		}
 	}
 </style>

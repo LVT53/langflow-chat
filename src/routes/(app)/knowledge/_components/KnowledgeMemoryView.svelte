@@ -625,15 +625,27 @@ $effect(() => {
 	}
 
 	.memory-profile-section {
+		width: 100%;
+		min-width: 0;
 		max-width: 100%;
-		overflow-x: clip;
+		overflow-x: hidden;
+	}
+
+	.memory-profile-section :global(*) {
+		box-sizing: border-box;
 	}
 
 	@media (max-width: 640px) {
+		.memory-profile-section > :global(.grid) {
+			grid-template-columns: minmax(0, 1fr);
+		}
+
 		.memory-review-callout,
 		.memory-category-card {
+			width: 100%;
 			min-width: 0;
 			max-width: 100%;
+			overflow-x: hidden;
 		}
 
 		.memory-review-card,
@@ -641,7 +653,10 @@ $effect(() => {
 			display: grid;
 			grid-template-columns: minmax(0, 1fr);
 			gap: 0.75rem;
+			width: 100%;
 			min-width: 0;
+			max-width: 100%;
+			overflow-x: hidden;
 		}
 
 		.memory-review-card > div,
@@ -651,8 +666,11 @@ $effect(() => {
 		}
 
 		.memory-card-actions {
+			display: flex;
+			flex-wrap: wrap;
 			justify-content: flex-end;
 			width: 100%;
+			min-width: 0;
 		}
 
 		.memory-profile-section p,

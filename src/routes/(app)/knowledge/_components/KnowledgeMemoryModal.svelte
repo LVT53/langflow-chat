@@ -165,7 +165,7 @@ onDestroy(() => {
 		aria-modal="true"
 		aria-labelledby="memory-profile-item-title"
 		tabindex={-1}
-		class="max-h-[88vh] w-full max-w-[640px] overflow-hidden rounded-[1rem] border border-border bg-surface-elevated shadow-2xl"
+		class="memory-detail-dialog max-h-[88vh] w-full max-w-[640px] overflow-hidden rounded-[1rem] border border-border bg-surface-elevated shadow-2xl"
 		onclick={(event) => event.stopPropagation()}
 	>
 		<div class="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
@@ -212,7 +212,7 @@ onDestroy(() => {
 			{/if}
 
 			<div class="mt-4 flex flex-wrap gap-2">
-				<span class="rounded-full border border-border bg-surface-page px-3 py-1 text-xs font-sans text-text-secondary">
+				<span class="memory-detail-chip rounded-full border border-border bg-surface-page px-3 py-1 text-xs font-sans text-text-secondary">
 					{$t("memoryProfile.scope")}: {fullScopeLabel}
 				</span>
 			</div>
@@ -220,12 +220,12 @@ onDestroy(() => {
 			{#if item.whyRemembered || sourceChips.length > 0}
 				<div class="mt-4 flex flex-wrap gap-2">
 					{#if item.whyRemembered}
-						<span class="rounded-full border border-border bg-surface-page px-3 py-1 text-xs font-sans text-text-secondary">
+						<span class="memory-detail-chip rounded-full border border-border bg-surface-page px-3 py-1 text-xs font-sans text-text-secondary">
 							{$t("memoryProfile.why")}: {item.whyRemembered}
 						</span>
 					{/if}
 					{#each visibleSourceChips as chip, index (`${chip.label ?? ''}:${chip.summary ?? ''}:${index}`)}
-						<span class="rounded-full border border-border bg-surface-page px-3 py-1 text-xs font-sans text-text-secondary">
+						<span class="memory-detail-chip rounded-full border border-border bg-surface-page px-3 py-1 text-xs font-sans text-text-secondary">
 							{chip.label ?? $t("memoryProfile.source")}{chip.summary ? `: ${chip.summary}` : ""}
 						</span>
 					{/each}
@@ -300,3 +300,28 @@ onDestroy(() => {
 		</div>
 	</div>
 </div>
+
+<style>
+	.memory-detail-dialog {
+		max-width: min(640px, calc(100vw - 2rem));
+		min-width: 0;
+	}
+
+	.memory-detail-dialog textarea,
+	.memory-detail-dialog p,
+	.memory-detail-chip {
+		min-width: 0;
+		max-width: 100%;
+		overflow-wrap: anywhere;
+	}
+
+	.memory-detail-chip {
+		white-space: normal;
+	}
+
+	@media (max-width: 640px) {
+		.memory-detail-dialog {
+			max-width: calc(100vw - 1.5rem);
+		}
+	}
+</style>
