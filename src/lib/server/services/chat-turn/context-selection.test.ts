@@ -139,14 +139,44 @@ vi.mock("../context-compression", () => ({
 			.join("\n\n"),
 }));
 
-vi.mock("../memory-profile", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("../memory-profile")>();
-	return {
-		...actual,
-		getActiveMemoryProfileContext: mocks.getActiveMemoryProfileContext,
-		recordMemoryReworkTelemetry: mocks.recordMemoryReworkTelemetry,
-	};
-});
+vi.mock("../memory-profile", () => ({
+	formatActiveMemoryProfileContextForPrompt: (
+		context: {
+			items: Array<{ statement: string; updatedAt: Date }>;
+		},
+		options: { maxTokens: number },
+	) => {
+		const ordered = [...context.items].sort(
+			(a, b) => b.updatedAt.getTime() - a.updatedAt.getTime(),
+		);
+		const included: string[] = [];
+		let estimatedTokens = 0;
+		for (const item of ordered) {
+			const line = `- ${item.statement}`;
+			const lineTokens = Math.ceil(line.length / 4);
+			if (estimatedTokens + lineTokens > options.maxTokens) continue;
+			included.push(line);
+			estimatedTokens += lineTokens;
+		}
+		const omittedCount = ordered.length - included.length;
+		const content = [
+			...included,
+			omittedCount > 0
+				? `Omitted active memory profile items: ${omittedCount}.`
+				: null,
+		]
+			.filter((value): value is string => Boolean(value))
+			.join("\n");
+		return {
+			content,
+			estimatedTokens,
+			includedCount: included.length,
+			omittedCount,
+		};
+	},
+	getActiveMemoryProfileContext: mocks.getActiveMemoryProfileContext,
+	recordMemoryReworkTelemetry: mocks.recordMemoryReworkTelemetry,
+}));
 
 function artifact(overrides: {
 	id: string;
@@ -455,6 +485,7 @@ describe("buildConstructedContext", () => {
 		);
 		expect(mocks.getActiveMemoryProfileContext).toHaveBeenCalledWith({
 			userId: "user-1",
+			applicableScopes: [{ type: "conversation", id: "conversation-1" }],
 		});
 		expect(constructed.taskState).toBeNull();
 		expect(constructed.contextTraceSections).toEqual(
@@ -885,6 +916,10 @@ describe("buildConstructedContext", () => {
 				}),
 			]),
 		);
+		expect(mocks.getActiveMemoryProfileContext).toHaveBeenCalledWith({
+			userId: "user-1",
+			applicableScopes: [{ type: "conversation", id: "conversation-1" }],
+		});
 		expect(mocks.resolvePromptAttachmentArtifacts).toHaveBeenCalled();
 		expect(mocks.listConversationSourceArtifactIds).toHaveBeenCalled();
 		expect(mocks.listConversationLinkedContextSources).toHaveBeenCalled();

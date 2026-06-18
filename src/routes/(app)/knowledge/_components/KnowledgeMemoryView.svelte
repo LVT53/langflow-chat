@@ -570,41 +570,41 @@ $effect(() => {
 
 <style>
 	.memory-review-callout {
-		border: 1px solid color-mix(in srgb, var(--accent) 58%, var(--border-default) 42%);
-		background: color-mix(in srgb, var(--accent) 17%, var(--surface-elevated) 83%);
+		border: 1px solid color-mix(in srgb, var(--warning) 46%, var(--border-default) 54%);
+		background: color-mix(in srgb, var(--warning) 14%, var(--surface-elevated) 86%);
 		box-shadow:
-			inset 5px 0 0 var(--accent),
-			0 10px 24px color-mix(in srgb, var(--accent) 12%, transparent 88%);
+			inset 5px 0 0 var(--warning),
+			0 10px 24px color-mix(in srgb, var(--warning) 12%, transparent 88%);
 	}
 
 	.memory-review-title {
-		color: var(--accent);
+		color: var(--warning);
 		font-size: 0.95rem;
 		line-height: 1.35;
 	}
 
 	.memory-review-more {
-		border: 1px solid color-mix(in srgb, var(--accent) 44%, var(--surface-page) 56%);
-		background: color-mix(in srgb, var(--accent) 12%, var(--surface-page) 88%);
-		color: color-mix(in srgb, var(--accent) 80%, var(--text-primary) 20%);
+		border: 1px solid color-mix(in srgb, var(--warning) 40%, var(--surface-page) 60%);
+		background: color-mix(in srgb, var(--warning) 12%, var(--surface-page) 88%);
+		color: color-mix(in srgb, var(--warning) 82%, var(--text-primary) 18%);
 	}
 
 	.memory-review-more:hover {
-		background: color-mix(in srgb, var(--accent) 18%, var(--surface-page) 82%);
+		background: color-mix(in srgb, var(--warning) 18%, var(--surface-page) 82%);
 	}
 
 	.memory-review-card {
-		border: 1px solid color-mix(in srgb, var(--accent) 38%, var(--border-subtle) 62%);
-		background: color-mix(in srgb, var(--accent) 10%, var(--surface-page) 90%);
+		border: 1px solid color-mix(in srgb, var(--warning) 34%, var(--border-subtle) 66%);
+		background: color-mix(in srgb, var(--warning) 9%, var(--surface-page) 91%);
 	}
 
 	:global(.dark) .memory-review-card {
-		background: color-mix(in srgb, var(--accent) 17%, var(--surface-elevated) 83%);
+		background: color-mix(in srgb, var(--warning) 14%, var(--surface-elevated) 86%);
 	}
 
 	.memory-review-reason {
-		border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--surface-page) 68%);
-		background: color-mix(in srgb, var(--accent) 12%, var(--surface-page) 88%);
+		border: 1px solid color-mix(in srgb, var(--warning) 28%, var(--surface-page) 72%);
+		background: color-mix(in srgb, var(--warning) 12%, var(--surface-page) 88%);
 	}
 
 	.memory-review-accept {

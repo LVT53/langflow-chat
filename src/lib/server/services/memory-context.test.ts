@@ -221,6 +221,7 @@ describe("memory context service", () => {
 		]);
 		expect(mockGetActiveMemoryProfileContext).toHaveBeenCalledWith({
 			userId: "user-1",
+			applicableScopes: [{ type: "conversation", id: "conv-current" }],
 		});
 		expect(mockRecallPersonaMemory).not.toHaveBeenCalled();
 	});
@@ -263,6 +264,7 @@ describe("memory context service", () => {
 		]);
 		expect(mockGetActiveMemoryProfileContext).toHaveBeenCalledWith({
 			userId: "user-1",
+			applicableScopes: [{ type: "conversation", id: "conv-current" }],
 		});
 		expect(mockRecallPersonaMemory).not.toHaveBeenCalled();
 		expect(
@@ -357,6 +359,7 @@ describe("memory context service", () => {
 		});
 		expect(mockGetActiveMemoryProfileContext).toHaveBeenCalledWith({
 			userId: "user-1",
+			applicableScopes: [{ type: "conversation", id: "conv-current" }],
 		});
 		expect(mockRecallPersonaMemory).not.toHaveBeenCalled();
 		expect(mockGetProjectContext).not.toHaveBeenCalled();
@@ -413,6 +416,7 @@ describe("memory context service", () => {
 		expect(result.content).not.toContain("cycling gear");
 		expect(mockGetActiveMemoryProfileContext).toHaveBeenCalledWith({
 			userId: "user-1",
+			applicableScopes: [{ type: "conversation", id: "conv-current" }],
 		});
 		expect(mockRecallPersonaMemory).not.toHaveBeenCalled();
 	});
@@ -528,6 +532,107 @@ describe("memory context service", () => {
 		expect(
 			JSON.stringify(mockRecordMemoryReworkTelemetry.mock.calls),
 		).not.toContain("cycling gear");
+	});
+
+	it("frames historical persona evidence that echoes review-needed profile memory as unresolved", async () => {
+		mockRecallPersonaMemory.mockResolvedValueOnce({
+			status: "ok",
+			source: "honcho_peer_chat",
+			content: "The user cares about cycling gear.",
+		});
+		mockListProjectionPolicyBlockedStatements.mockResolvedValueOnce([
+			{
+				id: "review-1",
+				status: "review_needed",
+				statement: "Cares about cycling gear.",
+			},
+		]);
+		const { getMemoryContext } = await import("./memory-context");
+
+		const result = await getMemoryContext({
+			userId: "user-1",
+			conversationId: "conv-current",
+			mode: "persona",
+			query: "What source says I care about cycling gear?",
+		});
+
+		expect(result).toMatchObject({
+			success: true,
+			mode: "persona",
+			status: "available",
+			source: "historical_honcho_evidence",
+			content:
+				"Unresolved historical persona evidence (not current profile truth): The user cares about cycling gear.",
+		});
+		if (result.mode !== "persona") {
+			throw new Error(`Expected persona mode, got ${result.mode}`);
+		}
+		expect(result.evidenceCandidates).toEqual([
+			{
+				id: "memory-context:persona:user-1",
+				title: "Unresolved historical persona evidence",
+				snippet:
+					"Unresolved historical persona evidence (not current profile truth): The user cares about cycling gear.",
+				sourceType: "memory",
+			},
+		]);
+		expect(mockRecordMemoryReworkTelemetry).toHaveBeenCalledWith({
+			userId: "user-1",
+			eventFamily: "prompt_use",
+			eventName: "memory_context_persona_historical_evidence",
+			reason: "projection_policy_unresolved_historical",
+			status: "available",
+			count: 1,
+			metadata: {
+				matchedPolicyStatuses: ["review_needed"],
+			},
+		});
+	});
+
+	it.each([
+		["blocked", "Conflict blocked profile statement."],
+		["expired", "Expired profile statement."],
+		["preserved_legacy", "Preserved legacy profile statement."],
+	] as const)("frames historical persona evidence that echoes %s profile memory as unresolved", async (status, statement) => {
+		mockRecallPersonaMemory.mockResolvedValueOnce({
+			status: "ok",
+			source: "honcho_peer_chat",
+			content: statement,
+		});
+		mockListProjectionPolicyBlockedStatements.mockResolvedValueOnce([
+			{
+				id: `policy-${status}`,
+				status,
+				statement,
+			},
+		]);
+		const { getMemoryContext } = await import("./memory-context");
+
+		const result = await getMemoryContext({
+			userId: "user-1",
+			conversationId: "conv-current",
+			mode: "persona",
+			query: "What evidence do you have for this memory?",
+		});
+
+		expect(result).toMatchObject({
+			success: true,
+			mode: "persona",
+			status: "available",
+			source: "historical_honcho_evidence",
+			content: `Unresolved historical persona evidence (not current profile truth): ${statement}`,
+		});
+		expect(mockRecordMemoryReworkTelemetry).toHaveBeenCalledWith({
+			userId: "user-1",
+			eventFamily: "prompt_use",
+			eventName: "memory_context_persona_historical_evidence",
+			reason: "projection_policy_unresolved_historical",
+			status: "available",
+			count: 1,
+			metadata: {
+				matchedPolicyStatuses: [status],
+			},
+		});
 	});
 
 	it("returns multiple older non-project history hits for a topic without leaking other users or projects", async () => {

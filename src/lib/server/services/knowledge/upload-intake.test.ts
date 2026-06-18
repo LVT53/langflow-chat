@@ -180,7 +180,7 @@ describe("Knowledge Upload Intake", () => {
 			artifact: sourceArtifact,
 			normalizedArtifact,
 			reusedExistingArtifact: false,
-			honcho: { uploaded: true, mode: "native" },
+			honcho: { uploaded: false, mode: "none" },
 			promptReady: true,
 			promptArtifactId: "normalized-1",
 			readinessError: null,
@@ -190,12 +190,7 @@ describe("Knowledge Upload Intake", () => {
 			conversationId: "conv-1",
 			file,
 		});
-		expect(mockSyncArtifactToHoncho).toHaveBeenCalledWith({
-			userId: "user-1",
-			conversationId: "conv-1",
-			artifact: sourceArtifact,
-			file,
-		});
+		expect(mockSyncArtifactToHoncho).not.toHaveBeenCalled();
 		expect(mockLogAttachmentTrace).toHaveBeenCalledWith(
 			"upload_result",
 			expect.objectContaining({
@@ -272,7 +267,7 @@ describe("Knowledge Upload Intake", () => {
 		expect(response).toMatchObject({
 			artifact: sourceArtifact,
 			normalizedArtifact,
-			honcho: { uploaded: true, mode: "native" },
+			honcho: { uploaded: false, mode: "none" },
 			promptReady: true,
 			promptArtifactId: "normalized-stored",
 			readinessError: null,
@@ -290,14 +285,10 @@ describe("Knowledge Upload Intake", () => {
 			binaryHash: "stored-binary-hash",
 			tempPathAbsolute: "/tmp/report-upload",
 		});
-		expect(mockSyncArtifactToHoncho).toHaveBeenCalledWith({
-			userId: "user-1",
-			conversationId: "conv-1",
-			artifact: sourceArtifact,
-		});
+		expect(mockSyncArtifactToHoncho).not.toHaveBeenCalled();
 	});
 
-	it("tries native File Honcho sync before falling back to normalized text", async () => {
+	it("does not sync native or normalized document text to Honcho by default", async () => {
 		const sourceArtifact = artifact({
 			id: "artifact-image",
 			name: "photo.png",
@@ -320,9 +311,6 @@ describe("Knowledge Upload Intake", () => {
 			normalizedArtifact,
 			reusedExistingArtifact: false,
 		});
-		mockSyncArtifactToHoncho
-			.mockResolvedValueOnce({ uploaded: false, mode: "none" })
-			.mockResolvedValueOnce({ uploaded: true, mode: "normalized" });
 		mockResolvePromptAttachmentArtifacts.mockResolvedValue({
 			displayArtifacts: [sourceArtifact],
 			promptArtifacts: [normalizedArtifact],
@@ -350,19 +338,10 @@ describe("Knowledge Upload Intake", () => {
 			startedAt: now,
 		});
 
-		expect(response.honcho).toEqual({ uploaded: true, mode: "normalized" });
-		expect(mockSyncArtifactToHoncho).toHaveBeenNthCalledWith(1, {
-			userId: "user-1",
-			conversationId: "conv-1",
-			artifact: sourceArtifact,
-			file,
-		});
-		expect(mockSyncArtifactToHoncho).toHaveBeenNthCalledWith(2, {
-			userId: "user-1",
-			conversationId: "conv-1",
-			artifact: sourceArtifact,
-			fallbackTextArtifact: normalizedArtifact,
-		});
+		expect(response.honcho).toEqual({ uploaded: false, mode: "none" });
+		expect(response.promptReady).toBe(true);
+		expect(response.promptArtifactId).toBe("normalized-image");
+		expect(mockSyncArtifactToHoncho).not.toHaveBeenCalled();
 	});
 
 	it("returns readiness failure metadata when extraction cannot produce prompt-ready text", async () => {

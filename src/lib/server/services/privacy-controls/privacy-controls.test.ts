@@ -97,6 +97,16 @@ function seedPrivacyUser() {
 			createdAt: now,
 		})
 		.run();
+	db.insert(schema.conversationSummaries)
+		.values({
+			conversationId: "conversation-1",
+			userId: "user-1",
+			summary: "Private durable conversation summary.",
+			source: "deterministic",
+			createdAt: now,
+			updatedAt: now,
+		})
+		.run();
 	db.insert(schema.artifacts)
 		.values([
 			{
@@ -553,6 +563,9 @@ async function getPrivacySnapshot() {
 	const conversations = await db
 		.select({ id: schema.conversations.id })
 		.from(schema.conversations);
+	const conversationSummaries = await db
+		.select({ id: schema.conversationSummaries.conversationId })
+		.from(schema.conversationSummaries);
 	const chatFiles = await db
 		.select({ id: schema.chatGeneratedFiles.id })
 		.from(schema.chatGeneratedFiles);
@@ -647,6 +660,7 @@ async function getPrivacySnapshot() {
 		artifactIds: artifacts.map((row) => row.id).sort(),
 		embeddingIds: embeddings.map((row) => row.id).sort(),
 		conversationIds: conversations.map((row) => row.id).sort(),
+		conversationSummaryIds: conversationSummaries.map((row) => row.id).sort(),
 		chatFileIds: chatFiles.map((row) => row.id).sort(),
 		taskStateIds: taskStates.map((row) => row.id).sort(),
 		workingSetIds: workingSet.map((row) => row.id).sort(),
@@ -716,6 +730,7 @@ describe("privacy controls service", () => {
 			],
 			embeddingIds: ["embedding-1"],
 			conversationIds: ["conversation-1"],
+			conversationSummaryIds: ["conversation-1"],
 			chatFileIds: ["file-1"],
 			usageEventIds: ["usage-1"],
 			analyticsConversationIds: ["analytics-conversation-1"],
@@ -743,6 +758,7 @@ describe("privacy controls service", () => {
 			artifactIds: ["generated-1"],
 			embeddingIds: [],
 			conversationIds: ["conversation-1"],
+			conversationSummaryIds: [],
 			chatFileIds: ["file-1"],
 			taskStateIds: [],
 			workingSetIds: [],

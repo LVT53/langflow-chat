@@ -607,13 +607,11 @@ export async function syncGeneratedFilesToMemory(params: {
 	const { createArtifactLink, createGeneratedOutputArtifact } = await import(
 		"$lib/server/services/knowledge"
 	);
-	const { syncArtifactToHoncho } = await import("$lib/server/services/honcho");
 
 	const uniqueFileIds = Array.from(new Set(params.fileIds));
 	const artifactIdsByChatFile = await listGeneratedOutputArtifactIdsByChatFile(
 		params.conversationId,
 	);
-	const syncedSourceArtifactIds = new Set<string>();
 
 	for (const fileId of uniqueFileIds) {
 		try {
@@ -622,15 +620,6 @@ export async function syncGeneratedFilesToMemory(params: {
 				existingArtifact?.isGeneratedDocumentSource &&
 				existingArtifact.sourceArtifact
 			) {
-				if (!syncedSourceArtifactIds.has(existingArtifact.sourceArtifact.id)) {
-					await syncArtifactToHoncho({
-						userId: params.userId,
-						conversationId: params.conversationId,
-						artifact: existingArtifact.sourceArtifact,
-						fallbackTextArtifact: existingArtifact.sourceArtifact,
-					});
-					syncedSourceArtifactIds.add(existingArtifact.sourceArtifact.id);
-				}
 				continue;
 			}
 
@@ -752,26 +741,6 @@ export async function syncGeneratedFilesToMemory(params: {
 						previousVersion: previousVersion.version,
 						currentFilename: file.filename,
 					},
-				});
-			}
-
-			const binaryFile = new File([new Uint8Array(content)], file.filename, {
-				type: file.mimeType ?? "application/octet-stream",
-			});
-
-			const syncResult = await syncArtifactToHoncho({
-				userId: params.userId,
-				conversationId: params.conversationId,
-				artifact: memoryArtifact,
-				file: binaryFile,
-			});
-
-			if (!syncResult.uploaded) {
-				await syncArtifactToHoncho({
-					userId: params.userId,
-					conversationId: params.conversationId,
-					artifact: memoryArtifact,
-					fallbackTextArtifact: memoryArtifact,
 				});
 			}
 		} catch (error) {

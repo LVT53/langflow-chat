@@ -985,7 +985,7 @@ describe("memory profile foundation", () => {
 		expect(contextJson).not.toContain("review");
 	});
 
-	it("keeps scoped memories out of ordinary active prompt context", async () => {
+	it("includes global and applicable scoped memories in active prompt context", async () => {
 		const { createMemoryProfileItem, getActiveMemoryProfileContext } =
 			await import("./index");
 
@@ -1003,9 +1003,21 @@ describe("memory profile foundation", () => {
 		});
 		await createMemoryProfileItem({
 			userId: "user-1",
+			category: "preferences",
+			scope: { type: "project", id: "project-2" },
+			statement: "Unrelated project preference.",
+		});
+		await createMemoryProfileItem({
+			userId: "user-1",
 			category: "goals_ongoing_work",
 			scope: { type: "conversation", id: "conversation-1" },
 			statement: "Conversation-specific goal.",
+		});
+		await createMemoryProfileItem({
+			userId: "user-1",
+			category: "goals_ongoing_work",
+			scope: { type: "conversation", id: "conversation-2" },
+			statement: "Unrelated conversation goal.",
 		});
 		await createMemoryProfileItem({
 			userId: "user-1",
@@ -1013,11 +1025,156 @@ describe("memory profile foundation", () => {
 			scope: { type: "document", id: "document-1" },
 			statement: "Document-specific constraint.",
 		});
+		await createMemoryProfileItem({
+			userId: "user-1",
+			category: "constraints_boundaries",
+			scope: { type: "document", id: "document-2" },
+			statement: "Unrelated document constraint.",
+		});
+
+		const context = await getActiveMemoryProfileContext({
+			userId: "user-1",
+			applicableScopes: [
+				{ type: "project", id: "project-1" },
+				{ type: "conversation", id: "conversation-1" },
+				{ type: "document", id: "document-1" },
+			],
+		});
+
+		expect(context.items.map((item) => item.statement)).toEqual(
+			expect.arrayContaining([
+				"Project-specific private preference.",
+				"Conversation-specific goal.",
+				"Document-specific constraint.",
+				"Prefers global memory behavior.",
+			]),
+		);
+		expect(context.items).toHaveLength(4);
+		expect(JSON.stringify(context)).not.toContain(
+			"Unrelated project preference.",
+		);
+		expect(JSON.stringify(context)).not.toContain(
+			"Unrelated conversation goal.",
+		);
+		expect(JSON.stringify(context)).not.toContain(
+			"Unrelated document constraint.",
+		);
+	});
+
+	it("defaults active prompt context to global memories when no scoped applicability is provided", async () => {
+		const { createMemoryProfileItem, getActiveMemoryProfileContext } =
+			await import("./index");
+
+		await createMemoryProfileItem({
+			userId: "user-1",
+			category: "preferences",
+			scope: { type: "global" },
+			statement: "Prefers global memory behavior.",
+		});
+		await createMemoryProfileItem({
+			userId: "user-1",
+			category: "goals_ongoing_work",
+			scope: { type: "conversation", id: "conversation-1" },
+			statement: "Conversation-specific goal.",
+		});
 
 		const context = await getActiveMemoryProfileContext({ userId: "user-1" });
 
 		expect(context.items.map((item) => item.statement)).toEqual([
 			"Prefers global memory behavior.",
+		]);
+	});
+
+	it("lists projection-policy blocked statements across non-active profile states", async () => {
+		const { createMemoryProfileItem, listProjectionPolicyBlockedStatements } =
+			await import("./index");
+
+		await createMemoryProfileItem({
+			userId: "user-1",
+			category: "preferences",
+			scope: { type: "global" },
+			statement: "Prefers active memory behavior.",
+			status: "active",
+		});
+		await createMemoryProfileItem({
+			userId: "user-1",
+			category: "preferences",
+			scope: { type: "global" },
+			statement: "Deleted profile statement.",
+			status: "deleted",
+		});
+		await createMemoryProfileItem({
+			userId: "user-1",
+			category: "preferences",
+			scope: { type: "global" },
+			statement: "Suppressed profile statement.",
+			status: "suppressed",
+		});
+		await createMemoryProfileItem({
+			userId: "user-1",
+			category: "preferences",
+			scope: { type: "global" },
+			statement: "Expired profile statement.",
+			status: "expired",
+		});
+		await createMemoryProfileItem({
+			userId: "user-1",
+			category: "preferences",
+			scope: { type: "global" },
+			statement: "Conflict blocked profile statement.",
+			status: "blocked",
+		});
+		await createMemoryProfileItem({
+			userId: "user-1",
+			category: "preferences",
+			scope: { type: "global" },
+			statement: "Review needed profile statement.",
+			status: "review_needed",
+		});
+		await createMemoryProfileItem({
+			userId: "user-1",
+			category: "preferences",
+			scope: { type: "global" },
+			statement: "Preserved legacy profile statement.",
+			status: "preserved_legacy",
+		});
+
+		const statements = await listProjectionPolicyBlockedStatements({
+			userId: "user-1",
+		});
+
+		expect(
+			statements
+				.map((statement) => ({
+					status: statement.status,
+					statement: statement.statement,
+				}))
+				.sort((left, right) => left.status.localeCompare(right.status)),
+		).toEqual([
+			{
+				status: "blocked",
+				statement: "Conflict blocked profile statement.",
+			},
+			{
+				status: "deleted",
+				statement: "Deleted profile statement.",
+			},
+			{
+				status: "expired",
+				statement: "Expired profile statement.",
+			},
+			{
+				status: "preserved_legacy",
+				statement: "Preserved legacy profile statement.",
+			},
+			{
+				status: "review_needed",
+				statement: "Review needed profile statement.",
+			},
+			{
+				status: "suppressed",
+				statement: "Suppressed profile statement.",
+			},
 		]);
 	});
 

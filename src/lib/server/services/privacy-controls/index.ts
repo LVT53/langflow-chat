@@ -10,6 +10,7 @@ import {
 	artifacts,
 	campaignAssets,
 	conversationContextStatus,
+	conversationSummaries,
 	conversationTaskStates,
 	conversationWorkingSetItems,
 	deepResearchJobs,
@@ -399,6 +400,9 @@ async function clearMemoryAndKnowledgeForUser(
 			.run();
 		tx.delete(semanticEmbeddings)
 			.where(eq(semanticEmbeddings.userId, userId))
+			.run();
+		tx.delete(conversationSummaries)
+			.where(eq(conversationSummaries.userId, userId))
 			.run();
 		tx.delete(conversationWorkingSetItems)
 			.where(eq(conversationWorkingSetItems.userId, userId))

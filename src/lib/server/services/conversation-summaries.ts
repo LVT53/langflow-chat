@@ -6,6 +6,7 @@ import {
 	requestContextSummarizer,
 } from "$lib/server/services/task-state/control-model";
 import { clipNullableText, normalizeWhitespace } from "$lib/server/utils/text";
+import { isCurrentMemoryResetGeneration } from "./memory-profile";
 
 const SUMMARY_MAX_CHARS = 700;
 const MEANINGFUL_TURN_MIN_CHARS = 40;
@@ -24,6 +25,7 @@ export type RefreshConversationSummaryParams = {
 	conversationId: string;
 	userMessage: string;
 	assistantResponse: string;
+	startedResetGeneration?: number;
 };
 
 function timestampToMs(value: Date | number | null | undefined): number {
@@ -111,6 +113,16 @@ async function buildModelSummary(params: {
 	}
 }
 
+async function isRefreshGenerationCurrent(
+	params: RefreshConversationSummaryParams,
+): Promise<boolean> {
+	if (params.startedResetGeneration === undefined) return true;
+	return isCurrentMemoryResetGeneration({
+		userId: params.userId,
+		resetGeneration: params.startedResetGeneration,
+	});
+}
+
 export async function getConversationSummary(params: {
 	userId: string;
 	conversationId: string;
@@ -132,6 +144,8 @@ export async function getConversationSummary(params: {
 export async function refreshConversationSummary(
 	params: RefreshConversationSummaryParams,
 ): Promise<ConversationSummary | null> {
+	if (!(await isRefreshGenerationCurrent(params))) return null;
+
 	const userMessage = compactText(params.userMessage);
 	const assistantResponse = compactText(params.assistantResponse);
 	if ((userMessage + assistantResponse).length < MEANINGFUL_TURN_MIN_CHARS) {
@@ -160,6 +174,8 @@ export async function refreshConversationSummary(
 			userMessage,
 			assistantResponse,
 		});
+
+	if (!(await isRefreshGenerationCurrent(params))) return null;
 
 	try {
 		await db

@@ -484,4 +484,189 @@ describe("memory intake gate", () => {
 			}),
 		]);
 	});
+
+	it("rejects one-off response style instructions instead of storing global constraints", async () => {
+		const {
+			getMemoryProfileReadModel,
+			listMemoryReworkTelemetry,
+			listPendingMemoryDirtyEntries,
+		} = await import("./index");
+		const { intakePostTurnMemory } = await import("./intake");
+
+		await expect(
+			intakePostTurnMemory({
+				userId: "user-1",
+				conversationId: "conv-1",
+				userMessage: "Don't use bullet points in this answer.",
+				assistantMessage: "Understood.",
+				userMessageId: "user-message-one-off-style",
+				assistantMessageId: "assistant-message-one-off-style",
+			}),
+		).resolves.toEqual({
+			status: "rejected",
+			reason: "one_off_instruction",
+		});
+		await expect(
+			intakePostTurnMemory({
+				userId: "user-1",
+				conversationId: "conv-1",
+				userMessage: "Do not be formal for this reply.",
+				assistantMessage: "Got it.",
+				userMessageId: "user-message-one-off-tone",
+				assistantMessageId: "assistant-message-one-off-tone",
+			}),
+		).resolves.toEqual({
+			status: "rejected",
+			reason: "one_off_instruction",
+		});
+
+		const profile = await getMemoryProfileReadModel({ userId: "user-1" });
+		expect(profile.categories.flatMap((group) => group.items)).toEqual([]);
+		expect(profile.review.visibleItems).toEqual([]);
+		expect(await listPendingMemoryDirtyEntries({ userId: "user-1" })).toEqual(
+			[],
+		);
+		const telemetry = await listMemoryReworkTelemetry({ userId: "user-1" });
+		expect(telemetry).toEqual([
+			expect.objectContaining({
+				eventFamily: "intake",
+				eventName: "memory_intake_rejected",
+				status: "rejected",
+				reason: "one_off_instruction",
+				metadata: expect.objectContaining({
+					userMessageId: "user-message-one-off-style",
+				}),
+			}),
+			expect.objectContaining({
+				eventFamily: "intake",
+				eventName: "memory_intake_rejected",
+				status: "rejected",
+				reason: "one_off_instruction",
+				metadata: expect.objectContaining({
+					userMessageId: "user-message-one-off-tone",
+				}),
+			}),
+		]);
+		expect(JSON.stringify(telemetry)).not.toContain("bullet points");
+		expect(JSON.stringify(telemetry)).not.toContain("formal");
+	});
+
+	it("rejects bare response style constraints without durable language", async () => {
+		const {
+			getMemoryProfileReadModel,
+			listMemoryReworkTelemetry,
+			listPendingMemoryDirtyEntries,
+		} = await import("./index");
+		const { intakePostTurnMemory } = await import("./intake");
+
+		await expect(
+			intakePostTurnMemory({
+				userId: "user-1",
+				conversationId: "conv-1",
+				userMessage: "Don't use bullet points.",
+				userMessageId: "user-message-bare-style",
+			}),
+		).resolves.toEqual({
+			status: "rejected",
+			reason: "no_explicit_durable_intent",
+		});
+
+		const profile = await getMemoryProfileReadModel({ userId: "user-1" });
+		expect(profile.categories.flatMap((group) => group.items)).toEqual([]);
+		expect(profile.review.visibleItems).toEqual([]);
+		expect(await listPendingMemoryDirtyEntries({ userId: "user-1" })).toEqual(
+			[],
+		);
+		expect(await listMemoryReworkTelemetry({ userId: "user-1" })).toEqual([
+			expect.objectContaining({
+				eventName: "memory_intake_rejected",
+				status: "rejected",
+				reason: "no_explicit_durable_intent",
+			}),
+		]);
+	});
+
+	it("admits strongly phrased durable response constraints", async () => {
+		const { getMemoryProfileReadModel, listMemoryReworkTelemetry } =
+			await import("./index");
+		const { intakePostTurnMemory } = await import("./intake");
+
+		await expect(
+			intakePostTurnMemory({
+				userId: "user-1",
+				conversationId: "conv-1",
+				userMessage: "Always avoid bullet points in responses.",
+				userMessageId: "user-message-durable-style",
+			}),
+		).resolves.toEqual(
+			expect.objectContaining({
+				status: "admitted",
+				category: "constraints_boundaries",
+			}),
+		);
+
+		const profile = await getMemoryProfileReadModel({ userId: "user-1" });
+		const constraints = profile.categories.find(
+			(group) => group.category === "constraints_boundaries",
+		);
+		expect(constraints?.items).toEqual([
+			expect.objectContaining({
+				category: "constraints_boundaries",
+				statement: "Always avoid bullet points in responses.",
+			}),
+		]);
+		expect(await listMemoryReworkTelemetry({ userId: "user-1" })).toEqual([
+			expect.objectContaining({
+				eventName: "memory_intake_admitted",
+				category: "constraints_boundaries",
+				status: "admitted",
+				metadata: expect.objectContaining({
+					parserRule: "direct_user_self_statement",
+					userMessageId: "user-message-durable-style",
+				}),
+			}),
+		]);
+	});
+
+	it("admits remembered never-want instructions as durable constraints", async () => {
+		const { getMemoryProfileReadModel, listMemoryReworkTelemetry } =
+			await import("./index");
+		const { intakePostTurnMemory } = await import("./intake");
+
+		await expect(
+			intakePostTurnMemory({
+				userId: "user-1",
+				conversationId: "conv-1",
+				userMessage: "Remember that I never want bullet points.",
+				userMessageId: "user-message-never-want-style",
+			}),
+		).resolves.toEqual(
+			expect.objectContaining({
+				status: "admitted",
+				category: "constraints_boundaries",
+			}),
+		);
+
+		const profile = await getMemoryProfileReadModel({ userId: "user-1" });
+		const constraints = profile.categories.find(
+			(group) => group.category === "constraints_boundaries",
+		);
+		expect(constraints?.items).toEqual([
+			expect.objectContaining({
+				category: "constraints_boundaries",
+				statement: "Never want bullet points.",
+			}),
+		]);
+		expect(await listMemoryReworkTelemetry({ userId: "user-1" })).toEqual([
+			expect.objectContaining({
+				eventName: "memory_intake_admitted",
+				category: "constraints_boundaries",
+				status: "admitted",
+				metadata: expect.objectContaining({
+					parserRule: "remember_that",
+					userMessageId: "user-message-never-want-style",
+				}),
+			}),
+		]);
+	});
 });

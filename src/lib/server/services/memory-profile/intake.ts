@@ -102,6 +102,18 @@ function looksSpecificDocumentSourceClaim(value: string): boolean {
 	);
 }
 
+function looksOneOffInstruction(value: string): boolean {
+	return /\b(?:this|current)\s+(?:answer|response|reply|message|turn)\b/i.test(
+		value,
+	);
+}
+
+function hasDurableConstraintMarker(value: string): boolean {
+	return /\b(?:ever|from now on|going forward|in the future|in future|always|never)\b/i.test(
+		value,
+	);
+}
+
 type ParsedStatement = {
 	category: MemoryProfileCategory;
 	statement: string;
@@ -163,7 +175,41 @@ function parseConstraintStatement(
 	text: string,
 	parserRule: string,
 ): ParsedStatement | null {
+	const alwaysMatch = /^always\s+(.+)$/i.exec(text);
+	if (alwaysMatch?.[1]) {
+		return parsedStatement(
+			"constraints_boundaries",
+			`Always ${lowerInitial(alwaysMatch[1])}`,
+			parserRule,
+		);
+	}
+
+	const neverMatch = /^never\s+(.+)$/i.exec(text);
+	if (neverMatch?.[1]) {
+		return parsedStatement(
+			"constraints_boundaries",
+			`Never ${lowerInitial(neverMatch[1])}`,
+			parserRule,
+		);
+	}
+
+	const neverWantMatch = /^i\s+never\s+want\s+(.+)$/i.exec(text);
+	if (neverWantMatch?.[1]) {
+		return parsedStatement(
+			"constraints_boundaries",
+			`Never want ${lowerInitial(neverWantMatch[1])}`,
+			parserRule,
+		);
+	}
+
 	const match = /^(do not|don't|dont)\s+(.+)$/i.exec(text);
+	if (
+		match?.[2] &&
+		parserRule !== "remember_that" &&
+		!hasDurableConstraintMarker(match[2])
+	) {
+		return null;
+	}
 	return match?.[2]
 		? parsedStatement(
 				"constraints_boundaries",
@@ -215,6 +261,9 @@ export function parsePostTurnMemoryIntake(
 ): ParsedDurableMemory {
 	const message = cleanText(userMessage);
 	if (!message) return { decision: "reject", reason: "empty_user_message" };
+	if (looksOneOffInstruction(message)) {
+		return { decision: "reject", reason: "one_off_instruction" };
+	}
 
 	const rememberMatch =
 		/^(?:please\s+)?remember(?:\s+that)?\s+(.+)$/i.exec(message) ??

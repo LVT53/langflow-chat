@@ -43,8 +43,10 @@ const {
 	mockReadFile,
 	mockAccess,
 	mockCreateGeneratedOutputArtifact,
+	mockCreateArtifactLink,
 	mockSyncArtifactToHoncho,
 	mockExtractDocumentText,
+	mockRecordMemoryEvent,
 } = vi.hoisted(() => {
 	const mockRows: ChatFileRow[] = [];
 	const mockArtifactRows: ArtifactRow[] = [];
@@ -95,6 +97,7 @@ const {
 			updatedAt: Date.now(),
 		}),
 	);
+	const mockCreateArtifactLink = vi.fn(async () => undefined);
 	const mockSyncArtifactToHoncho = vi.fn(async () => ({
 		uploaded: true,
 		mode: "native",
@@ -104,6 +107,7 @@ const {
 		normalizedName: "generated.txt",
 		mimeType: "text/plain",
 	}));
+	const mockRecordMemoryEvent = vi.fn(async () => undefined);
 
 	return {
 		mockRows,
@@ -117,8 +121,10 @@ const {
 		mockReadFile,
 		mockAccess,
 		mockCreateGeneratedOutputArtifact,
+		mockCreateArtifactLink,
 		mockSyncArtifactToHoncho,
 		mockExtractDocumentText,
+		mockRecordMemoryEvent,
 	};
 });
 
@@ -459,10 +465,16 @@ vi.mock("drizzle-orm", () => ({
 }));
 
 vi.mock("$lib/server/services/knowledge", () => ({
-	createArtifactLink: vi.fn(async () => undefined),
+	createArtifactLink: (...args: Parameters<typeof mockCreateArtifactLink>) =>
+		mockCreateArtifactLink(...args),
 	createGeneratedOutputArtifact: (
 		...args: Parameters<typeof mockCreateGeneratedOutputArtifact>
 	) => mockCreateGeneratedOutputArtifact(...args),
+}));
+
+vi.mock("$lib/server/services/memory-events", () => ({
+	recordMemoryEvent: (...args: Parameters<typeof mockRecordMemoryEvent>) =>
+		mockRecordMemoryEvent(...args),
 }));
 
 vi.mock("$lib/server/services/honcho", () => ({
@@ -483,6 +495,8 @@ describe("chat-files service", () => {
 		mockConversationIds.clear();
 		vi.clearAllMocks();
 		mockRm.mockResolvedValue(undefined);
+		mockCreateArtifactLink.mockResolvedValue(undefined);
+		mockRecordMemoryEvent.mockResolvedValue(undefined);
 		vi.spyOn(console, "info").mockImplementation(() => undefined);
 		vi.spyOn(console, "warn").mockImplementation(() => undefined);
 		vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -862,7 +876,7 @@ describe("chat-files service", () => {
 	});
 
 	describe("syncGeneratedFilesToMemory", () => {
-		it("uses the canonical source artifact for source-first rendered document files", async () => {
+		it("keeps source-first rendered document source out of direct Honcho sync by default", async () => {
 			const { syncGeneratedFilesToMemory } = await import("./chat-files");
 			const now = new Date("2026-01-01T12:00:00.000Z");
 			mockRows.push(
@@ -940,22 +954,7 @@ describe("chat-files service", () => {
 			expect(mockReadFile).not.toHaveBeenCalled();
 			expect(mockExtractDocumentText).not.toHaveBeenCalled();
 			expect(mockCreateGeneratedOutputArtifact).not.toHaveBeenCalled();
-			expect(mockSyncArtifactToHoncho).toHaveBeenCalledTimes(1);
-			expect(mockSyncArtifactToHoncho).toHaveBeenCalledWith(
-				expect.objectContaining({
-					userId: "user-1",
-					conversationId: "conv-a",
-					artifact: expect.objectContaining({
-						id: "artifact-source-1",
-						contentText: expect.stringContaining(
-							"Canonical generated document source text.",
-						),
-					}),
-					fallbackTextArtifact: expect.objectContaining({
-						id: "artifact-source-1",
-					}),
-				}),
-			);
+			expect(mockSyncArtifactToHoncho).not.toHaveBeenCalled();
 		});
 
 		it("preserves generated-file version metadata when text extraction fails", async () => {
@@ -1005,6 +1004,7 @@ describe("chat-files service", () => {
 			expect(
 				mockCreateGeneratedOutputArtifact.mock.calls[0][0].content,
 			).toContain("Generated file version: v1");
+			expect(mockSyncArtifactToHoncho).not.toHaveBeenCalled();
 			expect(console.warn).toHaveBeenCalledWith(
 				"[CHAT_FILES] Generated file text extraction failed; preserving version metadata",
 				expect.objectContaining({
@@ -1012,6 +1012,101 @@ describe("chat-files service", () => {
 					filename: "report.pdf",
 				}),
 			);
+		});
+
+		it("records generated document supersession metadata without Honcho artifact sync", async () => {
+			const { syncGeneratedFilesToMemory } = await import("./chat-files");
+			const previousUpdatedAt = new Date("2026-01-01T12:00:00.000Z");
+			mockArtifactRows.push({
+				id: "artifact-prev",
+				userId: "user-1",
+				type: "generated_output",
+				retrievalClass: "durable",
+				name: "report.pdf",
+				mimeType: "text/markdown",
+				sizeBytes: 1200,
+				conversationId: "conv-a",
+				summary: "Previous report summary",
+				metadataJson: JSON.stringify({
+					generatedFile: true,
+					generatedFilename: "report.pdf",
+					generatedFileVersion: 2,
+					documentFamilyId: "family-report",
+					documentFamilyStatus: "active",
+					documentLabel: "report.pdf",
+					documentRole: "draft",
+					versionNumber: 2,
+					sourceChatFileId: "file-prev",
+				}),
+				contentText: "Previous generated report body.",
+				extension: "md",
+				storagePath: null,
+				createdAt: previousUpdatedAt,
+				updatedAt: previousUpdatedAt,
+			});
+			mockRows.push({
+				id: "file-next",
+				conversationId: "conv-a",
+				assistantMessageId: "assistant-next",
+				userId: "user-1",
+				filename: "report.pdf",
+				mimeType: "application/pdf",
+				sizeBytes: 5000,
+				storagePath: "conv-a/file-next.pdf",
+				createdAt: new Date("2026-01-02T12:00:00.000Z"),
+			});
+
+			await syncGeneratedFilesToMemory({
+				userId: "user-1",
+				conversationId: "conv-a",
+				assistantMessageId: "assistant-next",
+				fileIds: ["file-next"],
+				assistantResponse: "Here is the revised report.",
+			});
+
+			expect(mockCreateGeneratedOutputArtifact).toHaveBeenCalledWith(
+				expect.objectContaining({
+					nameOverride: "report.pdf",
+					metadata: expect.objectContaining({
+						documentFamilyId: "family-report",
+						documentFamilyStatus: "active",
+						documentLabel: "report.pdf",
+						documentRole: "draft",
+						versionNumber: 3,
+						supersedesArtifactId: "artifact-prev",
+						previousGeneratedArtifactId: "artifact-prev",
+					}),
+				}),
+			);
+			expect(mockCreateArtifactLink).toHaveBeenCalledWith({
+				userId: "user-1",
+				artifactId: "artifact-1",
+				relatedArtifactId: "artifact-prev",
+				conversationId: "conv-a",
+				messageId: "assistant-next",
+				linkType: "supersedes",
+			});
+			expect(mockRecordMemoryEvent).toHaveBeenCalledWith(
+				expect.objectContaining({
+					eventKey: "document_superseded:artifact-prev:artifact-1",
+					userId: "user-1",
+					conversationId: "conv-a",
+					messageId: "assistant-next",
+					domain: "document",
+					eventType: "document_superseded",
+					subjectId: "artifact-1",
+					relatedId: "artifact-prev",
+					payload: expect.objectContaining({
+						documentFamilyId: "family-report",
+						documentLabel: "report.pdf",
+						documentRole: "draft",
+						versionNumber: 3,
+						previousVersion: 2,
+						currentFilename: "report.pdf",
+					}),
+				}),
+			);
+			expect(mockSyncArtifactToHoncho).not.toHaveBeenCalled();
 		});
 	});
 

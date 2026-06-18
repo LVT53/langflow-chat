@@ -189,11 +189,15 @@ async function recordPromptMemoryTelemetry(params: {
 
 async function buildActiveMemoryProfilePromptSection(params: {
 	userId: string;
+	conversationId: string;
 	modelContextBudget: ReturnType<typeof deriveModelContextBudget>;
 }): Promise<PromptContextSection | null> {
 	let context: ActiveMemoryProfileContext;
 	try {
-		context = await getActiveMemoryProfileContext({ userId: params.userId });
+		context = await getActiveMemoryProfileContext({
+			userId: params.userId,
+			applicableScopes: [{ type: "conversation", id: params.conversationId }],
+		});
 	} catch {
 		await recordPromptMemoryTelemetry({
 			userId: params.userId,
@@ -899,6 +903,7 @@ async function buildShallowConstructedContext(params: {
 		}).catch(() => null),
 		buildActiveMemoryProfilePromptSection({
 			userId: params.userId,
+			conversationId: params.conversationId,
 			modelContextBudget: params.modelContextBudget,
 		}),
 	]);
@@ -1142,6 +1147,7 @@ export async function buildConstructedContext(params: {
 		}).catch(() => null),
 		buildActiveMemoryProfilePromptSection({
 			userId: params.userId,
+			conversationId: params.conversationId,
 			modelContextBudget,
 		}),
 	]);

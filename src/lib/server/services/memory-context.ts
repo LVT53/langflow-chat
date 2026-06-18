@@ -320,24 +320,39 @@ function normalizeMemoryPolicyText(value: string): string {
 async function historicalPersonaEvidenceBlockedByProjection(params: {
 	userId: string;
 	content: string | null;
-}): Promise<{ blocked: boolean; blockedCount: number }> {
+}): Promise<{
+	blocked: boolean;
+	blockedCount: number;
+	unresolvedStatuses: string[];
+}> {
 	const normalizedContent = normalizeMemoryPolicyText(params.content ?? "");
-	if (!normalizedContent) return { blocked: false, blockedCount: 0 };
+	if (!normalizedContent) {
+		return { blocked: false, blockedCount: 0, unresolvedStatuses: [] };
+	}
 
 	const blockedStatements = await listProjectionPolicyBlockedStatements({
 		userId: params.userId,
 	});
 	let blockedCount = 0;
+	const unresolvedStatuses = new Set<string>();
 	for (const statement of blockedStatements) {
 		const normalizedStatement = normalizeMemoryPolicyText(statement.statement);
 		if (
 			normalizedStatement.length >= 12 &&
 			normalizedContent.includes(normalizedStatement)
 		) {
-			blockedCount += 1;
+			if (statement.status === "deleted" || statement.status === "suppressed") {
+				blockedCount += 1;
+			} else {
+				unresolvedStatuses.add(statement.status);
+			}
 		}
 	}
-	return { blocked: blockedCount > 0, blockedCount };
+	return {
+		blocked: blockedCount > 0,
+		blockedCount,
+		unresolvedStatuses: Array.from(unresolvedStatuses).sort(),
+	};
 }
 
 export function resolveProjectMemoryContextMode(params: {
@@ -394,7 +409,7 @@ async function getPersonaMemoryContext(
 						userId: params.userId,
 						content: recall.content,
 					})
-				: { blocked: false, blockedCount: 0 };
+				: { blocked: false, blockedCount: 0, unresolvedStatuses: [] };
 		if (blocked.blocked) {
 			await recordMemoryContextPromptTelemetry({
 				userId: params.userId,
@@ -418,15 +433,24 @@ async function getPersonaMemoryContext(
 			};
 		}
 		const status = recall.status === "ok" ? "available" : recall.status;
+		const hasUnresolvedPolicyMatch = blocked.unresolvedStatuses.length > 0;
+		const title = hasUnresolvedPolicyMatch
+			? "Unresolved historical persona evidence"
+			: "Historical persona evidence";
 		const content = recall.content
-			? `Historical persona evidence (not current profile truth): ${recall.content}`
+			? `${title} (not current profile truth): ${recall.content}`
 			: null;
 		await recordMemoryContextPromptTelemetry({
 			userId: params.userId,
 			eventName: "memory_context_persona_historical_evidence",
-			reason: `honcho_recall_${recall.status}`,
+			reason: hasUnresolvedPolicyMatch
+				? "projection_policy_unresolved_historical"
+				: `honcho_recall_${recall.status}`,
 			status,
 			count: content ? 1 : 0,
+			metadata: hasUnresolvedPolicyMatch
+				? { matchedPolicyStatuses: blocked.unresolvedStatuses }
+				: undefined,
 		});
 
 		return {
@@ -443,7 +467,7 @@ async function getPersonaMemoryContext(
 					: buildPersonaEvidenceCandidate({
 							userId: params.userId,
 							content,
-							title: "Historical persona evidence",
+							title,
 						}),
 			audit: {
 				conversationId: params.conversationId,
@@ -456,6 +480,7 @@ async function getPersonaMemoryContext(
 	try {
 		activeProfile = await getActiveMemoryProfileContext({
 			userId: params.userId,
+			applicableScopes: [{ type: "conversation", id: params.conversationId }],
 		});
 	} catch (error) {
 		await recordMemoryContextPromptTelemetry({

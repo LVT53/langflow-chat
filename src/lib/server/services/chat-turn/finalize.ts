@@ -948,6 +948,7 @@ export async function runPostTurnTasks(
 					conversationId: params.conversationId,
 					userMessage: params.userMessage,
 					assistantResponse: params.assistantResponse,
+					startedResetGeneration: params.startedResetGeneration,
 				}).catch((error) =>
 					console.error(
 						`${params.logPrefix} Conversation summary refresh failed:`,
@@ -958,7 +959,15 @@ export async function runPostTurnTasks(
 
 	try {
 		await Promise.allSettled([...honchoTasks, summaryRefreshTask]);
-		await runUserMemoryMaintenance(params.userId, params.maintenanceReason);
+		void runUserMemoryMaintenance(
+			params.userId,
+			params.maintenanceReason,
+		).catch((error) =>
+			console.error(
+				`${params.logPrefix} Post-turn memory maintenance failed:`,
+				error,
+			),
+		);
 	} catch (error) {
 		console.error(
 			`${params.logPrefix} Post-turn memory maintenance failed:`,

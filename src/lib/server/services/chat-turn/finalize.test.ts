@@ -17,12 +17,14 @@ const {
 	mockRefreshConversationSummary,
 	mockResolveWorkingDocumentSelection,
 	mockRunUserMemoryMaintenance,
+	mockSyncGeneratedFilesToMemory,
 } = vi.hoisted(() => ({
 	mockMirrorMessage: vi.fn(async () => undefined),
 	mockMirrorWorkCapsuleConclusion: vi.fn(async () => undefined),
 	mockMemoryIntake: vi.fn(async () => ({ status: "rejected" })),
 	mockIsCurrentMemoryResetGeneration: vi.fn(async () => true),
 	mockRefreshConversationSummary: vi.fn(async () => undefined),
+	mockSyncGeneratedFilesToMemory: vi.fn(async () => undefined),
 	mockResolveWorkingDocumentSelection: vi.fn(() => ({
 		documentFocused: false,
 		currentDocument: null,
@@ -49,6 +51,14 @@ const {
 		},
 	})),
 	mockRunUserMemoryMaintenance: vi.fn(async () => undefined),
+}));
+
+vi.mock("$lib/server/services/chat-files", () => ({
+	syncGeneratedFilesToMemory: mockSyncGeneratedFilesToMemory,
+}));
+
+vi.mock("$lib/server/config-store", () => ({
+	getConfig: vi.fn(() => ({ contextDiagnosticsDebug: false })),
 }));
 
 vi.mock("$lib/server/services/analytics", () => ({
@@ -301,10 +311,84 @@ describe("runPostTurnTasks", () => {
 			resetGeneration: 7,
 		});
 		expect(mockMirrorWorkCapsuleConclusion).not.toHaveBeenCalled();
+		expect(mockRefreshConversationSummary).toHaveBeenCalledWith(
+			expect.objectContaining({
+				startedResetGeneration: 7,
+			}),
+		);
 		expect(mockRunUserMemoryMaintenance).toHaveBeenCalledWith(
 			"user-1",
 			"chat_send",
 		);
+	});
+
+	it("does not block post-turn completion on memory maintenance", async () => {
+		let resolveMaintenance: ((value: undefined) => void) | undefined;
+		const maintenancePromise = new Promise<undefined>((resolve) => {
+			resolveMaintenance = resolve;
+		});
+		mockRunUserMemoryMaintenance.mockReturnValueOnce(maintenancePromise);
+		const { runPostTurnTasks } = await import("./finalize");
+
+		let completed = false;
+		const postTurn = runPostTurnTasks({
+			logPrefix: "[SEND]",
+			userId: "user-1",
+			conversationId: "conv-1",
+			upstreamMessage: "upstream prompt payload",
+			userMessage: "Please remember that I prefer concise answers.",
+			assistantResponse: "I will keep that in mind.",
+			assistantMirrorContent: "assistant mirror text",
+			maintenanceReason: "chat_send",
+		}).then(() => {
+			completed = true;
+		});
+
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect(completed).toBe(true);
+		expect(mockRunUserMemoryMaintenance).toHaveBeenCalledWith(
+			"user-1",
+			"chat_send",
+		);
+
+		resolveMaintenance?.(undefined);
+		await postTurn;
+	});
+
+	it("logs asynchronous memory maintenance failures after post-turn completion", async () => {
+		const errorSpy = vi
+			.spyOn(console, "error")
+			.mockImplementation(() => undefined);
+		let rejectMaintenance: ((error: Error) => void) | undefined;
+		mockRunUserMemoryMaintenance.mockReturnValueOnce(
+			new Promise<undefined>((_resolve, reject) => {
+				rejectMaintenance = reject;
+			}),
+		);
+		const { runPostTurnTasks } = await import("./finalize");
+
+		await runPostTurnTasks({
+			logPrefix: "[SEND]",
+			userId: "user-1",
+			conversationId: "conv-1",
+			upstreamMessage: "upstream prompt payload",
+			userMessage: "Please remember that I prefer concise answers.",
+			assistantResponse: "I will keep that in mind.",
+			assistantMirrorContent: "assistant mirror text",
+			maintenanceReason: "chat_send",
+		});
+
+		const error = new Error("maintenance failed");
+		rejectMaintenance?.(error);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+
+		expect(errorSpy).toHaveBeenCalledWith(
+			"[SEND] Post-turn memory maintenance failed:",
+			error,
+		);
+
+		errorSpy.mockRestore();
 	});
 });
 

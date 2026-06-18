@@ -129,4 +129,56 @@ describe("conversation summaries", () => {
 			}),
 		).resolves.toBeNull();
 	});
+
+	it("does not persist stale summary work after memory reset advances", async () => {
+		const { sqlite, db } = openSeedDatabase();
+		const now = new Date("2026-05-14T09:00:00.000Z");
+		db.insert(schema.users)
+			.values({
+				id: "user-1",
+				email: "summary@example.com",
+				passwordHash: "hash",
+				createdAt: now,
+				updatedAt: now,
+			})
+			.run();
+		db.insert(schema.conversations)
+			.values({
+				id: "conv-1",
+				userId: "user-1",
+				title: "Launch planning",
+				createdAt: now,
+				updatedAt: now,
+			})
+			.run();
+		sqlite.close();
+
+		const { advanceMemoryResetGeneration, getCurrentMemoryResetGeneration } =
+			await import("./memory-profile");
+		const { getConversationSummary, refreshConversationSummary } = await import(
+			"./conversation-summaries"
+		);
+
+		const startedResetGeneration =
+			await getCurrentMemoryResetGeneration("user-1");
+		await advanceMemoryResetGeneration("user-1");
+
+		const refreshed = await refreshConversationSummary({
+			userId: "user-1",
+			conversationId: "conv-1",
+			userMessage:
+				"This summary refresh began before Clear Memory and Knowledge reset the user.",
+			assistantResponse:
+				"The stale refresh output must be discarded so cleared memory context is not rehydrated.",
+			startedResetGeneration,
+		});
+
+		expect(refreshed).toBeNull();
+		await expect(
+			getConversationSummary({
+				userId: "user-1",
+				conversationId: "conv-1",
+			}),
+		).resolves.toBeNull();
+	});
 });

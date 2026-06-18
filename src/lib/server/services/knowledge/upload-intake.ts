@@ -2,7 +2,6 @@ import { getConfig } from "$lib/server/config-store";
 import { getAdapterBodySizeLimitBytes } from "$lib/server/env";
 import { logAttachmentTrace } from "$lib/server/services/attachment-trace";
 import { getConversation } from "$lib/server/services/conversations";
-import { syncArtifactToHoncho } from "$lib/server/services/honcho";
 import type { Artifact, KnowledgeUploadResponse } from "$lib/types";
 import {
 	createNormalizedArtifact,
@@ -89,6 +88,13 @@ type UploadRenameInfo = {
 	wasRenamed: boolean;
 };
 
+type UploadHonchoResult = KnowledgeUploadResponse["honcho"];
+
+const DEFAULT_DOCUMENT_HONCHO_RESULT: UploadHonchoResult = {
+	uploaded: false,
+	mode: "none",
+};
+
 function normalizeConversationId(
 	conversationId: string | null | undefined,
 ): string | null {
@@ -140,38 +146,12 @@ async function createNormalizedArtifactForUpload(params: {
 	});
 }
 
-async function syncUploadToHoncho(params: {
-	userId: string;
-	conversationId: string | null;
-	artifact: Artifact;
-	normalizedArtifact: Artifact | null;
-	file?: File;
-}): Promise<Awaited<ReturnType<typeof syncArtifactToHoncho>>> {
-	let syncResult = await syncArtifactToHoncho({
-		userId: params.userId,
-		conversationId: params.conversationId,
-		artifact: params.artifact,
-		...(params.file ? { file: params.file } : {}),
-	});
-
-	if (!syncResult.uploaded) {
-		syncResult = await syncArtifactToHoncho({
-			userId: params.userId,
-			conversationId: params.conversationId,
-			artifact: params.artifact,
-			fallbackTextArtifact: params.normalizedArtifact,
-		});
-	}
-
-	return syncResult;
-}
-
 async function buildKnowledgeUploadResponse(params: {
 	userId: string;
 	conversationId: string | null;
 	artifact: Artifact;
 	normalizedArtifact: Artifact | null;
-	honcho: Awaited<ReturnType<typeof syncArtifactToHoncho>>;
+	honcho: UploadHonchoResult;
 	traceId: string;
 	reusedExistingArtifact: boolean;
 	renameInfo?: UploadRenameInfo;
@@ -232,8 +212,8 @@ async function finishKnowledgeUpload(params: {
 		? "upload extraction completed"
 		: "Upload extraction completed";
 	const honchoMessage = params.logPrefix
-		? "upload Honcho sync completed"
-		: "Upload Honcho sync completed";
+		? "upload Honcho sync skipped"
+		: "Upload Honcho sync skipped";
 
 	console.info(knowledgeLogMessage(params.logPrefix, sourceSavedMessage), {
 		traceId: params.traceId,
@@ -261,20 +241,13 @@ async function finishKnowledgeUpload(params: {
 		durationMs: Date.now() - params.startedAt,
 	});
 
-	const honcho = await syncUploadToHoncho({
-		userId: params.userId,
-		conversationId: params.conversationId,
-		artifact: params.artifact,
-		normalizedArtifact,
-		file: params.file,
-	});
 	console.info(knowledgeLogMessage(params.logPrefix, honchoMessage), {
 		traceId: params.traceId,
 		userId: params.userId,
 		conversationId: params.conversationId,
 		artifactId: params.artifact.id,
-		uploaded: honcho.uploaded,
-		mode: honcho.mode,
+		uploaded: DEFAULT_DOCUMENT_HONCHO_RESULT.uploaded,
+		mode: DEFAULT_DOCUMENT_HONCHO_RESULT.mode,
 		durationMs: Date.now() - params.startedAt,
 	});
 
@@ -283,7 +256,7 @@ async function finishKnowledgeUpload(params: {
 		conversationId: params.conversationId,
 		artifact: params.artifact,
 		normalizedArtifact,
-		honcho,
+		honcho: DEFAULT_DOCUMENT_HONCHO_RESULT,
 		traceId: params.traceId,
 		reusedExistingArtifact: params.reusedExistingArtifact,
 		renameInfo: params.renameInfo,

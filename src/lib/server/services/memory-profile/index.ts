@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, or, sql } from "drizzle-orm";
 import { getConfig } from "$lib/server/config-store";
 import { db } from "$lib/server/db";
 import {
@@ -149,7 +149,15 @@ export type ActiveMemoryProfileContext = {
 
 export type MemoryProfilePolicyBlockedStatement = {
 	id: string;
-	status: Extract<MemoryProfileItemStatus, "deleted" | "suppressed">;
+	status: Extract<
+		MemoryProfileItemStatus,
+		| "deleted"
+		| "suppressed"
+		| "expired"
+		| "blocked"
+		| "review_needed"
+		| "preserved_legacy"
+	>;
 	statement: string;
 };
 
@@ -1089,6 +1097,7 @@ export async function getMemoryProfileItemDetail(params: {
 
 export async function getActiveMemoryProfileContext(params: {
 	userId: string;
+	applicableScopes?: MemoryProfileScope[];
 }): Promise<ActiveMemoryProfileContext> {
 	const resetGeneration = await getCurrentMemoryResetGeneration(params.userId);
 	const identity = await getMemoryProfileIdentity(params.userId);
@@ -1106,6 +1115,18 @@ export async function getActiveMemoryProfileContext(params: {
 		resetGeneration,
 		projectionStateId: projection.id,
 	});
+	const scopeConditions = [
+		eq(memoryProfileItems.scopeType, "global"),
+		...(params.applicableScopes ?? [])
+			.filter((scope) => scope.type !== "global")
+			.map((scope) => {
+				const columns = toScopeColumns(scope);
+				return and(
+					eq(memoryProfileItems.scopeType, columns.scopeType),
+					eq(memoryProfileItems.scopeId, columns.scopeId),
+				);
+			}),
+	];
 	const rows = await db
 		.select()
 		.from(memoryProfileItems)
@@ -1114,7 +1135,7 @@ export async function getActiveMemoryProfileContext(params: {
 				eq(memoryProfileItems.userId, params.userId),
 				eq(memoryProfileItems.resetGeneration, resetGeneration),
 				eq(memoryProfileItems.status, "active"),
-				eq(memoryProfileItems.scopeType, "global"),
+				or(...scopeConditions),
 			),
 		)
 		.orderBy(desc(memoryProfileItems.updatedAt));
@@ -1152,14 +1173,26 @@ export async function listProjectionPolicyBlockedStatements(params: {
 			and(
 				eq(memoryProfileItems.userId, params.userId),
 				eq(memoryProfileItems.resetGeneration, resetGeneration),
-				inArray(memoryProfileItems.status, ["deleted", "suppressed"]),
+				inArray(memoryProfileItems.status, [
+					"deleted",
+					"suppressed",
+					"expired",
+					"blocked",
+					"review_needed",
+					"preserved_legacy",
+				]),
 			),
 		);
 
 	return rows
 		.filter(
 			(row): row is MemoryProfilePolicyBlockedStatement =>
-				row.status === "deleted" || row.status === "suppressed",
+				row.status === "deleted" ||
+				row.status === "suppressed" ||
+				row.status === "expired" ||
+				row.status === "blocked" ||
+				row.status === "review_needed" ||
+				row.status === "preserved_legacy",
 		)
 		.map((row) => ({
 			id: row.id,
