@@ -1387,6 +1387,9 @@ export async function createOrUpdateMemoryReviewItem(params: {
 		expectedResetGeneration: params.expectedResetGeneration,
 	});
 	const now = new Date();
+	const requestedAffectedItemIds = Array.from(
+		new Set((params.affectedItemIds ?? []).filter((id) => id.length > 0)),
+	);
 	const [existing] = await db
 		.select()
 		.from(memoryReviewItems)
@@ -1410,24 +1413,31 @@ export async function createOrUpdateMemoryReviewItem(params: {
 				...parseJsonArray(existing.affectedItemIdsJson).filter(
 					(value): value is string => typeof value === "string",
 				),
-				...(params.affectedItemIds ?? []),
+				...requestedAffectedItemIds,
 			]),
 		);
-		await db
-			.update(memoryReviewItems)
-			.set({
-				question: params.question,
-				reason: params.reason,
-				subjectLabel: params.subjectLabel,
-				affectedItemIdsJson: JSON.stringify(affectedItemIds),
-				evidenceJson: JSON.stringify(evidence),
-				metadataJson: JSON.stringify(
-					params.metadata ?? parseJsonRecord(existing.metadataJson),
-				),
-				updatedAt: now,
-			})
-			.where(eq(memoryReviewItems.id, existing.id))
-			.run();
+		await markAffectedActiveMemoryProfileItemsForReview({
+			userId: params.userId,
+			resetGeneration,
+			affectedItemIds,
+			now,
+			mutateReviewItem: (tx) => {
+				tx.update(memoryReviewItems)
+					.set({
+						question: params.question,
+						reason: params.reason,
+						subjectLabel: params.subjectLabel,
+						affectedItemIdsJson: JSON.stringify(affectedItemIds),
+						evidenceJson: JSON.stringify(evidence),
+						metadataJson: JSON.stringify(
+							params.metadata ?? parseJsonRecord(existing.metadataJson),
+						),
+						updatedAt: now,
+					})
+					.where(eq(memoryReviewItems.id, existing.id))
+					.run();
+			},
+		});
 		return {
 			id: existing.id,
 			status: "open",
@@ -1436,28 +1446,86 @@ export async function createOrUpdateMemoryReviewItem(params: {
 	}
 
 	const id = randomUUID();
-	await db
-		.insert(memoryReviewItems)
-		.values({
-			id,
-			userId: params.userId,
-			resetGeneration,
-			subjectKey: params.subjectKey,
-			subjectLabel: params.subjectLabel,
-			question: params.question,
-			reason: params.reason,
-			affectedItemIdsJson: JSON.stringify(params.affectedItemIds ?? []),
-			evidenceJson: JSON.stringify(params.evidence ?? []),
-			metadataJson: JSON.stringify(params.metadata ?? {}),
-			createdAt: now,
-			updatedAt: now,
-		})
-		.run();
+	await markAffectedActiveMemoryProfileItemsForReview({
+		userId: params.userId,
+		resetGeneration,
+		affectedItemIds: requestedAffectedItemIds,
+		now,
+		mutateReviewItem: (tx) => {
+			tx.insert(memoryReviewItems)
+				.values({
+					id,
+					userId: params.userId,
+					resetGeneration,
+					subjectKey: params.subjectKey,
+					subjectLabel: params.subjectLabel,
+					question: params.question,
+					reason: params.reason,
+					affectedItemIdsJson: JSON.stringify(requestedAffectedItemIds),
+					evidenceJson: JSON.stringify(params.evidence ?? []),
+					metadataJson: JSON.stringify(params.metadata ?? {}),
+					createdAt: now,
+					updatedAt: now,
+				})
+				.run();
+		},
+	});
 	return {
 		id,
 		status: "open",
 		evidenceCount: params.evidence?.length ?? 0,
 	};
+}
+
+async function markAffectedActiveMemoryProfileItemsForReview(params: {
+	userId: string;
+	resetGeneration: number;
+	affectedItemIds: string[];
+	now: Date;
+	mutateReviewItem: (
+		tx: Parameters<Parameters<typeof db.transaction>[0]>[0],
+	) => void;
+}): Promise<void> {
+	const affectedItemIds = Array.from(new Set(params.affectedItemIds));
+	const projection =
+		affectedItemIds.length > 0
+			? await ensureProjectionState({
+					userId: params.userId,
+					resetGeneration: params.resetGeneration,
+				})
+			: null;
+
+	db.transaction((tx) => {
+		params.mutateReviewItem(tx);
+		if (affectedItemIds.length === 0 || !projection) return;
+
+		const result = tx
+			.update(memoryProfileItems)
+			.set({
+				status: "review_needed",
+				revision: sql`${memoryProfileItems.revision} + 1`,
+				updatedAt: params.now,
+			})
+			.where(
+				and(
+					eq(memoryProfileItems.userId, params.userId),
+					eq(memoryProfileItems.resetGeneration, params.resetGeneration),
+					eq(memoryProfileItems.status, "active"),
+					inArray(memoryProfileItems.id, affectedItemIds),
+				),
+			)
+			.run() as { changes?: number };
+		const changedCount = result.changes ?? 0;
+		if (changedCount === 0) return;
+
+		tx.update(memoryProjectionState)
+			.set({
+				revision: sql`${memoryProjectionState.revision} + ${changedCount}`,
+				updatedAt: params.now,
+			})
+			.where(eq(memoryProjectionState.id, projection.id))
+			.run();
+	});
 }
 
 export async function resolveMemoryReviewItem(params: {

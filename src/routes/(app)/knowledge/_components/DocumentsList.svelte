@@ -442,6 +442,12 @@ function toggleSort(nextSortKey: DocumentSortKey) {
 	onSortChange?.(nextSortKey, nextDirection);
 }
 
+function handleSortSelectChange(event: Event) {
+	const nextSortKey = (event.currentTarget as HTMLSelectElement)
+		.value as DocumentSortKey;
+	toggleSort(nextSortKey);
+}
+
 function handleSearchInput() {
 	if (!serverManaged) return;
 	if (searchDebounce) {
@@ -837,21 +843,44 @@ async function handleBulkDelete(): Promise<boolean> {
 
 			{#if onUpload}
 				<button
-				type="button"
-				class="upload-btn"
-				aria-label={$t('knowledge.upload')}
-				title={$t('knowledge.upload')}
-				disabled={isUploading}
-				onclick={handleUploadClick}
-			>
-				{#if isUploading}
-					<span class="upload-spinner"></span>
-				{:else}
-					<Upload size={18} strokeWidth={1.5} aria-hidden="true" />
-				{/if}
+					type="button"
+					class="upload-btn"
+					aria-label={$t('knowledge.upload')}
+					title={$t('knowledge.upload')}
+					disabled={isUploading}
+					onclick={handleUploadClick}
+				>
+					{#if isUploading}
+						<span class="upload-spinner"></span>
+					{:else}
+						<Upload size={18} strokeWidth={1.5} aria-hidden="true" />
+					{/if}
 				</button>
 			{/if}
-	</div>
+
+			<div class="mobile-sort-controls">
+				<select
+					class="mobile-sort-select"
+					aria-label={$t('knowledge.sortBy')}
+					value={activeSortKey}
+					onchange={handleSortSelectChange}
+				>
+					<option value="date">{$t('knowledge.date')}</option>
+					<option value="name">{$t('knowledge.name')}</option>
+					<option value="type">{$t('knowledge.type')}</option>
+					<option value="size">{$t('knowledge.size')}</option>
+				</select>
+				<button
+					type="button"
+					class="mobile-sort-direction"
+					aria-label={$t('knowledge.sortDirection')}
+					title={$t('knowledge.sortDirection')}
+					onclick={() => toggleSort(activeSortKey)}
+				>
+					<span aria-hidden="true">{getSortIndicator(activeSortKey)}</span>
+				</button>
+			</div>
+		</div>
 
 				{#if sortedDocuments.length === 0}
 			<div class="empty-state">
@@ -1086,17 +1115,20 @@ async function handleBulkDelete(): Promise<boolean> {
 			{#if displayDocumentCount > paginationLimit}
 				<nav class="pagination" aria-label="Pagination">
 					<div class="pagination-info">
-						<span>{$t('knowledge.showing', { from: showingFrom, to: showingTo, total: displayDocumentCount })}</span>
-						<select
-							class="page-size-select"
-							aria-label={$t('knowledge.itemsPerPage')}
-							value={paginationLimit}
-							onchange={(e) => onPaginationLimitChange?.(parseInt((e.target as HTMLSelectElement).value))}
-						>
-							<option value={20}>20</option>
-							<option value={50}>50</option>
-							<option value={100}>100</option>
-						</select>
+						<span class="pagination-range">{$t('knowledge.showing', { from: showingFrom, to: showingTo, total: displayDocumentCount })}</span>
+						<label class="page-size-control">
+							<span class="page-size-label">{$t('knowledge.itemsPerPage')}</span>
+							<select
+								class="page-size-select"
+								aria-label={$t('knowledge.itemsPerPage')}
+								value={paginationLimit}
+								onchange={(e) => onPaginationLimitChange?.(parseInt((e.currentTarget as HTMLSelectElement).value))}
+							>
+								<option value={20}>20</option>
+								<option value={50}>50</option>
+								<option value={100}>100</option>
+							</select>
+						</label>
 					</div>
 					<div class="pagination-controls">
 						<span class="page-info">{$t('knowledge.pageInfo', { current: currentPage, total: totalPages })}</span>
@@ -1391,6 +1423,10 @@ async function handleBulkDelete(): Promise<boolean> {
 		opacity: 0.85;
 	}
 
+	.mobile-sort-controls {
+		display: none;
+	}
+
 	.documents-table td {
 		padding: var(--space-md) var(--space-lg);
 		border-bottom: 1px solid var(--border-subtle);
@@ -1661,6 +1697,17 @@ async function handleBulkDelete(): Promise<boolean> {
 		color: var(--text-secondary);
 	}
 
+	.page-size-control {
+		display: inline-flex;
+		align-items: center;
+		gap: var(--space-sm);
+	}
+
+	.page-size-label {
+		font-size: 0.75rem;
+		color: var(--text-muted);
+	}
+
 	.page-size-select {
 		min-height: 40px;
 		padding: 0.25rem 0.5rem;
@@ -1850,7 +1897,7 @@ async function handleBulkDelete(): Promise<boolean> {
 
 	@media (max-width: 720px) {
 		.filter-controls {
-			flex-wrap: nowrap;
+			flex-wrap: wrap;
 			align-items: stretch;
 			padding: var(--space-sm);
 			border-radius: var(--radius-md);
@@ -1865,6 +1912,38 @@ async function handleBulkDelete(): Promise<boolean> {
 		.upload-btn {
 			width: 44px;
 			height: 44px;
+		}
+
+		.mobile-sort-controls {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) 44px;
+			flex: 1 0 100%;
+			gap: var(--space-xs);
+			min-width: 0;
+		}
+
+		.mobile-sort-select,
+		.mobile-sort-direction {
+			min-height: 44px;
+			border: 1px solid var(--border-default);
+			border-radius: var(--radius-md);
+			background: var(--surface-page);
+			color: var(--text-primary);
+			font-size: 0.82rem;
+		}
+
+		.mobile-sort-select {
+			min-width: 0;
+			padding: 0 0.65rem;
+		}
+
+		.mobile-sort-direction {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			width: 44px;
+			padding: 0;
+			cursor: pointer;
 		}
 
 		.table-container {
@@ -2075,11 +2154,59 @@ async function handleBulkDelete(): Promise<boolean> {
 			padding: var(--space-sm);
 		}
 
-		.bulk-actions,
-		.pagination-info,
-		.pagination-controls {
+		.bulk-actions {
 			width: 100%;
 			justify-content: space-between;
+		}
+
+		.pagination {
+			display: grid;
+			grid-template-columns: 1fr;
+			gap: var(--space-sm);
+			align-items: stretch;
+		}
+
+		.pagination-info {
+			display: grid;
+			grid-template-columns: 1fr auto;
+			width: 100%;
+			gap: var(--space-sm);
+			align-items: center;
+		}
+
+		.pagination-range {
+			min-width: 0;
+			overflow-wrap: anywhere;
+		}
+
+		.page-size-control {
+			gap: var(--space-xs);
+			white-space: nowrap;
+		}
+
+		.page-size-label {
+			position: absolute;
+			width: 1px;
+			height: 1px;
+			padding: 0;
+			margin: -1px;
+			overflow: hidden;
+			clip: rect(0, 0, 0, 0);
+			white-space: nowrap;
+			border: 0;
+		}
+
+		.pagination-controls {
+			display: grid;
+			grid-template-columns: 1fr 44px 44px;
+			width: 100%;
+			gap: var(--space-xs);
+			align-items: center;
+		}
+
+		.page-info {
+			min-width: 0;
+			overflow-wrap: anywhere;
 		}
 	}
 </style>

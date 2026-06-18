@@ -339,7 +339,7 @@ $effect(() => {
 									<p class="memory-review-reason mt-2 rounded-[0.4rem] px-2 py-1 text-xs font-sans leading-[1.45] text-text-muted">{item.reason}</p>
 								{/if}
 							</div>
-							<div class="flex shrink-0 items-center gap-1">
+							<div class="memory-card-actions flex shrink-0 items-center gap-1">
 								{#if item.canAccept}
 									<button
 										type="button"
@@ -391,7 +391,7 @@ $effect(() => {
 		<div class="grid gap-4 lg:grid-cols-2">
 			{#each categoryDefinitions as definition (definition.category)}
 				{@const items = getCategoryItems(definition.category)}
-				<section class="rounded-[1rem] border border-border bg-surface-elevated px-4 py-4 shadow-sm" aria-labelledby={`memory-category-${definition.category}`}>
+				<section class="memory-category-card rounded-[1rem] border border-border bg-surface-elevated px-4 py-4 shadow-sm" aria-labelledby={`memory-category-${definition.category}`}>
 					<h3 id={`memory-category-${definition.category}`} class="text-lg font-sans font-semibold text-text-primary">
 						{$t(definition.label)}
 					</h3>
@@ -401,7 +401,7 @@ $effect(() => {
 						<div class={`mt-3 grid gap-2 ${items.length > 4 ? "max-h-[356px] overflow-y-auto pr-1" : ""}`}>
 							{#each items as item (item.id)}
 								{@const scopeLabel = formatScope(item.scope)}
-								<div class="flex items-start justify-between gap-3 rounded-[0.75rem] border border-border bg-surface-page px-3 py-3">
+								<div class="memory-item-card flex items-start justify-between gap-3 rounded-[0.75rem] border border-border bg-surface-page px-3 py-3">
 									<div class="min-w-0">
 										<p class="break-words text-sm font-sans leading-[1.55] text-text-primary">{item.statement}</p>
 										{#if scopeLabel}
@@ -410,7 +410,7 @@ $effect(() => {
 											</div>
 										{/if}
 									</div>
-									<div class="flex shrink-0 items-center gap-1">
+									<div class="memory-card-actions flex shrink-0 items-center gap-1">
 										<button
 											type="button"
 											class="btn-icon-bare btn-icon-sm h-11 w-11 cursor-pointer rounded-full text-icon-muted hover:text-text-primary"
@@ -513,7 +513,7 @@ $effect(() => {
 			<div class="max-h-[calc(88vh-80px)] overflow-y-auto px-5 py-5">
 				<div class="grid gap-2">
 					{#each additionalReviewItems as item (item.id)}
-						<div class="flex items-start justify-between gap-3 rounded-[0.75rem] border border-border bg-surface-page px-3 py-3">
+						<div class="memory-review-card flex items-start justify-between gap-3 rounded-[0.75rem] border border-border bg-surface-page px-3 py-3">
 							<div class="min-w-0">
 								<p class="break-words text-xs font-sans leading-[1.45] text-text-muted">{item.subject}</p>
 								{#if item.question}
@@ -523,7 +523,7 @@ $effect(() => {
 									<p class="memory-review-reason mt-2 rounded-[0.4rem] px-2 py-1 text-xs font-sans leading-[1.45] text-text-muted">{item.reason}</p>
 								{/if}
 							</div>
-							<div class="flex shrink-0 items-center gap-1">
+							<div class="memory-card-actions flex shrink-0 items-center gap-1">
 								{#if item.canAccept}
 									<button
 										type="button"
@@ -622,6 +622,44 @@ $effect(() => {
 	.memory-review-accept:hover {
 		background: var(--accent-hover);
 		color: var(--accent-contrast);
+	}
+
+	.memory-profile-section {
+		max-width: 100%;
+		overflow-x: clip;
+	}
+
+	@media (max-width: 640px) {
+		.memory-review-callout,
+		.memory-category-card {
+			min-width: 0;
+			max-width: 100%;
+		}
+
+		.memory-review-card,
+		.memory-item-card {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr);
+			gap: 0.75rem;
+			min-width: 0;
+		}
+
+		.memory-review-card > div,
+		.memory-item-card > div {
+			min-width: 0;
+			max-width: 100%;
+		}
+
+		.memory-card-actions {
+			justify-content: flex-end;
+			width: 100%;
+		}
+
+		.memory-profile-section p,
+		.memory-profile-section span,
+		.memory-profile-section div {
+			overflow-wrap: anywhere;
+		}
 	}
 </style>
 

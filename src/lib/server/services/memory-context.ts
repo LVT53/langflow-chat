@@ -249,6 +249,10 @@ const HISTORY_QUERY_STOPWORDS = new Set([
 	"ra",
 ]);
 
+type ProjectionPolicyBlockedStatement = Awaited<
+	ReturnType<typeof listProjectionPolicyBlockedStatements>
+>[number];
+
 function buildPersonaEvidenceCandidate(params: {
 	userId: string;
 	content: string | null;
@@ -319,25 +323,22 @@ function normalizeMemoryPolicyText(value: string): string {
 		.trim();
 }
 
-async function historicalPersonaEvidenceBlockedByProjection(params: {
-	userId: string;
+function screenContentAgainstProjectionPolicy(params: {
+	blockedStatements: ProjectionPolicyBlockedStatement[];
 	content: string | null;
-}): Promise<{
+}): {
 	blocked: boolean;
 	blockedCount: number;
 	unresolvedStatuses: string[];
-}> {
+} {
 	const normalizedContent = normalizeMemoryPolicyText(params.content ?? "");
 	if (!normalizedContent) {
 		return { blocked: false, blockedCount: 0, unresolvedStatuses: [] };
 	}
 
-	const blockedStatements = await listProjectionPolicyBlockedStatements({
-		userId: params.userId,
-	});
 	let blockedCount = 0;
 	const unresolvedStatuses = new Set<string>();
-	for (const statement of blockedStatements) {
+	for (const statement of params.blockedStatements) {
 		const normalizedStatement = normalizeMemoryPolicyText(statement.statement);
 		if (
 			normalizedStatement.length >= 12 &&
@@ -355,6 +356,22 @@ async function historicalPersonaEvidenceBlockedByProjection(params: {
 		blockedCount,
 		unresolvedStatuses: Array.from(unresolvedStatuses).sort(),
 	};
+}
+
+async function historicalPersonaEvidenceBlockedByProjection(params: {
+	userId: string;
+	content: string | null;
+}): Promise<{
+	blocked: boolean;
+	blockedCount: number;
+	unresolvedStatuses: string[];
+}> {
+	return screenContentAgainstProjectionPolicy({
+		blockedStatements: await listProjectionPolicyBlockedStatements({
+			userId: params.userId,
+		}),
+		content: params.content,
+	});
 }
 
 export function resolveProjectMemoryContextMode(params: {
@@ -676,6 +693,89 @@ type HistoryCandidate = {
 	messageSnippets: HistoryMemoryContextMessage[];
 };
 
+function buildHistoryPolicyContent(
+	conversation: Pick<
+		HistoryMemoryContextConversation,
+		"title" | "summary" | "messageSnippets"
+	> & {
+		messages?: HistoryMemoryContextMessage[];
+	},
+): string {
+	return [
+		conversation.title,
+		conversation.summary,
+		...conversation.messageSnippets.map((message) => message.content),
+		...(conversation.messages ?? []).map((message) =>
+			[
+				message.content,
+				...(message.attachments ?? []).map((attachment) => attachment.content),
+			]
+				.filter(Boolean)
+				.join(" "),
+		),
+	]
+		.filter(Boolean)
+		.join(" ");
+}
+
+async function filterHistoryByProjectionPolicy(params: {
+	userId: string;
+	conversations: HistoryMemoryContextConversation[];
+	selectedConversation: HistoryMemoryContextSelectedConversation | null;
+}): Promise<{
+	conversations: HistoryMemoryContextConversation[];
+	selectedConversation: HistoryMemoryContextSelectedConversation | null;
+	blockedCount: number;
+}> {
+	if (params.conversations.length === 0 && !params.selectedConversation) {
+		return {
+			conversations: params.conversations,
+			selectedConversation: null,
+			blockedCount: 0,
+		};
+	}
+	const blockedStatements = await listProjectionPolicyBlockedStatements({
+		userId: params.userId,
+	});
+	if (blockedStatements.length === 0) {
+		return {
+			conversations: params.conversations,
+			selectedConversation: params.selectedConversation,
+			blockedCount: 0,
+		};
+	}
+
+	let blockedCount = 0;
+	const filteredConversations = params.conversations.filter((conversation) => {
+		const screen = screenContentAgainstProjectionPolicy({
+			blockedStatements,
+			content: buildHistoryPolicyContent(conversation),
+		});
+		if (!screen.blocked) return true;
+		blockedCount += 1;
+		return false;
+	});
+	let selectedConversation = params.selectedConversation;
+	if (
+		selectedConversation &&
+		screenContentAgainstProjectionPolicy({
+			blockedStatements,
+			content: buildHistoryPolicyContent(selectedConversation),
+		}).blocked
+	) {
+		selectedConversation = null;
+	}
+	if (params.selectedConversation && !selectedConversation) {
+		blockedCount += 1;
+	}
+
+	return {
+		conversations: filteredConversations,
+		selectedConversation,
+		blockedCount,
+	};
+}
+
 async function listHistoryCandidates(params: {
 	userId: string;
 	conversationId: string;
@@ -975,24 +1075,41 @@ async function getHistoryMemoryContext(
 				includeAttachments: params.includeAttachments,
 			})
 		: null;
+	const filteredHistory = await filterHistoryByProjectionPolicy({
+		userId: params.userId,
+		conversations,
+		selectedConversation,
+	});
+	if (filteredHistory.blockedCount > 0) {
+		await recordMemoryContextPromptTelemetry({
+			userId: params.userId,
+			eventName: "memory_context_history_projection_policy_filtered",
+			reason: "projection_policy_blocked_deleted_or_suppressed",
+			status: "filtered",
+			count: filteredHistory.blockedCount,
+		});
+	}
 
 	return {
 		success: true,
 		mode: "history",
 		status:
-			conversations.length > 0 || selectedConversation ? "available" : "empty",
+			filteredHistory.conversations.length > 0 ||
+			filteredHistory.selectedConversation
+				? "available"
+				: "empty",
 		source: "conversation_summaries",
 		query,
-		conversations,
+		conversations: filteredHistory.conversations,
 		omittedConversationCount: Math.max(
 			0,
-			candidates.length - conversations.length,
+			candidates.length - filteredHistory.conversations.length,
 		),
-		selectedConversation,
+		selectedConversation: filteredHistory.selectedConversation,
 		evidenceCandidates:
 			params.includeEvidenceCandidates === false
 				? []
-				: buildHistoryEvidenceCandidates(conversations),
+				: buildHistoryEvidenceCandidates(filteredHistory.conversations),
 		audit: {
 			conversationId: params.conversationId,
 			query,

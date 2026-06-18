@@ -5,6 +5,8 @@ type PageSwitcherItem = {
 	href?: string;
 	tabId?: string;
 	panelId?: string;
+	badge?: string | number | null;
+	badgeLabel?: string;
 };
 
 interface PageSwitcherProps {
@@ -36,7 +38,12 @@ let { items, activeId, ariaLabel, onChange }: PageSwitcherProps = $props();
 					onChange(item.id);
 				}}
 			>
-				{item.label}
+				<span class="page-switcher__label">{item.label}</span>
+				{#if item.badge != null && String(item.badge).length > 0}
+					<span class="page-switcher__badge" aria-label={item.badgeLabel}>
+						{item.badge}
+					</span>
+				{/if}
 			</a>
 		{:else}
 			<button
@@ -49,7 +56,12 @@ let { items, activeId, ariaLabel, onChange }: PageSwitcherProps = $props();
 				aria-controls={item.panelId}
 				onclick={() => onChange?.(item.id)}
 			>
-				{item.label}
+				<span class="page-switcher__label">{item.label}</span>
+				{#if item.badge != null && String(item.badge).length > 0}
+					<span class="page-switcher__badge" aria-label={item.badgeLabel}>
+						{item.badge}
+					</span>
+				{/if}
 			</button>
 		{/if}
 	{/each}
@@ -66,6 +78,10 @@ let { items, activeId, ariaLabel, onChange }: PageSwitcherProps = $props();
 	}
 
 	.page-switcher__item {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.45rem;
 		flex: 1 1 0;
 		border: 0;
 		border-radius: 0.375rem;
@@ -82,6 +98,28 @@ let { items, activeId, ariaLabel, onChange }: PageSwitcherProps = $props();
 			background var(--duration-standard),
 			color var(--duration-standard),
 			box-shadow var(--duration-standard);
+	}
+
+	.page-switcher__label {
+		min-width: 0;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.page-switcher__badge {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 1.35rem;
+		height: 1.35rem;
+		padding: 0 0.35rem;
+		border-radius: 999px;
+		background: var(--warning);
+		color: var(--warning-contrast, var(--surface-page));
+		font-size: 0.72rem;
+		font-weight: 700;
+		line-height: 1;
 	}
 
 	.page-switcher__item:hover {

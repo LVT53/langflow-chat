@@ -1474,10 +1474,12 @@ describe("memory profile foundation", () => {
 		expect(telemetryJson).not.toContain("prompt excerpt");
 	});
 
-	it("creates one generic review for exact active duplicate dirty entries without reviving or merging items", async () => {
+	it("creates one generic review for exact active duplicate dirty entries and removes affected items from active use", async () => {
 		const {
 			createMemoryProfileItem,
+			getActiveMemoryProfileContext,
 			getMemoryProfileReadModel,
+			listProjectionPolicyBlockedStatements,
 			listPendingMemoryDirtyEntries,
 			markMemoryDirty,
 			reconcileMemoryProfileDirtyLedgerForUser,
@@ -1517,9 +1519,7 @@ describe("memory profile foundation", () => {
 		});
 
 		const profile = await getMemoryProfileReadModel({ userId: "user-1" });
-		expect(profile.categories[1]?.items.map((item) => item.id).sort()).toEqual(
-			[first.id, second.id].sort(),
-		);
+		expect(profile.categories.flatMap((group) => group.items)).toEqual([]);
 		expect(profile.review.items).toEqual([
 			{
 				id: expect.any(String),
@@ -1532,6 +1532,19 @@ describe("memory profile foundation", () => {
 		]);
 		expect(JSON.stringify(profile.review.items)).not.toContain(
 			"compact implementation",
+		);
+		await expect(
+			getActiveMemoryProfileContext({ userId: "user-1" }),
+		).resolves.toMatchObject({
+			items: [],
+		});
+		await expect(
+			listProjectionPolicyBlockedStatements({ userId: "user-1" }),
+		).resolves.toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ id: first.id, status: "review_needed" }),
+				expect.objectContaining({ id: second.id, status: "review_needed" }),
+			]),
 		);
 		await expect(
 			listPendingMemoryDirtyEntries({ userId: "user-1" }),

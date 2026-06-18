@@ -50,6 +50,7 @@ let memoryLoading = $state(false);
 let memoryLoadError = $state("");
 let pendingMemoryActionKey = $state<string | null>(null);
 let lastMemoryProfileTabState = $state<KnowledgeTab | null>(null);
+let openMemoryReviewCount = $derived(memoryProfile?.review.openCount ?? 0);
 
 let workspaceCoordinator: KnowledgeWorkspaceCoordinator | undefined = $state();
 let workspaceOpenRequestSequence = 0;
@@ -95,6 +96,8 @@ let knowledgeTabs = $derived<
 		href: string;
 		tabId: string;
 		panelId: string;
+		badge?: string | number | null;
+		badgeLabel?: string;
 	}>
 >([
 	{
@@ -103,6 +106,8 @@ let knowledgeTabs = $derived<
 		href: "/knowledge",
 		tabId: "memory-profile-tab",
 		panelId: "memory-profile-panel",
+		badge: openMemoryReviewCount > 0 ? openMemoryReviewCount : null,
+		badgeLabel: $t("memoryProfile.needsReview"),
 	},
 	{
 		id: "documents",

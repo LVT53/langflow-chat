@@ -786,6 +786,103 @@ describe("memory context service", () => {
 		expect(historyResult.evidenceCandidates).toHaveLength(5);
 	});
 
+	it("blocks history candidates that echo deleted or suppressed profile memory", async () => {
+		mockListProjectionPolicyBlockedStatements.mockResolvedValueOnce([
+			{
+				id: "blocked-bike",
+				status: "suppressed",
+				statement: "Bike detail 2: compare commute setup and tire width.",
+			},
+		]);
+		const { sqlite, db } = openSeedDatabase();
+		const now = new Date("2026-05-16T09:00:00.000Z");
+		db.insert(schema.users)
+			.values({
+				id: "user-1",
+				email: "history-policy@example.com",
+				passwordHash: "hash",
+				createdAt: now,
+				updatedAt: now,
+			})
+			.run();
+		db.insert(schema.conversations)
+			.values([
+				{
+					id: "conv-current",
+					userId: "user-1",
+					title: "Current chat",
+					createdAt: now,
+					updatedAt: now,
+				},
+				{
+					id: "bike-allowed",
+					userId: "user-1",
+					title: "Allowed bike chat",
+					projectId: null,
+					createdAt: new Date("2026-05-12T08:00:00.000Z"),
+					updatedAt: new Date("2026-05-12T09:00:00.000Z"),
+				},
+				{
+					id: "bike-blocked",
+					userId: "user-1",
+					title: "Blocked bike chat",
+					projectId: null,
+					createdAt: new Date("2026-05-13T08:00:00.000Z"),
+					updatedAt: new Date("2026-05-13T09:00:00.000Z"),
+				},
+			])
+			.run();
+		db.insert(schema.conversationSummaries)
+			.values([
+				{
+					conversationId: "bike-allowed",
+					userId: "user-1",
+					summary: "Bike detail 1: compare bags and lights.",
+					source: "deterministic",
+					createdAt: new Date("2026-05-12T09:00:00.000Z"),
+					updatedAt: new Date("2026-05-12T09:00:00.000Z"),
+				},
+				{
+					conversationId: "bike-blocked",
+					userId: "user-1",
+					summary: "Bike detail 2: compare commute setup and tire width.",
+					source: "deterministic",
+					createdAt: new Date("2026-05-13T09:00:00.000Z"),
+					updatedAt: new Date("2026-05-13T09:00:00.000Z"),
+				},
+			])
+			.run();
+		sqlite.close();
+
+		const { getMemoryContext } = await import("./memory-context");
+		const result = await getMemoryContext({
+			userId: "user-1",
+			conversationId: "conv-current",
+			mode: "history",
+			query: "bike",
+			maxHistoryConversations: 10,
+		});
+		const historyResult = result as HistoryMemoryContextResult;
+
+		expect(
+			historyResult.conversations.map((item) => item.conversationId),
+		).toEqual(["bike-allowed"]);
+		expect(JSON.stringify(historyResult)).not.toContain("bike-blocked");
+		expect(JSON.stringify(historyResult)).not.toContain("tire width");
+		expect(mockListProjectionPolicyBlockedStatements).toHaveBeenCalledWith({
+			userId: "user-1",
+		});
+		expect(mockRecordMemoryReworkTelemetry).toHaveBeenCalledWith({
+			userId: "user-1",
+			eventFamily: "prompt_use",
+			eventName: "memory_context_history_projection_policy_filtered",
+			reason: "projection_policy_blocked_deleted_or_suppressed",
+			status: "filtered",
+			count: 1,
+			metadata: undefined,
+		});
+	});
+
 	it("finds older matching history summaries beyond recent nonmatching chats and counts only matching omissions", async () => {
 		const { sqlite, db } = openSeedDatabase();
 		const now = new Date("2026-05-16T09:00:00.000Z");
