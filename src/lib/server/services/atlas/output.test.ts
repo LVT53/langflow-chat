@@ -10,7 +10,10 @@ describe("Atlas renderer output", () => {
 			subtitle: "Representative evidence map",
 			assembledMarkdown:
 				"# Executive summary\n\nSearch should combine local authority and web freshness.",
-			sources: [{ title: "Vendor docs", url: "https://example.com/docs" }],
+			sources: [
+				{ title: "Uploaded strategy memo" },
+				{ title: "Vendor docs", url: "https://example.com/docs" },
+			],
 			honestyMarkers: [
 				{
 					code: "limited_web",
@@ -42,7 +45,8 @@ describe("Atlas renderer output", () => {
 			title: "Enterprise Search Atlas",
 			blocks: expect.arrayContaining([
 				expect.objectContaining({ type: "heading", text: "Executive summary" }),
-				expect.objectContaining({ type: "heading", text: "Sources" }),
+				expect.objectContaining({ type: "heading", text: "Your Library" }),
+				expect.objectContaining({ type: "heading", text: "Web Sources" }),
 				expect.objectContaining({ type: "heading", text: "Honesty markers" }),
 			]),
 		});

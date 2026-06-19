@@ -59,6 +59,7 @@ const STAGE_LABEL_KEYS: Record<string, I18nKey> = {
 	integrate: "atlas.stage.integrate",
 	assemble: "atlas.stage.assemble",
 	audit: "atlas.stage.audit",
+	render: "atlas.stage.render",
 };
 
 const STATUS_STAGE_LABEL_KEYS: Record<string, I18nKey> = {

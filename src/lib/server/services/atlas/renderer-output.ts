@@ -38,6 +38,22 @@ function markdownLines(markdown: string): string[] {
 		.filter(Boolean);
 }
 
+function addSourceSection(
+	blocks: GeneratedDocumentSource["blocks"],
+	title: string,
+	sources: Array<{ title: string; url?: string | null }>,
+) {
+	if (sources.length === 0) return;
+	blocks.push({ type: "heading", level: 2, text: title });
+	blocks.push({
+		type: "list",
+		style: "bullet",
+		items: sources.map((source) =>
+			source.url ? `${source.title} - ${source.url}` : source.title,
+		),
+	});
+}
+
 export function buildAtlasDocumentSource(
 	input: BuildAtlasDocumentSourceInput,
 ): GeneratedDocumentSource {
@@ -52,16 +68,10 @@ export function buildAtlasDocumentSource(
 		}
 	}
 
-	if (input.sources.length > 0) {
-		blocks.push({ type: "heading", level: 2, text: "Sources" });
-		blocks.push({
-			type: "list",
-			style: "bullet",
-			items: input.sources.map((source) =>
-				source.url ? `${source.title} - ${source.url}` : source.title,
-			),
-		});
-	}
+	const librarySources = input.sources.filter((source) => !source.url);
+	const webSources = input.sources.filter((source) => Boolean(source.url));
+	addSourceSection(blocks, "Your Library", librarySources);
+	addSourceSection(blocks, "Web Sources", webSources);
 
 	if (input.honestyMarkers.length > 0) {
 		blocks.push({ type: "heading", level: 2, text: "Honesty markers" });
