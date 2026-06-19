@@ -1018,7 +1018,7 @@ describe("buildConstructedContext", () => {
 		);
 		const retrievedEvidencePromptSection =
 			constructed.inputValue
-				.split("## Retrieved Evidence\n\n")
+				.split("## Retrieved Evidence\n")
 				.at(1)
 				?.split("\n\n## ")
 				.at(0) ?? "";
