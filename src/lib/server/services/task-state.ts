@@ -126,6 +126,29 @@ const OUTPUT_CONTROL_RE =
 	/\b(?:reply|respond|answer|say|output)\s+(?:with\s+)?(?:only|just|exactly)\b|(?:\bonly\b.*\b(?:codeword|answer|response|text|string|number|word)\b)|(?:\bdo\s+you\s+know\s+what\?)/i;
 const LIGHTWEIGHT_MEMORY_RECALL_RE =
 	/\b(?:what\s+is|what's|tell\s+me|do\s+you\s+(?:remember|recall|know)|recall|verify|confirm)\b[\s\S]{0,120}\b(?:my\s+)?(?:codeword|memory\s+verification|verification\s+code|memory\s+profile\s+fact|remembered\s+(?:fact|preference|detail)|saved\s+(?:memory|fact))\b|\b(?:memory\s+verification|verify\s+continuity)\b/i;
+const TASK_SUBJECT_STOPWORDS = new Set([
+	"about",
+	"again",
+	"answer",
+	"bullet",
+	"codeword",
+	"current",
+	"exactly",
+	"finish",
+	"just",
+	"only",
+	"please",
+	"point",
+	"points",
+	"reply",
+	"respond",
+	"status",
+	"tell",
+	"that",
+	"this",
+	"what",
+	"with",
+]);
 
 function isExplicitTaskControlOrRecallTurn(text: string): boolean {
 	return (
@@ -141,6 +164,32 @@ function sanitizeTurnTextForTaskState(text: string): string {
 		.filter((segment) => !isExplicitTaskControlOrRecallTurn(segment))
 		.filter(Boolean)
 		.join(" ");
+}
+
+function tokenizeTaskSubject(text: string): Set<string> {
+	return new Set(
+		normalizeWhitespace(text)
+			.toLowerCase()
+			.split(/[^a-z0-9]+/)
+			.map((term) => term.trim())
+			.filter((term) => term.length > 2)
+			.filter((term) => !TASK_SUBJECT_STOPWORDS.has(term)),
+	);
+}
+
+function hasStrongTaskSubjectOverlap(
+	message: string,
+	objective: string,
+): boolean {
+	const messageTerms = tokenizeTaskSubject(message);
+	const objectiveTerms = tokenizeTaskSubject(objective);
+	if (messageTerms.size === 0 || objectiveTerms.size === 0) return false;
+	let overlap = 0;
+	for (const term of objectiveTerms) {
+		if (messageTerms.has(term)) overlap += 1;
+	}
+	if (overlap >= 3) return true;
+	return overlap >= 2 && overlap / objectiveTerms.size >= 0.6;
 }
 
 export function shouldTrackTaskContinuityFromTurn(params: {
@@ -160,7 +209,11 @@ export function shouldTrackTaskContinuityFromTurn(params: {
 	if (params.taskState) {
 		return (
 			scoreMatch(messageText, params.taskState.objective) >=
-			TASK_CONTINUITY_MIN_TASK_MATCH_SCORE
+				TASK_CONTINUITY_MIN_TASK_MATCH_SCORE ||
+			hasStrongTaskSubjectOverlap(
+				messageText,
+				params.taskState.objective,
+			)
 		);
 	}
 

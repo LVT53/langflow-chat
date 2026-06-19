@@ -613,6 +613,30 @@ describe("task-state learning - project continuity signals", () => {
 				},
 			}),
 		).toBe(true);
+		expect(
+			shouldTrackTaskContinuityFromTurn({
+				message: "What is my codeword? Reply with only the codeword.",
+				taskState: {
+					taskId: "task-quarterly-budget",
+					userId: "user-1",
+					conversationId: "conv-1",
+					status: "active",
+					objective: "Finish the quarterly budget review",
+					confidence: 80,
+					locked: false,
+					lastConfirmedTurnMessageId: null,
+					constraints: [],
+					factsToPreserve: [],
+					decisions: [],
+					openQuestions: [],
+					activeArtifactIds: [],
+					nextSteps: [],
+					lastCheckpointAt: null,
+					createdAt: 1,
+					updatedAt: 1,
+				},
+			}),
+		).toBe(false);
 
 		const prepared = await prepareTaskContext({
 			userId: "user-1",
