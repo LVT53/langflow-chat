@@ -1016,7 +1016,15 @@ describe("buildConstructedContext", () => {
 				itemIds: evidenceArtifacts.map((item) => item.id),
 			}),
 		);
-		expect(retrievedEvidence?.estimatedTokens ?? 0).toBeGreaterThan(3_000);
+		const retrievedEvidencePromptSection =
+			constructed.inputValue
+				.split("## Retrieved Evidence\n\n")
+				.at(1)
+				?.split("\n\n## ")
+				.at(0) ?? "";
+		expect(estimateTokenCount(retrievedEvidencePromptSection)).toBeGreaterThan(
+			3_000,
+		);
 		expect(constructed.inputValue).toContain("SNIPPET_12");
 		expect(mocks.updateConversationContextStatus).toHaveBeenCalledWith(
 			expect.objectContaining({
