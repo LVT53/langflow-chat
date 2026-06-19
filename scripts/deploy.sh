@@ -91,10 +91,13 @@ echo ""
 
 echo -e "${GREEN}=== Deployment complete! ===${NC}"
 echo ""
-echo -e "${YELLOW}⚠ IMPORTANT: Restart the systemd service now!${NC}"
-echo -e "${YELLOW}  The old server process still holds the previous build manifest in memory.${NC}"
-echo -e "${YELLOW}  Failing to restart will cause 'Cannot find module' errors when the old${NC}"
-echo -e "${YELLOW}  process tries to load route chunks that were replaced by this build.${NC}"
+
+if systemctl is-active --quiet langflow-chat.service 2>/dev/null; then
+  echo -e "${YELLOW}Restarting langflow-chat systemd service...${NC}"
+  systemctl restart langflow-chat.service
+  echo -e "${GREEN}✓ Service restarted — fresh build is now live.${NC}"
+else
+  echo -e "${YELLOW}⚠ langflow-chat.service was not running.${NC}"
+  echo -e "${YELLOW}  Start it manually if needed: systemctl start langflow-chat.service${NC}"
+fi
 echo ""
-echo -e "${YELLOW}  Command:${NC}"
-echo -e "${YELLOW}    systemctl restart langflow-chat.service${NC}"
