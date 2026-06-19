@@ -232,17 +232,21 @@ async function resolveGeneratedFilePartialRange(params: {
 		};
 	}
 
-	const body = await readFileRange(filePath, range.start, range.end);
-	return {
-		ok: true,
-		status: 206,
-		body,
-		headers: {
-			...headers,
-			"Content-Length": body.byteLength.toString(),
-			"Content-Range": `bytes ${range.start}-${range.end}/${totalLength}`,
-		},
-	};
+	try {
+		const body = await readFileRange(filePath, range.start, range.end);
+		return {
+			ok: true,
+			status: 206,
+			body,
+			headers: {
+				...headers,
+				"Content-Length": body.byteLength.toString(),
+				"Content-Range": `bytes ${range.start}-${range.end}/${totalLength}`,
+			},
+		};
+	} catch {
+		return null;
+	}
 }
 
 function requiresFullGeneratedFileValidation(filename: string): boolean {
