@@ -52,6 +52,18 @@ describe("AtlasCard", () => {
 		expect(onCancel).toHaveBeenCalledWith("atlas-job-1");
 	});
 
+	it("renders the output rendering stage instead of falling back to generic running copy", () => {
+		render(AtlasCard, {
+			job: atlasJobFixture({
+				stage: "render",
+				progress: { percent: 97, stage: "render" },
+			}),
+		});
+
+		expect(screen.getByText("Rendering outputs")).toBeInTheDocument();
+		expect(screen.queryByText("Running research")).not.toBeInTheDocument();
+	});
+
 	it("renders completed actions with Open as the only text button", async () => {
 		const onOpenDocument = vi.fn();
 		render(AtlasCard, {
