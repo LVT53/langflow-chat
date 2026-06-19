@@ -4,9 +4,11 @@ Source: `docs/architecture-deepening-report.html`, Candidate 2: "Move Analytics 
 
 ## Status
 
-Issues 1 through 5 are implemented in the current worktree: `src/lib/server/services/analytics.ts` exposes `getAnalyticsDashboardReadModel(...)`, and `src/routes/api/analytics/+server.ts` now authenticates, parses `mock`, `month`, `systemMonth`, and `timeline`, delegates to that service interface, and returns JSON.
+Issues 1 through 5 are implemented in commit `3fddfceb`: `src/lib/server/services/analytics.ts` exposes `getAnalyticsDashboardReadModel(...)`, and `src/routes/api/analytics/+server.ts` now authenticates, parses `mock`, `month`, `systemMonth`, and `timeline`, delegates to that service interface, and returns JSON.
 
-Issue 6 is documented here and in the route/service maps. Remote live testing is not recorded as complete in this file.
+Issue 6 is documented here and in the route/service maps.
+
+Remote live testing completed on 2026-06-19: commit `3fddfceb` was deployed to `alfydesign`, `langflow-chat.service` was restarted successfully, `/api/health` returned `{"status":"OK"}`, recent service logs showed normal startup without analytics errors, and an authenticated `/api/analytics?timeline=monthly` smoke request returned HTTP 200 with personal, system, per-user, available-months, and timeline payload sections.
 
 ## Context
 
