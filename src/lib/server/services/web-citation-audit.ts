@@ -164,9 +164,12 @@ export function applyWebCitationQualityGate(params: {
 	});
 	if (!appendedNotice) return unchanged;
 
+	// Return unchanged response — do not append citation quality notice to
+	// user-visible text. The audit data is stored separately via
+	// persistAssistantEvidence in finalize.ts.
 	return {
-		response: appendNotice(params.assistantResponse, appendedNotice),
-		audit: { ...audit, noticeAppended: true },
+		response: params.assistantResponse,
+		audit: { ...audit, noticeAppended: false },
 		appendedNotice,
 	};
 }
