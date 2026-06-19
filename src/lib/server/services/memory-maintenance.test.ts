@@ -60,6 +60,14 @@ const mockState = vi.hoisted(() => {
 			timedOut: false,
 		}),
 	);
+	let mockCuratePreservedLegacyMemoryForUser = vi.fn(async () => ({
+		status: "completed",
+		inspected: 0,
+		active: 0,
+		review: 0,
+		rejected: 0,
+		remainingPreserved: 0,
+	}));
 	let mockDeleteSemanticEmbeddingsForSubjects = vi.fn(async () => 0);
 	let mockPruneOrphanHonchoSessions = vi.fn(async () => ({
 		deleted: 0,
@@ -121,6 +129,14 @@ const mockState = vi.hoisted(() => {
 				timedOut: false,
 			}),
 		);
+		mockCuratePreservedLegacyMemoryForUser = vi.fn(async () => ({
+			status: "completed",
+			inspected: 0,
+			active: 0,
+			review: 0,
+			rejected: 0,
+			remainingPreserved: 0,
+		}));
 		mockDeleteSemanticEmbeddingsForSubjects = vi.fn(async () => 0);
 		mockPruneOrphanHonchoSessions = vi.fn(async () => ({
 			deleted: 0,
@@ -156,6 +172,7 @@ const mockState = vi.hoisted(() => {
 		mockConfig,
 		mockPruneOldMemoryEvents,
 		mockReconcileMemoryProfileDirtyLedgerForUser,
+		mockCuratePreservedLegacyMemoryForUser,
 		mockDeleteSemanticEmbeddingsForSubjects,
 		mockPruneOrphanHonchoSessions,
 		mockListLegacyPersonaMemoryCandidates,
@@ -188,12 +205,18 @@ vi.mock("./memory-events", () => ({
 	) => mockState.mockPruneOldMemoryEvents(...args),
 }));
 
-vi.mock("./memory-profile", () => ({
+vi.mock("./memory-profile/dirty-ledger-reconciliation", () => ({
 	reconcileMemoryProfileDirtyLedgerForUser: (
 		...args: Parameters<
 			typeof mockState.mockReconcileMemoryProfileDirtyLedgerForUser
 		>
 	) => mockState.mockReconcileMemoryProfileDirtyLedgerForUser(...args),
+}));
+
+vi.mock("./memory-profile/legacy-curation", () => ({
+	curatePreservedLegacyMemoryForUser: (
+		...args: Parameters<typeof mockState.mockCuratePreservedLegacyMemoryForUser>
+	) => mockState.mockCuratePreservedLegacyMemoryForUser(...args),
 }));
 
 vi.mock("./semantic-embeddings", () => ({

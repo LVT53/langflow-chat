@@ -141,7 +141,7 @@ vi.mock("../context-compression", () => ({
 			.join("\n\n"),
 }));
 
-vi.mock("../memory-profile", () => ({
+vi.mock("../memory-profile/active-context", () => ({
 	formatActiveMemoryProfileContextForPrompt: (
 		context: {
 			items: Array<{ statement: string; updatedAt: Date }>;
@@ -177,6 +177,9 @@ vi.mock("../memory-profile", () => ({
 		};
 	},
 	getActiveMemoryProfileContext: mocks.getActiveMemoryProfileContext,
+}));
+
+vi.mock("../memory-profile/telemetry", () => ({
 	recordMemoryReworkTelemetry: mocks.recordMemoryReworkTelemetry,
 }));
 

@@ -27,16 +27,20 @@ vi.mock("./projects", () => ({
 	getConversationProjectId: mockGetConversationProjectId,
 }));
 
-vi.mock("./memory-profile", async (importOriginal) => {
-	const actual = await importOriginal<typeof import("./memory-profile")>();
+vi.mock("./memory-profile/active-context", async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import("./memory-profile/active-context")>();
 	return {
 		...actual,
 		getActiveMemoryProfileContext: mockGetActiveMemoryProfileContext,
 		listProjectionPolicyBlockedStatements:
 			mockListProjectionPolicyBlockedStatements,
-		recordMemoryReworkTelemetry: mockRecordMemoryReworkTelemetry,
 	};
 });
+
+vi.mock("./memory-profile/telemetry", () => ({
+	recordMemoryReworkTelemetry: mockRecordMemoryReworkTelemetry,
+}));
 
 function openSeedDatabase() {
 	const sqlite = new Database(dbPath);

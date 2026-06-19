@@ -59,8 +59,10 @@ import {
 	formatActiveMemoryProfileContextForPrompt,
 	getActiveMemoryProfileContext,
 	type MemoryProfileScope,
+} from "../memory-profile/active-context";
+import {
 	recordMemoryReworkTelemetry,
-} from "../memory-profile";
+} from "../memory-profile/telemetry";
 import {
 	getConversationProjectId,
 	getConversationProjectLabel,

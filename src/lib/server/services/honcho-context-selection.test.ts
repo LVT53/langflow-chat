@@ -231,6 +231,11 @@ const mockGetConversationProjectLabel = vi.hoisted(() =>
 		async () => null,
 	),
 );
+const mockGetConversationProjectId = vi.hoisted(() =>
+	vi.fn<(userId: string, conversationId: string) => Promise<string | null>>(
+		async () => null,
+	),
+);
 const mockGetProjectFolderReferenceContext = vi.hoisted(() =>
 	vi.fn<
 		(
@@ -589,6 +594,7 @@ vi.mock("./conversation-forks", () => ({
 }));
 
 vi.mock("./projects", () => ({
+	getConversationProjectId: mockGetConversationProjectId,
 	getConversationProjectLabel: mockGetConversationProjectLabel,
 }));
 
@@ -615,7 +621,7 @@ vi.mock("./linked-context-sources", () => ({
 		mockListConversationLinkedContextSources,
 }));
 
-vi.mock("./memory-profile", () => ({
+vi.mock("./memory-profile/active-context", () => ({
 	formatActiveMemoryProfileContextForPrompt: vi.fn((context) => ({
 		content: context.items
 			.map(
@@ -629,6 +635,9 @@ vi.mock("./memory-profile", () => ({
 		estimatedTokens: context.items.length,
 	})),
 	getActiveMemoryProfileContext: mockGetActiveMemoryProfileContext,
+}));
+
+vi.mock("./memory-profile/telemetry", () => ({
 	recordMemoryReworkTelemetry: mockRecordMemoryReworkTelemetry,
 }));
 
@@ -735,6 +744,7 @@ beforeEach(() => {
 		projectionRevision: 0,
 		items: [],
 	});
+	mockGetConversationProjectId.mockResolvedValue(null);
 	mockRecordMemoryReworkTelemetry.mockResolvedValue({ id: "telemetry-1" });
 });
 

@@ -31,10 +31,8 @@ import {
 	recordStepSuccess,
 } from "./maintenance-metrics";
 import { pruneOldMemoryEvents } from "./memory-events";
-import {
-	curatePreservedLegacyMemoryForUser,
-	reconcileMemoryProfileDirtyLedgerForUser,
-} from "./memory-profile";
+import { reconcileMemoryProfileDirtyLedgerForUser } from "./memory-profile/dirty-ledger-reconciliation";
+import { curatePreservedLegacyMemoryForUser } from "./memory-profile/legacy-curation";
 import { backfillSemanticEmbeddingsForUser } from "./semantic-embedding-refresh";
 import { deleteSemanticEmbeddingsForSubjects } from "./semantic-embeddings";
 import {
