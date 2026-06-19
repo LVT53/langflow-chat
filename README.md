@@ -39,9 +39,9 @@ The deploy script performs these steps in order:
 3. `npm run db:prepare`
 4. `npm run build`
 
-Important caveat:
+Important caveats:
 
-- `scripts/deploy.sh` does **not** restart systemd, Docker, or any other running process. Restart the systemd service separately after the script completes: `systemctl restart langflow-chat.service`.
+- `scripts/deploy.sh` restarts the systemd service automatically at the end. The deploy user needs a sudoers entry for that command: `alfydesign ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart langflow-chat.service` (or equivalent).
 - If you deploy through `scripts/deploy.sh`, you should not need a separate manual DB migration step after pulls. The script always runs the idempotent `db:prepare` step so the DB catches up even if the checkout was already updated before the deploy script started.
 
 For host-managed `adapter-node` deployments, the standard runtime entrypoint is:

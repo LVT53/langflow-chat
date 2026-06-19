@@ -94,7 +94,7 @@ echo ""
 
 if systemctl is-active --quiet langflow-chat.service 2>/dev/null; then
   echo -e "${YELLOW}Restarting langflow-chat systemd service...${NC}"
-  systemctl restart langflow-chat.service
+  sudo systemctl restart langflow-chat.service
   echo -e "${GREEN}✓ Service restarted — fresh build is now live.${NC}"
 else
   echo -e "${YELLOW}⚠ langflow-chat.service was not running.${NC}"
