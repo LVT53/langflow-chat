@@ -257,11 +257,7 @@ export async function completeStreamTurn(
 		);
 	}
 	if (citationGate?.appendedNotice) {
-		if (!responseBeforeCitationNotice) {
-			enqueueChunk(streamTextStartEvent());
-		}
-		enqueueChunk(streamTextDeltaEvent(`\n\n${citationGate.appendedNotice}`));
-		console.warn("[CHAT_STREAM] Appended web citation quality notice", {
+		console.warn("[CHAT_STREAM] Web citation quality issue detected (notice suppressed from user output)", {
 			conversationId,
 			streamId,
 			status: citationGate.audit?.status,

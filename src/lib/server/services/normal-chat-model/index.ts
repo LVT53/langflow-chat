@@ -1163,10 +1163,9 @@ async function* streamStreamingNormalChatModelRunAttempt(
 					break;
 				case "tool-call":
 					if (part.toolName === DONE_TOOL_NAME) {
-						const summary = readDoneToolSummary(part.input);
-						if (summary) {
-							yield { type: "text_delta", text: summary };
-						}
+						// Done tool summary is internal model metadata, not
+						// user-facing text. Suppress emission to prevent
+						// narrative summaries from leaking to the chat UI.
 						break;
 					}
 					if (
