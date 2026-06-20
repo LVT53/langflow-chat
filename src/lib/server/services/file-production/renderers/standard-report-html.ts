@@ -413,6 +413,7 @@ function renderInlineTextWithSourceCitations(
 	text: string,
 	sourceIndex: ReportSourceIndex,
 	chrome: ReportChrome,
+	localSources: GeneratedDocumentSourceChip[] = [],
 ): string {
 	const citationPattern = /\[(?:(source|forr[aá]s)\s+)?(\d{1,3})\]/gi;
 	const sourceLabelCitationsAreZeroBased = /\[(?:source|forr[aá]s)\s+0\]/i.test(
@@ -425,13 +426,23 @@ function renderInlineTextWithSourceCitations(
 		const end = start + match[0].length;
 		const hasSourceLabel = Boolean(match[1]);
 		const rawSourceNumber = Number.parseInt(match[2], 10);
-		const sourceIndexOffset = hasSourceLabel
-			? sourceLabelCitationsAreZeroBased
-				? rawSourceNumber
-				: rawSourceNumber - 1
-			: rawSourceNumber - 1;
-		const source = sourceIndex.sources[sourceIndexOffset];
-		const displaySourceNumber = sourceIndexOffset + 1;
+		const sourceIndexOffset =
+			hasSourceLabel && localSources.length > 0
+				? sourceLabelCitationsAreZeroBased
+					? rawSourceNumber
+					: rawSourceNumber - 1
+				: hasSourceLabel
+					? sourceLabelCitationsAreZeroBased
+						? rawSourceNumber
+						: rawSourceNumber - 1
+					: rawSourceNumber - 1;
+		const source =
+			hasSourceLabel && localSources.length > 0
+				? localSources[sourceIndexOffset]
+				: sourceIndex.sources[sourceIndexOffset];
+		const displaySourceNumber = source
+			? sourceNumberFor(sourceIndex, source)
+			: sourceIndexOffset + 1;
 		html += escapeHtml(text.slice(cursor, start));
 		html += source
 			? renderSourceChip(source, chrome, {
@@ -444,6 +455,10 @@ function renderInlineTextWithSourceCitations(
 	return html;
 }
 
+function hasSourceCitationReferences(text: string): boolean {
+	return /\[(?:(?:source|forr[aá]s)\s+)?\d{1,3}\]/i.test(text);
+}
+
 function renderParagraph(
 	block: Extract<GeneratedDocumentBlock, { type: "paragraph" }>,
 	sourceIndex: ReportSourceIndex,
@@ -451,7 +466,7 @@ function renderParagraph(
 ): string {
 	const explicitSources = block.sources ?? [];
 	const inlineSources =
-		explicitSources.length > 0
+		explicitSources.length > 0 && !hasSourceCitationReferences(block.text)
 			? ` <span class="inline-source-chips">${explicitSources
 					.map((source) =>
 						renderSourceChip(source, chrome, {
@@ -460,7 +475,7 @@ function renderParagraph(
 					)
 					.join("")}</span>`
 			: "";
-	return `<p>${renderInlineTextWithSourceCitations(block.text, sourceIndex, chrome)}${inlineSources}</p>`;
+	return `<p>${renderInlineTextWithSourceCitations(block.text, sourceIndex, chrome, explicitSources)}${inlineSources}</p>`;
 }
 
 function confidenceMarkerClass(

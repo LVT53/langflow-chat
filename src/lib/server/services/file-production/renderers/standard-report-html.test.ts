@@ -379,6 +379,10 @@ describe("AlfyAI Standard Report HTML renderer", () => {
 		expect(html).not.toContain("[Source 1]");
 		expect(html).toContain('aria-label="Source 1: First web result"');
 		expect(html).toContain('aria-label="Source 2: Second web result"');
+		const paragraphHtml =
+			/<p>The trend is current[\s\S]*?<\/p>/.exec(html)?.[0] ?? "";
+		expect(paragraphHtml).not.toContain('class="inline-source-chips"');
+		expect(paragraphHtml.match(/class="source-chip"/g) ?? []).toHaveLength(2);
 	});
 
 	it("removes a duplicate first heading that repeats the report title", () => {
