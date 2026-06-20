@@ -9,6 +9,20 @@ const mocks = vi.hoisted(() => ({
 	failAtlasJob: vi.fn(async () => true),
 	heartbeatAtlasJob: vi.fn(async () => true),
 	runAtlasPipeline: vi.fn(),
+	runAtlasAuditStage: vi.fn(async () => ({
+		text: '{"markers":[],"retryRequested":false}',
+		usage: {
+			inputTokens: 2,
+			outputTokens: 1,
+			totalTokens: 3,
+			costUsdMicros: 0,
+		},
+		model: {
+			modelId: "model2",
+			providerId: "provider",
+			displayName: "Audit",
+		},
+	})),
 	auditAtlasBasis: vi.fn(async (input) =>
 		input.runAuditModel?.(input.assembledMarkdown),
 	),
@@ -33,20 +47,7 @@ vi.mock("./pipeline", () => ({
 }));
 
 vi.mock("./model-stage", () => ({
-	runAtlasAuditStage: vi.fn(async () => ({
-		text: '{"markers":[],"retryRequested":false}',
-		usage: {
-			inputTokens: 2,
-			outputTokens: 1,
-			totalTokens: 3,
-			costUsdMicros: 0,
-		},
-		model: {
-			modelId: "model2",
-			providerId: "provider",
-			displayName: "Audit",
-		},
-	})),
+	runAtlasAuditStage: mocks.runAtlasAuditStage,
 	runAtlasModelStage: vi.fn(),
 }));
 
@@ -237,5 +238,23 @@ describe("Atlas worker runner", () => {
 			}),
 		);
 		expect(mocks.failAtlasJob).not.toHaveBeenCalled();
+	});
+
+	it("keeps matching provider synthesis and audit configs on the provider model", async () => {
+		const providerModel = "provider:deepseek-provider:deepseek-flash" as const;
+		const config = {
+			...mocks.getConfig(),
+			atlasSynthesisModel: providerModel,
+			atlasAuditModel: providerModel,
+		};
+		const { resolveAuditModelSelection } = await import("./worker-runner");
+
+		expect(
+			resolveAuditModelSelection({
+				synthesisModel: providerModel,
+				auditModel: providerModel,
+				config,
+			}),
+		).toEqual({ modelSelection: providerModel, warning: null });
 	});
 });

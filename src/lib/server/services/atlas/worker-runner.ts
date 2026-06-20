@@ -47,12 +47,15 @@ const DEFAULT_WORKER_ID = `atlas:${process.pid}:${randomUUID()}`;
 let workerInitialized = false;
 let drainPromise: Promise<void> | null = null;
 
-function resolveAuditModelSelection(input: {
+export function resolveAuditModelSelection(input: {
 	synthesisModel: ModelId;
 	auditModel: ModelId;
 	config: ReturnType<typeof getConfig>;
 }): { modelSelection: ModelId; warning: string | null } {
 	if (input.auditModel !== input.synthesisModel) {
+		return { modelSelection: input.auditModel, warning: null };
+	}
+	if (input.synthesisModel !== "model1" && input.synthesisModel !== "model2") {
 		return { modelSelection: input.auditModel, warning: null };
 	}
 	const fallbackModel = input.synthesisModel === "model1" ? "model2" : "model1";
