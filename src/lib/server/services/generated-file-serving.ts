@@ -10,10 +10,11 @@ import {
 	isGeneratedFileTypeAllowed,
 	validateGeneratedOutputFile,
 } from "$lib/server/services/file-production/output-validation";
-import { hasSucceededFileProductionJobForChatFile } from "$lib/server/services/file-production/read-model";
+import { getSucceededFileProductionJobForChatFile } from "$lib/server/services/file-production/read-model";
 import {
 	applyFileServingRange,
 	buildFileServingResponseHeaders,
+	type FileServingPreviewProfile,
 	parseFileServingRange,
 } from "$lib/server/services/file-serving-response-policy";
 import { getPreviewContentType } from "$lib/utils/file-preview";
@@ -107,13 +108,22 @@ export async function resolveGeneratedFileServing(params: {
 		return { ok: false, status: 404, error: "File not found" };
 	}
 
+	let succeededFileProductionJob:
+		| Awaited<ReturnType<typeof getSucceededFileProductionJobForChatFile>>
+		| undefined;
+	const resolveSucceededFileProductionJob = async () => {
+		succeededFileProductionJob ??=
+			await getSucceededFileProductionJobForChatFile({
+				userId: params.userId,
+				conversationId: chatFile.conversationId,
+				chatGeneratedFileId: chatFile.id,
+			});
+		return succeededFileProductionJob;
+	};
+
 	if (
 		chatFile.assistantMessageId === null &&
-		!(await hasSucceededFileProductionJobForChatFile({
-			userId: params.userId,
-			conversationId: chatFile.conversationId,
-			chatGeneratedFileId: chatFile.id,
-		}))
+		!(await resolveSucceededFileProductionJob())
 	) {
 		return { ok: false, status: 404, error: "File not found" };
 	}
@@ -179,6 +189,11 @@ export async function resolveGeneratedFileServing(params: {
 			contentType,
 			filename,
 			safetyFilenames: [chatFile.filename],
+			previewProfile: await resolvePreviewProfile({
+				mode: params.mode,
+				contentType,
+				resolveSucceededFileProductionJob,
+			}),
 		}),
 	});
 
@@ -186,6 +201,21 @@ export async function resolveGeneratedFileServing(params: {
 		ok: true,
 		...rangedResponse,
 	};
+}
+
+async function resolvePreviewProfile(params: {
+	mode: GeneratedFileServingMode;
+	contentType: string;
+	resolveSucceededFileProductionJob: () => Promise<
+		Awaited<ReturnType<typeof getSucceededFileProductionJobForChatFile>>
+	>;
+}): Promise<FileServingPreviewProfile | undefined> {
+	if (params.mode !== "preview" || params.contentType !== "text/html") {
+		return undefined;
+	}
+
+	const job = await params.resolveSucceededFileProductionJob();
+	return job?.sourceMode === "document_source" ? "standard-report" : undefined;
 }
 
 async function resolveGeneratedFilePartialRange(params: {

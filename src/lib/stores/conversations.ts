@@ -32,7 +32,10 @@ const localConversationSidebarStates = new Map<
 	{ sidebarPinned: boolean; sidebarSortOrder: number | null }
 >();
 const seenAtlasBadgeKeys = new Set<string>();
+const SEEN_ATLAS_BADGE_STORAGE_PREFIX = "alfyai:seen-atlas-badges:v1";
+const MAX_PERSISTED_SEEN_ATLAS_BADGE_KEYS = 500;
 let conversationSnapshotUserId: string | null = null;
+let seenAtlasBadgeKeysLoadedForUserId: string | null | undefined;
 let lastSuccessfulConversationSnapshotAt = 0;
 
 interface LoadConversationsOptions {
@@ -138,9 +141,67 @@ function atlasBadgeSeenKey(item: ConversationListItem): string | null {
 	return `${item.id}:${badge.jobId}:${completedOrUpdatedAt}`;
 }
 
+function seenAtlasBadgeStorageKey(userId: string | null): string {
+	return `${SEEN_ATLAS_BADGE_STORAGE_PREFIX}:${userId ?? "anonymous"}`;
+}
+
+function getBrowserLocalStorage(): Storage | null {
+	if (typeof window === "undefined") return null;
+	try {
+		return window.localStorage ?? null;
+	} catch {
+		return null;
+	}
+}
+
+function readSeenAtlasBadgeStorage(userId: string | null): Set<string> {
+	const storage = getBrowserLocalStorage();
+	if (!storage) return new Set();
+	try {
+		const raw = storage.getItem(seenAtlasBadgeStorageKey(userId));
+		if (!raw) return new Set();
+		const parsed = JSON.parse(raw);
+		if (!Array.isArray(parsed)) return new Set();
+		return new Set(
+			parsed
+				.filter(
+					(key): key is string => typeof key === "string" && key.length > 0,
+				)
+				.slice(-MAX_PERSISTED_SEEN_ATLAS_BADGE_KEYS),
+		);
+	} catch {
+		return new Set();
+	}
+}
+
+function persistSeenAtlasBadgeStorage(userId: string | null): void {
+	const storage = getBrowserLocalStorage();
+	if (!storage) return;
+	try {
+		const keys = Array.from(seenAtlasBadgeKeys).slice(
+			-MAX_PERSISTED_SEEN_ATLAS_BADGE_KEYS,
+		);
+		storage.setItem(seenAtlasBadgeStorageKey(userId), JSON.stringify(keys));
+	} catch {
+		// Best-effort only; the in-memory state still hides the badge this session.
+	}
+}
+
+function hydrateSeenAtlasBadgeKeys(userId: string | null): void {
+	if (seenAtlasBadgeKeysLoadedForUserId === userId) {
+		return;
+	}
+	seenAtlasBadgeKeys.clear();
+	for (const key of readSeenAtlasBadgeStorage(userId)) {
+		seenAtlasBadgeKeys.add(key);
+	}
+	seenAtlasBadgeKeysLoadedForUserId = userId;
+}
+
 function suppressSeenAtlasBadge(
 	item: ConversationListItem,
 ): ConversationListItem {
+	hydrateSeenAtlasBadgeKeys(conversationSnapshotUserId);
 	const seenKey = atlasBadgeSeenKey(item);
 	if (!seenKey || !seenAtlasBadgeKeys.has(seenKey)) return item;
 	return { ...item, atlasBadge: undefined };
@@ -210,8 +271,8 @@ export function reconcileConversationSnapshot(
 			deletedConversationIds.clear();
 			localConversationProjectIds.clear();
 			localConversationSidebarStates.clear();
-			seenAtlasBadgeKeys.clear();
 			conversationSnapshotUserId = options.userId ?? null;
+			hydrateSeenAtlasBadgeKeys(conversationSnapshotUserId);
 			return sortConversationsForSidebar(
 				incoming.map(normalizeConversationListItem).map(suppressSeenAtlasBadge),
 			);
@@ -219,6 +280,7 @@ export function reconcileConversationSnapshot(
 
 		if (options.userId !== undefined) {
 			conversationSnapshotUserId = options.userId;
+			hydrateSeenAtlasBadgeKeys(conversationSnapshotUserId);
 		}
 
 		const mergedIncoming = incoming.map((item) => {
@@ -266,12 +328,14 @@ export function clearConversationStore(): void {
 	localConversationProjectIds.clear();
 	localConversationSidebarStates.clear();
 	seenAtlasBadgeKeys.clear();
+	seenAtlasBadgeKeysLoadedForUserId = undefined;
 	conversationSnapshotUserId = null;
 	lastSuccessfulConversationSnapshotAt = 0;
 	conversations.set([]);
 }
 
 export function markConversationAtlasBadgeSeen(id: string): void {
+	hydrateSeenAtlasBadgeKeys(conversationSnapshotUserId);
 	conversations.update((items) => {
 		let changed = false;
 		const nextItems = items.map((item) => {
@@ -279,6 +343,7 @@ export function markConversationAtlasBadgeSeen(id: string): void {
 			const seenKey = atlasBadgeSeenKey(item);
 			if (!seenKey) return item;
 			seenAtlasBadgeKeys.add(seenKey);
+			persistSeenAtlasBadgeStorage(conversationSnapshotUserId);
 			if (!item.atlasBadge) return item;
 			changed = true;
 			return { ...item, atlasBadge: undefined };

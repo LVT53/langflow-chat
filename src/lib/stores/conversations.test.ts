@@ -21,6 +21,8 @@ import {
 	upsertConversationLocal,
 } from "./conversations";
 
+let localStorageMock: Record<string, string> = {};
+
 vi.mock("$lib/client/api/conversations", async (importOriginal) => {
 	const actual =
 		await importOriginal<typeof import("$lib/client/api/conversations")>();
@@ -58,11 +60,21 @@ function conversationItem(
 describe("conversations store", () => {
 	beforeEach(() => {
 		clearConversationStore();
+		localStorageMock = {};
 		vi.restoreAllMocks();
 		vi.mocked(setConversationSidebarPinned).mockReset();
 		vi.mocked(savePinnedConversationSidebarOrder).mockReset();
 		vi.stubGlobal("fetch", vi.fn());
 		vi.stubGlobal("window", {
+			localStorage: {
+				getItem: vi.fn((key: string) => localStorageMock[key] ?? null),
+				setItem: vi.fn((key: string, value: string) => {
+					localStorageMock[key] = value;
+				}),
+				removeItem: vi.fn((key: string) => {
+					delete localStorageMock[key];
+				}),
+			},
 			sessionStorage: {
 				getItem: vi.fn(() => null),
 				setItem: vi.fn(),
@@ -241,6 +253,44 @@ describe("conversations store", () => {
 			}),
 		]);
 		expect(get(conversations)[0]?.atlasBadge).toEqual(secondBadge);
+	});
+
+	it("keeps a seen Atlas completion hidden after a page refresh", () => {
+		const badge = {
+			jobId: "atlas-job-1",
+			status: "succeeded" as const,
+			label: "Atlas report",
+			completedAt: 1_789_000,
+			updatedAt: 1_789_000,
+		};
+
+		reconcileConversationSnapshot(
+			[
+				conversationItem("conv-atlas", "Atlas chat", 100, {
+					atlasBadge: badge,
+				}),
+			],
+			{ userId: "user-1" },
+		);
+		markConversationAtlasBadgeSeen("conv-atlas");
+		expect(get(conversations)[0]?.atlasBadge).toBeUndefined();
+
+		clearConversationStore();
+		reconcileConversationSnapshot(
+			[
+				conversationItem("conv-atlas", "Atlas chat", 101, {
+					atlasBadge: badge,
+				}),
+			],
+			{ userId: "user-1" },
+		);
+
+		expect(get(conversations)[0]?.atlasBadge).toBeUndefined();
+		expect(
+			JSON.parse(
+				localStorageMock["alfyai:seen-atlas-badges:v1:user-1"] ?? "[]",
+			),
+		).toContain("conv-atlas:atlas-job-1:1789000");
 	});
 
 	it("clears stored conversations and local preservation state", () => {

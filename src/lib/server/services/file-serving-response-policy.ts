@@ -7,6 +7,7 @@ export interface FileServingResponsePolicyParams {
 	filename: string;
 	safetyFilenames?: readonly (string | null | undefined)[];
 	restrictedPreview?: boolean;
+	previewProfile?: FileServingPreviewProfile;
 }
 
 export interface FileServingRangeResult {
@@ -22,6 +23,11 @@ export type ParsedFileServingRange =
 
 const RESTRICTED_PREVIEW_CSP =
 	"default-src 'none'; img-src data:; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
+
+const STANDARD_REPORT_PREVIEW_CSP =
+	"default-src 'none'; img-src https: http: data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
+
+export type FileServingPreviewProfile = "standard-report";
 
 function hasSvgFilename(filename: string): boolean {
 	return filename.toLowerCase().endsWith(".svg");
@@ -78,7 +84,10 @@ export function buildFileServingResponseHeaders(
 	};
 
 	if (isRestrictedPreview({ ...params, contentType })) {
-		headers["Content-Security-Policy"] = RESTRICTED_PREVIEW_CSP;
+		headers["Content-Security-Policy"] =
+			params.previewProfile === "standard-report"
+				? STANDARD_REPORT_PREVIEW_CSP
+				: RESTRICTED_PREVIEW_CSP;
 		headers["X-Content-Type-Options"] = "nosniff";
 		headers["Referrer-Policy"] = "no-referrer";
 	}

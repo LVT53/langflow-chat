@@ -256,8 +256,24 @@ export async function hasSucceededFileProductionJobForChatFile(input: {
 	conversationId: string;
 	chatGeneratedFileId: string;
 }): Promise<boolean> {
+	return Boolean(await getSucceededFileProductionJobForChatFile(input));
+}
+
+export async function getSucceededFileProductionJobForChatFile(input: {
+	userId: string;
+	conversationId: string;
+	chatGeneratedFileId: string;
+}): Promise<{
+	id: string;
+	sourceMode: string | null;
+	origin: string;
+} | null> {
 	const [row] = await db
-		.select({ jobId: fileProductionJobs.id })
+		.select({
+			id: fileProductionJobs.id,
+			sourceMode: fileProductionJobs.sourceMode,
+			origin: fileProductionJobs.origin,
+		})
 		.from(fileProductionJobFiles)
 		.innerJoin(
 			fileProductionJobs,
@@ -276,7 +292,7 @@ export async function hasSucceededFileProductionJobForChatFile(input: {
 		)
 		.limit(1);
 
-	return Boolean(row);
+	return row ?? null;
 }
 
 async function getReadModelChatFilesByIdsForConversation(
