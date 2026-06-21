@@ -2674,6 +2674,8 @@ describe("Atlas pipeline slices", () => {
 													"slightly lower MTEB than NV-Embed-v2 | - reject table-tail headings.",
 													"domain-specific retrieval may benefit from benchmarking on your own corpus - reject sentence-like headings.",
 													"Evidence packs used: AIMultiple (id - reject evidence bookkeeping.",
+													"- `atlas-pack-v1-IdH1JM0_BBcIN0Ip` (AIMultiple): The NVIDIA models top retrieval-specific leaderboards.",
+													"- atlas-pack-v1-KKyqV5_BHlHcr1Bd (Ailog): Qwen3-8B offers full open-source freedom.",
 													"Table: | Apache 2.0 | MIT |.",
 													"Key Model Characteristics: summarize licensing and hardware needs.",
 												].join("\n")
@@ -2714,6 +2716,8 @@ describe("Atlas pipeline slices", () => {
 		expect(auditInput?.assembledMarkdown).not.toContain(
 			"## Evidence packs used",
 		);
+		expect(auditInput?.assembledMarkdown).not.toContain("## - atlas-pack");
+		expect(auditInput?.assembledMarkdown).not.toContain("## - `atlas-pack");
 		expect(auditInput?.assembledMarkdown).not.toContain("|-------|");
 		expect(auditInput?.assembledMarkdown).not.toContain("| Model |");
 	});
