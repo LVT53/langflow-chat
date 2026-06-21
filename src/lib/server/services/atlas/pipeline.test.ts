@@ -168,6 +168,250 @@ describe("Atlas pipeline slices", () => {
 		});
 	});
 
+	it("renders structured image candidates when assembly does not author Markdown images", async () => {
+		const { runAtlasPipeline } = await import("./pipeline");
+		let renderedBlocks: Array<{ type?: string; [key: string]: unknown }> = [];
+		let checkpoint: unknown = null;
+
+		const result = await runAtlasPipeline({
+			job: {
+				id: "atlas-image-job",
+				userId: "user-1",
+				conversationId: "conv-1",
+				assistantMessageId: "assistant-1",
+				action: "create",
+				parentAtlasJobId: null,
+				profile: "overview",
+				title: "Enterprise Search Images",
+				query: "Compare enterprise search architectures with useful visuals",
+				lifecycle: {
+					family: {
+						familyId: "atlas-image-job",
+						mode: "new_family",
+						action: "create",
+						rootAtlasJobId: "atlas-image-job",
+						currentAtlasJobId: "atlas-image-job",
+						parentAtlasJobId: null,
+						forkedFromAtlasJobId: null,
+					},
+					seed: null,
+				},
+			},
+			now: new Date("2026-06-21T10:00:00.000Z"),
+			dependencies: {
+				resolveSources: vi.fn(async () => ({ localSources: [] })),
+				searchWeb: vi.fn(async () => ({
+					sources: [
+						{
+							id: "web-1",
+							title: "Enterprise search architecture evidence",
+							url: "https://example.com/report",
+							snippet:
+								"Evidence on hybrid search architecture, reranking, governance, and visual architecture patterns.",
+						},
+					],
+					rejectedSources: [],
+					limitation: null,
+				})),
+				searchImages: vi.fn(async () => ({
+					imageCandidates: [
+						{
+							id: "image-1",
+							query: "enterprise search architecture",
+							title: "Enterprise search architecture diagram",
+							imageUrl: "https://cdn.example.com/architecture.png",
+							sourcePageUrl: "https://example.com/report",
+							sourceTitle: "Example Research",
+							thumbnailUrl: null,
+							width: 1200,
+							height: 800,
+							caption: "Enterprise search architecture diagram",
+							selectionReason:
+								"Image result for enterprise search architecture.",
+						},
+					],
+					imageLimitation: null,
+				})),
+				runModelStage: vi.fn(async (input) => {
+					if (input.stage === "decompose") {
+						return {
+							text: "enterprise search architecture\nhybrid retrieval reranking",
+							usage: {
+								inputTokens: 1,
+								outputTokens: 1,
+								totalTokens: 2,
+								costUsdMicros: 0,
+							},
+						};
+					}
+					if (input.stage === "assemble") {
+						return {
+							text: [
+								"# Enterprise Search Images",
+								"",
+								"## Executive Summary",
+								"Enterprise search architecture decisions should combine lexical retrieval, semantic retrieval, and reranking when teams need both exact recall and concept-level discovery. The accepted evidence supports hybrid retrieval as the default because governance, latency, source permissions, and evaluation workflows all become easier to reason about when every layer has a narrow responsibility.",
+								"",
+								"## Architecture Findings",
+								"Hybrid search architecture works best when ingestion, lexical indexes, vector indexes, and rerankers are observable as separate components. This makes failures easier to isolate, gives compliance reviewers clearer control points, and lets product teams tune relevance without replacing the whole retrieval stack.",
+								"",
+								"## Limitations",
+								"The evidence set is representative rather than exhaustive, so implementation choices should still be validated against corpus size, access rules, and latency budgets.",
+							].join("\n"),
+							usage: {
+								inputTokens: 1,
+								outputTokens: 1,
+								totalTokens: 2,
+								costUsdMicros: 0,
+							},
+						};
+					}
+					return {
+						text: `${input.stage} result`,
+						usage: {
+							inputTokens: 1,
+							outputTokens: 1,
+							totalTokens: 2,
+							costUsdMicros: 0,
+						},
+					};
+				}),
+				auditBasis: vi.fn(async () => ({
+					passed: true,
+					honestyMarkers: [],
+					retryRequested: false,
+				})),
+				writeCheckpoint: vi.fn(async (input) => {
+					checkpoint = input.checkpoint;
+				}),
+				renderOutputs: vi.fn(async (source) => {
+					renderedBlocks = source.blocks;
+					return {
+						fileProductionJobId: "fp-job-1",
+						htmlChatGeneratedFileId: "file-html",
+						pdfChatGeneratedFileId: "file-pdf",
+						markdownChatGeneratedFileId: "file-md",
+					};
+				}),
+			},
+		});
+
+		expect(result.status).toBe("succeeded");
+		expect(renderedBlocks).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					type: "image",
+					source: {
+						kind: "https",
+						url: "https://cdn.example.com/architecture.png",
+					},
+					caption: "Enterprise search architecture diagram",
+					sourceAttribution: {
+						title: "Example Research",
+						url: "https://example.com/report",
+					},
+				}),
+			]),
+		);
+		expect(checkpoint).toMatchObject({
+			selectedImageCandidateIds: ["image-1"],
+		});
+	});
+
+	it("continues successfully when Atlas image search fails", async () => {
+		const { runAtlasPipeline } = await import("./pipeline");
+		let renderedBlocks: Array<{ type?: string; [key: string]: unknown }> = [];
+
+		const result = await runAtlasPipeline({
+			job: {
+				id: "atlas-image-failure-job",
+				userId: "user-1",
+				conversationId: "conv-1",
+				assistantMessageId: "assistant-1",
+				action: "create",
+				parentAtlasJobId: null,
+				profile: "overview",
+				title: "Enterprise Search Without Images",
+				query: "Compare enterprise search architectures",
+				lifecycle: {
+					family: {
+						familyId: "atlas-image-failure-job",
+						mode: "new_family",
+						action: "create",
+						rootAtlasJobId: "atlas-image-failure-job",
+						currentAtlasJobId: "atlas-image-failure-job",
+						parentAtlasJobId: null,
+						forkedFromAtlasJobId: null,
+					},
+					seed: null,
+				},
+			},
+			now: new Date("2026-06-21T10:00:00.000Z"),
+			dependencies: {
+				resolveSources: vi.fn(async () => ({ localSources: [] })),
+				searchWeb: vi.fn(async () => ({
+					sources: [
+						{
+							id: "web-1",
+							title: "Enterprise search architecture evidence",
+							url: "https://example.com/report",
+							snippet:
+								"Evidence on hybrid search architecture, reranking, governance, and evaluation workflows.",
+						},
+					],
+					rejectedSources: [],
+					limitation: null,
+				})),
+				searchImages: vi.fn(async () => {
+					throw new Error("image endpoint unavailable");
+				}),
+				runModelStage: vi.fn(async (input) => ({
+					text:
+						input.stage === "decompose"
+							? "enterprise search architecture"
+							: input.stage === "assemble"
+								? [
+										"# Enterprise Search Without Images",
+										"",
+										"## Executive Summary",
+										"Enterprise search architecture decisions should combine lexical retrieval, semantic retrieval, and reranking when teams need both exact recall and concept-level discovery. The accepted evidence supports hybrid retrieval as a default because governance, latency, permissions, and evaluation workflows are easier to reason about when each retrieval layer has a narrow responsibility.",
+										"",
+										"## Findings",
+										"Hybrid retrieval gives teams a practical way to preserve exact terminology while still supporting natural language discovery. Reranking then gives the system a narrower and more inspectable final evidence set for answer generation.",
+										"",
+										"## Limitations",
+										"The evidence set is representative rather than exhaustive.",
+									].join("\n")
+								: `${input.stage} result`,
+					usage: {
+						inputTokens: 1,
+						outputTokens: 1,
+						totalTokens: 2,
+						costUsdMicros: 0,
+					},
+				})),
+				auditBasis: vi.fn(async () => ({
+					passed: true,
+					honestyMarkers: [],
+					retryRequested: false,
+				})),
+				writeCheckpoint: vi.fn(async () => {}),
+				renderOutputs: vi.fn(async (source) => {
+					renderedBlocks = source.blocks;
+					return {
+						fileProductionJobId: "fp-job-1",
+						htmlChatGeneratedFileId: "file-html",
+						pdfChatGeneratedFileId: "file-pdf",
+						markdownChatGeneratedFileId: "file-md",
+					};
+				}),
+			},
+		});
+
+		expect(result.status).toBe("succeeded");
+		expect(renderedBlocks.some((block) => block.type === "image")).toBe(false);
+	});
+
 	it("threads same-family lifecycle seeds into prompts, checkpoints, and rendered source metadata", async () => {
 		const { runAtlasPipeline } = await import("./pipeline");
 		const prompts: Record<string, string> = {};
@@ -1034,17 +1278,17 @@ describe("Atlas pipeline slices", () => {
 								return manyQueries;
 							}
 							return [
-										"# Profile report",
-										"",
-										"## Executive Summary",
-										"The evidence shows SvelteKit routing documentation centers on filesystem routes and route files, with enough detail for a concise profile comparison report.",
-										"",
-										"## Findings",
-										"Profile-specific search breadth should change how many decomposed queries reach search, while the fixed pipeline and audit still run for every profile.",
-										"",
-										"## Limitations",
-										"This fixture uses one accepted source and focuses on profile routing behavior.",
-									].join("\n");
+								"# Profile report",
+								"",
+								"## Executive Summary",
+								"The evidence shows SvelteKit routing documentation centers on filesystem routes and route files, with enough detail for a concise profile comparison report.",
+								"",
+								"## Findings",
+								"Profile-specific search breadth should change how many decomposed queries reach search, while the fixed pipeline and audit still run for every profile.",
+								"",
+								"## Limitations",
+								"This fixture uses one accepted source and focuses on profile routing behavior.",
+							].join("\n");
 						})(),
 						usage: {
 							inputTokens: 1,

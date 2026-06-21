@@ -12,10 +12,13 @@ export const DEFAULT_ATLAS_SEARCH_INTER_BATCH_DELAY_MS = 500;
 export const DEFAULT_ATLAS_SEARCH_INITIAL_RETRY_BACKOFF_MS = 500;
 export const DEFAULT_ATLAS_SEARCH_MAX_RETRY_BACKOFF_MS = 10_000;
 export const DEFAULT_ATLAS_SEARCH_MAX_ATTEMPTS = 3;
+export const DEFAULT_ATLAS_IMAGE_SEARCH_SAFESEARCH = 1;
 
 export interface AtlasProfileRuntimeConfig {
 	maxSearchQueries: number;
 	maxAcceptedWebSources: number;
+	maxImageCandidates: number;
+	maxRenderedImages: number;
 	maxOutputTokens: number;
 	promptPosture: {
 		en: string;
@@ -30,6 +33,8 @@ const ATLAS_PROFILE_RUNTIME_CONFIG: Record<
 	overview: {
 		maxSearchQueries: 6,
 		maxAcceptedWebSources: 16,
+		maxImageCandidates: 3,
+		maxRenderedImages: 2,
 		maxOutputTokens: 2400,
 		promptPosture: {
 			en: "Profile posture: Overview. Be concise, prioritize the strongest evidence, avoid unnecessary branches, and produce a focused report with clear limitations.",
@@ -39,6 +44,8 @@ const ATLAS_PROFILE_RUNTIME_CONFIG: Record<
 	"in-depth": {
 		maxSearchQueries: 14,
 		maxAcceptedWebSources: 36,
+		maxImageCandidates: 6,
+		maxRenderedImages: 3,
 		maxOutputTokens: 5200,
 		promptPosture: {
 			en: "Profile posture: In-Depth. Balance breadth and depth, compare the main evidence clusters, preserve important tradeoffs, and write a moderately detailed report.",
@@ -48,6 +55,8 @@ const ATLAS_PROFILE_RUNTIME_CONFIG: Record<
 	exhaustive: {
 		maxSearchQueries: 28,
 		maxAcceptedWebSources: 72,
+		maxImageCandidates: 10,
+		maxRenderedImages: 5,
 		maxOutputTokens: 9000,
 		promptPosture: {
 			en: "Profile posture: Exhaustive. Search broadly, preserve minority evidence and contradictions, cover edge cases, and write a comprehensive report without dropping uncertainty.",

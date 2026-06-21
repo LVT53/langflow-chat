@@ -12,7 +12,11 @@ import {
 	detectLanguage,
 	type SupportedLanguage,
 } from "$lib/server/services/language";
-import type { AtlasDocumentFamilyMetadata, AtlasHonestyMarker } from "./types";
+import type {
+	AtlasDocumentFamilyMetadata,
+	AtlasHonestyMarker,
+	AtlasImageCandidate,
+} from "./types";
 
 export interface AtlasReportSource {
 	title: string;
@@ -28,6 +32,8 @@ export interface BuildAtlasDocumentSourceInput {
 	assembledMarkdown: string;
 	sources: AtlasReportSource[];
 	honestyMarkers: AtlasHonestyMarker[];
+	imageCandidates?: AtlasImageCandidate[];
+	maxRenderedImages?: number;
 	date?: string | null;
 	language?: SupportedLanguage | null;
 }
@@ -479,7 +485,8 @@ function isTakeawayHeading(
 	language: SupportedLanguage,
 ): block is Extract<GeneratedDocumentBlock, { type: "heading" }> {
 	return (
-		block.type === "heading" && takeawayHeadingPattern(language).test(block.text)
+		block.type === "heading" &&
+		takeawayHeadingPattern(language).test(block.text)
 	);
 }
 
@@ -651,6 +658,189 @@ function auditPassedMarker(language: SupportedLanguage): AtlasHonestyMarker {
 	};
 }
 
+function imageUrlsInBlocks(
+	blocks: GeneratedDocumentSource["blocks"],
+): Set<string> {
+	const urls = new Set<string>();
+	for (const block of blocks) {
+		if (
+			block.type === "image" &&
+			block.source.kind === "https" &&
+			block.source.url
+		) {
+			urls.add(block.source.url);
+		}
+	}
+	return urls;
+}
+
+function meaningfulTokens(text: string): Set<string> {
+	const stopwords = new Set([
+		"about",
+		"after",
+		"atlas",
+		"chart",
+		"from",
+		"image",
+		"into",
+		"market",
+		"report",
+		"search",
+		"source",
+		"that",
+		"this",
+		"with",
+	]);
+	const tokens = text
+		.toLowerCase()
+		.normalize("NFD")
+		.replace(/[\u0300-\u036f]/g, "")
+		.split(/[^a-z0-9]+/)
+		.filter((token) => token.length >= 4 && !stopwords.has(token));
+	return new Set(tokens);
+}
+
+function blockSearchText(block: GeneratedDocumentBlock): string {
+	if (block.type === "heading" || block.type === "paragraph") return block.text;
+	if (block.type === "list") return block.items.join(" ");
+	if (block.type === "callout") return `${block.title ?? ""} ${block.text}`;
+	return "";
+}
+
+function blockMatchScore(
+	block: GeneratedDocumentBlock,
+	tokens: Set<string>,
+): number {
+	if (tokens.size === 0) return 0;
+	const haystack = blockSearchText(block)
+		.toLowerCase()
+		.normalize("NFD")
+		.replace(/[\u0300-\u036f]/g, "");
+	let score = 0;
+	for (const token of tokens) {
+		if (haystack.includes(token)) score += 1;
+	}
+	return score;
+}
+
+function imageBlockForCandidate(
+	candidate: AtlasImageCandidate,
+): GeneratedDocumentImageBlock {
+	const attributionUrl = candidate.sourcePageUrl ?? candidate.imageUrl;
+	return {
+		type: "image",
+		source: { kind: "https", url: candidate.imageUrl },
+		altText: candidate.title,
+		caption: candidate.caption || candidate.title,
+		sourceAttribution: {
+			title: candidate.sourceTitle ?? candidate.title,
+			url: attributionUrl,
+		},
+		critical: false,
+	};
+}
+
+function executiveSummaryFallbackIndex(
+	blocks: GeneratedDocumentSource["blocks"],
+): number {
+	const headingIndex = blocks.findIndex(
+		(block) =>
+			block.type === "heading" &&
+			/^(executive summary|vezetői összefoglaló|összefoglaló)$/i.test(
+				block.text.trim(),
+			),
+	);
+	if (headingIndex < 0) return Math.min(1, blocks.length);
+	for (let index = headingIndex + 1; index < blocks.length; index += 1) {
+		const block = blocks[index];
+		if (block?.type === "heading") break;
+		if (
+			block?.type === "paragraph" ||
+			block?.type === "list" ||
+			block?.type === "callout"
+		) {
+			return index + 1;
+		}
+	}
+	return headingIndex + 1;
+}
+
+function insertionIndexForImageCandidate(
+	blocks: GeneratedDocumentSource["blocks"],
+	candidate: AtlasImageCandidate,
+): number {
+	const tokens = meaningfulTokens(
+		[
+			candidate.title,
+			candidate.query,
+			candidate.caption,
+			candidate.sourceTitle ?? "",
+		].join(" "),
+	);
+	let bestIndex = -1;
+	let bestScore = 0;
+	for (const [index, block] of blocks.entries()) {
+		if (block.type === "sourceChips" || block.type === "confidenceMarker")
+			continue;
+		const score = blockMatchScore(block, tokens);
+		if (score > bestScore) {
+			bestScore = score;
+			bestIndex = index;
+		}
+	}
+	if (bestIndex < 0) return executiveSummaryFallbackIndex(blocks);
+	const block = blocks[bestIndex];
+	if (block?.type !== "heading") return bestIndex + 1;
+	for (let index = bestIndex + 1; index < blocks.length; index += 1) {
+		const next = blocks[index];
+		if (next?.type === "heading") break;
+		if (
+			next?.type === "paragraph" ||
+			next?.type === "list" ||
+			next?.type === "callout"
+		) {
+			return index + 1;
+		}
+	}
+	return bestIndex + 1;
+}
+
+function insertDeterministicImageBlocks(
+	blocks: GeneratedDocumentSource["blocks"],
+	imageCandidates: AtlasImageCandidate[] = [],
+	maxRenderedImages = 0,
+): void {
+	if (imageCandidates.length === 0 || maxRenderedImages <= 0) return;
+	if (Array.from(imageUrlsInBlocks(blocks)).length > 0) return;
+	const selected = imageCandidates.slice(0, maxRenderedImages);
+	if (selected.length === 0) return;
+	const insertions = new Map<number, GeneratedDocumentImageBlock[]>();
+	for (const candidate of selected) {
+		const index = insertionIndexForImageCandidate(blocks, candidate);
+		const existing = insertions.get(index) ?? [];
+		existing.push(imageBlockForCandidate(candidate));
+		insertions.set(index, existing);
+	}
+	const converted: GeneratedDocumentSource["blocks"] = [];
+	for (let index = 0; index <= blocks.length; index += 1) {
+		const atIndex = insertions.get(index);
+		if (atIndex) converted.push(...atIndex);
+		const block = blocks[index];
+		if (block) converted.push(block);
+	}
+	blocks.splice(0, blocks.length, ...converted);
+}
+
+export function collectAtlasSelectedImageCandidateIds(
+	source: GeneratedDocumentSource,
+	imageCandidates: AtlasImageCandidate[] = [],
+): string[] {
+	const renderedUrls = imageUrlsInBlocks(source.blocks);
+	return imageCandidates
+		.filter((candidate) => renderedUrls.has(candidate.imageUrl))
+		.map((candidate) => candidate.id);
+}
+
 export function buildAtlasDocumentSource(
 	input: BuildAtlasDocumentSourceInput,
 ): GeneratedDocumentSource {
@@ -662,6 +852,11 @@ export function buildAtlasDocumentSource(
 	removeModelAuthoredSourcesSections(blocks);
 	convertAuthoredTakeawaysToCallouts(blocks, language);
 	addInlineSourceFallbacks(blocks, input.sources, language);
+	insertDeterministicImageBlocks(
+		blocks,
+		input.imageCandidates,
+		input.maxRenderedImages,
+	);
 
 	const librarySources = input.sources.filter((source) => !source.url);
 	const webSources = input.sources.filter((source) => Boolean(source.url));

@@ -1,7 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AtlasSearchSource } from "./search";
 
 describe("Atlas search stage", () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+
 	it("requires SearXNG configuration", async () => {
 		const { runAtlasSearchStage } = await import("./search");
 
@@ -173,5 +177,97 @@ describe("Atlas search stage", () => {
 			expect.objectContaining({ url: "https://example.com/retrieval" }),
 		);
 		expect(result.sources[0].snippet).toContain("Fetched page excerpt");
+	});
+
+	it("normalizes SearXNG image results, filters unsafe or non-HTTPS images, and de-duplicates image URLs", async () => {
+		const { runAtlasImageSearchStage } = await import("./search");
+		const fetchMock = vi.fn(async (url: URL | string) => {
+			const requestUrl = new URL(String(url));
+			expect(requestUrl.pathname).toBe("/search");
+			expect(requestUrl.searchParams.get("format")).toBe("json");
+			expect(requestUrl.searchParams.get("categories")).toBe("images");
+			expect(requestUrl.searchParams.get("safesearch")).toBe("1");
+			expect(requestUrl.searchParams.get("image_proxy")).toBe("0");
+			return new Response(
+				JSON.stringify({
+					results: [
+						{
+							title: "Enterprise architecture diagram",
+							content: "Enterprise architecture diagram caption",
+							img_src: "https://cdn.example.com/architecture.png",
+							thumbnail_src: "https://cdn.example.com/architecture-thumb.png",
+							url: "https://example.com/report",
+							source: "Example Research",
+							resolution: "1024 x 768",
+						},
+						{
+							title: "Duplicate diagram",
+							img_src: "https://cdn.example.com/architecture.png",
+							url: "https://example.com/duplicate",
+						},
+						{
+							title: "HTTP image is not embeddable",
+							img_src: "http://cdn.example.com/insecure.png",
+							url: "https://example.com/insecure",
+						},
+						{
+							title: "Porn result",
+							img_src: "https://cdn.example.com/adult.png",
+							url: "https://example.com/adult",
+						},
+					],
+				}),
+			);
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		const result = await runAtlasImageSearchStage({
+			queries: ["enterprise architecture"],
+			config: {
+				searxngBaseUrl: "http://searxng.local",
+				concurrency: 1,
+				interBatchDelayMs: 0,
+				maxImageCandidates: 3,
+				maxAttempts: 1,
+			},
+		});
+
+		expect(result.imageLimitation).toBeNull();
+		expect(result.imageCandidates).toEqual([
+			expect.objectContaining({
+				query: "enterprise architecture",
+				title: "Enterprise architecture diagram",
+				imageUrl: "https://cdn.example.com/architecture.png",
+				sourcePageUrl: "https://example.com/report",
+				sourceTitle: "Example Research",
+				thumbnailUrl: "https://cdn.example.com/architecture-thumb.png",
+				width: 1024,
+				height: 768,
+				caption: "Enterprise architecture diagram caption",
+			}),
+		]);
+	});
+
+	it("keeps image search failures non-fatal", async () => {
+		const { runAtlasImageSearchStage } = await import("./search");
+
+		const result = await runAtlasImageSearchStage({
+			queries: ["enterprise architecture"],
+			config: {
+				searxngBaseUrl: "http://searxng.local",
+				concurrency: 1,
+				interBatchDelayMs: 0,
+				maxAttempts: 1,
+			},
+			searchImages: vi.fn(async () => {
+				throw new Error("image endpoint unavailable");
+			}),
+		});
+
+		expect(result.imageCandidates).toEqual([]);
+		expect(result.imageLimitation).toMatchObject({
+			code: "atlas_image_search_partial_failure",
+			failedQueries: ["enterprise architecture"],
+		});
 	});
 });

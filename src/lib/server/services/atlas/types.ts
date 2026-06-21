@@ -101,6 +101,20 @@ export interface AtlasHonestyMarker {
 	severity: "info" | "warning" | "critical";
 }
 
+export interface AtlasImageCandidate {
+	id: string;
+	query: string;
+	title: string;
+	imageUrl: string;
+	sourcePageUrl: string | null;
+	sourceTitle: string | null;
+	thumbnailUrl: string | null;
+	width: number | null;
+	height: number | null;
+	caption: string;
+	selectionReason: string;
+}
+
 export type AtlasDocumentFamilyMode = "new_family" | "same_family";
 
 export interface AtlasDocumentFamilyMetadata {

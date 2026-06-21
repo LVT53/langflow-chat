@@ -28,7 +28,7 @@ import { runAtlasAuditStage, runAtlasModelStage } from "./model-stage";
 import { AtlasPipelineQualityError, runAtlasPipeline } from "./pipeline";
 import { auditAtlasBasis } from "./quality-gates";
 import { renderAtlasOutputs } from "./renderer-output";
-import { runAtlasSearchStage } from "./search";
+import { runAtlasImageSearchStage, runAtlasSearchStage } from "./search";
 import { resolveAtlasSourcesForJob } from "./sources";
 
 export interface ExecuteNextAtlasJobInput {
@@ -143,6 +143,16 @@ export async function executeNextAtlasJob(
 							webResearchExtractTimeoutMs: config.webResearchExtractTimeoutMs,
 							webResearchExtractCacheTtlHours:
 								config.webResearchExtractCacheTtlHours,
+						},
+					}),
+				searchImages: (queries) =>
+					runAtlasImageSearchStage({
+						queries,
+						config: {
+							searxngBaseUrl: config.searxngBaseUrl,
+							concurrency: config.atlasSearchConcurrency,
+							interBatchDelayMs: config.atlasSearchBatchDelayMs,
+							maxImageCandidates: profileConfig.maxImageCandidates,
 						},
 					}),
 				runModelStage: ({ stage, prompt, system }) =>

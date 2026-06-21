@@ -3,13 +3,15 @@ import {
 	detectLanguage,
 	type SupportedLanguage,
 } from "$lib/server/services/language";
+import { getAtlasProfileRuntimeConfig } from "./config";
 import {
 	type AtlasOutputIds,
 	buildAtlasDocumentSource,
+	collectAtlasSelectedImageCandidateIds,
 } from "./renderer-output";
-import { getAtlasProfileRuntimeConfig } from "./config";
 import type {
 	AtlasHonestyMarker,
+	AtlasImageCandidate,
 	AtlasJobProgressDetails,
 	AtlasLifecycleContext,
 	AtlasPipelineJobContext,
@@ -52,6 +54,10 @@ export interface RunAtlasPipelineInput {
 				rejectionReason?: string;
 			}>;
 			limitation: { code: string; message: string } | null;
+		}>;
+		searchImages?: (queries: string[]) => Promise<{
+			imageCandidates: AtlasImageCandidate[];
+			imageLimitation: { code: string; message: string } | null;
 		}>;
 		runModelStage: (input: {
 			stage: ModelStage;
@@ -373,6 +379,7 @@ function buildAssemblePrompt(input: {
 	curatedEvidence: string;
 	synthesis: string;
 	outline: string;
+	imageCandidates: AtlasImageCandidate[];
 	sources: Array<{
 		title: string;
 		url?: string | null;
@@ -392,6 +399,7 @@ function buildAssemblePrompt(input: {
 					"Ha a bizonyíték gyenge vagy ellentmondásos, azt a Limitations részben és a releváns szakaszban mondd ki.",
 					"Ha összehasonlítható számszerű bizonyíték van, adj kompakt Markdown táblázatot, hogy a renderer diagramot készíthessen.",
 					"Csak akkor adj Markdown képet HTTPS URL-lel, ha az hasznos, forrásalapú, és van világos képaláírása vagy forrásmegjelölése.",
+					"A képeket az imageCandidates mezőből válaszd; ne találj ki kép URL-eket.",
 				].join(" ")
 			: [
 					"Write a complete Atlas report in Markdown.",
@@ -402,6 +410,7 @@ function buildAssemblePrompt(input: {
 					"If evidence is weak or conflicting, state that in Limitations and in the relevant section.",
 					"When comparable numeric evidence is available, include a compact Markdown table so the renderer can build a useful chart.",
 					"Only include Markdown images with HTTPS URLs when they are useful, source-backed, and have a clear caption or attribution.",
+					"Choose images from the imageCandidates field; do not invent image URLs.",
 				].join(" ");
 	return JSON.stringify({
 		detectedLanguage: input.language,
@@ -410,6 +419,7 @@ function buildAssemblePrompt(input: {
 		curatedEvidence: input.curatedEvidence,
 		synthesis: input.synthesis,
 		outline: input.outline,
+		imageCandidates: input.imageCandidates,
 		acceptedSources: input.sources,
 		searchLimitation: input.limitation,
 		atlasLifecycle: input.lifecycle,
@@ -697,6 +707,31 @@ export async function runAtlasPipeline(
 		progressDetails: { queries: searchQueries },
 	});
 	const search = await input.dependencies.searchWeb(searchQueries);
+	let imageSearch: {
+		imageCandidates: AtlasImageCandidate[];
+		imageLimitation: { code: string; message: string } | null;
+	} = { imageCandidates: [], imageLimitation: null };
+	if (input.dependencies.searchImages) {
+		await input.dependencies.heartbeat?.({
+			stage: "search",
+			progressPercent: 32,
+			progressDetails: { queries: searchQueries },
+		});
+		try {
+			imageSearch = await input.dependencies.searchImages(searchQueries);
+		} catch (error) {
+			imageSearch = {
+				imageCandidates: [],
+				imageLimitation: {
+					code: "atlas_image_search_failed",
+					message:
+						error instanceof Error
+							? error.message
+							: "Atlas image search failed.",
+				},
+			};
+		}
+	}
 
 	await input.dependencies.heartbeat?.({
 		stage: "curate",
@@ -710,6 +745,7 @@ export async function runAtlasPipeline(
 			currentDate,
 			local: sources.localSources,
 			web: search.sources,
+			imageCandidates: imageSearch.imageCandidates,
 			parentCuratedSourcePool:
 				input.job.lifecycle.seed?.curatedSourcePool ?? null,
 			atlasLifecycle: input.job.lifecycle.family,
@@ -764,6 +800,7 @@ export async function runAtlasPipeline(
 			curatedEvidence: curate.text,
 			synthesis: synthesize.text,
 			outline: integrate.text,
+			imageCandidates: imageSearch.imageCandidates,
 			sources: [
 				...sources.localSources.map((source) => ({
 					title: source.title,
@@ -793,6 +830,7 @@ export async function runAtlasPipeline(
 			curatedEvidence: curate.text,
 			synthesis: synthesize.text,
 			outline: integrate.text,
+			imageCandidates: imageSearch.imageCandidates,
 			sources: [
 				...sources.localSources.map((source) => ({
 					title: source.title,
@@ -918,6 +956,23 @@ export async function runAtlasPipeline(
 					"Atlas audit requested additional verification. This version ships with explicit honesty markers instead of unsupported certainty.",
 				].join("\n");
 
+	const documentSource = buildAtlasDocumentSource({
+		title: input.job.title,
+		subtitle: null,
+		family: input.job.lifecycle.family,
+		assembledMarkdown: auditedMarkdown,
+		sources: auditSources,
+		honestyMarkers: audit.honestyMarkers,
+		imageCandidates: imageSearch.imageCandidates,
+		maxRenderedImages: profileConfig.maxRenderedImages,
+		date: currentDate,
+		language,
+	});
+	const selectedImageCandidateIds = collectAtlasSelectedImageCandidateIds(
+		documentSource,
+		imageSearch.imageCandidates,
+	);
+
 	await input.dependencies.writeCheckpoint({
 		jobId: input.job.id,
 		roundNumber: 1,
@@ -925,8 +980,14 @@ export async function runAtlasPipeline(
 		checkpoint: {
 			assembledMarkdown: auditedMarkdown,
 			honestyMarkers: audit.honestyMarkers,
+			imageCandidates: imageSearch.imageCandidates,
+			selectedImageCandidateIds,
 		},
-		curatedSourcePool: { local: sources.localSources, web: search.sources },
+		curatedSourcePool: {
+			local: sources.localSources,
+			web: search.sources,
+			images: imageSearch.imageCandidates,
+		},
 		compressedFindings: {
 			synthesize: synthesize.text,
 			integrate: integrate.text,
@@ -937,6 +998,9 @@ export async function runAtlasPipeline(
 			title: input.job.title,
 			date: currentDate,
 			atlasFamily: input.job.lifecycle.family,
+			imageCandidateCount: imageSearch.imageCandidates.length,
+			selectedImageCandidateIds,
+			imageLimitation: imageSearch.imageLimitation,
 			parentSeedUsed: input.job.lifecycle.seed
 				? {
 						parentAtlasJobId: input.job.lifecycle.seed.parentAtlasJobId,
@@ -952,16 +1016,6 @@ export async function runAtlasPipeline(
 		throw new AtlasPipelineQualityError(audit.honestyMarkers);
 	}
 
-	const documentSource = buildAtlasDocumentSource({
-		title: input.job.title,
-		subtitle: null,
-		family: input.job.lifecycle.family,
-		assembledMarkdown: auditedMarkdown,
-		sources: auditSources,
-		honestyMarkers: audit.honestyMarkers,
-		date: currentDate,
-		language,
-	});
 	await input.dependencies.heartbeat?.({
 		stage: "render",
 		progressPercent: 97,

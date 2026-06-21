@@ -42,6 +42,16 @@ function renderTable(block: GeneratedDocumentTableBlock): string {
 		.join("\n");
 }
 
+function renderImageSource(
+	block: Extract<GeneratedDocumentBlock, { type: "image" }>,
+): string | null {
+	if (block.source.kind === "https") return block.source.url;
+	if (block.source.kind === "data") {
+		return `data:${block.source.mimeType};base64,${block.source.data}`;
+	}
+	return null;
+}
+
 function renderBlock(block: GeneratedDocumentBlock): string {
 	switch (block.type) {
 		case "heading":
@@ -93,15 +103,18 @@ function renderBlock(block: GeneratedDocumentBlock): string {
 			return renderTable(block);
 		case "chart":
 			return `### ${block.title ?? "Chart"}\n\n${block.altText ?? block.caption ?? "Chart data is available in the rendered report."}`;
-		case "image":
+		case "image": {
+			const src = renderImageSource(block);
 			return [
-				`![${block.altText}](${block.caption ?? ""})`,
+				src ? `![${block.altText}](${src})` : `**Image:** ${block.altText}`,
+				block.caption ?? null,
 				block.sourceAttribution
 					? `Source: [${block.sourceAttribution.title}](${block.sourceAttribution.url})`
 					: null,
 			]
 				.filter((line): line is string => Boolean(line))
 				.join("\n");
+		}
 		case "pageBreak":
 			return "";
 	}

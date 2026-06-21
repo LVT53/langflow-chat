@@ -210,6 +210,47 @@ describe("Atlas renderer output", () => {
 		expect(renderedText).not.toMatch(/\*\*|`|\[|\]\(/);
 	});
 
+	it("keeps model-authored report images instead of duplicating structured Atlas image candidates", async () => {
+		const { buildAtlasDocumentSource } = await import("./renderer-output");
+
+		const source = buildAtlasDocumentSource({
+			title: "Enterprise Search Atlas",
+			assembledMarkdown: [
+				"# Enterprise Search Atlas",
+				"",
+				"## Executive Summary",
+				"Hybrid retrieval remains the clearest default for teams that need exact-match recall and semantic discovery in the same workflow.",
+				"",
+				'![Authored architecture diagram](https://example.com/authored.png "Authored source")',
+			].join("\n"),
+			sources: [],
+			honestyMarkers: [],
+			imageCandidates: [
+				{
+					id: "image-candidate-1",
+					query: "enterprise search architecture",
+					title: "Structured architecture diagram",
+					imageUrl: "https://example.com/structured.png",
+					sourcePageUrl: "https://example.com/structured-source",
+					sourceTitle: "Structured source",
+					thumbnailUrl: null,
+					width: null,
+					height: null,
+					caption: "Structured image candidate",
+					selectionReason: "Image result for enterprise search architecture.",
+				},
+			],
+			maxRenderedImages: 1,
+		});
+
+		const imageBlocks = source.blocks.filter((block) => block.type === "image");
+		expect(imageBlocks).toHaveLength(1);
+		expect(imageBlocks[0]).toMatchObject({
+			source: { kind: "https", url: "https://example.com/authored.png" },
+			altText: "Authored architecture diagram",
+		});
+	});
+
 	it("adds accepted-source chips to substantive paragraphs when Markdown has no explicit citations", async () => {
 		const { buildAtlasDocumentSource } = await import("./renderer-output");
 

@@ -3,12 +3,14 @@ import {
 	type WebResearchExtractionConfig,
 } from "$lib/server/services/web-research/extraction";
 import {
+	DEFAULT_ATLAS_IMAGE_SEARCH_SAFESEARCH,
 	DEFAULT_ATLAS_SEARCH_CONCURRENCY,
 	DEFAULT_ATLAS_SEARCH_INITIAL_RETRY_BACKOFF_MS,
 	DEFAULT_ATLAS_SEARCH_INTER_BATCH_DELAY_MS,
 	DEFAULT_ATLAS_SEARCH_MAX_ATTEMPTS,
 	DEFAULT_ATLAS_SEARCH_MAX_RETRY_BACKOFF_MS,
 } from "./config";
+import type { AtlasImageCandidate } from "./types";
 
 export interface AtlasSearchSource {
 	id: string;
@@ -27,11 +29,18 @@ export interface AtlasSearchLimitation {
 	failedQueries?: string[];
 }
 
+export interface AtlasImageSearchLimitation {
+	code: string;
+	message: string;
+	failedQueries?: string[];
+}
+
 export interface AtlasSearchConfig {
 	searxngBaseUrl: string;
 	concurrency?: number;
 	interBatchDelayMs?: number;
 	maxAcceptedSources?: number;
+	maxImageCandidates?: number;
 	initialRetryBackoffMs?: number;
 	maxRetryBackoffMs?: number;
 	maxAttempts?: number;
@@ -52,6 +61,27 @@ export interface AtlasSearchStageResult {
 	sources: AtlasSearchSource[];
 	rejectedSources: RejectedAtlasSearchSource[];
 	limitation: AtlasSearchLimitation | null;
+}
+
+export interface RunAtlasImageSearchStageInput {
+	queries: string[];
+	config: Pick<
+		AtlasSearchConfig,
+		| "searxngBaseUrl"
+		| "concurrency"
+		| "interBatchDelayMs"
+		| "maxImageCandidates"
+		| "initialRetryBackoffMs"
+		| "maxRetryBackoffMs"
+		| "maxAttempts"
+	>;
+	searchImages?: (query: string) => Promise<AtlasImageCandidate[]>;
+	sleep?: (ms: number) => Promise<void>;
+}
+
+export interface AtlasImageSearchStageResult {
+	imageCandidates: AtlasImageCandidate[];
+	imageLimitation: AtlasImageSearchLimitation | null;
 }
 
 function uniqueQueries(queries: string[]): string[] {
@@ -85,6 +115,24 @@ function isUnsafeAdultSource(source: AtlasSearchSource): boolean {
 	const haystack = [source.title, source.url, source.snippet ?? ""]
 		.join(" ")
 		.toLowerCase();
+	return isUnsafeAdultText(haystack);
+}
+
+function isUnsafeAdultImageCandidate(candidate: AtlasImageCandidate): boolean {
+	const haystack = [
+		candidate.title,
+		candidate.imageUrl,
+		candidate.sourcePageUrl ?? "",
+		candidate.sourceTitle ?? "",
+		candidate.caption,
+		candidate.selectionReason,
+	]
+		.join(" ")
+		.toLowerCase();
+	return isUnsafeAdultText(haystack);
+}
+
+function isUnsafeAdultText(haystack: string): boolean {
 	return /(^|[^a-z0-9])(porn|porno|xxx|xvideos|xnxx|pornhub|redtube|onlyfans|adult\s+video|escort|nsfw|nude\s+girls?|camgirl|sex\s+video)([^a-z0-9]|$)/i.test(
 		haystack,
 	);
@@ -244,16 +292,135 @@ async function searchSearxng(
 		.filter((source): source is AtlasSearchSource => source !== null);
 }
 
-async function runWithRetries(
+function cleanOptionalText(value: unknown): string | null {
+	return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function httpsUrl(value: unknown): string | null {
+	const raw = cleanOptionalText(value);
+	if (!raw) return null;
+	try {
+		const parsed = new URL(raw);
+		return parsed.protocol === "https:" ? parsed.toString() : null;
+	} catch {
+		return null;
+	}
+}
+
+function parseResolution(value: unknown): {
+	width: number | null;
+	height: number | null;
+} {
+	if (typeof value !== "string") return { width: null, height: null };
+	const match = value.match(/(\d{2,6})\s*[x×]\s*(\d{2,6})/i);
+	if (!match) return { width: null, height: null };
+	const width = Number(match[1]);
+	const height = Number(match[2]);
+	return {
+		width: Number.isFinite(width) ? width : null,
+		height: Number.isFinite(height) ? height : null,
+	};
+}
+
+function normalizeSearxngImageResult(
 	query: string,
-	search: (query: string) => Promise<AtlasSearchSource[]>,
+	result: unknown,
+	index: number,
+): AtlasImageCandidate | null {
+	if (!result || typeof result !== "object" || Array.isArray(result)) {
+		return null;
+	}
+	const record = result as Record<string, unknown>;
+	const imageUrl =
+		httpsUrl(record.img_src) ??
+		httpsUrl(record.thumbnail_src) ??
+		httpsUrl(record.thumbnail);
+	if (!imageUrl) return null;
+	const sourcePageUrl = httpsUrl(record.url);
+	const title =
+		cleanOptionalText(record.title) ??
+		cleanOptionalText(record.content) ??
+		sourcePageUrl ??
+		imageUrl;
+	const sourceTitle =
+		cleanOptionalText(record.source) ??
+		cleanOptionalText(record.engine) ??
+		(sourcePageUrl ? new URL(sourcePageUrl).hostname : null);
+	const { width, height } = parseResolution(record.resolution);
+	const caption = cleanOptionalText(record.content) ?? title;
+	return {
+		id: `image:${query}:${index}`,
+		query,
+		title,
+		imageUrl,
+		sourcePageUrl,
+		sourceTitle,
+		thumbnailUrl: httpsUrl(record.thumbnail_src) ?? httpsUrl(record.thumbnail),
+		width,
+		height,
+		caption,
+		selectionReason: `Image result for "${query}" from SearXNG.`,
+	};
+}
+
+function convergeImageCandidates(input: {
+	imageCandidates: AtlasImageCandidate[];
+	maxAccepted: number;
+}): AtlasImageCandidate[] {
+	const accepted: AtlasImageCandidate[] = [];
+	const seenUrls = new Set<string>();
+
+	for (const candidate of input.imageCandidates) {
+		if (isUnsafeAdultImageCandidate(candidate)) continue;
+		const key = normalizedSourceUrlKey(candidate.imageUrl);
+		if (seenUrls.has(key)) continue;
+		seenUrls.add(key);
+		if (accepted.length >= input.maxAccepted) break;
+		accepted.push(candidate);
+	}
+
+	return accepted;
+}
+
+async function searchSearxngImages(
+	baseUrl: string,
+	query: string,
+): Promise<AtlasImageCandidate[]> {
+	const url = new URL(`${normalizeBaseUrl(baseUrl)}/search`);
+	url.searchParams.set("q", query);
+	url.searchParams.set("format", "json");
+	url.searchParams.set("categories", "images");
+	url.searchParams.set(
+		"safesearch",
+		String(DEFAULT_ATLAS_IMAGE_SEARCH_SAFESEARCH),
+	);
+	url.searchParams.set("image_proxy", "0");
+	const response = await fetch(url);
+	if (!response.ok) {
+		throw new Error(`SearXNG image search failed with HTTP ${response.status}`);
+	}
+	const body = (await response.json()) as unknown;
+	const results =
+		body &&
+		typeof body === "object" &&
+		Array.isArray((body as { results?: unknown }).results)
+			? (body as { results: unknown[] }).results
+			: [];
+	return results
+		.map((result, index) => normalizeSearxngImageResult(query, result, index))
+		.filter((source): source is AtlasImageCandidate => source !== null);
+}
+
+async function runWithRetries<T>(
+	query: string,
+	search: (query: string) => Promise<T[]>,
 	input: {
 		maxAttempts: number;
 		initialRetryBackoffMs: number;
 		maxRetryBackoffMs: number;
 		sleep: (ms: number) => Promise<void>;
 	},
-): Promise<AtlasSearchSource[]> {
+): Promise<T[]> {
 	let nextBackoff = input.initialRetryBackoffMs;
 	let lastError: unknown;
 	for (let attempt = 1; attempt <= input.maxAttempts; attempt += 1) {
@@ -378,5 +545,90 @@ export async function runAtlasSearchStage(
 			: converged.sources,
 		rejectedSources: [...rejectedSources, ...converged.rejectedSources],
 		limitation: null,
+	};
+}
+
+export async function runAtlasImageSearchStage(
+	input: RunAtlasImageSearchStageInput,
+): Promise<AtlasImageSearchStageResult> {
+	const baseUrl = normalizeBaseUrl(input.config.searxngBaseUrl);
+	if (!baseUrl) {
+		return {
+			imageCandidates: [],
+			imageLimitation: {
+				code: "atlas_image_search_unavailable",
+				message: "Atlas image search requires SearXNG to be configured.",
+			},
+		};
+	}
+
+	const queries = uniqueQueries(input.queries);
+	if (queries.length === 0) {
+		return { imageCandidates: [], imageLimitation: null };
+	}
+
+	const concurrency = Math.max(
+		1,
+		input.config.concurrency ?? DEFAULT_ATLAS_SEARCH_CONCURRENCY,
+	);
+	const interBatchDelayMs =
+		input.config.interBatchDelayMs ?? DEFAULT_ATLAS_SEARCH_INTER_BATCH_DELAY_MS;
+	const maxAttempts = Math.max(
+		1,
+		input.config.maxAttempts ?? DEFAULT_ATLAS_SEARCH_MAX_ATTEMPTS,
+	);
+	const initialRetryBackoffMs =
+		input.config.initialRetryBackoffMs ??
+		DEFAULT_ATLAS_SEARCH_INITIAL_RETRY_BACKOFF_MS;
+	const maxRetryBackoffMs =
+		input.config.maxRetryBackoffMs ?? DEFAULT_ATLAS_SEARCH_MAX_RETRY_BACKOFF_MS;
+	const sleep = input.sleep ?? defaultSleep;
+	const searchImages =
+		input.searchImages ?? ((query) => searchSearxngImages(baseUrl, query));
+	const imageCandidates: AtlasImageCandidate[] = [];
+	const failedQueries: string[] = [];
+	const maxImageCandidates = Math.max(0, input.config.maxImageCandidates ?? 3);
+	if (maxImageCandidates === 0) {
+		return { imageCandidates: [], imageLimitation: null };
+	}
+
+	for (let index = 0; index < queries.length; index += concurrency) {
+		const batch = queries.slice(index, index + concurrency);
+		const settled = await Promise.allSettled(
+			batch.map((query) =>
+				runWithRetries(query, searchImages, {
+					maxAttempts,
+					initialRetryBackoffMs,
+					maxRetryBackoffMs,
+					sleep,
+				}),
+			),
+		);
+		for (const [batchIndex, result] of settled.entries()) {
+			if (result.status === "fulfilled") {
+				imageCandidates.push(...result.value);
+			} else {
+				failedQueries.push(batch[batchIndex]);
+			}
+		}
+		if (index + concurrency < queries.length) {
+			await sleep(interBatchDelayMs);
+		}
+	}
+
+	return {
+		imageCandidates: convergeImageCandidates({
+			imageCandidates,
+			maxAccepted: maxImageCandidates,
+		}),
+		imageLimitation:
+			failedQueries.length > 0
+				? {
+						code: "atlas_image_search_partial_failure",
+						message:
+							"Atlas image search skipped some queries because image search failed.",
+						failedQueries,
+					}
+				: null,
 	};
 }
