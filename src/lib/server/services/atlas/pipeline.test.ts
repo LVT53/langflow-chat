@@ -2450,6 +2450,12 @@ describe("Atlas pipeline slices", () => {
 						"## Report",
 						"The key tradeoff is peak retrieval quality versus operational simplicity.",
 						"",
+						"## Stage: Integrate",
+						"The optimal choice depends on accuracy targets and hardware budget.",
+						"",
+						"## Key finding: No single best model",
+						"Larger models can improve retrieval accuracy but increase latency.",
+						"",
 						"## Date: 2026-06-21",
 						"Self-hosting removes per-token API costs but requires GPU operations.",
 						"",
@@ -2534,6 +2540,8 @@ describe("Atlas pipeline slices", () => {
 		expect(auditInput?.assembledMarkdown).toContain("## Limitations");
 		expect(auditInput?.assembledMarkdown).not.toContain("## Date:");
 		expect(auditInput?.assembledMarkdown).not.toContain("## Profile:");
+		expect(auditInput?.assembledMarkdown).not.toContain("## Stage:");
+		expect(auditInput?.assembledMarkdown).not.toContain("## Key finding:");
 		expect(auditInput?.assembledMarkdown).not.toContain("## Evidence basis");
 		expect(auditInput?.assembledMarkdown).not.toContain("(mixpeek.com)");
 		expect(auditInput?.assembledMarkdown).not.toContain("![Decorative");

@@ -633,6 +633,64 @@ describe("Atlas renderer output", () => {
 		);
 	});
 
+	it("attaches unlocatable Atlas Claim Basis markers to nearby paragraph text", async () => {
+		const { buildAtlasDocumentSource } = await import("./renderer-output");
+
+		const source = buildAtlasDocumentSource({
+			title: "Nearby Basis Atlas",
+			assembledMarkdown: [
+				"## Executive Summary",
+				"The report keeps unsupported marker fallbacks near visible text.",
+				"",
+				"## Findings",
+				"The report has a substantive paragraph after the requested section.",
+			].join("\n"),
+			sources: [],
+			honestyMarkers: [],
+			claimBasis: [
+				{
+					version: "atlas.claim-basis.v1",
+					id: "basis-unlocatable",
+					locator: {
+						sectionTitle: "Stage: Integrate",
+						paragraphIndex: 0,
+						claimIndex: 0,
+						claimText: "A malformed model envelope section was audited.",
+						quote: "malformed model envelope",
+						startOffset: null,
+						endOffset: null,
+					},
+					supportLevel: "partial",
+					evidencePackIds: ["pack-1"],
+					sourceRefs: [],
+					supportRationale:
+						"The claim-basis fallback should stay inline with report text.",
+					auditConcernCode: "atlas_claim_basis_section_fallback",
+				},
+			],
+		});
+
+		const paragraphs = source.blocks.filter(
+			(
+				block,
+			): block is Extract<
+				(typeof source.blocks)[number],
+				{ type: "paragraph" }
+			> => block.type === "paragraph",
+		);
+		expect(paragraphs.some((paragraph) => paragraph.basisMarkers?.length)).toBe(
+			true,
+		);
+		expect(source.blocks).not.toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					type: "basisMarker",
+					id: "basis-unlocatable",
+				}),
+			]),
+		);
+	});
+
 	it("replaces model-authored final source sections with canonical backend source chips", async () => {
 		const { buildAtlasDocumentSource } = await import("./renderer-output");
 

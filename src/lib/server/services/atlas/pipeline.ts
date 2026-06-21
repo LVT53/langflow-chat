@@ -1246,7 +1246,13 @@ function isReportEnvelopeHeading(title: string): boolean {
 		normalized === "status final evidence based" ||
 		normalized.startsWith("date ") ||
 		normalized.startsWith("profile ") ||
+		normalized.startsWith("stage ") ||
 		normalized.startsWith("status ") ||
+		normalized.startsWith("key finding ") ||
+		normalized.startsWith("key strength ") ||
+		normalized.startsWith("license ") ||
+		normalized.startsWith("parameters ") ||
+		normalized.startsWith("context ") ||
 		normalized.startsWith("datum ") ||
 		normalized.startsWith("profil ") ||
 		normalized.startsWith("allapot ")
@@ -1308,10 +1314,18 @@ function countReportEnvelopeScalarLines(markdown: string): number {
 	return markdown
 		.split(/\r?\n/)
 		.filter((line) =>
-			/^\s*(?:[-*]\s*)?(?:\*\*)?(date|profile|status|evidence basis|datum|profil|allapot)(?:\*\*)?\s*:/i.test(
+			/^\s*(?:[-*]\s*)?(?:\*\*)?(date|profile|stage|status|key finding|key strength|license|parameters|context|evidence basis|datum|profil|allapot)(?:\*\*)?\s*:/i.test(
 				line,
 			),
 		).length;
+}
+
+function hasLimitationsHeading(markdown: string): boolean {
+	return markdownHeadingTitles(markdown).some((heading) =>
+		/\b(limitations?|constraints?|caveats?|korlatok)\b/i.test(
+			normalizedReportShapeText(heading),
+		),
+	);
 }
 
 function looksLikeMalformedAssembledReport(input: {
@@ -1327,7 +1341,8 @@ function looksLikeMalformedAssembledReport(input: {
 	return (
 		envelopeHeadingCount >= 2 ||
 		sourceHeadingCount >= 2 ||
-		envelopeHeadingCount + envelopeScalarCount >= 3
+		envelopeHeadingCount + envelopeScalarCount >= 3 ||
+		(headings.length >= 4 && !hasLimitationsHeading(input.markdown))
 	);
 }
 

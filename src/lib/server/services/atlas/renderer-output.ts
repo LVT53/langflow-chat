@@ -947,6 +947,25 @@ function fallbackIndexForClaimBasis(
 	return executiveSummaryFallbackIndex(blocks);
 }
 
+function nearestParagraphIndexForClaimBasisFallback(
+	blocks: GeneratedDocumentSource["blocks"],
+	insertionIndex: number,
+): number | null {
+	for (
+		let index = Math.min(insertionIndex - 1, blocks.length - 1);
+		index >= 0;
+		index -= 1
+	) {
+		if (blocks[index]?.type === "paragraph") return index;
+		if (blocks[index]?.type === "heading" && index < insertionIndex - 1) break;
+	}
+	for (let index = insertionIndex; index < blocks.length; index += 1) {
+		if (blocks[index]?.type === "paragraph") return index;
+		if (blocks[index]?.type === "heading" && index > insertionIndex) break;
+	}
+	return null;
+}
+
 function applyAtlasClaimBasisMarkers(
 	blocks: GeneratedDocumentSource["blocks"],
 	claimBasis: AtlasClaimBasis[] = [],
@@ -1003,6 +1022,26 @@ function applyAtlasClaimBasisMarkers(
 		}
 
 		const insertionIndex = fallbackIndexForClaimBasis(blocks, basis, contexts);
+		const nearestParagraphIndex = nearestParagraphIndexForClaimBasisFallback(
+			blocks,
+			insertionIndex,
+		);
+		if (nearestParagraphIndex !== null) {
+			const paragraph = blocks[nearestParagraphIndex];
+			if (paragraph?.type === "paragraph") {
+				const marker = paragraphMarkerForClaim({
+					basis,
+					index: basisIndex,
+					anchorText: paragraph.text,
+					occurrence: 0,
+				});
+				blocks[nearestParagraphIndex] = {
+					...paragraph,
+					basisMarkers: [...(paragraph.basisMarkers ?? []), marker],
+				};
+				continue;
+			}
+		}
 		const existing = standaloneInsertions.get(insertionIndex) ?? [];
 		existing.push(basisMarkerForClaim(basis, basisIndex));
 		standaloneInsertions.set(insertionIndex, existing);
