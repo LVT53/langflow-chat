@@ -10,6 +10,7 @@ import {
 	DEFAULT_ATLAS_SEARCH_MAX_ATTEMPTS,
 	DEFAULT_ATLAS_SEARCH_MAX_RETRY_BACKOFF_MS,
 } from "./config";
+import { isUsableAtlasImageCandidate } from "./image-quality";
 import type { AtlasImageCandidate } from "./types";
 
 export interface AtlasSearchSource {
@@ -372,6 +373,7 @@ function convergeImageCandidates(input: {
 
 	for (const candidate of input.imageCandidates) {
 		if (isUnsafeAdultImageCandidate(candidate)) continue;
+		if (!isUsableAtlasImageCandidate(candidate)) continue;
 		const key = normalizedSourceUrlKey(candidate.imageUrl);
 		if (seenUrls.has(key)) continue;
 		seenUrls.add(key);

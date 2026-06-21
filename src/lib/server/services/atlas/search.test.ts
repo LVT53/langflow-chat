@@ -201,6 +201,23 @@ describe("Atlas search stage", () => {
 							resolution: "1024 x 768",
 						},
 						{
+							title: "Algolia devicon logo",
+							content: "Algolia logo icon",
+							img_src:
+								"https://cdn.jsdelivr.net/gh/devicons/devicon/icons/algolia/algolia-original.svg",
+							url: "https://github.com/devicons/devicon",
+							source: "Devicon",
+							resolution: "512 x 512",
+						},
+						{
+							title: "Generic SaaS illustration",
+							content: "Unrelated product screenshot",
+							img_src: "https://cdn.example.com/unrelated-product.png",
+							url: "https://example.com/unrelated-product",
+							source: "Example Images",
+							resolution: "1200 x 900",
+						},
+						{
 							title: "Duplicate diagram",
 							img_src: "https://cdn.example.com/architecture.png",
 							url: "https://example.com/duplicate",

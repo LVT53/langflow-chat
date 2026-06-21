@@ -952,6 +952,7 @@ function buildAssemblePrompt(input: {
 					"Ha a bizonyíték gyenge vagy ellentmondásos, azt a Limitations részben és a releváns szakaszban mondd ki.",
 					"Ha összehasonlítható számszerű bizonyíték van, adj kompakt Markdown táblázatot, hogy a renderer diagramot készíthessen.",
 					"Csak akkor adj Markdown képet HTTPS URL-lel, ha az hasznos, forrásalapú, és van világos képaláírása vagy forrásmegjelölése.",
+					"Ne használj logókat, ikonokat, deviconokat, SVG/vektor képeket vagy gyengén kapcsolódó dekoratív képeket.",
 					"A képeket az imageCandidates mezőből válaszd; ne találj ki kép URL-eket.",
 				].join(" ")
 			: [
@@ -967,6 +968,7 @@ function buildAssemblePrompt(input: {
 					"If evidence is weak or conflicting, state that in Limitations and in the relevant section.",
 					"When comparable numeric evidence is available, include a compact Markdown table so the renderer can build a useful chart.",
 					"Only include Markdown images with HTTPS URLs when they are useful, source-backed, and have a clear caption or attribution.",
+					"Do not include logos, icons, devicons, SVG/vector assets, or weakly related decorative images.",
 					"Choose images from the imageCandidates field; do not invent image URLs.",
 				].join(" ");
 	return JSON.stringify({

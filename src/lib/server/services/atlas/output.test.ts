@@ -337,7 +337,7 @@ describe("Atlas renderer output", () => {
 		});
 	});
 
-	it("keeps model-authored report images instead of duplicating structured Atlas image candidates", async () => {
+	it("keeps vetted model-authored report images instead of duplicating structured Atlas image candidates", async () => {
 		const { buildAtlasDocumentSource } = await import("./renderer-output");
 
 		const source = buildAtlasDocumentSource({
@@ -348,7 +348,7 @@ describe("Atlas renderer output", () => {
 				"## Executive Summary",
 				"Hybrid retrieval remains the clearest default for teams that need exact-match recall and semantic discovery in the same workflow.",
 				"",
-				'![Authored architecture diagram](https://example.com/authored.png "Authored source")',
+				'![Authored enterprise search architecture diagram](https://example.com/structured.png "Structured source")',
 			].join("\n"),
 			sources: [],
 			honestyMarkers: [],
@@ -356,14 +356,14 @@ describe("Atlas renderer output", () => {
 				{
 					id: "image-candidate-1",
 					query: "enterprise search architecture",
-					title: "Structured architecture diagram",
+					title: "Enterprise search architecture diagram",
 					imageUrl: "https://example.com/structured.png",
 					sourcePageUrl: "https://example.com/structured-source",
 					sourceTitle: "Structured source",
 					thumbnailUrl: null,
 					width: null,
 					height: null,
-					caption: "Structured image candidate",
+					caption: "Enterprise search architecture diagram",
 					selectionReason: "Image result for enterprise search architecture.",
 				},
 			],
@@ -373,8 +373,56 @@ describe("Atlas renderer output", () => {
 		const imageBlocks = source.blocks.filter((block) => block.type === "image");
 		expect(imageBlocks).toHaveLength(1);
 		expect(imageBlocks[0]).toMatchObject({
-			source: { kind: "https", url: "https://example.com/authored.png" },
-			altText: "Authored architecture diagram",
+			source: { kind: "https", url: "https://example.com/structured.png" },
+			altText: "Authored enterprise search architecture diagram",
+		});
+	});
+
+	it("drops unvetted authored logo images and inserts a vetted relevant candidate", async () => {
+		const { buildAtlasDocumentSource } = await import("./renderer-output");
+
+		const source = buildAtlasDocumentSource({
+			title: "Enterprise Search Atlas",
+			assembledMarkdown: [
+				"## Executive Summary",
+				"Enterprise search architecture decisions should combine lexical retrieval, semantic retrieval, and reranking.",
+				"",
+				'![Algolia logo](https://cdn.jsdelivr.net/gh/devicons/devicon/icons/algolia/algolia-original.svg "Algolia logo")',
+				"",
+				"## Findings",
+				"Enterprise search architecture diagrams are useful when they clarify ingestion, indexing, retrieval, and reranking responsibilities.",
+				"",
+				"## Limitations",
+				"The evidence is representative rather than exhaustive.",
+			].join("\n"),
+			sources: [],
+			honestyMarkers: [],
+			imageCandidates: [
+				{
+					id: "image-candidate-1",
+					query: "enterprise search architecture",
+					title: "Enterprise search architecture diagram",
+					imageUrl: "https://example.com/enterprise-search-architecture.png",
+					sourcePageUrl: "https://example.com/enterprise-search-architecture",
+					sourceTitle: "Example Research",
+					thumbnailUrl: null,
+					width: 1200,
+					height: 800,
+					caption: "Enterprise search architecture diagram",
+					selectionReason: "Image result for enterprise search architecture.",
+				},
+			],
+			maxRenderedImages: 2,
+		});
+
+		const imageBlocks = source.blocks.filter((block) => block.type === "image");
+		expect(imageBlocks).toHaveLength(1);
+		expect(imageBlocks[0]).toMatchObject({
+			source: {
+				kind: "https",
+				url: "https://example.com/enterprise-search-architecture.png",
+			},
+			caption: "Enterprise search architecture diagram",
 		});
 	});
 
@@ -429,14 +477,14 @@ describe("Atlas renderer output", () => {
 			imageCandidates: [1, 2, 3, 4].map((index) => ({
 				id: `image-candidate-${index}`,
 				query: "short visual atlas",
-				title: `Structured visual ${index}`,
+				title: `Short visual atlas diagram ${index}`,
 				imageUrl: `https://example.com/structured-${index}.png`,
 				sourcePageUrl: `https://example.com/structured-source-${index}`,
 				sourceTitle: `Structured source ${index}`,
 				thumbnailUrl: null,
 				width: null,
 				height: null,
-				caption: `Structured image candidate ${index}`,
+				caption: `Short visual atlas structured image candidate ${index}`,
 				selectionReason: "Image result for short visual atlas.",
 			})),
 			maxRenderedImages: 4,
@@ -447,6 +495,46 @@ describe("Atlas renderer output", () => {
 		expect(imageBlocks[0]).toMatchObject({
 			source: { kind: "https", url: "https://example.com/structured-1.png" },
 		});
+	});
+
+	it("does not insert otherwise usable image candidates without report-section relevance", async () => {
+		const { buildAtlasDocumentSource } = await import("./renderer-output");
+
+		const source = buildAtlasDocumentSource({
+			title: "Enterprise Search Atlas",
+			assembledMarkdown: [
+				"## Executive Summary",
+				"Enterprise search architecture should balance lexical retrieval, semantic retrieval, and reranking.",
+				"",
+				"## Findings",
+				"Governance and latency controls are the main implementation concerns.",
+				"",
+				"## Limitations",
+				"The evidence is representative rather than exhaustive.",
+			].join("\n"),
+			sources: [],
+			honestyMarkers: [],
+			imageCandidates: [
+				{
+					id: "image-candidate-payroll",
+					query: "payroll compliance workflow",
+					title: "Payroll compliance workflow diagram",
+					imageUrl: "https://example.com/payroll-compliance-workflow.png",
+					sourcePageUrl: "https://example.com/payroll-compliance-workflow",
+					sourceTitle: "Workflow Research",
+					thumbnailUrl: null,
+					width: 1200,
+					height: 800,
+					caption: "Payroll compliance workflow diagram",
+					selectionReason: "Image result for payroll compliance workflow.",
+				},
+			],
+			maxRenderedImages: 2,
+		});
+
+		expect(
+			source.blocks.filter((block) => block.type === "image"),
+		).toHaveLength(0);
 	});
 
 	it("adds accepted-source chips to substantive paragraphs when Markdown has no explicit citations", async () => {
