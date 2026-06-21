@@ -2373,6 +2373,179 @@ describe("Atlas pipeline slices", () => {
 		);
 	});
 
+	it("falls back before audit when assembly turns metadata and source titles into sections", async () => {
+		const { runAtlasPipeline } = await import("./pipeline");
+		let assembleCalls = 0;
+		const auditBasis = vi.fn(async () => ({
+			passed: true,
+			honestyMarkers: [],
+			retryRequested: false,
+		}));
+		const renderOutputs = vi.fn(async () => ({
+			fileProductionJobId: "fp-job-1",
+			htmlChatGeneratedFileId: "file-html",
+			pdfChatGeneratedFileId: "file-pdf",
+			markdownChatGeneratedFileId: "file-md",
+		}));
+
+		await runAtlasPipeline({
+			job: {
+				id: "atlas-metadata-source-heading-collapse",
+				userId: "user-1",
+				conversationId: "conv-1",
+				assistantMessageId: "assistant-1",
+				action: "create",
+				parentAtlasJobId: null,
+				profile: "overview",
+				title: "Embedding model report",
+				query:
+					"Compare self-hosted embedding models for English technical-document retrieval",
+				lifecycle: {
+					family: {
+						familyId: "atlas-metadata-source-heading-collapse",
+						mode: "new_family",
+						action: "create",
+						rootAtlasJobId: "atlas-metadata-source-heading-collapse",
+						currentAtlasJobId: "atlas-metadata-source-heading-collapse",
+						parentAtlasJobId: null,
+						forkedFromAtlasJobId: null,
+					},
+					seed: null,
+				},
+			},
+			now: new Date("2026-06-21T18:32:54.000Z"),
+			dependencies: {
+				resolveSources: vi.fn(async () => ({ localSources: [] })),
+				searchWeb: vi.fn(async () => ({
+					sources: [
+						{
+							id: "web-1",
+							title: "Best Self-Hosted Embedding Models in 2026",
+							url: "https://mixpeek.com/curated-lists/best-self-hosted-embedding-models",
+							snippet:
+								"BGE-M3 is a practical self-hosted option for multilingual and hybrid retrieval.",
+						},
+						{
+							id: "web-2",
+							title: "Best Embedding Models for RAG in 2026",
+							url: "https://innovativeais.com/blog/best-embedding-models-for-rag-in-2026",
+							snippet:
+								"NVIDIA NV-Embed-v2 leads benchmark accuracy while BGE-M3 is a production workhorse.",
+						},
+					],
+					rejectedSources: [],
+					limitation: null,
+				})),
+				runModelStage: vi.fn(async (input) => {
+					const malformedAssembly = [
+						"# Best self-hosted embedding models",
+						"",
+						"2026-06-21",
+						"",
+						"## Executive Summary",
+						"BGE-M3 is the pragmatic self-hosted default, while NVIDIA NV-Embed leads pure benchmark accuracy.",
+						"",
+						"![Decorative embedding image](https://example.com/embedding.png)",
+						"",
+						"## Report",
+						"The key tradeoff is peak retrieval quality versus operational simplicity.",
+						"",
+						"## Date: 2026-06-21",
+						"Self-hosting removes per-token API costs but requires GPU operations.",
+						"",
+						"## Profile: Overview",
+						"Hybrid retrieval is now a default production pattern.",
+						"",
+						"## Status: Final, evidence-based",
+						"| Model | Tradeoff |",
+						"",
+						"## Evidence basis:",
+						"|-------|----------|",
+						"",
+						"## Best Self-Hosted Embedding Models in 2026 (mixpeek.com)",
+						"Best Self-Hosted Embedding Models in 2026 (mixpeek.com).",
+						"",
+						"## Best Embedding Models for RAG in 2026 (innovativeais.com)",
+						"Best Embedding Models for RAG in 2026 (innovativeais.com).",
+						"",
+						"## Model Tradeoffs",
+						"BGE-M3 trades some top-line benchmark performance for easier self-hosting and hybrid retrieval support.",
+					].join("\n");
+					if (input.stage === "assemble") {
+						assembleCalls += 1;
+						return {
+							text: malformedAssembly,
+							usage: {
+								inputTokens: 1,
+								outputTokens: 1,
+								totalTokens: 2,
+								costUsdMicros: 1,
+							},
+						};
+					}
+					return {
+						text:
+							input.stage === "decompose"
+								? "self-hosted embedding models 2026"
+								: input.stage === "curate"
+									? "Curated evidence: BGE-M3 is a pragmatic self-hosted default, NV-Embed leads accuracy, and self-hosting trades API costs for GPU operations."
+									: input.stage === "synthesize"
+										? [
+												"Executive Summary: BGE-M3 is the pragmatic default while NV-Embed leads pure benchmark accuracy.",
+												"Model Tradeoffs: BGE-M3 emphasizes hybrid retrieval and simpler operations; NV-Embed emphasizes benchmark quality.",
+												"Deployment Considerations: self-hosting removes per-token API costs but requires GPU operations.",
+												"Recommendation: start with BGE-M3 unless peak benchmark accuracy justifies larger infrastructure.",
+												"Limitations: benchmark rankings should be validated on the team's own corpus.",
+											].join("\n")
+										: input.stage === "integrate"
+											? [
+													"Executive Summary - summarize the model choice.",
+													"Model Tradeoffs - compare quality, cost, and operations.",
+													"Deployment Considerations - explain GPU and hosting implications.",
+													"Recommendation - give the default choice.",
+													"Limitations - state evidence and benchmark limits.",
+												].join("\n")
+											: `${input.stage} result`,
+						usage: {
+							inputTokens: 1,
+							outputTokens: 1,
+							totalTokens: 2,
+							costUsdMicros: 1,
+						},
+					};
+				}),
+				auditBasis,
+				writeCheckpoint: vi.fn(async () => {}),
+				renderOutputs,
+			},
+		});
+
+		expect(assembleCalls).toBe(2);
+		const auditCalls = auditBasis.mock.calls as unknown as Array<
+			[Parameters<RunAtlasPipelineInput["dependencies"]["auditBasis"]>[0]]
+		>;
+		const auditInput = auditCalls[0]?.[0];
+		expect(auditInput?.assembledMarkdown).toContain("## Executive Summary");
+		expect(auditInput?.assembledMarkdown).toContain("## Model Tradeoffs");
+		expect(auditInput?.assembledMarkdown).toContain(
+			"## Deployment Considerations",
+		);
+		expect(auditInput?.assembledMarkdown).toContain("## Recommendation");
+		expect(auditInput?.assembledMarkdown).toContain("## Limitations");
+		expect(auditInput?.assembledMarkdown).not.toContain("## Date:");
+		expect(auditInput?.assembledMarkdown).not.toContain("## Profile:");
+		expect(auditInput?.assembledMarkdown).not.toContain("## Evidence basis");
+		expect(auditInput?.assembledMarkdown).not.toContain("(mixpeek.com)");
+		expect(auditInput?.assembledMarkdown).not.toContain("![Decorative");
+		expect(auditInput?.assemblyMetadata.sectionBriefs).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ sectionTitle: "Model Tradeoffs" }),
+				expect.objectContaining({ sectionTitle: "Deployment Considerations" }),
+				expect.objectContaining({ sectionTitle: "Recommendation" }),
+			]),
+		);
+	});
+
 	it("preserves synthesized structure instead of stitching source excerpts when assembly collapses", async () => {
 		const { runAtlasPipeline } = await import("./pipeline");
 		const auditBasis = vi.fn(async () => ({

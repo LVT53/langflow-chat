@@ -1209,6 +1209,138 @@ function looksLikeProcessOnlyReport(markdown: string): boolean {
 	return processHitCount >= 2 || words < 180 || !substantiveSignals;
 }
 
+function stripMarkdownFormatting(value: string): string {
+	return value
+		.replace(/!\[([^\]]*)]\([^)]+\)/g, "$1")
+		.replace(/\[([^\]]+)]\([^)]+\)/g, "$1")
+		.replace(/[*_`~>#|]+/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+}
+
+function normalizedReportShapeText(value: string): string {
+	return stripMarkdownFormatting(value)
+		.normalize("NFD")
+		.replace(/[\u0300-\u036f]/g, "")
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+}
+
+function markdownHeadingTitles(markdown: string): string[] {
+	return markdown
+		.split(/\r?\n/)
+		.map((line) => /^\s*#{1,6}\s+(.+?)\s*#*\s*$/.exec(line)?.[1] ?? null)
+		.filter((title): title is string => Boolean(title));
+}
+
+function isReportEnvelopeHeading(title: string): boolean {
+	const normalized = normalizedReportShapeText(title);
+	return (
+		normalized === "report" ||
+		normalized === "evidence basis" ||
+		normalized === "evidence base" ||
+		normalized === "research evidence" ||
+		normalized === "accepted evidence" ||
+		normalized === "status final evidence based" ||
+		normalized.startsWith("date ") ||
+		normalized.startsWith("profile ") ||
+		normalized.startsWith("status ") ||
+		normalized.startsWith("datum ") ||
+		normalized.startsWith("profil ") ||
+		normalized.startsWith("allapot ")
+	);
+}
+
+function tokenSetForReportShape(value: string): Set<string> {
+	const stopwords = new Set([
+		"a",
+		"an",
+		"and",
+		"best",
+		"for",
+		"in",
+		"of",
+		"on",
+		"the",
+		"to",
+		"with",
+		"guide",
+		"report",
+		"reports",
+		"comparison",
+		"compared",
+		"benchmark",
+		"benchmarks",
+	]);
+	return new Set(
+		normalizedReportShapeText(value)
+			.split(/\s+/)
+			.filter((token) => token.length >= 4 && !stopwords.has(token)),
+	);
+}
+
+function isLikelyAcceptedSourceTitleHeading(
+	title: string,
+	acceptedSourceTitles: string[],
+): boolean {
+	const normalized = normalizedReportShapeText(title);
+	if (!normalized || acceptedSourceTitles.length === 0) return false;
+	if (/\b[a-z0-9-]+(?:\.[a-z0-9-]+)+\b/i.test(title)) return true;
+	const headingTokens = tokenSetForReportShape(title);
+	if (headingTokens.size < 2) return false;
+	for (const sourceTitle of acceptedSourceTitles) {
+		const sourceTokens = tokenSetForReportShape(sourceTitle);
+		if (sourceTokens.size < 2) continue;
+		let overlap = 0;
+		for (const token of headingTokens) {
+			if (sourceTokens.has(token)) overlap += 1;
+		}
+		if (overlap >= Math.min(3, headingTokens.size, sourceTokens.size)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+function countReportEnvelopeScalarLines(markdown: string): number {
+	return markdown
+		.split(/\r?\n/)
+		.filter((line) =>
+			/^\s*(?:[-*]\s*)?(?:\*\*)?(date|profile|status|evidence basis|datum|profil|allapot)(?:\*\*)?\s*:/i.test(
+				line,
+			),
+		).length;
+}
+
+function looksLikeMalformedAssembledReport(input: {
+	markdown: string;
+	acceptedSourceTitles: string[];
+}): boolean {
+	const headings = markdownHeadingTitles(input.markdown);
+	const envelopeHeadingCount = headings.filter(isReportEnvelopeHeading).length;
+	const sourceHeadingCount = headings.filter((heading) =>
+		isLikelyAcceptedSourceTitleHeading(heading, input.acceptedSourceTitles),
+	).length;
+	const envelopeScalarCount = countReportEnvelopeScalarLines(input.markdown);
+	return (
+		envelopeHeadingCount >= 2 ||
+		sourceHeadingCount >= 2 ||
+		envelopeHeadingCount + envelopeScalarCount >= 3
+	);
+}
+
+function needsAssemblyRepair(input: {
+	markdown: string;
+	acceptedSourceTitles: string[];
+}): boolean {
+	return (
+		looksLikeProcessOnlyReport(input.markdown) ||
+		looksLikeMalformedAssembledReport(input)
+	);
+}
+
 function buildAssembleRepairPrompt(input: {
 	basePrompt: string;
 	previousDraft: string;
@@ -1234,18 +1366,24 @@ interface AtlasFallbackReportSection {
 function fallbackSectionLabels(language: SupportedLanguage): {
 	executive: string;
 	findings: string;
+	tradeoffs: string;
+	recommendations: string;
 	limitations: string;
 } {
 	if (language === "hu") {
 		return {
 			executive: "Vezetői összefoglaló",
 			findings: "Megállapítások",
+			tradeoffs: "Kompromisszumok",
+			recommendations: "Ajánlás",
 			limitations: "Korlátok",
 		};
 	}
 	return {
 		executive: "Executive Summary",
 		findings: "Findings",
+		tradeoffs: "Tradeoffs",
+		recommendations: "Recommendation",
 		limitations: "Limitations",
 	};
 }
@@ -1289,6 +1427,8 @@ function outlineTitleCandidate(value: string): string | null {
 		: cleaned.trim();
 	if (title.length < 3 || title.length > 80) return null;
 	if (/[.!?]\s+\S/.test(title)) return null;
+	if (isReportEnvelopeHeading(title)) return null;
+	if (/\b[a-z0-9-]+(?:\.[a-z0-9-]+)+\b/i.test(title)) return null;
 	if (
 		/\b(source|sources|bibliography|references|forras|forrasok|hivatkozasok)\b/i.test(
 			title,
@@ -1359,12 +1499,18 @@ function uniqueFallbackSectionTitles(
 	} else if (limitationsIndex < 0) {
 		unique.push(labels.limitations);
 	}
-	if (unique.length < 3) {
-		const findingsKey = normalizedFallbackHeading(labels.findings);
+	const defaultMiddleSections = [
+		labels.findings,
+		labels.tradeoffs,
+		labels.recommendations,
+	];
+	for (const sectionTitle of defaultMiddleSections) {
+		if (unique.length >= 5) break;
+		const sectionKey = normalizedFallbackHeading(sectionTitle);
 		if (
-			!unique.some((title) => normalizedFallbackHeading(title) === findingsKey)
+			!unique.some((title) => normalizedFallbackHeading(title) === sectionKey)
 		) {
-			unique.splice(Math.max(1, unique.length - 1), 0, labels.findings);
+			unique.splice(Math.max(1, unique.length - 1), 0, sectionTitle);
 		}
 	}
 	return unique.slice(0, 10);
@@ -1928,7 +2074,16 @@ export async function runAtlasPipeline(
 	let assemblyOutput = parseAtlasAssemblyOutput(assemble.text);
 	let assemblyMetadata = assemblyOutput.metadata;
 	let finalAssembledMarkdown = assemblyOutput.markdown;
-	if (looksLikeProcessOnlyReport(finalAssembledMarkdown)) {
+	const acceptedSourceTitles = [
+		...sources.localSources.map((source) => source.title),
+		...finalResearchRound.webSources.map((source) => source.title),
+	];
+	if (
+		needsAssemblyRepair({
+			markdown: finalAssembledMarkdown,
+			acceptedSourceTitles,
+		})
+	) {
 		await input.dependencies.heartbeat?.({
 			stage: "assemble",
 			progressPercent: 86,
@@ -1964,7 +2119,12 @@ export async function runAtlasPipeline(
 		);
 		finalAssembledMarkdown = assemblyOutput.markdown;
 	}
-	if (looksLikeProcessOnlyReport(finalAssembledMarkdown)) {
+	if (
+		needsAssemblyRepair({
+			markdown: finalAssembledMarkdown,
+			acceptedSourceTitles,
+		})
+	) {
 		const fallbackSources = [
 			...sources.localSources.map((source) => ({
 				title: source.title,

@@ -378,6 +378,37 @@ describe("Atlas renderer output", () => {
 		});
 	});
 
+	it("caps model-authored report images by section density", async () => {
+		const { buildAtlasDocumentSource } = await import("./renderer-output");
+
+		const source = buildAtlasDocumentSource({
+			title: "Crowded Visual Atlas",
+			assembledMarkdown: [
+				"## Executive Summary",
+				"Image-heavy model output should be reduced before rendering.",
+				"",
+				'![First authored image](https://example.com/authored-1.png "First")',
+				"",
+				"## Findings",
+				"The report has enough sections for one visual, not a gallery.",
+				"",
+				'![Second authored image](https://example.com/authored-2.png "Second")',
+				"",
+				"## Limitations",
+				"The image cap is based on section density.",
+			].join("\n"),
+			sources: [],
+			honestyMarkers: [],
+			maxRenderedImages: 4,
+		});
+
+		const imageBlocks = source.blocks.filter((block) => block.type === "image");
+		expect(imageBlocks).toHaveLength(1);
+		expect(imageBlocks[0]).toMatchObject({
+			source: { kind: "https", url: "https://example.com/authored-1.png" },
+		});
+	});
+
 	it("caps deterministic Atlas images by report section density", async () => {
 		const { buildAtlasDocumentSource } = await import("./renderer-output");
 

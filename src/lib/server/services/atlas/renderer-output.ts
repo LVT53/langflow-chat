@@ -1177,14 +1177,8 @@ function insertDeterministicImageBlocks(
 ): void {
 	if (imageCandidates.length === 0 || maxRenderedImages <= 0) return;
 	if (Array.from(imageUrlsInBlocks(blocks)).length > 0) return;
-	const sectionCount = blocks.filter(
-		(block) => block.type === "heading" && block.level <= 2,
-	).length;
-	const densityLimit = Math.max(1, Math.floor(Math.max(sectionCount, 1) / 3));
-	const selected = imageCandidates.slice(
-		0,
-		Math.min(maxRenderedImages, densityLimit),
-	);
+	const limit = imageDensityLimit(blocks, maxRenderedImages);
+	const selected = imageCandidates.slice(0, limit);
 	if (selected.length === 0) return;
 	const insertions = new Map<number, GeneratedDocumentImageBlock[]>();
 	for (const candidate of selected) {
@@ -1201,6 +1195,36 @@ function insertDeterministicImageBlocks(
 		if (block) converted.push(block);
 	}
 	blocks.splice(0, blocks.length, ...converted);
+}
+
+function imageDensityLimit(
+	blocks: GeneratedDocumentSource["blocks"],
+	maxRenderedImages: number,
+): number {
+	const sectionCount = blocks.filter(
+		(block) => block.type === "heading" && block.level <= 2,
+	).length;
+	const densityLimit = Math.max(1, Math.floor(Math.max(sectionCount, 1) / 3));
+	return Math.min(maxRenderedImages, densityLimit);
+}
+
+function capAuthoredImageBlocks(
+	blocks: GeneratedDocumentSource["blocks"],
+	maxRenderedImages: number | undefined,
+): void {
+	if (maxRenderedImages === undefined) return;
+	const limit =
+		maxRenderedImages <= 0 ? 0 : imageDensityLimit(blocks, maxRenderedImages);
+	let kept = 0;
+	const capped = blocks.filter((block) => {
+		if (block.type !== "image") return true;
+		if (kept >= limit) return false;
+		kept += 1;
+		return true;
+	});
+	if (capped.length !== blocks.length) {
+		blocks.splice(0, blocks.length, ...capped);
+	}
 }
 
 export function collectAtlasSelectedImageCandidateIds(
@@ -1224,6 +1248,7 @@ export function buildAtlasDocumentSource(
 	removeOpeningTitleBlockCluster(blocks, input.title, language);
 	removeModelAuthoredSourcesSections(blocks);
 	convertAuthoredTakeawaysToCallouts(blocks, language);
+	capAuthoredImageBlocks(blocks, input.maxRenderedImages);
 	addInlineSourceFallbacks(blocks, input.sources, language);
 	insertDeterministicImageBlocks(
 		blocks,
