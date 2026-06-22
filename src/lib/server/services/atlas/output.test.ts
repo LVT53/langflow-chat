@@ -654,6 +654,77 @@ describe("Atlas renderer output", () => {
 		});
 	});
 
+	it("deduplicates deterministic image candidates from the same article page", async () => {
+		const { buildAtlasDocumentSource } = await import("./renderer-output");
+
+		const source = buildAtlasDocumentSource({
+			title: "Embedding Retrieval Atlas",
+			assembledMarkdown: [
+				"## Executive Summary",
+				"Embedding retrieval architecture choices should compare model quality, reranking, latency, and deployment cost.",
+				"",
+				"## Retrieval Architecture",
+				"Embedding retrieval architecture diagrams are useful when they clarify model hosting, vector indexing, and reranking responsibilities.",
+				"",
+				"## Reranking",
+				"Reranking changes both retrieval quality and latency, so it should be evaluated with the embedding model.",
+				"",
+				"## Latency",
+				"Latency depends on model size, batching, quantization, and whether the reranker is resident.",
+				"",
+				"## Deployment",
+				"Deployment choices should keep memory, serving maturity, and observability visible.",
+				"",
+				"## Limitations",
+				"The evidence remains representative rather than exhaustive.",
+			].join("\n"),
+			sources: [],
+			honestyMarkers: [],
+			imageCandidates: [
+				{
+					id: "image-medium-1",
+					query: "embedding retrieval architecture reranking",
+					title: "Embedding retrieval architecture diagram",
+					imageUrl: "https://miro.medium.com/v2/resize:fit:1358/one.png",
+					sourcePageUrl:
+						"https://medium.com/@example/embedding-retrieval-architecture",
+					sourceTitle: "Embedding retrieval architecture deep dive",
+					thumbnailUrl: null,
+					width: 1200,
+					height: 675,
+					caption:
+						"Embedding retrieval architecture diagram with vector index and reranking.",
+					selectionReason: "Image result for embedding retrieval.",
+				},
+				{
+					id: "image-medium-2",
+					query: "embedding retrieval architecture reranking",
+					title: "Embedding retrieval architecture diagram",
+					imageUrl: "https://miro.medium.com/v2/resize:fit:1358/two.png",
+					sourcePageUrl:
+						"https://medium.com/@example/embedding-retrieval-architecture#diagram",
+					sourceTitle: "Embedding retrieval architecture deep dive",
+					thumbnailUrl: null,
+					width: 1200,
+					height: 675,
+					caption:
+						"Embedding retrieval architecture diagram with vector index and reranking.",
+					selectionReason: "Image result for embedding retrieval.",
+				},
+			],
+			maxRenderedImages: 3,
+		});
+
+		const imageBlocks = source.blocks.filter((block) => block.type === "image");
+		expect(imageBlocks).toHaveLength(1);
+		expect(imageBlocks[0]).toMatchObject({
+			source: {
+				kind: "https",
+				url: "https://miro.medium.com/v2/resize:fit:1358/one.png",
+			},
+		});
+	});
+
 	it("caps model-authored report images by section density", async () => {
 		const { buildAtlasDocumentSource } = await import("./renderer-output");
 

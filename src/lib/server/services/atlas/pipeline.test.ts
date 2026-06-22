@@ -3166,7 +3166,7 @@ describe("Atlas pipeline slices", () => {
 				id: "atlas-final-quality-expansion",
 				profile: "overview",
 				query:
-					"Find the most intelligent embedding model with minimal latency and cost that can be self-hosted on a single RT-class machine",
+					"Live Atlas regression check 2026-06-22T01:06:07.989Z. Compare the best self-hosted embedding models for English technical-document retrieval with minimal latency and cost",
 			}),
 			now: new Date("2026-06-22T02:42:00.000Z"),
 			dependencies: {
@@ -3218,7 +3218,7 @@ describe("Atlas pipeline slices", () => {
 								"Executive Summary: English technical-document retrieval needs a source-grounded model comparison across retrieval quality, latency, cost, hardware fit, deployment risk, reranking support, language coverage, and maintenance boundaries.",
 								"Findings: Accepted evidence connects embedding dimensions, serving maturity, reranker compatibility, memory pressure, and production validation to the model choice.",
 								"Tradeoffs: Larger dimensions and benchmark leaders can improve quality but increase storage, memory, and latency pressure.",
-								"Recommendation: Choose a compact model with reranker compatibility first, then promote larger candidates only after corpus tests.",
+								"Recommendation: Comprehensive comparison of the best embedding models in 2026. MTEB benchmarks, multilingual performance, and recommendations for your RAG applications. News Embedding Models 2026: Benchmark and Comparison April 21, 2026 10 min read Ailog Team.",
 							].join("\n"),
 							usage: stageUsage(),
 						};
@@ -3284,7 +3284,13 @@ describe("Atlas pipeline slices", () => {
 			"**Qwen3 supports output dimensions 32-1024.**",
 		);
 		expect(secondAuditInput?.assembledMarkdown).toContain(
-			"We recommend using the strongest supported pattern",
+			"self-hosted embedding models for English technical-document retrieval",
+		);
+		expect(secondAuditInput?.assembledMarkdown).not.toMatch(
+			/live Atlas regression check|2026-06-22T01:06:07\.989Z/i,
+		);
+		expect(secondAuditInput?.assembledMarkdown).not.toContain(
+			"Comprehensive comparison of the best embedding models in 2026",
 		);
 		const renderedSource = renderOutputs.mock.calls[0]?.[0];
 		expect(
@@ -3300,7 +3306,11 @@ describe("Atlas pipeline slices", () => {
 			.join("\n");
 		expect(renderedText).not.toContain("No single model dominates all domains");
 		expect(renderedText).toContain(
-			"We recommend using the strongest supported pattern",
+			"self-hosted embedding models for English technical-document retrieval",
+		);
+		expect(renderedText).not.toContain("That makes this section useful");
+		expect(renderedText).not.toContain(
+			"The evidence should therefore be read as a decision checkpoint",
 		);
 		const finalCheckpoint = checkpoints.at(-1);
 		expect(finalCheckpoint).toMatchObject({

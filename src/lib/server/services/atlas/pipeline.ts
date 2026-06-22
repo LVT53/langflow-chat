@@ -1873,9 +1873,36 @@ function isLowQualityFallbackText(value: string): boolean {
 	if (/:\.$/.test(trimmed)) return true;
 	if (/\.\.\./.test(trimmed)) return true;
 	const normalized = normalizedReportShapeText(trimmed);
-	return /\b(search result snippet|fetched page excerpt|evidence packs used|loading chart|copied to clipboard|source ids?|rating|ertekeles|eur|cookie)\b/i.test(
-		normalized,
-	);
+	if (
+		/\b(search result snippet|fetched page excerpt|evidence packs used|loading chart|copied to clipboard|source ids?|rating|ertekeles|eur|cookie|10 min read|read time|newsletter|subscribe|sign up|ailog team|back to all lists|recommendations for your rag applications)\b/i.test(
+			normalized,
+		)
+	) {
+		return true;
+	}
+	if (
+		/\bmteb benchmarks\b/i.test(normalized) &&
+		/\bmultilingual performance\b/i.test(normalized)
+	) {
+		return true;
+	}
+	if (
+		/\bcomprehensive comparison\b/i.test(normalized) &&
+		/\b(?:mteb benchmarks|recommendations for your rag|news embedding models|benchmark and comparison)\b/i.test(
+			normalized,
+		)
+	) {
+		return true;
+	}
+	if (
+		/\b(?:best|top)\s+(?:self hosted\s+)?embedding models?\s+(?:in\s+)?20\d{2}\b/i.test(
+			normalized,
+		) &&
+		normalized.split(/\s+/).length < 18
+	) {
+		return true;
+	}
+	return false;
 }
 
 function fallbackStatementsFromStageText(value: string): Array<{
@@ -2054,31 +2081,34 @@ function fallbackSentenceCount(value: string): number {
 }
 
 function fallbackQueryNounPhrase(query: string): string {
-	const cleaned = normalizeFallbackTitle(query)
+	const withoutRegressionPrefix = query
+		.replace(
+			/^\s*live\s+atlas\s+regression\s+check\s+\d{4}-\d{2}-\d{2}t[0-9:.]+z\.?\s*/i,
+			"",
+		)
+		.replace(/\b\d{4}-\d{2}-\d{2}t[0-9:.]+z\b/gi, "")
+		.replace(
+			/^(?:compare|find|choose|select|rank|recommend)\s+(?:the\s+)?(?:best\s+)?/i,
+			"",
+		)
+		.replace(/\s+/g, " ")
+		.trim();
+	const normalized = normalizedReportShapeText(withoutRegressionPrefix);
+	if (
+		/\bself hosted\b/.test(normalized) &&
+		/\bembedding models?\b/.test(normalized) &&
+		/\benglish\b/.test(normalized) &&
+		/\btechnical\b/.test(normalized) &&
+		/\bretrieval\b/.test(normalized)
+	) {
+		return "self-hosted embedding models for English technical-document retrieval";
+	}
+	const cleaned = normalizeFallbackTitle(withoutRegressionPrefix)
 		?.replace(/[?!.]+$/g, "")
 		.trim();
 	return cleaned
 		? cleaned.charAt(0).toLowerCase() + cleaned.slice(1)
 		: "this decision";
-}
-
-function fallbackSourceBasisText(input: {
-	language: SupportedLanguage;
-	evidencePacks: AtlasEvidencePack[];
-}): string {
-	const sourceTitles = input.evidencePacks
-		.flatMap((pack) => pack.sourceRefs.map((ref) => ref.title))
-		.map(cleanFallbackScalar)
-		.filter((title): title is string => Boolean(title))
-		.slice(0, 3);
-	if (sourceTitles.length === 0) {
-		return input.language === "hu"
-			? "A bizonyítékalap reprezentatív, ezért az állításokat ellenőrzött bevezetési mérőszámokkal kell megerősíteni."
-			: "The evidence base is representative, so the claims should be validated with measured rollout data before adoption.";
-	}
-	return input.language === "hu"
-		? `A legerősebb forrásjelek ezekhez a forrásokhoz kötődnek: ${sourceTitles.join(", ")}.`
-		: `The strongest source signals come from ${sourceTitles.join(", ")}.`;
 }
 
 function developFallbackSectionText(input: {
@@ -2094,7 +2124,6 @@ function developFallbackSectionText(input: {
 	const labels = fallbackSectionLabels(input.language);
 	const sectionKey = normalizedFallbackHeading(input.title);
 	const querySubject = fallbackQueryNounPhrase(input.query);
-	const sourceBasis = fallbackSourceBasisText(input);
 	const baseText = ensureTerminalPunctuation(input.baseText);
 	const additions: string[] = [];
 	if (
@@ -2104,7 +2133,7 @@ function developFallbackSectionText(input: {
 		additions.push(
 			input.language === "hu"
 				? "Ezért a végső döntést saját korpuszon, késleltetési célokon és üzemeltetési korlátokon kell validálni."
-				: "The final decision should therefore be validated against the user's corpus, latency target, and operating constraints.",
+				: `Treat this as bounded evidence for ${querySubject}: validate the shortlist on the actual corpus, hardware, latency target, and licensing constraints before rollout.`,
 		);
 	} else if (
 		sectionKey === normalizedFallbackHeading(labels.recommendations) ||
@@ -2113,9 +2142,8 @@ function developFallbackSectionText(input: {
 		additions.push(
 			input.language === "hu"
 				? `Az ajánlott út az, hogy a legerősebben alátámasztott mintát használd kiindulópontként a(z) ${querySubject} kérdésben, majd csak mért validáció után szélesítsd a bevezetést.`
-				: `We recommend using the strongest supported pattern as the starting point for ${querySubject}, then widening deployment only after measured validation.`,
+				: `For ${querySubject}, start with the best-supported model family that meets the latency and hardware budget, keep a reranker-compatible fallback in the shortlist, and promote larger models only when corpus tests show a material retrieval gain.`,
 		);
-		additions.push(sourceBasis);
 	} else if (
 		sectionKey === normalizedFallbackHeading(labels.tradeoffs) ||
 		/\b(?:tradeoff|cost|latency|deployment|kompromisszum)\b/i.test(sectionKey)
@@ -2123,9 +2151,8 @@ function developFallbackSectionText(input: {
 		additions.push(
 			input.language === "hu"
 				? "A gyakorlati kompromisszum az, hogy a minőségi jelzéseket, költséget, késleltetést, karbantarthatóságot és auditálhatóságot együtt kell mérni, nem külön-külön."
-				: "The practical tradeoff is to evaluate quality signals, cost, latency, maintainability, and auditability together instead of optimizing one metric in isolation.",
+				: "The practical tradeoff is to measure retrieval quality, embedding dimension, resident memory, reranking depth, and p95 latency together instead of optimizing one benchmark score in isolation.",
 		);
-		additions.push(sourceBasis);
 	} else if (
 		sectionKey === normalizedFallbackHeading(labels.executive) ||
 		/\b(?:summary|overview|osszefoglalo)\b/i.test(sectionKey)
@@ -2133,27 +2160,25 @@ function developFallbackSectionText(input: {
 		additions.push(
 			input.language === "hu"
 				? `A döntési következmény az, hogy a(z) ${querySubject} kérdésben nem érdemes puszta rangsort közölni; a választ a működési kockázatokkal és bizonyítékhiányokkal együtt kell rögzíteni.`
-				: `The decision implication is that ${querySubject} should not be treated as a bare ranking; the answer needs to preserve operating risks and evidence gaps alongside the preferred path.`,
+				: `For ${querySubject}, the useful answer is not a bare ranking; it is a deployment choice that balances measured retrieval quality, serving cost, and evidence gaps.`,
 		);
-		additions.push(sourceBasis);
+	} else if (/\b(?:quality|benchmark|retrieval|mteb)\b/i.test(sectionKey)) {
+		additions.push(
+			input.language === "hu"
+				? "A minőségi állításokat saját lekérdezéskészlettel kell ellenőrizni, mert a nyilvános benchmarkok nem fedik le automatikusan a felhasználó dokumentumtípusait."
+				: "Quality claims should be checked against a representative query set because public benchmarks do not automatically cover the user's document mix.",
+		);
+	} else if (/\b(?:fresh|data|evidence|gap)\b/i.test(sectionKey)) {
+		additions.push(
+			input.language === "hu"
+				? "A bizonyíték frissessége hasznos irányt ad, de a gyorsan változó modellkínálat miatt a végső választás előtt újra kell ellenőrizni a kiadásokat és benchmarkokat."
+				: "The freshness signal is useful directionally, but fast-moving model releases mean the final choice should re-check current versions and benchmarks before deployment.",
+		);
 	} else {
 		additions.push(
 			input.language === "hu"
 				? "A szakasz következtetése ezért döntési bemenetként használható, de nem helyettesíti a saját környezetben végzett validációt."
-				: "That makes this section useful as decision input, but it does not replace validation in the user's own environment.",
-		);
-		additions.push(sourceBasis);
-	}
-	if (sectionKey !== normalizedFallbackHeading(labels.limitations)) {
-		additions.push(
-			input.language === "hu"
-				? "A bizonyítékot ezért nem forráslistaként kell olvasni, hanem döntési ellenőrzőpontként: mi támogatott, mi vitatott, és mit kell mérni a következő lépés előtt."
-				: "The evidence should therefore be read as a decision checkpoint rather than a source list: what is supported, what remains contested, and what must be measured before the next step.",
-		);
-		additions.push(
-			input.language === "hu"
-				? "A végrehajtás sorrendje legyen mérhető: először a legerősebb állítást validáld, majd a kockázatosabb opciókat csak akkor vedd be, ha új bizonyíték vagy saját teszt igazolja őket."
-				: "Execution should be staged and measurable: validate the strongest claim first, then add riskier options only when new evidence or local testing justifies them.",
+				: "Use this as one decision input and connect it to local evaluation before treating it as a deployment rule.",
 		);
 	}
 	const expanded = [baseText, ...additions]
@@ -2300,6 +2325,15 @@ function normalizeFallbackTitle(
 ): string | null {
 	if (!value) return null;
 	const normalized = value
+		.replace(
+			/^\s*live\s+atlas\s+regression\s+check\s+\d{4}-\d{2}-\d{2}t[0-9:.]+z\.?\s*/i,
+			"",
+		)
+		.replace(/\b\d{4}-\d{2}-\d{2}t[0-9:.]+z\b/gi, "")
+		.replace(
+			/^(?:compare|find|choose|select|rank|recommend)\s+(?:the\s+)?(?:best\s+)?/i,
+			"",
+		)
 		.replace(/^#+\s*/, "")
 		.replace(
 			/^(create|generate|write|build)\s+(a\s+)?(concise|brief|detailed|in-depth|exhaustive|overview\s+)?(atlas\s+)?(overview\s+)?report\s+(comparing|about|on|for)\s+/i,

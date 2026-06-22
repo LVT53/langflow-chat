@@ -1189,6 +1189,41 @@ function imageBlockForCandidate(
 	};
 }
 
+function canonicalAtlasImagePageKey(
+	candidate: AtlasImageCandidate,
+): string | null {
+	const value = candidate.sourcePageUrl ?? candidate.imageUrl;
+	if (!value) return null;
+	try {
+		const parsed = new URL(value);
+		parsed.hash = "";
+		parsed.searchParams.sort();
+		return parsed.toString().replace(/\/+$/, "").toLowerCase();
+	} catch {
+		return value.trim().replace(/#.*$/, "").replace(/\/+$/, "").toLowerCase();
+	}
+}
+
+function normalizedAtlasImageVisualKey(candidate: AtlasImageCandidate): string {
+	const tokens = Array.from(
+		atlasImageMeaningfulTokens(`${candidate.title} ${candidate.caption}`),
+	).sort();
+	return tokens.join(" ");
+}
+
+function atlasImageVisualKeysOverlap(left: string, right: string): boolean {
+	if (!left || !right) return false;
+	if (left === right) return true;
+	const leftTokens = new Set(left.split(/\s+/).filter(Boolean));
+	const rightTokens = new Set(right.split(/\s+/).filter(Boolean));
+	if (leftTokens.size === 0 || rightTokens.size === 0) return false;
+	let overlap = 0;
+	for (const token of leftTokens) {
+		if (rightTokens.has(token)) overlap += 1;
+	}
+	return overlap >= Math.min(4, leftTokens.size, rightTokens.size);
+}
+
 function executiveSummaryFallbackIndex(
 	blocks: GeneratedDocumentSource["blocks"],
 ): number {
@@ -1283,14 +1318,29 @@ function insertDeterministicImageBlocks(
 	if (Array.from(imageUrlsInBlocks(blocks)).length > 0) return;
 	const limit = imageDensityLimit(blocks, maxRenderedImages);
 	const insertions = new Map<number, GeneratedDocumentImageBlock[]>();
+	const selectedPageKeys = new Set<string>();
+	const selectedVisualKeys: string[] = [];
 	let selected = 0;
 	for (const candidate of imageCandidates) {
 		if (selected >= limit) break;
+		const pageKey = canonicalAtlasImagePageKey(candidate);
+		if (pageKey && selectedPageKeys.has(pageKey)) continue;
+		const visualKey = normalizedAtlasImageVisualKey(candidate);
+		if (
+			visualKey &&
+			selectedVisualKeys.some((selectedKey) =>
+				atlasImageVisualKeysOverlap(selectedKey, visualKey),
+			)
+		) {
+			continue;
+		}
 		const index = insertionIndexForImageCandidate(blocks, candidate);
 		if (index === null) continue;
 		const existing = insertions.get(index) ?? [];
 		existing.push(imageBlockForCandidate(candidate));
 		insertions.set(index, existing);
+		if (pageKey) selectedPageKeys.add(pageKey);
+		if (visualKey) selectedVisualKeys.push(visualKey);
 		selected += 1;
 	}
 	if (selected === 0) return;
