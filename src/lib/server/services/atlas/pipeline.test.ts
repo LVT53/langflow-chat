@@ -135,6 +135,37 @@ describe("Atlas pipeline slices", () => {
 		].join("\n");
 	}
 
+	function underdevelopedMultiSectionDraft(): string {
+		return [
+			"## Executive Summary",
+			"Hybrid retrieval with reranking is the likely default for regulated SaaS teams because it preserves exact policy terms while still finding conceptually related evidence. The draft names the operating implications but gives only enough detail to sketch the decision, not enough to settle rollout confidence for the team. It also leaves evaluation ownership and rollout sequencing mostly implicit.",
+			"",
+			"## Model Shortlist",
+			"Keyword retrieval, vector retrieval, hybrid retrieval, and reranking all remain plausible choices when the corpus includes policy language and product documentation. Hybrid retrieval appears strongest because it keeps exact matches visible, but the draft leaves the shortlist at a high level and does not compare implementation burden deeply. The comparison needs sharper ranking and adoption criteria.",
+			"",
+			"## Retrieval Quality",
+			"Retrieval quality depends on recall, precision, chunking, metadata filters, and whether reranking can remove noisy candidates before generation. The accepted evidence supports measuring these factors together, but this section only summarizes the criteria and does not yet translate them into a validation plan. It also omits the reviewer workflow for failed retrieval and the evidence owner for weak answers.",
+			"",
+			"## Latency and Cost",
+			"Latency and cost depend on the number of retrieval passes, embedding dimensions, reranker depth, cache behavior, and infrastructure overhead. The draft says reranking adds cost, yet it does not quantify tradeoffs or describe how to decide whether the added step is justified. It also omits a budget rule for reranking depth before teams commit to production service limits.",
+			"",
+			"## Deployment Implications",
+			"Production rollout needs observability, source logging, access controls, and clear failure handling so reviewers can inspect why evidence was selected. These concerns are named here, but the draft still lacks concrete sequencing for rollout, monitoring, and escalation when retrieved evidence conflicts. It also needs clearer ownership between platform and compliance teams during pilot review and after launch.",
+			"",
+			"## Recommendation",
+			"We recommend starting with hybrid retrieval plus reranking and validating it against the team's own corpus before wider rollout. That recommendation is directionally useful, but it remains too compact to explain the operational threshold for moving from pilot to production.",
+			"",
+			"## Tradeoffs",
+			"Vector-only retrieval is simpler to reason about at the application layer, while keyword retrieval keeps precise compliance terms visible. Hybrid retrieval combines those strengths, but the draft only sketches the comparison and leaves unclear which tradeoffs matter most for regulated SaaS.",
+			"",
+			"## Evidence Gaps",
+			"The accepted sources do not provide identical measurements for the same corpus, latency budget, and governance requirements. This limits confidence, especially when comparing benchmark behavior with production behavior under access controls and reviewer workflows.",
+			"",
+			"## Limitations",
+			"Evidence is representative rather than exhaustive, so the team should treat the recommendation as a starting point. The draft should be expanded before audit so the final report does not rely on source projection or deterministic fallback prose.",
+		].join("\n");
+	}
+
 	const noopWriterEvidenceCardReranker: AtlasWriterEvidenceCardReranker =
 		async (params) => ({
 			items: params.items.map((item, index) => ({
@@ -3108,6 +3139,165 @@ describe("Atlas pipeline slices", () => {
 		});
 	});
 
+	it("runs the bounded writer improvement pass for a 450-600 word multi-section draft before audit", async () => {
+		const assemblePrompts: string[] = [];
+		const checkpoints: Array<{
+			checkpoint: Record<string, unknown>;
+			qualityDiagnostics: Record<string, unknown>;
+		}> = [];
+		const firstDraft = underdevelopedMultiSectionDraft();
+		const improvedDraft = [
+			"## Executive Summary",
+			"For regulated SaaS, use hybrid retrieval plus reranking as the default because it balances exact policy recall, semantic discovery, and auditable evidence selection. Keyword-only retrieval is too brittle for conceptual questions, while vector-only retrieval can miss exact compliance wording that reviewers need to inspect. The practical decision is to keep retrieval broad at first, then use reranking and source-level logging to make final evidence selection reviewable.",
+			"",
+			"## Ranked Architecture Choice",
+			"First, deploy hybrid retrieval with lexical and vector candidates feeding a reranker. Second, keep vector-only retrieval as a fallback for exploratory discovery where exact policy language is less important. Third, avoid keyword-only retrieval for the main assistant path unless the corpus is narrow and the questions are predictable. This ranking gives the team a default architecture and a clear reason to reject simpler but weaker alternatives.",
+			"",
+			"## Deployment and Operating Implications",
+			"The rollout should begin with corpus-specific recall and latency tests, not a generic benchmark decision. Measure recall@10, reranker precision, citation coverage, p95 latency, and reviewer acceptance on representative policy, support, and product documents. Keep query logs, selected source IDs, reranker scores, and rejected-source samples so compliance reviewers can inspect both what the assistant used and what it ignored.",
+			"",
+			"## Recommendation",
+			"We recommend piloting hybrid retrieval plus reranking on the highest-value regulated workflows first, then expanding only if the measured recall gain justifies the extra latency and operating cost. Set a latency budget before rollout, tune reranking depth inside that budget, and require evidence-level logging before exposing the assistant to production users.",
+			"",
+			"## Limitations",
+			"The evidence is representative rather than exhaustive, so the final architecture still needs validation against the team's corpus, access rules, and compliance review process. If reranking does not materially improve accepted-source quality inside the latency budget, the team should reduce reranker depth or limit it to high-risk queries.",
+		].join("\n");
+		const auditBasis = vi.fn(async () => ({
+			passed: true,
+			honestyMarkers: [],
+			retryRequested: false,
+		}));
+
+		await runAtlasPipelineWithNoopReranker({
+			job: atlasJob({
+				id: "atlas-underdeveloped-multisection-improvement",
+				profile: "overview",
+				query:
+					"Choose the best retrieval architecture for regulated SaaS with auditable evidence and low latency",
+			}),
+			now: new Date("2026-06-22T08:00:00.000Z"),
+			dependencies: {
+				resolveSources: vi.fn(async () => ({ localSources: [] })),
+				searchWeb: vi.fn(async () => ({
+					sources: [
+						{
+							id: "web-underdeveloped-retrieval",
+							title: "Hybrid retrieval deployment evidence",
+							url: "https://example.com/hybrid-retrieval-deployment",
+							snippet:
+								"Hybrid retrieval evidence covers exact policy recall, semantic discovery, reranking, source logging, latency budgets, and regulated SaaS validation.",
+						},
+					],
+					rejectedSources: [],
+					limitation: null,
+				})),
+				runModelStage: vi.fn(async (input) => {
+					if (input.stage === "decompose") {
+						return {
+							text: "hybrid retrieval reranking regulated SaaS auditability latency",
+							usage: stageUsage(),
+						};
+					}
+					if (input.stage === "coverage-review") {
+						return { text: coverageReviewText([], true), usage: stageUsage() };
+					}
+					if (input.stage === "assemble") {
+						assemblePrompts.push(input.prompt);
+						return {
+							text: JSON.stringify({
+								generatedTitle: "Regulated SaaS Retrieval Architecture",
+								bodyMarkdown:
+									assemblePrompts.length === 1 ? firstDraft : improvedDraft,
+								sectionBriefs: [],
+								limitations: ["Evidence is representative."],
+							}),
+							usage: stageUsage(),
+						};
+					}
+					return { text: `${input.stage} result`, usage: stageUsage() };
+				}),
+				auditBasis,
+				writeCheckpoint: vi.fn(async (input) => {
+					checkpoints.push(input as (typeof checkpoints)[number]);
+				}),
+				renderOutputs: vi.fn(async () => ({
+					fileProductionJobId: "fp-job-underdeveloped-multisection",
+					htmlChatGeneratedFileId: "file-html",
+					pdfChatGeneratedFileId: "file-pdf",
+					markdownChatGeneratedFileId: "file-md",
+				})),
+			},
+		});
+
+		expect(assemblePrompts).toHaveLength(2);
+		const improvementPrompt = JSON.parse(assemblePrompts[1]);
+		expect(improvementPrompt.writerImprovement).toMatchObject({
+			pass: 1,
+			maxPasses: 1,
+			warningCodes: expect.arrayContaining([
+				"atlas_report_underdeveloped_for_section_count",
+			]),
+		});
+		expect(improvementPrompt.reportShapeDiagnostics).toMatchObject({
+			sectionCount: 9,
+			warnings: expect.arrayContaining([
+				expect.objectContaining({
+					code: "atlas_report_underdeveloped_for_section_count",
+				}),
+			]),
+		});
+		expect(
+			improvementPrompt.reportShapeDiagnostics.bodyWordCount,
+		).toBeGreaterThanOrEqual(450);
+		expect(
+			improvementPrompt.reportShapeDiagnostics.bodyWordCount,
+		).toBeLessThanOrEqual(600);
+		expect(auditBasis).toHaveBeenCalledWith(
+			expect.objectContaining({
+				assembledMarkdown: expect.stringContaining(
+					"For regulated SaaS, use hybrid retrieval plus reranking",
+				),
+			}),
+		);
+		const auditCalls = auditBasis.mock.calls as unknown as Array<
+			[Parameters<RunAtlasPipelineInput["dependencies"]["auditBasis"]>[0]]
+		>;
+		expect(auditCalls[0]?.[0].assembledMarkdown).not.toContain(
+			"the draft still lacks concrete sequencing",
+		);
+		expect(checkpoints.at(-1)).toMatchObject({
+			checkpoint: {
+				writer: {
+					improvement: {
+						ran: true,
+						passCount: 1,
+						reasonWarningCodes: expect.arrayContaining([
+							"atlas_report_underdeveloped_for_section_count",
+						]),
+					},
+					firstDraftReportShapeDiagnostics: expect.objectContaining({
+						bodyWordCount: expect.any(Number),
+						sectionCount: 9,
+						warnings: expect.arrayContaining([
+							expect.objectContaining({
+								code: "atlas_report_underdeveloped_for_section_count",
+							}),
+						]),
+					}),
+				},
+			},
+			qualityDiagnostics: {
+				writerImprovement: expect.objectContaining({
+					ran: true,
+					passCount: 1,
+					reasonWarningCodes: expect.arrayContaining([
+						"atlas_report_underdeveloped_for_section_count",
+					]),
+				}),
+			},
+		});
+	});
+
 	it("applies deterministic final expansion when the post-audit rendered report is still hollow", async () => {
 		const checkpoints: Array<{
 			checkpoint: Record<string, unknown>;
@@ -3953,7 +4143,7 @@ describe("Atlas pipeline slices", () => {
 			},
 		});
 
-		expect(assembleCalls).toBe(2);
+		expect(assembleCalls).toBe(3);
 		const auditCalls = auditBasis.mock.calls as unknown as Array<
 			[Parameters<RunAtlasPipelineInput["dependencies"]["auditBasis"]>[0]]
 		>;
@@ -4093,7 +4283,7 @@ describe("Atlas pipeline slices", () => {
 			},
 		});
 
-		expect(assembleCalls).toBe(2);
+		expect(assembleCalls).toBe(3);
 		const auditCalls = auditBasis.mock.calls as unknown as Array<
 			[Parameters<RunAtlasPipelineInput["dependencies"]["auditBasis"]>[0]]
 		>;
@@ -4244,7 +4434,7 @@ describe("Atlas pipeline slices", () => {
 			},
 		});
 
-		expect(assembleCalls).toBe(2);
+		expect(assembleCalls).toBe(3);
 		const auditCalls = auditBasis.mock.calls as unknown as Array<
 			[Parameters<RunAtlasPipelineInput["dependencies"]["auditBasis"]>[0]]
 		>;

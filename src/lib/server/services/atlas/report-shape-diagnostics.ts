@@ -6,6 +6,7 @@ import type {
 
 export type AtlasReportShapeWarningCode =
 	| "atlas_report_body_too_thin"
+	| "atlas_report_underdeveloped_for_section_count"
 	| "atlas_report_sections_too_sparse"
 	| "atlas_too_many_one_sentence_sections"
 	| "atlas_source_projection_dominates_report"
@@ -46,6 +47,9 @@ interface ReportShapeParts {
 }
 
 const BODY_TOO_THIN_WORDS = 220;
+const UNDERDEVELOPED_MULTI_SECTION_MAX_WORDS = 600;
+const UNDERDEVELOPED_MULTI_SECTION_MIN_SECTIONS = 6;
+const UNDERDEVELOPED_WORDS_PER_SECTION = 75;
 const SPARSE_REPORT_MAX_WORDS = 700;
 const SHALLOW_SECTION_REPORT_MAX_WORDS = 900;
 const MIN_SECTIONS_FOR_SPARSE_WARNING = 6;
@@ -387,6 +391,18 @@ function buildWarnings(input: {
 			code: "atlas_report_body_too_thin",
 			message:
 				"Atlas report body is thin; this diagnostic is advisory and must not fail the job by itself.",
+		});
+	}
+	if (
+		input.sectionCount >= UNDERDEVELOPED_MULTI_SECTION_MIN_SECTIONS &&
+		input.bodyWordCount >= BODY_TOO_THIN_WORDS &&
+		input.bodyWordCount < UNDERDEVELOPED_MULTI_SECTION_MAX_WORDS &&
+		input.bodyWordCount / input.sectionCount < UNDERDEVELOPED_WORDS_PER_SECTION
+	) {
+		warnings.push({
+			code: "atlas_report_underdeveloped_for_section_count",
+			message:
+				"Atlas report has too little body development for its section count; this diagnostic is advisory and may trigger the bounded writer improvement pass.",
 		});
 	}
 	const substantiveFloor = Math.min(3, Math.ceil(input.sectionCount / 3));
