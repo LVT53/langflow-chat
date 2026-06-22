@@ -185,10 +185,12 @@ function baseWriterPrompt(
 	truncationLevel = 0,
 ) {
 	const factsPerCard =
-		truncationLevel >= 4 ? 2 : truncationLevel >= 2 ? 3 : null;
+		truncationLevel >= 5 ? 1 : truncationLevel >= 4 ? 2 : truncationLevel >= 2 ? 3 : null;
 	const synthesisMaxLen = truncationLevel >= 1 ? 1500 : null;
 	const outlineMaxLen = truncationLevel >= 1 ? 1500 : null;
 	const trimCoverageReview = truncationLevel >= 3;
+	const omitCoverageReview = truncationLevel >= 5;
+	const omitDiagnostics = truncationLevel >= 5;
 
 	const synthesis =
 		synthesisMaxLen !== null
@@ -201,26 +203,41 @@ function baseWriterPrompt(
 	const writerEvidenceCards = input.writerEvidenceCards.map((card) => {
 		const base = modelFacingWriterEvidenceCard(card);
 		if (factsPerCard === null) return base;
-		return {
+		const truncated = {
 			...base,
 			relevantFacts: base.relevantFacts.slice(0, factsPerCard),
 		};
+		if (truncationLevel >= 5) {
+			return {
+				...truncated,
+				conflicts: [],
+				supportsSections: [],
+				sourceRefs: [],
+				limitations: truncated.limitations.slice(0, 1),
+			};
+		}
+		return truncated;
 	});
-	const coverageReview = trimCoverageReview
+	const coverageReview = omitCoverageReview
 		? {
 				sufficient: input.coverageReview.sufficient,
-				proposals: input.coverageReview.proposals,
-				diagnostics: input.coverageReview.diagnostics,
-				limitations: input.coverageReview.limitations,
+				truncated: true,
 			}
-		: {
-				version: input.coverageReview.version,
-				sufficient: input.coverageReview.sufficient,
-				proposals: input.coverageReview.proposals,
-				approvedGapCandidates: input.coverageReview.approvedGapCandidates,
-				diagnostics: input.coverageReview.diagnostics,
-				limitations: input.coverageReview.limitations,
-			};
+		: trimCoverageReview
+			? {
+					sufficient: input.coverageReview.sufficient,
+					proposals: input.coverageReview.proposals,
+					diagnostics: input.coverageReview.diagnostics,
+					limitations: input.coverageReview.limitations,
+				}
+			: {
+					version: input.coverageReview.version,
+					sufficient: input.coverageReview.sufficient,
+					proposals: input.coverageReview.proposals,
+					approvedGapCandidates: input.coverageReview.approvedGapCandidates,
+					diagnostics: input.coverageReview.diagnostics,
+					limitations: input.coverageReview.limitations,
+				};
 
 	return {
 		detectedLanguage: input.language,
@@ -254,19 +271,30 @@ function baseWriterPrompt(
 		imageCandidates: input.imageCandidates,
 		writerEvidenceCardsVersion: input.writerEvidenceCardsVersion,
 		writerEvidenceCards,
-		writerEvidenceCardDiagnostics: input.writerEvidenceCardDiagnostics,
-		evidencePackDiagnostics: input.evidencePackDiagnostics,
+		writerEvidenceCardDiagnostics: omitDiagnostics
+			? []
+			: input.writerEvidenceCardDiagnostics,
+		evidencePackDiagnostics: omitDiagnostics
+			? []
+			: input.evidencePackDiagnostics,
 		coverageReview,
 		searchLimitation: input.limitation,
-		limitations: [
-			...(input.limitation ? [input.limitation.message] : []),
-			...input.coverageReview.limitations.map(
-				(limitation) => limitation.message,
-			),
-			...input.evidencePackDiagnostics
-				.filter((diagnostic) => diagnostic.severity === "warning")
-				.map((diagnostic) => diagnostic.message),
-		],
+		limitations: omitDiagnostics
+			? [
+					...(input.limitation ? [input.limitation.message] : []),
+					...(input.coverageReview.limitations.length > 0
+						? ["Evidence coverage limitations suppressed under aggressive truncation."]
+						: []),
+				]
+			: [
+					...(input.limitation ? [input.limitation.message] : []),
+					...input.coverageReview.limitations.map(
+						(limitation) => limitation.message,
+					),
+					...input.evidencePackDiagnostics
+						.filter((diagnostic) => diagnostic.severity === "warning")
+						.map((diagnostic) => diagnostic.message),
+				],
 		atlasLifecycle: input.lifecycle,
 		sourceProjectionRule:
 			"Do not write Markdown Sources, bibliographies, references, works-cited sections, citation appendices, or source lists; the backend owns source projection.",
@@ -288,11 +316,11 @@ export function buildAtlasWriterPrompt(
 		profile: input.profile,
 		evidenceCardCount: input.writerEvidenceCards.length,
 	});
-	for (let level = 1; level <= 4; level++) {
+	for (let level = 1; level <= 5; level++) {
 		const result = JSON.stringify(baseWriterPrompt(input, level));
 		if (result.length <= effectiveMax) return result;
 	}
-	return JSON.stringify(baseWriterPrompt(input, 4));
+	return JSON.stringify(baseWriterPrompt(input, 5));
 }
 
 export function buildAtlasWriterImprovementPrompt(
@@ -318,11 +346,11 @@ export function buildAtlasWriterImprovementPrompt(
 	});
 	const firstPass = JSON.stringify(makePrompt(0));
 	if (firstPass.length <= effectiveMax) return firstPass;
-	for (let level = 1; level <= 4; level++) {
+	for (let level = 1; level <= 5; level++) {
 		const result = JSON.stringify(makePrompt(level));
 		if (result.length <= effectiveMax) return result;
 	}
-	return JSON.stringify(makePrompt(4));
+	return JSON.stringify(makePrompt(5));
 }
 
 export function shouldImproveAtlasWriterDraft(

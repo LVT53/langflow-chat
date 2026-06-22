@@ -473,13 +473,13 @@ describe("Atlas writer prompt", () => {
 		}
 	});
 
-	it("evidence card facts capped at 2 as last resort", () => {
-		const cards = Array.from({ length: 40 }, (_, i) =>
-			makeEvidenceCard(`Source ${i + 1}`, 10),
+	it("caps evidence card facts at 1 as last resort at truncation level 5", () => {
+		const cards = Array.from({ length: 60 }, (_, i) =>
+			makeEvidenceCard(`Source ${i + 1}`, 12),
 		);
 		const input = defaultWriterInput({
-			synthesis: "X".repeat(20000),
-			outline: "Y".repeat(20000),
+			synthesis: "X".repeat(30000),
+			outline: "Y".repeat(30000),
 			writerEvidenceCards: cards,
 		});
 
@@ -487,7 +487,19 @@ describe("Atlas writer prompt", () => {
 		const parsed = JSON.parse(prompt);
 
 		for (const card of parsed.writerEvidenceCards) {
-			expect(card.relevantFacts.length).toBeLessThanOrEqual(2);
+			expect(card.relevantFacts.length).toBeLessThanOrEqual(1);
+		}
+		expect(parsed.evidencePackDiagnostics).toEqual([]);
+		expect(parsed.writerEvidenceCardDiagnostics).toEqual([]);
+		expect(parsed.coverageReview).toEqual({
+			sufficient: true,
+			truncated: true,
+		});
+		// Level 5 strips verbose card fields
+		for (const card of parsed.writerEvidenceCards) {
+			expect(card.conflicts).toEqual([]);
+			expect(card.supportsSections).toEqual([]);
+			expect(card.sourceRefs).toEqual([]);
 		}
 	});
 
@@ -508,5 +520,81 @@ describe("Atlas writer prompt", () => {
 			"H2 címsorokat használj a fő jelentésszakaszokhoz",
 		);
 		expect(parsed.instructions).toContain("Ne használj címsort egyetlen mondat számára");
+	});
+
+	it("truncation level 5 drops diagnostics and reduces coverage review for massive prompts", () => {
+		const cards = Array.from({ length: 50 }, (_, i) =>
+			makeEvidenceCard(`Source ${i + 1}`, 12),
+		);
+		const input = defaultWriterInput({
+			synthesis: "Z".repeat(25000),
+			outline: "W".repeat(25000),
+			writerEvidenceCards: cards,
+			coverageReview: {
+				...defaultCoverageReview(),
+				diagnostics: [
+					{ code: "coverage_thin", severity: "warning" as const, message: "Thin coverage" },
+				],
+				limitations: [
+					{ code: "coverage_gap", message: "Coverage gap" },
+				],
+				proposals: [
+					{
+						missingQuestion: "Fill gap",
+						whyCurrentEvidenceIsWeak: "Missing data",
+						targetSearchQuery: "more data",
+						desiredEvidenceType: "benchmark",
+						affectedSection: "Findings",
+						priority: "medium" as const,
+					},
+				],
+			},
+		});
+
+		const result = buildAtlasWriterPrompt(input);
+		const parsed = JSON.parse(result);
+
+		for (const card of parsed.writerEvidenceCards) {
+			expect(card.relevantFacts.length).toBeLessThanOrEqual(1);
+		}
+		expect(parsed.evidencePackDiagnostics).toEqual([]);
+		expect(parsed.writerEvidenceCardDiagnostics).toEqual([]);
+		expect(parsed.coverageReview.truncated).toBe(true);
+		expect(result.length).toBeLessThanOrEqual(50000);
+	});
+
+	it("fits 16-source overview within 50000 chars with only synth/outline truncation", () => {
+		const cards = Array.from({ length: 16 }, (_, i) =>
+			makeEvidenceCard(`Self-hosted embedding evidence source ${i + 1}`, 8),
+		);
+		const input = defaultWriterInput({
+			synthesis:
+				"Synthesized findings with detailed tradeoffs across retrieval quality, latency, cost, hardware fit, deployment risk, reranking support, language coverage, and maintenance boundaries for regulated SaaS deployments. ".repeat(
+					20,
+				),
+			outline:
+				"1. Executive Summary, 2. Model Shortlist, 3. Retrieval Quality, 4. Latency and Cost, 5. Deployment Implications, 6. Recommendation, 7. Limitations, 8. Evidence Gaps. ".repeat(
+					20,
+				),
+			writerEvidenceCards: cards,
+			coverageReview: {
+				...defaultCoverageReview(),
+				diagnostics: [
+					{ code: "coverage_ok", severity: "info" as const, message: "ok" },
+				],
+			},
+		});
+
+		const prompt = buildAtlasWriterPrompt(input);
+		const parsed = JSON.parse(prompt);
+
+		expect(prompt.length).toBeLessThanOrEqual(50000);
+		expect(parsed.synthesis.length).toBeLessThanOrEqual(1500);
+		expect(parsed.outline.length).toBeLessThanOrEqual(1500);
+		// For 16 cards with 8 facts each, level 1 (synth/outline truncation only)
+		// should suffice — no fact reduction needed.
+		for (const card of parsed.writerEvidenceCards) {
+			expect(card.relevantFacts.length).toBe(8);
+		}
 	});
 });
