@@ -1397,7 +1397,9 @@ function isReportEnvelopeHeading(title: string): boolean {
 
 function isReportScalarOnlyHeading(title: string): boolean {
 	const normalized = normalizedReportShapeText(title);
-	return /^\d+(?:\.\d+)?\s*[bmk]?\s+(?:dimensions?|gb|mb|ms|parameters?|params?|tokens?)$/i.test(normalized);
+	return /^\d+(?:\.\d+)?\s*[bmk]?\s+(?:dimensions?|gb|mb|ms|parameters?|params?|tokens?)$/i.test(
+		normalized,
+	);
 }
 
 function tokenSetForReportShape(value: string): Set<string> {
@@ -2381,12 +2383,10 @@ export async function runAtlasPipeline(
 			)
 				? "process_only"
 				: "malformed";
-			assemblyDiagnostics.firstRepairOutputPrefix =
-				repair.text.slice(0, 500);
+			assemblyDiagnostics.firstRepairOutputPrefix = repair.text.slice(0, 500);
 			assemblyDiagnostics.firstRepairParsedAsJson =
 				assemblyOutput.metadata.structured;
-			assemblyDiagnostics.firstRepairRepairReason =
-				firstRepairRepairReason;
+			assemblyDiagnostics.firstRepairRepairReason = firstRepairRepairReason;
 
 			await input.dependencies.heartbeat?.({
 				stage: "assemble",
@@ -2394,12 +2394,7 @@ export async function runAtlasPipeline(
 			});
 			const minimalRepair = await input.dependencies.runModelStage({
 				stage: "assemble",
-				system: stageSystem(
-					"assemble",
-					language,
-					currentDate,
-					profilePosture,
-				),
+				system: stageSystem("assemble", language, currentDate, profilePosture),
 				prompt: buildMinimalAssembleRepairPrompt({
 					basePrompt: writerPrompt,
 					query: input.job.query,
@@ -2414,8 +2409,7 @@ export async function runAtlasPipeline(
 			);
 			finalAssembledMarkdown = minimalOutput.markdown;
 
-			outputTokensByTier.secondRepair =
-				minimalRepair.usage.outputTokens;
+			outputTokensByTier.secondRepair = minimalRepair.usage.outputTokens;
 			assemblyDiagnostics.outputTokensByTier = {
 				...outputTokensByTier,
 			};
@@ -2431,16 +2425,15 @@ export async function runAtlasPipeline(
 				)
 					? "process_only"
 					: "malformed";
-				assemblyDiagnostics.secondRepairOutputPrefix =
-					minimalRepair.text.slice(0, 500);
+				assemblyDiagnostics.secondRepairOutputPrefix = minimalRepair.text.slice(
+					0,
+					500,
+				);
 				assemblyDiagnostics.secondRepairParsedAsJson =
 					minimalOutput.metadata.structured;
-				assemblyDiagnostics.secondRepairRepairReason =
-					secondRepairRepairReason;
-				assemblyDiagnostics.finalFailureCheck =
-					"needsAssemblyRepair";
-				assemblyDiagnostics.finalFailureSubCondition =
-					secondRepairRepairReason;
+				assemblyDiagnostics.secondRepairRepairReason = secondRepairRepairReason;
+				assemblyDiagnostics.finalFailureCheck = "needsAssemblyRepair";
+				assemblyDiagnostics.finalFailureSubCondition = secondRepairRepairReason;
 
 				const fallbackReport = buildHonestEvidenceFallbackReport({
 					language,

@@ -4896,7 +4896,7 @@ describe("Atlas pipeline slices", () => {
 								? "self-hosted embedding models"
 								: input.stage === "curate"
 									? "Curated evidence: Nemotron leads raw retrieval accuracy, BGE-M3 supports hybrid retrieval, and Jina v5 offers a smaller high-quality option."
-										: input.stage === "synthesize"
+									: input.stage === "synthesize"
 										? "Executive Summary: No single self-hosted embedding model dominates all deployment scenarios.\nFindings: Nemotron leads raw retrieval quality when H100-class hardware is available.\nTradeoffs: BGE-M3 and Jina v5 reduce hosting complexity while giving up some peak benchmark performance.\nRecommendation: Start with BGE-M3 for most self-hosted English technical retrieval unless benchmark accuracy justifies a larger model.\nLimitations: Public benchmark rankings should be validated on the team's own corpus before production selection."
 										: `${input.stage} result`,
 						usage: {
@@ -6380,9 +6380,9 @@ describe("Atlas pipeline slices", () => {
 		expect(diag.firstPassRepairReason).toBe("process_only");
 
 		expect(diag.firstRepairOutputPrefix).toBeTypeOf("string");
-		expect(
-			(diag.firstRepairOutputPrefix as string).length,
-		).toBeLessThanOrEqual(500);
+		expect((diag.firstRepairOutputPrefix as string).length).toBeLessThanOrEqual(
+			500,
+		);
 		expect(diag.firstRepairParsedAsJson).toBe(false);
 		expect(diag.firstRepairRepairReason).toBe("process_only");
 
@@ -6404,14 +6404,14 @@ describe("Atlas pipeline slices", () => {
 
 		expect(diag.writerPromptTruncated).toBe(false);
 		expect(typeof diag.writerPromptCharCount).toBe("number");
-		expect((diag.writerPromptCharCount as number)).toBeGreaterThan(0);
+		expect(diag.writerPromptCharCount as number).toBeGreaterThan(0);
 
 		const claimDiag = diag.claimBasisDiagnostics as
 			| Array<Record<string, unknown>>
 			| undefined;
 		expect(claimDiag).toBeDefined();
-		expect(claimDiag!.length).toBe(1);
-		expect(claimDiag![0].code).toBe("cascade_test_diagnostic");
+		expect(claimDiag?.length).toBe(1);
+		expect(claimDiag?.[0].code).toBe("cascade_test_diagnostic");
 	});
 
 	it("falls back to honest evidence summary after both assembly repairs fail", async () => {
@@ -6706,8 +6706,10 @@ describe("Atlas pipeline slices", () => {
 
 describe("Atlas guard functions", () => {
 	function goodReportBody(words = 80): string {
-		const paragraphs = Array.from({ length: Math.ceil(words / 12) }, () =>
-			"The analysis reveals several important architectural trade-offs that affect regulated SaaS deployments because hybrid retrieval combines the strengths of lexical and semantic approaches. ",
+		const paragraphs = Array.from(
+			{ length: Math.ceil(words / 12) },
+			() =>
+				"The analysis reveals several important architectural trade-offs that affect regulated SaaS deployments because hybrid retrieval combines the strengths of lexical and semantic approaches. ",
 		);
 		return paragraphs.join("\n").split(/\s+/).slice(0, words).join(" ");
 	}
@@ -6730,7 +6732,8 @@ describe("Atlas guard functions", () => {
 
 		it("returns true when body words before sources are under 60 even with a substantive heading", async () => {
 			const { looksLikeProcessOnlyReport } = await import("./pipeline");
-			const short = "## Executive Summary\n\nShort body with very few words here.";
+			const short =
+				"## Executive Summary\n\nShort body with very few words here.";
 			expect(looksLikeProcessOnlyReport(short)).toBe(true);
 		});
 
@@ -6748,10 +6751,7 @@ describe("Atlas guard functions", () => {
 
 		it("returns true when process phrases >= 2 exist regardless of word count or signals", async () => {
 			const { looksLikeProcessOnlyReport } = await import("./pipeline");
-			const markdown = reportWithHeading(
-				"Executive Summary",
-				80,
-			).replace(
+			const markdown = reportWithHeading("Executive Summary", 80).replace(
 				"reveals",
 				"I examined sources and reviewed the findings and synthesized the findings because the evidence shows hybrid retrieval works",
 			);
@@ -6768,7 +6768,10 @@ describe("Atlas guard functions", () => {
 
 		it("returns true when process phrases === 1, words >= 180, but no substantive signals", async () => {
 			const { looksLikeProcessOnlyReport } = await import("./pipeline");
-			const bodyText = Array.from({ length: 200 }, () => "data point entry record metric value sample observation result").join(" ");
+			const bodyText = Array.from(
+				{ length: 200 },
+				() => "data point entry record metric value sample observation result",
+			).join(" ");
 			const markdown =
 				"## Executive Summary\n\nI examined the data and the results are acceptable. " +
 				bodyText;
@@ -6798,16 +6801,14 @@ describe("Atlas guard functions", () => {
 
 		it("returns true for a Hungarian report without English substantive headings (accented headings do not match \\b)", async () => {
 			const { looksLikeProcessOnlyReport } = await import("./pipeline");
-			const markdown =
-				"## Vezetői összefoglaló\n\n" +
-				goodReportBody(250);
+			const markdown = `## Vezetői összefoglaló\n\n${goodReportBody(250)}`;
 			expect(looksLikeProcessOnlyReport(markdown)).toBe(true);
 		});
 
 		it("excludes words after a '## Sources' heading from body word count", async () => {
 			const { looksLikeProcessOnlyReport } = await import("./pipeline");
 			const shortBeforeSources = "## Executive Summary\n\nBrief note only. \n";
-			const manyAfterSources = "## Sources\n\n" + goodReportBody(300);
+			const manyAfterSources = `## Sources\n\n${goodReportBody(300)}`;
 			const markdown = shortBeforeSources + manyAfterSources;
 			expect(looksLikeProcessOnlyReport(markdown)).toBe(true);
 		});
@@ -6815,9 +6816,7 @@ describe("Atlas guard functions", () => {
 
 	describe("looksLikeMalformedAssembledReport", () => {
 		it("returns false for a well-formed report with 4 substantive headings including Limitations", async () => {
-			const { looksLikeMalformedAssembledReport } = await import(
-				"./pipeline"
-			);
+			const { looksLikeMalformedAssembledReport } = await import("./pipeline");
 			const markdown = `## Executive Summary\n\n${goodReportBody(60)}\n\n## Analysis\n\n${goodReportBody(60)}\n\n## Findings\n\n${goodReportBody(60)}\n\n## Limitations\n\n${goodReportBody(60)}`;
 			expect(
 				looksLikeMalformedAssembledReport({
@@ -6828,9 +6827,7 @@ describe("Atlas guard functions", () => {
 		});
 
 		it("returns false for a single scalar heading (below threshold of 2)", async () => {
-			const { looksLikeMalformedAssembledReport } = await import(
-				"./pipeline"
-			);
+			const { looksLikeMalformedAssembledReport } = await import("./pipeline");
 			const markdown = `## Executive Summary\n\n${goodReportBody(60)}\n\n## 8B parameters\n\n${goodReportBody(60)}`;
 			expect(
 				looksLikeMalformedAssembledReport({
@@ -6841,9 +6838,7 @@ describe("Atlas guard functions", () => {
 		});
 
 		it("returns true when scalar heading count >= 2", async () => {
-			const { looksLikeMalformedAssembledReport } = await import(
-				"./pipeline"
-			);
+			const { looksLikeMalformedAssembledReport } = await import("./pipeline");
 			const markdown = `## Executive Summary\n\ntext\n\n## 8 GB\n\ntext\n\n## 16 GB\n\ntext`;
 			const result = looksLikeMalformedAssembledReport({
 				markdown,
@@ -6853,9 +6848,7 @@ describe("Atlas guard functions", () => {
 		});
 
 		it("returns true when envelope heading count >= 2", async () => {
-			const { looksLikeMalformedAssembledReport } = await import(
-				"./pipeline"
-			);
+			const { looksLikeMalformedAssembledReport } = await import("./pipeline");
 			const markdown = `## Executive Summary\n\n${goodReportBody(60)}\n\n## Date 2026-06-21\n\n${goodReportBody(40)}\n\n## Profile overview\n\n${goodReportBody(40)}`;
 			expect(
 				looksLikeMalformedAssembledReport({
@@ -6866,9 +6859,7 @@ describe("Atlas guard functions", () => {
 		});
 
 		it("returns false when source-title-matching heading count is 2 (below threshold of 3)", async () => {
-			const { looksLikeMalformedAssembledReport } = await import(
-				"./pipeline"
-			);
+			const { looksLikeMalformedAssembledReport } = await import("./pipeline");
 			const markdown = `## Executive Summary\n\n${goodReportBody(60)}\n\n## Hybrid retrieval enterprise SaaS\n\n${goodReportBody(40)}\n\n## Evidence from performance benchmarks\n\n${goodReportBody(40)}`;
 			expect(
 				looksLikeMalformedAssembledReport({
@@ -6882,9 +6873,7 @@ describe("Atlas guard functions", () => {
 		});
 
 		it("returns true when source-title-matching heading count >= 3", async () => {
-			const { looksLikeMalformedAssembledReport } = await import(
-				"./pipeline"
-			);
+			const { looksLikeMalformedAssembledReport } = await import("./pipeline");
 			const markdown = `## Executive Summary\n\n${goodReportBody(60)}\n\n## Hybrid retrieval enterprise SaaS\n\n${goodReportBody(40)}\n\n## Performance benchmarks latency\n\n${goodReportBody(40)}\n\n## Scalability analysis cloud deployment\n\n${goodReportBody(40)}`;
 			expect(
 				looksLikeMalformedAssembledReport({
@@ -6899,9 +6888,7 @@ describe("Atlas guard functions", () => {
 		});
 
 		it("returns true when envelope heading + envelope scalar lines >= 3", async () => {
-			const { looksLikeMalformedAssembledReport } = await import(
-				"./pipeline"
-			);
+			const { looksLikeMalformedAssembledReport } = await import("./pipeline");
 			const markdown = `## Profile overview\n\n${goodReportBody(40)}\n\n**Date:** 2026-06-21\n\n${goodReportBody(40)}\n\n**Status:** final\n\n${goodReportBody(40)}`;
 			expect(
 				looksLikeMalformedAssembledReport({
@@ -6912,9 +6899,7 @@ describe("Atlas guard functions", () => {
 		});
 
 		it("returns false for a good report with 5 substantive headings including Limitations", async () => {
-			const { looksLikeMalformedAssembledReport } = await import(
-				"./pipeline"
-			);
+			const { looksLikeMalformedAssembledReport } = await import("./pipeline");
 			const markdown = `## Executive Summary\n\n${goodReportBody(60)}\n\n## Analysis\n\n${goodReportBody(60)}\n\n## Key Findings\n\n${goodReportBody(60)}\n\n## Limitations\n\n${goodReportBody(50)}\n\n## Recommendations\n\n${goodReportBody(60)}`;
 			expect(
 				looksLikeMalformedAssembledReport({
