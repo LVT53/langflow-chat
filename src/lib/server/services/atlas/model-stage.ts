@@ -11,6 +11,7 @@ export interface AtlasModelStageUsage {
 
 export interface AtlasModelStageResult {
 	text: string;
+	finishReason?: string | null;
 	usage: AtlasModelStageUsage;
 	model: {
 		modelId: string;
@@ -28,6 +29,7 @@ export interface AtlasNormalChatModelBoundaryInput {
 
 export interface AtlasNormalChatModelBoundaryResult {
 	text: string;
+	finishReason?: string | null;
 	usage?: {
 		inputTokens?: number;
 		outputTokens?: number;
@@ -164,6 +166,7 @@ export async function runAtlasModelStage(
 	});
 	return {
 		text: result.text,
+		finishReason: result.finishReason,
 		usage: {
 			...usage,
 			costUsdMicros,
@@ -185,7 +188,8 @@ export async function runAtlasAuditStage(
 		messages: [{ role: "user", content: input.prompt }],
 		system:
 			"Audit the Atlas report against the provided sources. Return strict JSON only. Do not rewrite the report.",
-		maxOutputTokens: 1600,
+		maxOutputTokens: getAtlasProfileRuntimeConfig(input.profile)
+			.maxOutputTokens,
 	});
 	const usage = normalizeUsage(result.usage);
 	const costUsdMicros = await calculateStageCostUsdMicros({
@@ -195,6 +199,7 @@ export async function runAtlasAuditStage(
 	});
 	return {
 		text: result.text,
+		finishReason: result.finishReason,
 		usage: {
 			...usage,
 			costUsdMicros,

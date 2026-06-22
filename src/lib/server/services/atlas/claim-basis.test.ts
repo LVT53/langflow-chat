@@ -775,6 +775,66 @@ describe("Atlas Claim Basis", () => {
 		expect(prompt.report).toBe(shortMarkdown);
 	});
 
+	it("truncates assembled markdown to explicit maxChars value when passed", () => {
+		const longMarkdown = "Y".repeat(20000);
+		const prompt = JSON.parse(
+			buildAtlasClaimBasisPrompt({
+				language: "en",
+				currentDate: "2026-06-22",
+				assembledMarkdown: longMarkdown,
+				evidencePacks: [evidencePack],
+				evidencePackDiagnostics: [],
+				sectionBriefs,
+				sources: [{ title: "Example", url: "https://example.com" }],
+				limitation: null,
+				maxChars: 3000,
+			}),
+		) as { report: string };
+
+		expect(prompt.report.length).toBeLessThanOrEqual(3100);
+		expect(prompt.report).toContain("truncated");
+		expect(prompt.report.length).toBeLessThan(5000);
+	});
+
+	it("preserves full markdown when under explicit maxChars", () => {
+		const shortMarkdown = "## Summary\nShort report.";
+		const prompt = JSON.parse(
+			buildAtlasClaimBasisPrompt({
+				language: "en",
+				currentDate: "2026-06-22",
+				assembledMarkdown: shortMarkdown,
+				evidencePacks: [evidencePack],
+				evidencePackDiagnostics: [],
+				sectionBriefs,
+				sources: [{ title: "Example", url: "https://example.com" }],
+				limitation: null,
+				maxChars: 6000,
+			}),
+		) as { report: string };
+
+		expect(prompt.report).toBe(shortMarkdown);
+	});
+
+	it("default behavior unchanged when no maxChars passed", () => {
+		const longMarkdown = "X".repeat(15000);
+		const prompt = JSON.parse(
+			buildAtlasClaimBasisPrompt({
+				language: "en",
+				currentDate: "2026-06-22",
+				assembledMarkdown: longMarkdown,
+				evidencePacks: [evidencePack],
+				evidencePackDiagnostics: [],
+				sectionBriefs,
+				sources: [{ title: "Example", url: "https://example.com" }],
+				limitation: null,
+			}),
+		) as { report: string };
+
+		expect(prompt.report.length).toBeLessThanOrEqual(8100);
+		expect(prompt.report).toContain("truncated");
+		expect(prompt.report.length).toBeGreaterThan(7000);
+	});
+
 	it("preserves all 10 instructions and Hungarian parity check in compacted prompt", () => {
 		const prompt = JSON.parse(
 			buildAtlasClaimBasisPrompt({

@@ -86,6 +86,7 @@ export interface BuildAtlasClaimBasisPromptInput {
 	sources: Array<{ title: string; url?: string | null }>;
 	limitation?: { code: string; message: string } | null;
 	coverageReview?: AtlasCoverageReview | null;
+	maxChars?: number;
 }
 
 export interface ParseAtlasClaimBasisModelResultInput {
@@ -184,9 +185,10 @@ export function compactSources(
 	return sources.map((s) => ({ title: s.title, url: s.url ?? null }));
 }
 
-function trimReport(report: string): string {
-	if (report.length <= 8000) return report;
-	return `${report.slice(0, 8000).trim()}\n\n(report truncated for audit context budget)`;
+function trimReport(report: string, maxChars?: number): string {
+	const limit = maxChars ?? 8000;
+	if (report.length <= limit) return report;
+	return `${report.slice(0, limit).trim()}\n\n(report truncated for audit context budget)`;
 }
 
 export function buildAtlasClaimBasisPrompt(
@@ -238,7 +240,7 @@ export function buildAtlasClaimBasisPrompt(
 			diagnostics:
 				"array of { code, severity, message, sectionTitle, basisId }",
 		},
-		report: trimReport(input.assembledMarkdown),
+		report: trimReport(input.assembledMarkdown, input.maxChars),
 		evidencePacks: compactEvidencePacks(input.evidencePacks),
 		evidencePackDiagnostics: input.evidencePackDiagnostics,
 		sectionBriefs: compactSectionBriefs(input.sectionBriefs),

@@ -59,6 +59,10 @@ interface Config {
 	atlasSearchBatchDelayMs: number;
 	atlasSynthesisModel: ModelId;
 	atlasAuditModel: ModelId;
+	atlasOverviewMaxOutputTokens: number;
+	atlasInDepthMaxOutputTokens: number;
+	atlasExhaustiveMaxOutputTokens: number;
+	atlasMaxWriterPromptChars: number;
 	webPushVapidPublicKey: string;
 	webPushVapidPrivateKey: string;
 	webPushVapidSubject: string;
@@ -460,6 +464,26 @@ function readConfig(): Config {
 			process.env.ATLAS_AUDIT_MODEL,
 			"ATLAS_AUDIT_MODEL",
 			"model2",
+		),
+		atlasOverviewMaxOutputTokens: parsePositiveIntegerEnv(
+			process.env.ATLAS_OVERVIEW_MAX_OUTPUT_TOKENS,
+			8000,
+			1,
+		),
+		atlasInDepthMaxOutputTokens: parsePositiveIntegerEnv(
+			process.env.ATLAS_IN_DEPTH_MAX_OUTPUT_TOKENS,
+			12000,
+			1,
+		),
+		atlasExhaustiveMaxOutputTokens: parsePositiveIntegerEnv(
+			process.env.ATLAS_EXHAUSTIVE_MAX_OUTPUT_TOKENS,
+			16000,
+			1,
+		),
+		atlasMaxWriterPromptChars: parsePositiveIntegerEnv(
+			process.env.ATLAS_MAX_WRITER_PROMPT_CHARS,
+			50000,
+			100,
 		),
 		webPushVapidPublicKey: process.env.WEB_PUSH_VAPID_PUBLIC_KEY || "",
 		webPushVapidPrivateKey: process.env.WEB_PUSH_VAPID_PRIVATE_KEY || "",

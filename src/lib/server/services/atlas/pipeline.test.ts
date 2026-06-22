@@ -3825,10 +3825,10 @@ describe("Atlas pipeline slices", () => {
 		>;
 		const firstAuditInput = auditCalls[0]?.[0];
 		expect(firstAuditInput?.assembledMarkdown).toContain(
-			"**No single model dominates all domains.**",
+			"No single model dominates all domains",
 		);
 		expect(firstAuditInput?.assembledMarkdown).toContain(
-			"**Qwen3 supports output dimensions 32-1024.**",
+			"Qwen3 supports output dimensions 32-1024",
 		);
 		const renderedSource = renderOutputs.mock.calls[0]?.[0];
 		expect(renderedSource.title).toBe(
@@ -6950,6 +6950,39 @@ describe("Atlas guard functions", () => {
 					markdown: "   \n  ",
 					acceptedSourceTitles: [],
 				}),
+			).toBe(true);
+		});
+	});
+
+	describe("isLikelySentenceClaimHeading", () => {
+		it("returns false for a topical heading with trailing period but no claim verb", async () => {
+			const { isLikelySentenceClaimHeading } = await import("./pipeline");
+			expect(isLikelySentenceClaimHeading("Top Self-Hosted Models.")).toBe(
+				false,
+			);
+		});
+
+		it("returns true for a sentence heading with trailing period and claim verb", async () => {
+			const { isLikelySentenceClaimHeading } = await import("./pipeline");
+			expect(
+				isLikelySentenceClaimHeading("This model outperforms competitors."),
+			).toBe(true);
+		});
+
+		it("returns false for a short heading without trailing period", async () => {
+			const { isLikelySentenceClaimHeading } = await import("./pipeline");
+			expect(isLikelySentenceClaimHeading("Key Findings")).toBe(false);
+		});
+
+		it("returns false for a Hungarian topical heading with period but no claim verb", async () => {
+			const { isLikelySentenceClaimHeading } = await import("./pipeline");
+			expect(isLikelySentenceClaimHeading("Legjobb modellek.")).toBe(false);
+		});
+
+		it("returns true for a Hungarian sentence heading with period and claim verb", async () => {
+			const { isLikelySentenceClaimHeading } = await import("./pipeline");
+			expect(
+				isLikelySentenceClaimHeading("A modell támogatja a gyors keresést."),
 			).toBe(true);
 		});
 	});

@@ -1,3 +1,7 @@
+import {
+	getAtlasMaxWriterPromptChars,
+	getMaxModelContext,
+} from "$lib/server/config-store";
 import type { SupportedLanguage } from "$lib/server/services/language";
 import type { AtlasReportShapeDiagnostics } from "./report-shape-diagnostics";
 import type {
@@ -71,6 +75,7 @@ function writerInstructions(language: SupportedLanguage): string {
 			"Adj kompakt Markdown táblázatot, ha összehasonlítás vagy döntési kritériumok tisztábban olvashatók táblázatként.",
 			"Képet csak az imageCandidates mezőből válassz, HTTPS URL-lel; ne találj ki kép URL-eket, és ne használj logót, ikont, devicont, SVG/vektor vagy dekoratív képet.",
 			"Each sectionBrief must preserve relevant evidencePackIds and sourceAssociations when the section depends on specific cards.",
+			"Ne írj olyan lista elemet, amely csak egy címkét és kettőspontot tartalmaz tartalom nélkül (pl. '- **Hardware fit:**' érvénytelen). Minden lista elemnek tartalmaznia kell leíró szöveget a címke után.",
 		].join(" ");
 	}
 	return [
@@ -86,6 +91,7 @@ function writerInstructions(language: SupportedLanguage): string {
 		"Use compact Markdown tables when comparisons or decision criteria become clearer as a table.",
 		"Choose images only from imageCandidates with HTTPS URLs; do not invent image URLs and do not use logos, icons, devicons, SVG/vector assets, or decorative images.",
 		"Each sectionBrief must preserve relevant evidencePackIds and sourceAssociations when the section depends on specific cards.",
+		"Do not emit list items that have only a label and colon with no content after the colon (e.g., '- **Hardware fit:**' is invalid). Every list item must have descriptive text after any label.",
 	].join(" ");
 }
 
@@ -165,8 +171,6 @@ function modelFacingWriterEvidenceCard(card: AtlasWriterEvidenceCard) {
 	};
 }
 
-const MAX_WRITER_PROMPT_CHARS = 50000;
-
 function compactString(value: string, maxLength: number): string {
 	if (value.length <= maxLength) return value;
 	return `${value.slice(0, maxLength - 3)}...`;
@@ -174,22 +178,38 @@ function compactString(value: string, maxLength: number): string {
 
 function baseWriterPrompt(
 	input: BuildAtlasWriterPromptInput,
-	truncate = false,
+	truncationLevel = 0,
 ) {
-	const synthesis = truncate
-		? compactString(input.synthesis, 2000)
-		: input.synthesis;
-	const outline = truncate ? compactString(input.outline, 2000) : input.outline;
+	const factsPerCard =
+		truncationLevel >= 2 ? 2 : truncationLevel >= 1 ? 3 : null;
+	const synthesisMaxLen =
+		truncationLevel >= 3 ? 1500 : truncationLevel >= 1 ? 2000 : null;
+	const outlineMaxLen =
+		truncationLevel >= 3 ? 1500 : truncationLevel >= 1 ? 2000 : null;
+	const trimCoverageReview = truncationLevel >= 4;
+
+	const synthesis =
+		synthesisMaxLen !== null
+			? compactString(input.synthesis, synthesisMaxLen)
+			: input.synthesis;
+	const outline =
+		outlineMaxLen !== null
+			? compactString(input.outline, outlineMaxLen)
+			: input.outline;
 	const writerEvidenceCards = input.writerEvidenceCards.map((card) => {
 		const base = modelFacingWriterEvidenceCard(card);
-		if (!truncate) return base;
-		return { ...base, relevantFacts: base.relevantFacts.slice(0, 3) };
+		if (factsPerCard === null) return base;
+		return {
+			...base,
+			relevantFacts: base.relevantFacts.slice(0, factsPerCard),
+		};
 	});
-	const coverageReview = truncate
+	const coverageReview = trimCoverageReview
 		? {
 				sufficient: input.coverageReview.sufficient,
-				approvedGapCandidateCount:
-					input.coverageReview.approvedGapCandidates.length,
+				proposals: input.coverageReview.proposals,
+				diagnostics: input.coverageReview.diagnostics,
+				limitations: input.coverageReview.limitations,
 			}
 		: {
 				version: input.coverageReview.version,
@@ -252,47 +272,53 @@ function baseWriterPrompt(
 export function buildAtlasWriterPrompt(
 	input: BuildAtlasWriterPromptInput,
 ): string {
+	const effectiveMax = Math.min(
+		getAtlasMaxWriterPromptChars(),
+		Math.floor(getMaxModelContext() * 0.4),
+	);
 	const firstPass = JSON.stringify(baseWriterPrompt(input));
-	if (firstPass.length <= MAX_WRITER_PROMPT_CHARS) return firstPass;
+	if (firstPass.length <= effectiveMax) return firstPass;
 	console.info("[ATLAS_WRITER] Prompt truncated", {
 		originalLength: firstPass.length,
-		maxChars: MAX_WRITER_PROMPT_CHARS,
+		maxChars: effectiveMax,
 		profile: input.profile,
 		evidenceCardCount: input.writerEvidenceCards.length,
 	});
-	return JSON.stringify(baseWriterPrompt(input, true));
+	for (let level = 1; level <= 4; level++) {
+		const result = JSON.stringify(baseWriterPrompt(input, level));
+		if (result.length <= effectiveMax) return result;
+	}
+	return JSON.stringify(baseWriterPrompt(input, 4));
 }
 
 export function buildAtlasWriterImprovementPrompt(
 	input: BuildAtlasWriterImprovementPromptInput,
 ): string {
-	const firstPass = JSON.stringify({
-		...baseWriterPrompt(input),
+	const effectiveMax = Math.min(
+		getAtlasMaxWriterPromptChars(),
+		Math.floor(getMaxModelContext() * 0.4),
+	);
+	const codeWarnings = input.reportShapeDiagnostics.warnings
+		.map((warning) => warning.code)
+		.filter((code) => SERIOUS_REPORT_SHAPE_WARNING_CODES.has(code));
+	const makePrompt = (level: number) => ({
+		...baseWriterPrompt(input, level),
 		writerImprovement: {
 			pass: 1,
 			maxPasses: 1,
-			warningCodes: input.reportShapeDiagnostics.warnings
-				.map((warning) => warning.code)
-				.filter((code) => SERIOUS_REPORT_SHAPE_WARNING_CODES.has(code)),
+			warningCodes: codeWarnings,
 		},
 		improvementInstructions: improvementInstructions(input.language),
 		currentDraft: input.currentDraft,
 		reportShapeDiagnostics: input.reportShapeDiagnostics,
 	});
-	if (firstPass.length <= MAX_WRITER_PROMPT_CHARS) return firstPass;
-	return JSON.stringify({
-		...baseWriterPrompt(input, true),
-		writerImprovement: {
-			pass: 1,
-			maxPasses: 1,
-			warningCodes: input.reportShapeDiagnostics.warnings
-				.map((warning) => warning.code)
-				.filter((code) => SERIOUS_REPORT_SHAPE_WARNING_CODES.has(code)),
-		},
-		improvementInstructions: improvementInstructions(input.language),
-		currentDraft: input.currentDraft,
-		reportShapeDiagnostics: input.reportShapeDiagnostics,
-	});
+	const firstPass = JSON.stringify(makePrompt(0));
+	if (firstPass.length <= effectiveMax) return firstPass;
+	for (let level = 1; level <= 4; level++) {
+		const result = JSON.stringify(makePrompt(level));
+		if (result.length <= effectiveMax) return result;
+	}
+	return JSON.stringify(makePrompt(4));
 }
 
 export function shouldImproveAtlasWriterDraft(

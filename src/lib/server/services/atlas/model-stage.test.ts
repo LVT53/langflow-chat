@@ -59,6 +59,7 @@ describe("Atlas model stage", () => {
 		);
 		expect(result).toEqual({
 			text: "Structured stage output",
+			finishReason: "stop",
 			usage: {
 				inputTokens: 12,
 				outputTokens: 8,
@@ -183,7 +184,7 @@ describe("Atlas model stage", () => {
 				modelSelection: "model2",
 				messages: [{ role: "user", content: '{"report":"Atlas"}' }],
 				system: expect.stringContaining("Return strict JSON only"),
-				maxOutputTokens: 1600,
+				maxOutputTokens: 8000,
 			}),
 		);
 		expect(result.usage).toEqual({
@@ -192,5 +193,66 @@ describe("Atlas model stage", () => {
 			totalTokens: 10,
 			costUsdMicros: 44,
 		});
+	});
+
+	it("returns finishReason from the model run result", async () => {
+		const { runAtlasModelStage } = await import("./model-stage");
+		const runModel = vi.fn(async () => ({
+			text: "Output with length finish",
+			finishReason: "length" as const,
+			usage: {
+				inputTokens: 10,
+				outputTokens: 100,
+				totalTokens: 110,
+			},
+			model: {
+				modelId: "model1",
+				providerId: "provider",
+				displayName: "Model 1",
+			},
+		}));
+
+		const result = await runAtlasModelStage({
+			stage: "synthesize",
+			profile: "overview",
+			modelSelection: "model1",
+			system: "Atlas system prompt",
+			prompt: "Test prompt",
+			runModel,
+		});
+
+		expect(result.finishReason).toBe("length");
+	});
+
+	it("returns finishReason from the audit stage", async () => {
+		const { runAtlasAuditStage } = await import("./model-stage");
+		const runModel = vi.fn(async () => ({
+			text: '{"markers":[],"retryRequested":false}',
+			finishReason: "stop" as const,
+			usage: {
+				inputTokens: 5,
+				outputTokens: 3,
+				totalTokens: 8,
+			},
+			model: {
+				modelId: "model2",
+				providerId: "provider",
+				displayName: "Model 2",
+			},
+		}));
+
+		const result = await runAtlasAuditStage({
+			profile: "exhaustive",
+			modelSelection: "model2",
+			prompt: '{"report":"Atlas"}',
+			runModel,
+		});
+
+		expect(result.finishReason).toBe("stop");
+		expect(runModel).toHaveBeenCalledWith(
+			expect.objectContaining({
+				maxOutputTokens: 16000,
+			}),
+		);
 	});
 });

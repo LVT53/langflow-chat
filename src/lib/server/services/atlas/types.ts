@@ -184,6 +184,9 @@ export interface AtlasAssemblyDiagnostics {
 	writerPromptTruncated: boolean;
 	writerPromptCharCount: number;
 	claimBasisDiagnostics?: AtlasClaimBasisDiagnostic[];
+	writerFinishReason?: string | null;
+	auditFinishReason?: string | null;
+	coverageReviewFinishReason?: string | null;
 }
 
 export interface AtlasClaimLocator {

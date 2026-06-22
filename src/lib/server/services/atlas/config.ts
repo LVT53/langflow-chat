@@ -1,5 +1,10 @@
 import { createHash } from "node:crypto";
 import {
+	getAtlasExhaustiveMaxOutputTokens,
+	getAtlasInDepthMaxOutputTokens,
+	getAtlasOverviewMaxOutputTokens,
+} from "$lib/server/config-store";
+import {
 	ATLAS_PIPELINE_STAGES,
 	type AtlasAction,
 	type AtlasPipelineStage,
@@ -170,5 +175,12 @@ export function buildAtlasIdempotencyKey(scope: AtlasIdempotencyScope): string {
 export function getAtlasProfileRuntimeConfig(
 	profile: AtlasProfile,
 ): AtlasProfileRuntimeConfig {
-	return ATLAS_PROFILE_RUNTIME_CONFIG[profile];
+	const base = ATLAS_PROFILE_RUNTIME_CONFIG[profile];
+	const maxOutputTokens =
+		profile === "overview"
+			? getAtlasOverviewMaxOutputTokens()
+			: profile === "in-depth"
+				? getAtlasInDepthMaxOutputTokens()
+				: getAtlasExhaustiveMaxOutputTokens();
+	return { ...base, maxOutputTokens };
 }

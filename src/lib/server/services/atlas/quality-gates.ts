@@ -37,10 +37,12 @@ function buildMinimalRetryPrompt(input: {
 	sources: Array<{ title: string; url?: string | null }>;
 	sectionBriefs: AtlasSectionBrief[];
 	evidencePacks: AtlasEvidencePack[];
+	maxChars?: number;
 }): string {
+	const retryLimit = Math.floor((input.maxChars ?? 8000) * 0.5);
 	return JSON.stringify({
 		task: "Return strict JSON with a non-empty claimBasis array, retryRequested boolean, limitations array, and diagnostics array. The previous response did not contain valid JSON with a non-empty claimBasis array. Return ONLY valid JSON, no markdown, no explanation.",
-		report: input.assembledMarkdown.slice(0, 4000),
+		report: input.assembledMarkdown.slice(0, retryLimit),
 		evidencePackIds: input.evidencePacks.map((p) => p.id),
 		sectionTitles: input.sectionBriefs.map((b) => b.sectionTitle),
 		sources: input.sources.map((s) => ({ title: s.title, url: s.url })),
@@ -73,6 +75,7 @@ export interface AtlasAuditBasisInput {
 	assemblyMetadata?: AtlasAssemblyMetadata;
 	runAuditModel?: (prompt: string) => Promise<AtlasAuditModelResult>;
 	auditModelWarning?: string | null;
+	maxChars?: number;
 }
 
 export interface AtlasAuditBasisResult {
@@ -283,6 +286,7 @@ export async function auditAtlasBasis(
 			coverageReview: input.coverageReview ?? null,
 			sources: input.sources,
 			limitation: input.limitation ?? null,
+			maxChars: input.maxChars,
 		}),
 	);
 	let basis = parseAtlasClaimBasisModelResult({
@@ -298,6 +302,7 @@ export async function auditAtlasBasis(
 				sources: input.sources,
 				sectionBriefs,
 				evidencePacks,
+				maxChars: input.maxChars,
 			}),
 		);
 		basis = parseAtlasClaimBasisModelResult({

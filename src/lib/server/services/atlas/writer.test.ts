@@ -202,8 +202,8 @@ describe("Atlas writer prompt", () => {
 		}
 	});
 
-	it("reduces coverageReview to sufficient + approvedGapCandidateCount when prompt is large", () => {
-		const cards = Array.from({ length: 16 }, (_, i) =>
+	it("preserves coverage review proposals during truncation", () => {
+		const cards = Array.from({ length: 30 }, (_, i) =>
 			makeEvidenceCard(`Evidence ${i + 1}`, 10),
 		);
 		const bigSynthesis = "Y".repeat(8000);
@@ -218,10 +218,13 @@ describe("Atlas writer prompt", () => {
 		const prompt = buildAtlasWriterPrompt(input);
 		const parsed = JSON.parse(prompt);
 
-		expect(parsed.coverageReview).toEqual({
-			sufficient: true,
-			approvedGapCandidateCount: 0,
-		});
+		expect(parsed.coverageReview.sufficient).toBe(true);
+		expect(parsed.coverageReview).toHaveProperty("proposals");
+		expect(parsed.coverageReview).toHaveProperty("diagnostics");
+		expect(parsed.coverageReview).toHaveProperty("limitations");
+		expect(parsed.coverageReview).not.toHaveProperty(
+			"approvedGapCandidateCount",
+		);
 	});
 
 	it("does not truncate when prompt is small enough", () => {
@@ -386,5 +389,26 @@ describe("Atlas writer prompt", () => {
 				}),
 			),
 		).toBe(false);
+	});
+
+	it("scales effectiveMax with getMaxModelContext", () => {
+		const cards = Array.from({ length: 16 }, (_, i) =>
+			makeEvidenceCard(`Context scaling source ${i + 1}`, 10),
+		);
+		const input = defaultWriterInput({
+			synthesis: "X".repeat(8000),
+			outline: "Y".repeat(8000),
+			writerEvidenceCards: cards,
+		});
+		const prompt = buildAtlasWriterPrompt(input);
+		expect(prompt.length).toBeLessThanOrEqual(50000);
+	});
+
+	it("includes empty-list-item instruction in writer prompt", () => {
+		const prompt = buildAtlasWriterPrompt(defaultWriterInput());
+		const parsed = JSON.parse(prompt);
+		expect(parsed.instructions).toContain(
+			"Do not emit list items that have only a label and colon",
+		);
 	});
 });

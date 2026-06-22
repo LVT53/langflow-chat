@@ -1,3 +1,4 @@
+import { getMaxModelContext } from "$lib/server/config-store";
 import type { GeneratedDocumentSource } from "$lib/server/services/file-production/source-schema";
 import {
 	detectLanguage,
@@ -109,7 +110,11 @@ export interface RunAtlasPipelineInput {
 			stage: ModelStage;
 			prompt: string;
 			system: string;
-		}) => Promise<{ text: string; usage: AtlasStageUsage }>;
+		}) => Promise<{
+			text: string;
+			finishReason?: string | null;
+			usage: AtlasStageUsage;
+		}>;
 		auditBasis: (input: {
 			assembledMarkdown: string;
 			sources: Array<{ title: string; url?: string | null }>;
@@ -121,10 +126,12 @@ export interface RunAtlasPipelineInput {
 			coverageReview: AtlasCoverageReview;
 			sectionBriefs: AtlasSectionBrief[];
 			assemblyMetadata: AtlasAssemblyMetadata;
+			maxChars?: number;
 		}) => Promise<{
 			passed: boolean;
 			honestyMarkers: AtlasHonestyMarker[];
 			retryRequested: boolean;
+			finishReason?: string | null;
 			usage?: AtlasStageUsage | null;
 			claimBasis?: AtlasClaimBasis[];
 			basisLimitations?: AtlasClaimBasisLimitation[];
@@ -617,6 +624,7 @@ interface AtlasResearchRoundResult {
 	evidencePackResult: BuildAtlasEvidencePacksResult;
 	evidencePackDiagnostics: AtlasEvidencePackDiagnostic[];
 	coverageReview: AtlasCoverageReview;
+	coverageReviewFinishReason?: string | null;
 	usage: AtlasStageUsage;
 	qualityDiagnostics: AtlasResearchRoundDiagnostics;
 }
@@ -822,6 +830,7 @@ async function runAtlasResearchRound(input: {
 		evidencePackResult,
 		evidencePackDiagnostics,
 		coverageReview,
+		coverageReviewFinishReason: coverageReviewModel.finishReason,
 		usage,
 		qualityDiagnostics: {
 			roundNumber: input.roundNumber,
@@ -1530,16 +1539,17 @@ const SAFE_REPORT_HEADING_LABELS = new Set([
 ]);
 
 const CLAIM_HEADING_VERB_PATTERN =
-	/\b(?:are|avoid|can|cannot|choose|dominates?|has|have|improves?|is|keeps?|leads?|limits?|needs?|offers?|outperforms?|requires?|should|supports?|uses?|wins?)\b/i;
+	/\b(?:(?:are|avoid|can|cannot|choose|dominates?|has|have|improves?|is|keeps?|leads?|limits?|needs?|offers?|outperforms?|requires?|should|supports?|uses?|wins?)\b|támogat|javít|nyújt|kínál|működik|teljesít)/i;
 
-function isLikelySentenceClaimHeading(title: string): boolean {
+export function isLikelySentenceClaimHeading(title: string): boolean {
 	const trimmed = title.trim().replace(/[.:;]+$/g, "");
 	const normalized = normalizedReportShapeText(trimmed);
 	if (!normalized || SAFE_REPORT_HEADING_LABELS.has(normalized)) return false;
 	if (/^(?:what|where|when|why|how)\b/i.test(trimmed)) return false;
 	const words = normalized.split(/\s+/).filter(Boolean);
 	if (words.length < 4) return false;
-	if (/[.!?]$/.test(title.trim())) return true;
+	// Require BOTH trailing punctuation AND a claim verb
+	if (!/[.!?]$/.test(title.trim())) return false;
 	return CLAIM_HEADING_VERB_PATTERN.test(trimmed);
 }
 
@@ -2208,6 +2218,8 @@ export async function runAtlasPipeline(
 	const evidencePackResult = finalResearchRound.evidencePackResult;
 	const evidencePackDiagnostics = finalResearchRound.evidencePackDiagnostics;
 	const coverageReview = finalResearchRound.coverageReview;
+	const coverageReviewFinishReason =
+		finalResearchRound.coverageReviewFinishReason;
 	const searchLimitation = combineResearchRoundLimitations(researchRounds);
 
 	await input.dependencies.heartbeat?.({
@@ -2305,6 +2317,7 @@ export async function runAtlasPipeline(
 		prompt: writerPrompt,
 	});
 	usage = addUsage(usage, assemble.usage);
+	const writerFinishReason = assemble.finishReason;
 	let assemblyOutput = parseAtlasAssemblyOutput(assemble.text);
 	let assemblyMetadata = assemblyOutput.metadata;
 	let finalAssembledMarkdown = assemblyOutput.markdown;
@@ -2565,6 +2578,10 @@ export async function runAtlasPipeline(
 		stage: "audit",
 		progressPercent: 92,
 	});
+	const claimBasisReportMaxChars = Math.min(
+		12000,
+		Math.floor(getMaxModelContext() * 0.15),
+	);
 	let audit = await input.dependencies.auditBasis({
 		assembledMarkdown: finalAssembledMarkdown,
 		sources: auditSources,
@@ -2576,10 +2593,12 @@ export async function runAtlasPipeline(
 		coverageReview,
 		sectionBriefs: assemblyMetadata.sectionBriefs,
 		assemblyMetadata,
+		maxChars: claimBasisReportMaxChars,
 	});
 	if (audit.usage) {
 		usage = addUsage(usage, audit.usage);
 	}
+	let auditFinishReason = audit.finishReason;
 	if (audit.retryRequested) {
 		await input.dependencies.heartbeat?.({
 			stage: "assemble",
@@ -2627,10 +2646,12 @@ export async function runAtlasPipeline(
 			coverageReview,
 			sectionBriefs: assemblyMetadata.sectionBriefs,
 			assemblyMetadata,
+			maxChars: claimBasisReportMaxChars,
 		});
 		if (audit.usage) {
 			usage = addUsage(usage, audit.usage);
 		}
+		auditFinishReason = audit.finishReason;
 	}
 	let auditedMarkdown =
 		audit.passed && !audit.retryRequested
@@ -2708,6 +2729,29 @@ export async function runAtlasPipeline(
 			...assemblyDiagnostics,
 			claimBasisDiagnostics: basisDiagnostics,
 		};
+	}
+	if (assemblyDiagnostics) {
+		assemblyDiagnostics = {
+			...assemblyDiagnostics,
+			writerFinishReason: writerFinishReason ?? null,
+			auditFinishReason: auditFinishReason ?? null,
+			coverageReviewFinishReason: coverageReviewFinishReason ?? null,
+		};
+	}
+	if (writerFinishReason === "length") {
+		console.warn(
+			"[ATLAS] Writer (assemble) stage hit max output tokens (finishReason=length). Report may be truncated.",
+		);
+	}
+	if (auditFinishReason === "length") {
+		console.warn(
+			"[ATLAS] Audit stage hit max output tokens (finishReason=length). Claim basis may be incomplete.",
+		);
+	}
+	if (coverageReviewFinishReason === "length") {
+		console.warn(
+			"[ATLAS] Coverage review stage hit max output tokens (finishReason=length). Gap proposals may be truncated.",
+		);
 	}
 	const writerCheckpoint = {
 		evidenceCards: {

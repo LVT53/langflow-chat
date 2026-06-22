@@ -105,6 +105,10 @@ export const ADMIN_CONFIG_KEYS = [
 	"ATLAS_SEARCH_BATCH_DELAY_MS",
 	"ATLAS_SYNTHESIS_MODEL",
 	"ATLAS_AUDIT_MODEL",
+	"ATLAS_OVERVIEW_MAX_OUTPUT_TOKENS",
+	"ATLAS_IN_DEPTH_MAX_OUTPUT_TOKENS",
+	"ATLAS_EXHAUSTIVE_MAX_OUTPUT_TOKENS",
+	"ATLAS_MAX_WRITER_PROMPT_CHARS",
 	"WEB_PUSH_VAPID_PUBLIC_KEY",
 	"WEB_PUSH_VAPID_PRIVATE_KEY",
 	"WEB_PUSH_VAPID_SUBJECT",
@@ -165,6 +169,10 @@ export interface RuntimeConfig {
 	atlasSearchBatchDelayMs: number;
 	atlasSynthesisModel: ModelId;
 	atlasAuditModel: ModelId;
+	atlasOverviewMaxOutputTokens: number;
+	atlasInDepthMaxOutputTokens: number;
+	atlasExhaustiveMaxOutputTokens: number;
+	atlasMaxWriterPromptChars: number;
 	webPushVapidPublicKey: string;
 	webPushVapidPrivateKey: string;
 	webPushVapidSubject: string;
@@ -805,6 +813,26 @@ const overrideAppliers: Record<AdminConfigKey, OverrideApplier> = {
 	ATLAS_AUDIT_MODEL: (config, value) => {
 		config.atlasAuditModel = normalizeConfiguredModelId(value);
 	},
+	ATLAS_OVERVIEW_MAX_OUTPUT_TOKENS: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined)
+			config.atlasOverviewMaxOutputTokens = Math.max(1, parsed);
+	},
+	ATLAS_IN_DEPTH_MAX_OUTPUT_TOKENS: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined)
+			config.atlasInDepthMaxOutputTokens = Math.max(1, parsed);
+	},
+	ATLAS_EXHAUSTIVE_MAX_OUTPUT_TOKENS: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined)
+			config.atlasExhaustiveMaxOutputTokens = Math.max(1, parsed);
+	},
+	ATLAS_MAX_WRITER_PROMPT_CHARS: (config, value) => {
+		const parsed = parseIntOverride(value);
+		if (parsed !== undefined)
+			config.atlasMaxWriterPromptChars = Math.max(100, parsed);
+	},
 	WEB_PUSH_VAPID_PUBLIC_KEY: (config, value) => {
 		config.webPushVapidPublicKey = value.trim();
 	},
@@ -972,6 +1000,22 @@ export function getMaxMessageLength(modelId?: string): number {
 	if (modelId === "model1") return runtimeConfig.model1MaxMessageLength;
 	if (modelId === "model2") return runtimeConfig.model2MaxMessageLength;
 	return runtimeConfig.maxMessageLength;
+}
+
+export function getAtlasOverviewMaxOutputTokens(): number {
+	return runtimeConfig.atlasOverviewMaxOutputTokens;
+}
+
+export function getAtlasInDepthMaxOutputTokens(): number {
+	return runtimeConfig.atlasInDepthMaxOutputTokens;
+}
+
+export function getAtlasExhaustiveMaxOutputTokens(): number {
+	return runtimeConfig.atlasExhaustiveMaxOutputTokens;
+}
+
+export function getAtlasMaxWriterPromptChars(): number {
+	return runtimeConfig.atlasMaxWriterPromptChars;
 }
 
 export function isModelEnabled(
@@ -1172,6 +1216,16 @@ export function getResolvedAdminConfigValues(
 		ATLAS_SEARCH_BATCH_DELAY_MS: String(config.atlasSearchBatchDelayMs),
 		ATLAS_SYNTHESIS_MODEL: config.atlasSynthesisModel,
 		ATLAS_AUDIT_MODEL: config.atlasAuditModel,
+		ATLAS_OVERVIEW_MAX_OUTPUT_TOKENS: String(
+			config.atlasOverviewMaxOutputTokens,
+		),
+		ATLAS_IN_DEPTH_MAX_OUTPUT_TOKENS: String(
+			config.atlasInDepthMaxOutputTokens,
+		),
+		ATLAS_EXHAUSTIVE_MAX_OUTPUT_TOKENS: String(
+			config.atlasExhaustiveMaxOutputTokens,
+		),
+		ATLAS_MAX_WRITER_PROMPT_CHARS: String(config.atlasMaxWriterPromptChars),
 		WEB_PUSH_VAPID_PUBLIC_KEY: config.webPushVapidPublicKey,
 		WEB_PUSH_VAPID_PRIVATE_KEY: config.webPushVapidPrivateKey ? "[set]" : "",
 		WEB_PUSH_VAPID_SUBJECT: config.webPushVapidSubject,

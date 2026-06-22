@@ -58,10 +58,15 @@ const mocks = vi.hoisted(() => ({
 	buildAtlasLifecycleContext: vi.fn(),
 }));
 
-vi.mock("$lib/server/config-store", () => ({
-	getConfig: mocks.getConfig,
-	isModelEnabled: mocks.isModelEnabled,
-}));
+vi.mock("$lib/server/config-store", async (importOriginal) => {
+	const actual =
+		await importOriginal<typeof import("$lib/server/config-store")>();
+	return {
+		...actual,
+		getConfig: mocks.getConfig,
+		isModelEnabled: mocks.isModelEnabled,
+	};
+});
 
 vi.mock("./job-ledger", () => ({
 	applyAtlasGeneratedTitle: mocks.applyAtlasGeneratedTitle,
@@ -74,6 +79,17 @@ vi.mock("./job-ledger", () => ({
 
 vi.mock("./pipeline", () => ({
 	runAtlasPipeline: mocks.runAtlasPipeline,
+	AtlasPipelineQualityError: class AtlasPipelineQualityError extends Error {
+		constructor(markers: unknown[]) {
+			const markerCodes = (markers as { code: string }[])
+				.map((m) => m.code)
+				.join(", ");
+			super(
+				`Atlas quality gate failed${markerCodes ? `: ${markerCodes}` : "."}`,
+			);
+			this.name = "AtlasPipelineQualityError";
+		}
+	},
 }));
 
 vi.mock("./model-stage", () => ({

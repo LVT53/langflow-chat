@@ -466,6 +466,55 @@ describe("Atlas quality gates", () => {
 		);
 	});
 
+	it("scales retry report truncation with maxChars", async () => {
+		const longReport = "X".repeat(20000);
+		const runAuditModel = vi
+			.fn()
+			.mockResolvedValueOnce({
+				text: JSON.stringify({ retryRequested: false, claimBasis: [] }),
+			})
+			.mockResolvedValueOnce({
+				text: JSON.stringify({
+					retryRequested: false,
+					claimBasis: [
+						{
+							locator: {
+								sectionTitle: "Executive Summary",
+								paragraphIndex: 0,
+								claimIndex: 0,
+								claimText: "Hybrid retrieval improves recall.",
+							},
+							supportLevel: "supported",
+							evidencePackIds: ["pack-hybrid"],
+							supportRationale:
+								"The accepted source says hybrid retrieval combines lexical and semantic recall.",
+						},
+					],
+				}),
+			});
+
+		await auditAtlasBasis({
+			assembledMarkdown: longReport,
+			sources: [{ title: "Example", url: "https://example.com" }],
+			evidencePacks: [evidencePack],
+			sectionBriefs,
+			runAuditModel,
+			maxChars: 10000,
+		});
+
+		expect(runAuditModel).toHaveBeenCalledTimes(2);
+		const retryPromptText = runAuditModel.mock.calls[1]?.[0];
+		expect(retryPromptText).toBeDefined();
+		if (!retryPromptText) return;
+		const retryPrompt = JSON.parse(retryPromptText) as {
+			report?: string;
+		};
+		expect(retryPrompt.report).toBeDefined();
+		if (!retryPrompt.report) return;
+		expect(retryPrompt.report.length).toBeLessThanOrEqual(5100);
+		expect(retryPrompt.report.length).toBeGreaterThanOrEqual(4900);
+	});
+
 	it("includes retry attempted diagnostic even when retry succeeds with fallback", async () => {
 		const runAuditModel = vi
 			.fn()
