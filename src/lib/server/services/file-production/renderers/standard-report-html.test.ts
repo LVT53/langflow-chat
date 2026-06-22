@@ -682,6 +682,9 @@ describe("AlfyAI Standard Report HTML renderer", () => {
 		expect(html).toContain(
 			"<span>Accepted source states revenue increased by 12%. This should compact.</span>",
 		);
+		expect(html).toMatch(
+			/Revenue increased by 12%<button type="button" class="basis-marker basis-marker--supported"[\s\S]*?<\/button> while churn evidence remains thin/,
+		);
 		expect(supportedMarker).not.toContain("<svg");
 		expect(supportedMarker).not.toContain("data-confidence");
 		expect(html).toContain(".basis-marker:hover .basis-tooltip");

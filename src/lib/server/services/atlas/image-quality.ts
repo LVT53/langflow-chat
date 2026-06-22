@@ -95,6 +95,19 @@ export function atlasImageCandidateEvidenceText(
 	].join(" ");
 }
 
+function atlasImageCandidateVisualText(candidate: AtlasImageCandidate): string {
+	return [candidate.title, candidate.caption].join(" ");
+}
+
+function atlasImageCandidateSourceContextText(
+	candidate: AtlasImageCandidate,
+): string {
+	return [
+		candidate.sourceTitle ?? "",
+		normalizedImageUrlText(candidate.sourcePageUrl),
+	].join(" ");
+}
+
 function minimumQueryOverlap(query: string): number {
 	const tokenCount = atlasImageMeaningfulTokens(query).size;
 	if (tokenCount === 0) return 0;
@@ -104,11 +117,16 @@ function minimumQueryOverlap(query: string): number {
 function hasStrongQueryRelevance(candidate: AtlasImageCandidate): boolean {
 	const requiredOverlap = minimumQueryOverlap(candidate.query);
 	if (requiredOverlap === 0) return true;
+	const visualScore = atlasImageTokenOverlapScore(
+		candidate.query,
+		atlasImageCandidateVisualText(candidate),
+	);
+	const sourceContextScore = atlasImageTokenOverlapScore(
+		candidate.query,
+		atlasImageCandidateSourceContextText(candidate),
+	);
 	return (
-		atlasImageTokenOverlapScore(
-			candidate.query,
-			atlasImageCandidateEvidenceText(candidate),
-		) >= requiredOverlap
+		visualScore > 0 && visualScore + sourceContextScore >= requiredOverlap
 	);
 }
 

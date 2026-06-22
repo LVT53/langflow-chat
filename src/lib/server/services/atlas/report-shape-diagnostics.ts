@@ -1,0 +1,414 @@
+import type {
+	GeneratedDocumentBlock,
+	GeneratedDocumentSource,
+	GeneratedDocumentSourceChip,
+} from "$lib/server/services/file-production/source-schema";
+
+export type AtlasReportShapeWarningCode =
+	| "atlas_report_body_too_thin"
+	| "atlas_source_projection_dominates_report"
+	| "atlas_recommendation_not_decisive"
+	| "atlas_too_many_images_for_body_size";
+
+export interface AtlasReportShapeWarning {
+	code: AtlasReportShapeWarningCode;
+	message: string;
+}
+
+export interface AtlasReportShapeDiagnostics {
+	bodyWordCount: number;
+	sourceWordCount: number;
+	totalWordCount: number;
+	sourceWordShare: number;
+	substantiveSectionCount: number;
+	oneSentenceSectionCount: number;
+	imageCount: number;
+	hasDecisionOrRecommendationSignal: boolean;
+	warnings: AtlasReportShapeWarning[];
+}
+
+interface ReportShapeSection {
+	title: string | null;
+	textParts: string[];
+	hasStructuredContent: boolean;
+}
+
+interface ReportShapeParts {
+	bodyText: string;
+	sourceText: string;
+	sections: ReportShapeSection[];
+	imageCount: number;
+}
+
+const BODY_TOO_THIN_WORDS = 220;
+const SOURCE_DOMINATES_MIN_WORDS = 300;
+const SOURCE_DOMINATES_SHARE = 0.55;
+const SOURCE_DOMINATES_RATIO = 2;
+const SUBSTANTIVE_SECTION_WORDS = 55;
+const SUBSTANTIVE_STRUCTURED_SECTION_WORDS = 30;
+
+const SOURCE_SECTION_LABELS = new Set([
+	"sources",
+	"source list",
+	"sources cited",
+	"sources consulted",
+	"sources consulted by the model",
+	"sources used",
+	"web sources",
+	"your library",
+	"bibliography",
+	"references",
+	"reference list",
+	"works cited",
+	"citations",
+	"citation appendix",
+	"forrasok",
+	"forraslista",
+	"felhasznalt forrasok",
+	"webes forrasok",
+	"sajat konyvtar",
+	"hivatkozasok",
+	"hivatkozasi fuggelek",
+	"irodalomjegyzek",
+	"felhasznalt irodalom",
+]);
+
+function normalizedHeading(text: string): string {
+	return text
+		.normalize("NFD")
+		.replace(/[\u0300-\u036f]/g, "")
+		.trim()
+		.toLowerCase()
+		.replace(/\s+/g, " ")
+		.replace(/[.:;]+$/g, "");
+}
+
+function isSourceHeading(text: string): boolean {
+	const normalized = normalizedHeading(text).replace(
+		/^(appendix|fuggelek)\s*[:.-]\s*/,
+		"",
+	);
+	return SOURCE_SECTION_LABELS.has(normalized);
+}
+
+function stripMarkdown(text: string): string {
+	return text
+		.replace(/!\[[^\]]*]\([^)]*\)/g, " ")
+		.replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
+		.replace(/[`*_~>#|-]+/g, " ")
+		.replace(/https?:\/\/\S+/g, " ")
+		.replace(/\s+/g, " ")
+		.trim();
+}
+
+function wordCount(text: string): number {
+	return (
+		stripMarkdown(text).match(/[\p{L}\p{N}]+(?:['-][\p{L}\p{N}]+)*/gu)
+			?.length ?? 0
+	);
+}
+
+function sentenceCount(text: string): number {
+	const stripped = stripMarkdown(text);
+	if (!stripped) return 0;
+	const endings = stripped.match(/[.!?]+(?=\s|$)/g)?.length ?? 0;
+	return Math.max(1, endings);
+}
+
+function hasDecisionSignal(text: string): boolean {
+	return /\b(?:we recommend|recommend(?:ed|s)?|should|choose|use|adopt|avoid|default|best fit|best option|verdict|decision is|start with|opt for|ranked|shortlist)\b/i.test(
+		text,
+	);
+}
+
+function isRecommendationTitle(title: string | null): boolean {
+	return Boolean(
+		title &&
+			/\b(?:recommendation|recommended|decision|verdict|shortlist|what to do|javaslat|dontes)\b/i.test(
+				normalizedHeading(title),
+			),
+	);
+}
+
+function blockText(block: GeneratedDocumentBlock): string {
+	if (block.type === "heading" || block.type === "paragraph") return block.text;
+	if (block.type === "quote") return block.text;
+	if (block.type === "callout") return `${block.title ?? ""} ${block.text}`;
+	if (block.type === "list") return block.items.join(" ");
+	if (block.type === "code") return block.text;
+	if (block.type === "table") {
+		return [
+			...block.columns.map((column) => column.label),
+			...block.rows.flatMap((row) =>
+				Object.values(row).map((value) => String(value ?? "")),
+			),
+		].join(" ");
+	}
+	if (block.type === "chart") {
+		return `${block.title} ${block.caption ?? ""} ${block.altText ?? ""}`;
+	}
+	if (block.type === "image") {
+		return `${block.altText ?? ""} ${block.caption ?? ""}`;
+	}
+	return "";
+}
+
+function sourceChipText(source: GeneratedDocumentSourceChip): string {
+	return [source.title, source.reasoning ?? ""].filter(Boolean).join(" ");
+}
+
+function reportPartsFromDocumentSource(
+	source: GeneratedDocumentSource,
+): ReportShapeParts {
+	const bodyTextParts: string[] = [];
+	const sourceTextParts: string[] = [];
+	const sections: ReportShapeSection[] = [];
+	let currentSection: ReportShapeSection | null = null;
+	let previousHeadingWasCanonicalSources = false;
+	let imageCount = 0;
+
+	for (const block of source.blocks) {
+		if (block.type === "sourceChips") {
+			if (previousHeadingWasCanonicalSources) {
+				const lastBodyPart = bodyTextParts.at(-1);
+				if (lastBodyPart && isSourceHeading(lastBodyPart)) bodyTextParts.pop();
+			}
+			sourceTextParts.push(
+				block.title,
+				...block.sources.map((chip) => sourceChipText(chip)),
+			);
+			previousHeadingWasCanonicalSources = false;
+			continue;
+		}
+
+		if (block.type === "heading") {
+			previousHeadingWasCanonicalSources = isSourceHeading(block.text);
+			if (previousHeadingWasCanonicalSources) {
+				sourceTextParts.push(block.text);
+				currentSection = null;
+				continue;
+			}
+			currentSection = {
+				title: block.text,
+				textParts: [],
+				hasStructuredContent: false,
+			};
+			sections.push(currentSection);
+			bodyTextParts.push(block.text);
+			continue;
+		}
+
+		previousHeadingWasCanonicalSources = false;
+		if (block.type === "image") imageCount += 1;
+		const text = blockText(block);
+		if (!text) continue;
+		bodyTextParts.push(text);
+		if (!currentSection) {
+			currentSection = {
+				title: null,
+				textParts: [],
+				hasStructuredContent: false,
+			};
+			sections.push(currentSection);
+		}
+		currentSection.textParts.push(text);
+		if (
+			block.type === "list" ||
+			block.type === "table" ||
+			block.type === "chart"
+		) {
+			currentSection.hasStructuredContent = true;
+		}
+	}
+
+	return {
+		bodyText: bodyTextParts.join(" "),
+		sourceText: sourceTextParts.join(" "),
+		sections,
+		imageCount,
+	};
+}
+
+function reportPartsFromMarkdown(markdown: string): ReportShapeParts {
+	const bodyTextParts: string[] = [];
+	const sourceTextParts: string[] = [];
+	const sections: ReportShapeSection[] = [];
+	let currentSection: ReportShapeSection | null = null;
+	let sourceSectionLevel: number | null = null;
+	let imageCount = 0;
+
+	for (const rawLine of markdown.split(/\r?\n/)) {
+		const line = rawLine.trim();
+		if (!line) continue;
+		const imageMatches = line.match(/!\[[^\]]*]\([^)]*\)/g);
+		if (imageMatches) imageCount += imageMatches.length;
+
+		const heading = line.match(/^(#{1,6})\s+(.+)$/);
+		if (heading) {
+			const level = heading[1].length;
+			const title = heading[2].trim();
+			if (sourceSectionLevel !== null && level <= sourceSectionLevel) {
+				sourceSectionLevel = null;
+			}
+			if (sourceSectionLevel !== null || isSourceHeading(title)) {
+				sourceSectionLevel = sourceSectionLevel ?? level;
+				sourceTextParts.push(title);
+				currentSection = null;
+				continue;
+			}
+			currentSection = {
+				title,
+				textParts: [],
+				hasStructuredContent: false,
+			};
+			sections.push(currentSection);
+			bodyTextParts.push(title);
+			continue;
+		}
+
+		if (sourceSectionLevel !== null) {
+			sourceTextParts.push(line);
+			continue;
+		}
+
+		bodyTextParts.push(line);
+		if (!currentSection) {
+			currentSection = {
+				title: null,
+				textParts: [],
+				hasStructuredContent: false,
+			};
+			sections.push(currentSection);
+		}
+		currentSection.textParts.push(line);
+		if (/^\s*(?:[-*]|\d+\.)\s+/.test(rawLine) || line.includes("|")) {
+			currentSection.hasStructuredContent = true;
+		}
+	}
+
+	return {
+		bodyText: bodyTextParts.join(" "),
+		sourceText: sourceTextParts.join(" "),
+		sections,
+		imageCount,
+	};
+}
+
+function buildWarnings(input: {
+	bodyWordCount: number;
+	sourceWordCount: number;
+	totalWordCount: number;
+	sourceWordShare: number;
+	substantiveSectionCount: number;
+	oneSentenceSectionCount: number;
+	imageCount: number;
+	hasDecisionOrRecommendationSignal: boolean;
+	hasRecommendationSection: boolean;
+	recommendationSectionHasDecisionSignal: boolean;
+}): AtlasReportShapeWarning[] {
+	const warnings: AtlasReportShapeWarning[] = [];
+	if (input.bodyWordCount > 0 && input.bodyWordCount < BODY_TOO_THIN_WORDS) {
+		warnings.push({
+			code: "atlas_report_body_too_thin",
+			message:
+				"Atlas report body is thin; this diagnostic is advisory and must not fail the job by itself.",
+		});
+	}
+	if (
+		input.sourceWordCount >= SOURCE_DOMINATES_MIN_WORDS &&
+		input.sourceWordShare >= SOURCE_DOMINATES_SHARE &&
+		input.sourceWordCount >= input.bodyWordCount * SOURCE_DOMINATES_RATIO
+	) {
+		warnings.push({
+			code: "atlas_source_projection_dominates_report",
+			message:
+				"Atlas source projection dominates the report body; publish compact sources and improve synthesis when possible.",
+		});
+	}
+	if (
+		input.hasRecommendationSection &&
+		!input.recommendationSectionHasDecisionSignal
+	) {
+		warnings.push({
+			code: "atlas_recommendation_not_decisive",
+			message:
+				"Atlas has a recommendation or decision section without a clear decision signal.",
+		});
+	}
+	const imageLimit =
+		input.bodyWordCount < 400
+			? 1
+			: Math.max(1, Math.ceil(input.bodyWordCount / 700));
+	if (input.imageCount > imageLimit) {
+		warnings.push({
+			code: "atlas_too_many_images_for_body_size",
+			message:
+				"Atlas image count is high for the amount of report body text; this is an advisory shape diagnostic.",
+		});
+	}
+	return warnings;
+}
+
+export function diagnoseAtlasReportShape(
+	input: string | GeneratedDocumentSource,
+): AtlasReportShapeDiagnostics {
+	const parts =
+		typeof input === "string"
+			? reportPartsFromMarkdown(input)
+			: reportPartsFromDocumentSource(input);
+	const bodyWordCount = wordCount(parts.bodyText);
+	const sourceWordCount = wordCount(parts.sourceText);
+	const totalWordCount = bodyWordCount + sourceWordCount;
+	const sourceWordShare =
+		totalWordCount > 0 ? sourceWordCount / totalWordCount : 0;
+	const sectionStats = parts.sections.map((section) => {
+		const text = section.textParts.join(" ");
+		const words = wordCount(text);
+		return {
+			title: section.title,
+			words,
+			sentences: sentenceCount(text),
+			hasStructuredContent: section.hasStructuredContent,
+			hasDecisionSignal: hasDecisionSignal(text),
+		};
+	});
+	const substantiveSectionCount = sectionStats.filter(
+		(section) =>
+			section.words >= SUBSTANTIVE_SECTION_WORDS ||
+			(section.hasStructuredContent &&
+				section.words >= SUBSTANTIVE_STRUCTURED_SECTION_WORDS),
+	).length;
+	const oneSentenceSectionCount = sectionStats.filter(
+		(section) => section.words > 0 && section.sentences <= 1,
+	).length;
+	const hasDecisionOrRecommendationSignal = hasDecisionSignal(parts.bodyText);
+	const recommendationSections = sectionStats.filter((section) =>
+		isRecommendationTitle(section.title),
+	);
+	const recommendationSectionHasDecisionSignal = recommendationSections.some(
+		(section) => section.hasDecisionSignal,
+	);
+
+	return {
+		bodyWordCount,
+		sourceWordCount,
+		totalWordCount,
+		sourceWordShare,
+		substantiveSectionCount,
+		oneSentenceSectionCount,
+		imageCount: parts.imageCount,
+		hasDecisionOrRecommendationSignal,
+		warnings: buildWarnings({
+			bodyWordCount,
+			sourceWordCount,
+			totalWordCount,
+			sourceWordShare,
+			substantiveSectionCount,
+			oneSentenceSectionCount,
+			imageCount: parts.imageCount,
+			hasDecisionOrRecommendationSignal,
+			hasRecommendationSection: recommendationSections.length > 0,
+			recommendationSectionHasDecisionSignal,
+		}),
+	};
+}

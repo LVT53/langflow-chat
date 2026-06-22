@@ -40,7 +40,11 @@ export function determineTeiWinningMode(params: {
 }
 
 export function logTeiRetrievalSummary(params: {
-	scope: "documents" | "persona_prompt" | "task_routing";
+	scope:
+		| "documents"
+		| "persona_prompt"
+		| "task_routing"
+		| "atlas_writer_evidence_cards";
 	userId?: string;
 	conversationId?: string;
 	queryLength: number;

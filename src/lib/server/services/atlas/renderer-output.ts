@@ -32,6 +32,7 @@ export interface AtlasReportSource {
 	url?: string | null;
 	authority?: string | null;
 	reasoning?: string | null;
+	relevanceNote?: string | null;
 }
 
 export interface BuildAtlasDocumentSourceInput {
@@ -70,6 +71,7 @@ export interface RenderAtlasOutputsInput {
 
 const ATLAS_OUTPUT_JOB_POLL_INTERVAL_MS = 250;
 const ATLAS_OUTPUT_JOB_POLL_TIMEOUT_MS = 30_000;
+export const ATLAS_SOURCE_RELEVANCE_NOTE_MAX_LENGTH = 220;
 
 function addSourceSection(
 	blocks: GeneratedDocumentSource["blocks"],
@@ -99,13 +101,14 @@ function sourceChipForAtlasSource(
 		url: source.url ?? null,
 		kind: isWeb ? "web" : "library",
 		provided,
-		reasoning:
-			source.reasoning ??
-			(provided
+		reasoning: compactAtlasSourceRelevanceNote({
+			note: source.relevanceNote ?? source.reasoning,
+			fallback: provided
 				? chrome.providedSourcesReasoning
 				: isWeb
 					? chrome.webSourcesReasoning
-					: chrome.librarySourcesReasoning),
+					: chrome.librarySourcesReasoning,
+		}),
 	};
 }
 
@@ -148,6 +151,67 @@ function cleanText(value: unknown): string | null {
 	if (typeof value !== "string") return null;
 	const trimmed = value.replace(/\s+/g, " ").trim();
 	return trimmed.length > 0 ? trimmed : null;
+}
+
+function withoutRawExcerptTail(text: string): string {
+	const rawLabelMatch = text.match(
+		/\b(?:Fetched page excerpt|Accepted source excerpt)\s*:/i,
+	);
+	if (!rawLabelMatch || typeof rawLabelMatch.index !== "number") return text;
+	if (rawLabelMatch.index === 0) return "";
+	const beforeRawLabel = text.slice(0, rawLabelMatch.index).trim();
+	return beforeRawLabel.length >= 24 ? beforeRawLabel : "";
+}
+
+function removeSourceDumpLabels(text: string): string {
+	return text
+		.replace(/\bSearch result snippet\s*:\s*/gi, "")
+		.replace(/\bFetched page excerpt\s*:\s*/gi, "")
+		.replace(/\bAccepted source excerpt\s*:\s*/gi, "")
+		.replace(/\s+/g, " ")
+		.trim();
+}
+
+function usefulSourceNoteSentences(text: string): string[] {
+	const sentences = text
+		.split(/(?<=[.!?])\s+/)
+		.map((sentence) => sentence.trim())
+		.filter(Boolean);
+	const candidates = sentences.length > 0 ? sentences : [text.trim()];
+	const filtered = candidates.filter(
+		(sentence) =>
+			!/\b(?:cookie|subscribe|sign in|privacy policy|advertisement|loading|navigation menu|copied from the fetched page)\b/i.test(
+				sentence,
+			),
+	);
+	return (filtered.length > 0 ? filtered : candidates).slice(0, 2);
+}
+
+function truncateSourceNote(text: string, maxLength: number): string {
+	if (text.length <= maxLength) return text;
+	const clipped = text.slice(0, maxLength + 1);
+	const lastSentence = clipped.search(/[.!?](?=\s|$)[^.!?]*$/);
+	if (lastSentence >= 80) return text.slice(0, lastSentence + 1).trim();
+	const lastSpace = clipped.lastIndexOf(" ");
+	const end = Math.max(lastSpace, Math.min(maxLength, 80));
+	return `${clipped.slice(0, end).trim()}...`;
+}
+
+export function compactAtlasSourceRelevanceNote(input: {
+	note?: string | null;
+	fallback: string;
+	maxLength?: number;
+}): string {
+	const fallback =
+		cleanText(input.fallback) ?? "Accepted evidence gathered by Atlas";
+	const normalized = cleanText(input.note) ?? fallback;
+	const cleaned = removeSourceDumpLabels(withoutRawExcerptTail(normalized));
+	const sentences = usefulSourceNoteSentences(cleaned).join(" ");
+	const compact = cleanText(sentences) ?? fallback;
+	return truncateSourceNote(
+		compact,
+		input.maxLength ?? ATLAS_SOURCE_RELEVANCE_NOTE_MAX_LENGTH,
+	);
 }
 
 function cleanCodeText(value: unknown): string | null {

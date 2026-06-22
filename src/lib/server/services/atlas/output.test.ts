@@ -486,6 +486,86 @@ describe("Atlas renderer output", () => {
 		});
 	});
 
+	it("rejects decorative image candidates whose only query relevance comes from the source page", async () => {
+		const { buildAtlasDocumentSource } = await import("./renderer-output");
+
+		const source = buildAtlasDocumentSource({
+			title: "Enterprise Search Atlas",
+			assembledMarkdown: [
+				"## Executive Summary",
+				"Enterprise search architecture decisions should combine lexical retrieval, semantic retrieval, and reranking.",
+				"",
+				"## Findings",
+				"The report body is relevant, but decorative artwork should not become evidence just because it came from a relevant page.",
+			].join("\n"),
+			sources: [],
+			honestyMarkers: [],
+			imageCandidates: [
+				{
+					id: "image-candidate-decorative",
+					query: "enterprise search architecture",
+					title: "Abstract blue technology hero banner",
+					imageUrl: "https://example.com/hero-banner.png",
+					sourcePageUrl: "https://example.com/enterprise-search-architecture",
+					sourceTitle: "Enterprise search architecture reference guide",
+					thumbnailUrl: null,
+					width: 1200,
+					height: 800,
+					caption: "Decorative stock background with glowing lines",
+					selectionReason: "Image result for enterprise search architecture.",
+				},
+			],
+			maxRenderedImages: 1,
+		});
+
+		expect(
+			source.blocks.filter((block) => block.type === "image"),
+		).toHaveLength(0);
+	});
+
+	it("keeps source-backed image candidates when visual text and source title both support the report query", async () => {
+		const { buildAtlasDocumentSource } = await import("./renderer-output");
+
+		const source = buildAtlasDocumentSource({
+			title: "Enterprise Search Atlas",
+			assembledMarkdown: [
+				"## Executive Summary",
+				"Enterprise search architecture decisions should combine lexical retrieval, semantic retrieval, and reranking.",
+				"",
+				"## Findings",
+				"Architecture diagrams clarify ingestion, indexing, retrieval, and reranking responsibilities.",
+			].join("\n"),
+			sources: [],
+			honestyMarkers: [],
+			imageCandidates: [
+				{
+					id: "image-candidate-source-backed",
+					query: "enterprise search architecture",
+					title: "Reference architecture diagram",
+					imageUrl: "https://example.com/reference-architecture.png",
+					sourcePageUrl: "https://example.com/enterprise-search-architecture",
+					sourceTitle: "Enterprise search architecture reference guide",
+					thumbnailUrl: null,
+					width: 1200,
+					height: 800,
+					caption: "Architecture diagram for the retrieval stack",
+					selectionReason: "Image result for enterprise search architecture.",
+				},
+			],
+			maxRenderedImages: 1,
+		});
+
+		const imageBlocks = source.blocks.filter((block) => block.type === "image");
+		expect(imageBlocks).toHaveLength(1);
+		expect(imageBlocks[0]).toMatchObject({
+			source: {
+				kind: "https",
+				url: "https://example.com/reference-architecture.png",
+			},
+			caption: "Architecture diagram for the retrieval stack",
+		});
+	});
+
 	it("caps model-authored report images by section density", async () => {
 		const { buildAtlasDocumentSource } = await import("./renderer-output");
 
@@ -1038,6 +1118,184 @@ describe("Atlas renderer output", () => {
 				}),
 			]),
 		);
+	});
+
+	it("compacts long fetched snippets in deterministic source chips", async () => {
+		const { buildAtlasDocumentSource } = await import("./renderer-output");
+		const longFetchedSnippet = [
+			"Search result snippet: Framework routing docs.",
+			"Fetched page excerpt:",
+			Array.from(
+				{ length: 120 },
+				(_, index) =>
+					`RAW_EXCERPT_SENTINEL_${index} navigation boilerplate paragraph copied from the fetched page`,
+			).join(" "),
+		].join(" ");
+
+		const source = buildAtlasDocumentSource({
+			title: "Compact Source Atlas",
+			assembledMarkdown:
+				"## Executive Summary\nAtlas keeps source identity visible without publishing fetched-page excerpts as the report body.",
+			sources: [
+				{
+					title: "Routing docs",
+					url: "https://example.com/routing",
+					reasoning: longFetchedSnippet,
+				},
+			],
+			honestyMarkers: [],
+		});
+
+		const webSources = source.blocks.find(
+			(block) => block.type === "sourceChips" && block.title === "Web Sources",
+		);
+		if (webSources?.type !== "sourceChips") {
+			throw new Error("Expected deterministic Web Sources source chips.");
+		}
+		const reasoning = webSources.sources[0]?.reasoning ?? "";
+
+		expect(webSources.sources[0]).toMatchObject({
+			title: "Routing docs",
+			url: "https://example.com/routing",
+		});
+		expect(reasoning).toContain("Framework routing docs.");
+		expect(reasoning.length).toBeLessThanOrEqual(240);
+		expect(reasoning).not.toMatch(
+			/Fetched page excerpt|Search result snippet|RAW_EXCERPT_SENTINEL/i,
+		);
+	});
+
+	it("falls back when source-chip reasoning starts directly with a fetched excerpt", async () => {
+		const { buildAtlasDocumentSource } = await import("./renderer-output");
+		const rawFirstSnippet = [
+			"Fetched page excerpt:",
+			Array.from(
+				{ length: 80 },
+				(_, index) =>
+					`RAW_FIRST_SENTINEL_${index} copied source paragraph that should not publish`,
+			).join(" "),
+		].join(" ");
+
+		const source = buildAtlasDocumentSource({
+			title: "Raw First Source Atlas",
+			assembledMarkdown:
+				"## Executive Summary\nAtlas should not publish raw fetched excerpts when the source note starts with a dump label.",
+			sources: [
+				{
+					title: "Raw source",
+					url: "https://example.com/raw",
+					reasoning: rawFirstSnippet,
+				},
+			],
+			honestyMarkers: [],
+		});
+
+		const webSources = source.blocks.find(
+			(block) => block.type === "sourceChips" && block.title === "Web Sources",
+		);
+		if (webSources?.type !== "sourceChips") {
+			throw new Error("Expected deterministic Web Sources source chips.");
+		}
+
+		expect(webSources.sources[0]).toMatchObject({
+			title: "Raw source",
+			url: "https://example.com/raw",
+			reasoning: "Accepted web evidence gathered by Atlas",
+		});
+	});
+
+	it("diagnoses source-dominated reports as warnings without throwing", async () => {
+		const { diagnoseAtlasReportShape } = await import(
+			"./report-shape-diagnostics"
+		);
+		const sourceDump = Array.from(
+			{ length: 1_200 },
+			(_, index) => `sourceword${index}`,
+		).join(" ");
+
+		const diagnostics = diagnoseAtlasReportShape(
+			[
+				"## Executive Summary",
+				"The report is currently too thin.",
+				"",
+				"## Findings",
+				"Evidence exists but the synthesis is still shallow.",
+				"",
+				"## Tradeoffs",
+				"Tradeoffs are mentioned without comparison.",
+				"",
+				"## Recommendation",
+				"Recommendation remains unclear.",
+				"",
+				"## Limitations",
+				"Coverage is limited.",
+				"",
+				"## Sources",
+				"### Web Sources",
+				`- [Routing docs](https://example.com/routing) Fetched page excerpt: ${sourceDump}`,
+			].join("\n"),
+		);
+
+		const warningCodes = diagnostics.warnings.map((warning) => warning.code);
+		expect(diagnostics.bodyWordCount).toBeLessThan(80);
+		expect(diagnostics.sourceWordCount).toBeGreaterThan(1_000);
+		expect(diagnostics.sourceWordShare).toBeGreaterThan(0.9);
+		expect(warningCodes).toEqual(
+			expect.arrayContaining([
+				"atlas_report_body_too_thin",
+				"atlas_source_projection_dominates_report",
+				"atlas_recommendation_not_decisive",
+			]),
+		);
+	});
+
+	it("does not warn when a substantive body has compact source projection", async () => {
+		const { buildAtlasDocumentSource } = await import("./renderer-output");
+		const { diagnoseAtlasReportShape } = await import(
+			"./report-shape-diagnostics"
+		);
+		const bodyParagraph = [
+			"Hybrid retrieval is the recommended default because it gives exact-term recall, semantic discovery, and a clear path to reranking without locking the team into one retrieval mode.",
+			"Operationally, the strongest stack starts with measurable corpus evaluation, keeps source-level logging, and treats latency budgets as a design constraint rather than a post-launch tuning exercise.",
+			"Teams should avoid publishing broad claims from a single benchmark and should validate the selected approach on representative internal documents before production rollout.",
+		].join(" ");
+
+		const source = buildAtlasDocumentSource({
+			title: "Substantive Atlas",
+			assembledMarkdown: [
+				"## Executive Summary",
+				bodyParagraph,
+				"",
+				"## Recommendation",
+				bodyParagraph,
+				"",
+				"## Tradeoffs",
+				bodyParagraph,
+				"",
+				"## Limitations",
+				bodyParagraph,
+			].join("\n"),
+			sources: [
+				{
+					title: "Architecture benchmark",
+					url: "https://example.com/benchmark",
+					reasoning: "Supports the hybrid retrieval recommendation.",
+				},
+			],
+			honestyMarkers: [],
+		});
+
+		const diagnostics = diagnoseAtlasReportShape(source);
+		const warningCodes = diagnostics.warnings.map((warning) => warning.code);
+
+		expect(diagnostics.bodyWordCount).toBeGreaterThan(250);
+		expect(diagnostics.sourceWordCount).toBeLessThan(40);
+		expect(diagnostics.hasDecisionOrRecommendationSignal).toBe(true);
+		expect(warningCodes).not.toContain("atlas_report_body_too_thin");
+		expect(warningCodes).not.toContain(
+			"atlas_source_projection_dominates_report",
+		);
+		expect(warningCodes).not.toContain("atlas_recommendation_not_decisive");
 	});
 
 	it("keeps key takeaways as optional compact section callouts instead of a forced report-wide top block", async () => {

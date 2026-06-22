@@ -11,6 +11,8 @@ export const ATLAS_EVIDENCE_PACK_SCHEMA_VERSION = "atlas.evidence-pack.v1";
 export const ATLAS_COVERAGE_REVIEW_SCHEMA_VERSION = "atlas.coverage-review.v1";
 export const ATLAS_ASSEMBLY_SCHEMA_VERSION = "atlas.assembly.v1";
 export const ATLAS_CLAIM_BASIS_SCHEMA_VERSION = "atlas.claim-basis.v1";
+export const ATLAS_WRITER_EVIDENCE_CARD_SCHEMA_VERSION =
+	"atlas.writer-evidence-card.v1";
 export const ATLAS_CLAIM_SUPPORT_LEVELS = [
 	"supported",
 	"partial",
@@ -30,6 +32,16 @@ export type AtlasGapProposalPriority =
 	(typeof ATLAS_GAP_PROPOSAL_PRIORITIES)[number];
 export type AtlasClaimSupportLevel =
 	(typeof ATLAS_CLAIM_SUPPORT_LEVELS)[number];
+export type AtlasWriterEvidenceCardAuthority =
+	| "official"
+	| "benchmark"
+	| "vendor"
+	| "analysis"
+	| "community"
+	| "user_provided"
+	| "library"
+	| "parent_seed"
+	| "unknown";
 
 export type AtlasEvidencePackSourceKind = "web" | "local";
 export type AtlasEvidencePackAuthority =
@@ -72,6 +84,27 @@ export interface AtlasEvidencePack {
 	freshness: AtlasEvidencePackFreshness;
 	affectedSectionHint: string | null;
 	versionNote: string;
+}
+
+export interface AtlasWriterEvidenceCard {
+	version: typeof ATLAS_WRITER_EVIDENCE_CARD_SCHEMA_VERSION;
+	id: string;
+	sourceTitle: string;
+	url: string | null;
+	authority: AtlasWriterEvidenceCardAuthority;
+	sourceRefs: AtlasEvidencePackSourceRef[];
+	relevantFacts: string[];
+	limitations: string[];
+	conflicts: string[];
+	supportsSections: string[];
+	evidencePackIds: string[];
+	freshnessNote: string | null;
+}
+
+export interface AtlasWriterEvidenceCardDiagnostic {
+	code: string;
+	severity: "info" | "warning";
+	message: string;
 }
 
 export interface AtlasEvidencePackDiagnostic {
@@ -223,6 +256,18 @@ export interface AtlasJobOutputs {
 	htmlChatGeneratedFileId: string | null;
 	pdfChatGeneratedFileId: string | null;
 	markdownChatGeneratedFileId: string | null;
+}
+
+export interface AtlasEvidenceAppendixSummary {
+	status: "checkpoint_only";
+	acceptedWebSourceCount: number;
+	acceptedLocalSourceCount: number;
+	rejectedWebSourceCount: number;
+	rawExcerptPresent: boolean;
+	rawExcerptLabelCount: number;
+	maxSnippetChars: number;
+	rejectedReasonCounts: Record<string, number>;
+	publishedReportIncludesRawExcerpts: false;
 }
 
 export interface AtlasJobError {

@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { GeneratedDocumentSource } from "$lib/server/services/file-production/source-schema";
 import type { RunAtlasPipelineInput } from "./pipeline";
+import type { AtlasWriterEvidenceCardReranker } from "./writer-evidence-cards";
 import type {
 	AtlasGapProposal,
 	AtlasPipelineJobContext,
@@ -8,6 +9,11 @@ import type {
 } from "./types";
 
 describe("Atlas pipeline slices", () => {
+	afterEach(() => {
+		vi.unstubAllEnvs();
+		vi.unstubAllGlobals();
+	});
+
 	function stageUsage(inputTokens = 1, outputTokens = 1) {
 		return {
 			inputTokens,
@@ -108,8 +114,122 @@ describe("Atlas pipeline slices", () => {
 		].join("\n");
 	}
 
-	it("uses a valid structured generated title as the canonical document title and checkpoints section briefs", async () => {
+	function decisionQualityReport(): string {
+		const body = [
+			"For a regulated SaaS team, the best default is a hybrid retrieval stack with lexical retrieval, vector retrieval, and reranking kept as separate operational responsibilities. This structure answers the request directly because it preserves exact policy language, broadens recall for related concepts, and gives reviewers a clear evidence trail before generation.",
+			"We recommend starting with hybrid retrieval plus reranking, then validating latency and recall against the team's own corpus before scaling. Keyword-only retrieval is too brittle for conceptual discovery, while vector-only retrieval makes exact compliance language and audit review harder to control.",
+			"The practical tradeoff is latency and operating complexity: reranking adds another step, but it narrows noisy candidates and makes final evidence selection easier to inspect. Teams should set a latency budget, measure recall on representative documents, and keep source-level logging in the evaluation loop.",
+		].join(" ");
+		return [
+			"## Executive Summary",
+			body,
+			"",
+			"## Recommended Architecture",
+			body,
+			"",
+			"## Tradeoffs",
+			body,
+			"",
+			"## Limitations",
+			"The evidence is representative rather than exhaustive, so the final stack should be validated against production documents, access rules, and response-time targets before rollout.",
+		].join("\n");
+	}
+
+	const noopWriterEvidenceCardReranker: AtlasWriterEvidenceCardReranker =
+		async (params) => ({
+			items: params.items.map((item, index) => ({
+				item,
+				index,
+				score: 0,
+			})),
+		});
+
+	async function runAtlasPipelineWithNoopReranker(
+		input: RunAtlasPipelineInput,
+	) {
 		const { runAtlasPipeline } = await import("./pipeline");
+		return runAtlasPipeline({
+			...input,
+			dependencies: {
+				...input.dependencies,
+				rerankWriterEvidenceCards:
+					input.dependencies.rerankWriterEvidenceCards ??
+					noopWriterEvidenceCardReranker,
+			},
+		});
+	}
+
+	it("does not consult ambient TEI routing in unit tests when a no-op writer reranker is supplied", async () => {
+		vi.stubEnv("TEI_RERANKER_URL", "http://tei.example.test/rerank");
+		const fetchTripwire = vi.fn(async () => {
+			throw new Error("Unit tests must not call ambient TEI");
+		});
+		vi.stubGlobal("fetch", fetchTripwire);
+
+		await runAtlasPipelineWithNoopReranker({
+			job: atlasJob({
+				id: "atlas-no-ambient-tei",
+				profile: "overview",
+				query: "Recommend retrieval architecture for regulated SaaS",
+			}),
+			now: new Date("2026-06-21T10:00:00.000Z"),
+			dependencies: {
+				resolveSources: vi.fn(async () => ({ localSources: [] })),
+				searchWeb: vi.fn(async () => ({
+					sources: [
+						{
+							id: "web-no-ambient-tei",
+							title: "Hybrid retrieval deterministic evidence",
+							url: "https://example.com/no-ambient-tei",
+							snippet:
+								"Hybrid retrieval evidence supports exact recall, semantic discovery, reranking, governance, and latency validation.",
+						},
+					],
+					rejectedSources: [],
+					limitation: null,
+				})),
+				runModelStage: vi.fn(async (input) => {
+					if (input.stage === "decompose") {
+						return {
+							text: "hybrid retrieval regulated SaaS",
+							usage: stageUsage(),
+						};
+					}
+					if (input.stage === "coverage-review") {
+						return { text: coverageReviewText([], true), usage: stageUsage() };
+					}
+					if (input.stage === "assemble") {
+						return {
+							text: JSON.stringify({
+								generatedTitle: "No Ambient TEI Atlas",
+								bodyMarkdown: decisionQualityReport(),
+								sectionBriefs: [],
+								limitations: [],
+							}),
+							usage: stageUsage(),
+						};
+					}
+					return { text: `${input.stage} result`, usage: stageUsage() };
+				}),
+				auditBasis: vi.fn(async () => ({
+					passed: true,
+					honestyMarkers: [],
+					retryRequested: false,
+				})),
+				writeCheckpoint: vi.fn(async () => {}),
+				renderOutputs: vi.fn(async () => ({
+					fileProductionJobId: "fp-job-no-ambient-tei",
+					htmlChatGeneratedFileId: "file-html",
+					pdfChatGeneratedFileId: "file-pdf",
+					markdownChatGeneratedFileId: "file-md",
+				})),
+			},
+		});
+
+		expect(fetchTripwire).not.toHaveBeenCalled();
+	});
+
+	it("uses a valid structured generated title as the canonical document title and checkpoints section briefs", async () => {
 		const checkpoints: Array<{
 			roundNumber: number;
 			checkpoint: Record<string, unknown>;
@@ -123,7 +243,7 @@ describe("Atlas pipeline slices", () => {
 			markdownChatGeneratedFileId: "file-md",
 		}));
 
-		const result = await runAtlasPipeline({
+		const result = await runAtlasPipelineWithNoopReranker({
 			job: atlasJob({
 				id: "atlas-generated-title",
 				profile: "overview",
@@ -243,7 +363,6 @@ describe("Atlas pipeline slices", () => {
 	});
 
 	it("passes Evidence Packs and section briefs into basis audit and checkpoints Claim Basis data", async () => {
-		const { runAtlasPipeline } = await import("./pipeline");
 		const checkpoints: Array<{
 			roundNumber: number;
 			checkpoint: Record<string, unknown>;
@@ -309,7 +428,7 @@ describe("Atlas pipeline slices", () => {
 			};
 		});
 
-		await runAtlasPipeline({
+		await runAtlasPipelineWithNoopReranker({
 			job: atlasJob({
 				id: "atlas-claim-basis-checkpoint",
 				profile: "overview",
@@ -449,7 +568,6 @@ describe("Atlas pipeline slices", () => {
 	});
 
 	it("keeps the job title fallback when structured generated title is invalid", async () => {
-		const { runAtlasPipeline } = await import("./pipeline");
 		const applyGeneratedTitle = vi.fn(async () => {});
 		const renderOutputs = vi.fn(async () => ({
 			fileProductionJobId: "fp-job-invalid-title",
@@ -472,7 +590,7 @@ describe("Atlas pipeline slices", () => {
 			documentSourceSummary: { title: "Parent Generated Title" },
 		};
 
-		const result = await runAtlasPipeline({
+		const result = await runAtlasPipelineWithNoopReranker({
 			job,
 			now: new Date("2026-06-21T10:00:00.000Z"),
 			dependencies: {
@@ -532,7 +650,6 @@ describe("Atlas pipeline slices", () => {
 	});
 
 	it("runs two useful Exhaustive gap-fill rounds inside the same Atlas job and stops by the profile cap", async () => {
-		const { runAtlasPipeline } = await import("./pipeline");
 		const searchWeb = vi
 			.fn()
 			.mockResolvedValueOnce({
@@ -582,7 +699,7 @@ describe("Atlas pipeline slices", () => {
 		}> = [];
 		let coverageReviewCalls = 0;
 
-		const result = await runAtlasPipeline({
+		const result = await runAtlasPipelineWithNoopReranker({
 			job: atlasJob({ id: "atlas-gap-cap", profile: "exhaustive" }),
 			now: new Date("2026-06-21T10:00:00.000Z"),
 			dependencies: {
@@ -676,7 +793,6 @@ describe("Atlas pipeline slices", () => {
 	});
 
 	it("runs only one useful In-Depth gap-fill round", async () => {
-		const { runAtlasPipeline } = await import("./pipeline");
 		const searchWeb = vi
 			.fn()
 			.mockResolvedValueOnce({
@@ -708,7 +824,7 @@ describe("Atlas pipeline slices", () => {
 		const checkpoints: Array<{ roundNumber: number; checkpoint: unknown }> = [];
 		let coverageReviewCalls = 0;
 
-		await runAtlasPipeline({
+		await runAtlasPipelineWithNoopReranker({
 			job: atlasJob({
 				id: "atlas-in-depth-gap",
 				profile: "in-depth",
@@ -779,7 +895,6 @@ describe("Atlas pipeline slices", () => {
 	});
 
 	it("skips a second allowed gap-fill round when the previous round adds no useful evidence", async () => {
-		const { runAtlasPipeline } = await import("./pipeline");
 		const searchWeb = vi
 			.fn()
 			.mockResolvedValueOnce({
@@ -816,7 +931,7 @@ describe("Atlas pipeline slices", () => {
 			};
 		}> = [];
 
-		await runAtlasPipeline({
+		await runAtlasPipelineWithNoopReranker({
 			job: atlasJob({ id: "atlas-gap-no-useful", profile: "exhaustive" }),
 			now: new Date("2026-06-21T10:00:00.000Z"),
 			dependencies: {
@@ -878,7 +993,6 @@ describe("Atlas pipeline slices", () => {
 	});
 
 	it("deduplicates gap-fill sources by canonical URL and repeated material", async () => {
-		const { runAtlasPipeline } = await import("./pipeline");
 		const searchWeb = vi
 			.fn()
 			.mockResolvedValueOnce({
@@ -919,7 +1033,7 @@ describe("Atlas pipeline slices", () => {
 			curatedSourcePool: { web?: unknown[]; rejectedWeb?: unknown[] };
 		}> = [];
 
-		const result = await runAtlasPipeline({
+		const result = await runAtlasPipelineWithNoopReranker({
 			job: atlasJob({ id: "atlas-gap-dedupe", profile: "exhaustive" }),
 			now: new Date("2026-06-21T10:00:00.000Z"),
 			dependencies: {
@@ -980,7 +1094,6 @@ describe("Atlas pipeline slices", () => {
 	});
 
 	it("preserves contradictions discovered during gap fill in Evidence Packs and checkpoints", async () => {
-		const { runAtlasPipeline } = await import("./pipeline");
 		const prompts: Record<string, string> = {};
 		const checkpoints: Array<{ roundNumber: number; checkpoint: unknown }> = [];
 		const searchWeb = vi
@@ -1012,7 +1125,7 @@ describe("Atlas pipeline slices", () => {
 				limitation: null,
 			});
 
-		await runAtlasPipeline({
+		await runAtlasPipelineWithNoopReranker({
 			job: atlasJob({ id: "atlas-gap-contradiction", profile: "in-depth" }),
 			now: new Date("2026-06-21T10:00:00.000Z"),
 			dependencies: {
@@ -1082,11 +1195,10 @@ describe("Atlas pipeline slices", () => {
 	});
 
 	it("builds evidence packs after curation, checkpoints them, and uses them in model-facing later stages", async () => {
-		const { runAtlasPipeline } = await import("./pipeline");
 		const prompts: Record<string, string> = {};
 		let checkpointInput: unknown = null;
 
-		await runAtlasPipeline({
+		await runAtlasPipelineWithNoopReranker({
 			job: {
 				id: "atlas-evidence-pack-job",
 				userId: "user-1",
@@ -1219,9 +1331,23 @@ describe("Atlas pipeline slices", () => {
 		expect(integratePrompt.evidencePacks).toEqual(
 			synthesizePrompt.evidencePacks,
 		);
-		expect(assemblePrompt.evidencePacks).toEqual(
-			synthesizePrompt.evidencePacks,
+		expect(assemblePrompt.writerEvidenceCards).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					sourceTitle: "Internal architecture memo",
+					evidencePackIds: [expect.stringMatching(/^atlas-pack-v1-/)],
+				}),
+				expect.objectContaining({
+					sourceTitle: "Hybrid retrieval guide",
+					url: "https://example.com/hybrid-retrieval",
+					evidencePackIds: [expect.stringMatching(/^atlas-pack-v1-/)],
+				}),
+			]),
 		);
+		expect(assemblePrompt.writerEvidenceCardsVersion).toBe(
+			"atlas.writer-evidence-card.v1",
+		);
+		expect(assemblePrompt.evidencePacks).toBeUndefined();
 		expect(assemblePrompt.acceptedSources).toBeUndefined();
 		expect(checkpointInput).toMatchObject({
 			checkpoint: {
@@ -1239,8 +1365,246 @@ describe("Atlas pipeline slices", () => {
 		});
 	});
 
+	it("routes writer evidence cards before assembling the writer prompt", async () => {
+		const prompts: Record<string, string> = {};
+		const rerankWriterEvidenceCards = vi.fn<AtlasWriterEvidenceCardReranker>(
+			async (params) => {
+				const zetaIndex = params.items.findIndex(
+					(card) => card.sourceTitle === "Zeta hybrid retrieval guide",
+				);
+				const alphaIndex = params.items.findIndex(
+					(card) => card.sourceTitle === "Alpha vector retrieval notes",
+				);
+				return {
+					items: [
+						{
+							item: params.items[zetaIndex],
+							index: zetaIndex,
+							score: 0.92,
+						},
+						{
+							item: params.items[alphaIndex],
+							index: alphaIndex,
+							score: 0.31,
+						},
+					],
+				};
+			},
+		);
+
+		await runAtlasPipelineWithNoopReranker({
+			job: atlasJob({
+				id: "atlas-routed-writer-cards",
+				profile: "overview",
+				query:
+					"Which retrieval architecture should a regulated SaaS assistant use?",
+			}),
+			now: new Date("2026-06-21T10:00:00.000Z"),
+			dependencies: {
+				resolveSources: vi.fn(async () => ({ localSources: [] })),
+				searchWeb: vi.fn(async () => ({
+					sources: [
+						{
+							id: "web-alpha-vector",
+							title: "Alpha vector retrieval notes",
+							url: "https://example.com/alpha-vector",
+							snippet:
+								"Vector retrieval broadens semantic recall but needs exact-match safeguards for compliance terms.",
+						},
+						{
+							id: "web-zeta-hybrid",
+							title: "Zeta hybrid retrieval guide",
+							url: "https://example.com/zeta-hybrid",
+							snippet:
+								"Hybrid retrieval preserves exact policy language while adding semantic discovery and reranking.",
+						},
+					],
+					rejectedSources: [],
+					limitation: null,
+				})),
+				runModelStage: vi.fn(async (input) => {
+					prompts[input.stage] = input.prompt;
+					if (input.stage === "decompose") {
+						return {
+							text: "regulated SaaS retrieval architecture",
+							usage: stageUsage(),
+						};
+					}
+					if (input.stage === "coverage-review") {
+						return { text: coverageReviewText([], true), usage: stageUsage() };
+					}
+					if (input.stage === "integrate") {
+						return {
+							text: JSON.stringify({
+								sectionBriefs: [
+									{
+										sectionTitle: "Recommended Architecture",
+										brief:
+											"Choose the retrieval architecture with the strongest evidence.",
+										evidencePackIds: [],
+										sourceAssociations: [],
+										limitations: [],
+									},
+								],
+							}),
+							usage: stageUsage(),
+						};
+					}
+					if (input.stage === "assemble") {
+						return {
+							text: JSON.stringify({
+								generatedTitle: "Regulated SaaS Retrieval Choice",
+								bodyMarkdown: decisionQualityReport(),
+								sectionBriefs: [],
+								limitations: [],
+							}),
+							usage: stageUsage(),
+						};
+					}
+					return { text: `${input.stage} result`, usage: stageUsage() };
+				}),
+				auditBasis: vi.fn(async () => ({
+					passed: true,
+					honestyMarkers: [],
+					retryRequested: false,
+				})),
+				writeCheckpoint: vi.fn(async () => {}),
+				renderOutputs: vi.fn(async () => ({
+					fileProductionJobId: "fp-job-routed-writer-cards",
+					htmlChatGeneratedFileId: "file-html",
+					pdfChatGeneratedFileId: "file-pdf",
+					markdownChatGeneratedFileId: "file-md",
+				})),
+				rerankWriterEvidenceCards,
+			},
+		});
+
+		const assemblePrompt = JSON.parse(prompts.assemble);
+		expect(
+			assemblePrompt.writerEvidenceCards.map(
+				(card: { sourceTitle: string }) => card.sourceTitle,
+			),
+		).toEqual(["Zeta hybrid retrieval guide", "Alpha vector retrieval notes"]);
+		expect(assemblePrompt.writerEvidenceCardDiagnostics).toEqual([
+			expect.objectContaining({
+				code: "atlas_writer_evidence_cards_routing_reranked",
+				severity: "info",
+			}),
+		]);
+		expect(
+			JSON.stringify(assemblePrompt.writerEvidenceCardDiagnostics),
+		).not.toMatch(/score|confidence|0\.92|0\.31/i);
+	});
+
+	it("completes with deterministic writer card order when TEI routing is unavailable", async () => {
+		const checkpoints: Array<{ checkpoint: Record<string, unknown> }> = [];
+		const rerankWriterEvidenceCards = vi
+			.fn<AtlasWriterEvidenceCardReranker>()
+			.mockResolvedValue(null);
+
+		const result = await runAtlasPipelineWithNoopReranker({
+			job: atlasJob({
+				id: "atlas-writer-routing-fallback",
+				profile: "overview",
+				query: "Recommend retrieval architecture for regulated SaaS",
+			}),
+			now: new Date("2026-06-21T10:00:00.000Z"),
+			dependencies: {
+				resolveSources: vi.fn(async () => ({ localSources: [] })),
+				searchWeb: vi.fn(async () => ({
+					sources: [
+						{
+							id: "web-alpha-vector-fallback",
+							title: "Alpha vector retrieval fallback notes",
+							url: "https://example.com/alpha-vector-fallback",
+							snippet:
+								"Vector retrieval fallback evidence covers semantic recall and compliance safeguards.",
+						},
+						{
+							id: "web-zeta-hybrid-fallback",
+							title: "Zeta hybrid retrieval fallback guide",
+							url: "https://example.com/zeta-hybrid-fallback",
+							snippet:
+								"Hybrid retrieval fallback evidence covers exact policy language, semantic discovery, and reranking.",
+						},
+					],
+					rejectedSources: [],
+					limitation: null,
+				})),
+				runModelStage: vi.fn(async (input) => {
+					if (input.stage === "decompose") {
+						return {
+							text: "regulated SaaS retrieval architecture",
+							usage: stageUsage(),
+						};
+					}
+					if (input.stage === "coverage-review") {
+						return { text: coverageReviewText([], true), usage: stageUsage() };
+					}
+					if (input.stage === "assemble") {
+						return {
+							text: JSON.stringify({
+								generatedTitle: "Writer Routing Fallback",
+								bodyMarkdown: decisionQualityReport(),
+								sectionBriefs: [],
+								limitations: [],
+							}),
+							usage: stageUsage(),
+						};
+					}
+					return { text: `${input.stage} result`, usage: stageUsage() };
+				}),
+				auditBasis: vi.fn(async () => ({
+					passed: true,
+					honestyMarkers: [],
+					retryRequested: false,
+				})),
+				writeCheckpoint: vi.fn(async (input) => {
+					checkpoints.push(input as (typeof checkpoints)[number]);
+				}),
+				renderOutputs: vi.fn(async () => ({
+					fileProductionJobId: "fp-job-routing-fallback",
+					htmlChatGeneratedFileId: "file-html",
+					pdfChatGeneratedFileId: "file-pdf",
+					markdownChatGeneratedFileId: "file-md",
+				})),
+				rerankWriterEvidenceCards,
+			},
+		});
+
+		expect(result.status).toBe("succeeded");
+		expect(checkpoints.at(-1)).toMatchObject({
+			checkpoint: {
+				writer: {
+					evidenceCards: {
+						diagnostics: [
+							expect.objectContaining({
+								code: "atlas_writer_evidence_cards_routing_fallback",
+							}),
+						],
+					},
+				},
+				writerEvidenceCards: [
+					expect.objectContaining({
+						sourceTitle: "Alpha vector retrieval fallback notes",
+					}),
+					expect.objectContaining({
+						sourceTitle: "Zeta hybrid retrieval fallback guide",
+					}),
+				],
+			},
+		});
+		const writerDiagnostics = JSON.stringify(
+			(
+				checkpoints.at(-1)?.checkpoint.writer as {
+					evidenceCards?: { diagnostics?: unknown };
+				}
+			)?.evidenceCards?.diagnostics,
+		);
+		expect(writerDiagnostics).not.toMatch(/score|confidence/i);
+	});
+
 	it("runs coverage review after evidence packs and checkpoints diagnostics without executing gap fill yet", async () => {
-		const { runAtlasPipeline } = await import("./pipeline");
 		const prompts: Record<string, string> = {};
 		const stages: string[] = [];
 		let checkpointInput: unknown = null;
@@ -1258,7 +1622,7 @@ describe("Atlas pipeline slices", () => {
 			limitation: null,
 		}));
 
-		await runAtlasPipeline({
+		await runAtlasPipelineWithNoopReranker({
 			job: {
 				id: "atlas-coverage-review-job",
 				userId: "user-1",
@@ -1380,12 +1744,11 @@ describe("Atlas pipeline slices", () => {
 	});
 
 	it("runs the fixed pipeline order, writes checkpoints only after completed rounds, audits Basis Markers, and renders sibling outputs", async () => {
-		const { runAtlasPipeline } = await import("./pipeline");
 		const stages: string[] = [];
 		const checkpointRounds: number[] = [];
 		const heartbeat = vi.fn(async () => {});
 
-		const result = await runAtlasPipeline({
+		const result = await runAtlasPipelineWithNoopReranker({
 			job: {
 				id: "atlas-job-1",
 				userId: "user-1",
@@ -1548,7 +1911,6 @@ describe("Atlas pipeline slices", () => {
 	});
 
 	it("renders a source-backed report with limitations when soft audit retry is exhausted", async () => {
-		const { runAtlasPipeline } = await import("./pipeline");
 		const auditBasis = vi.fn(async () => ({
 			passed: false,
 			honestyMarkers: [
@@ -1609,7 +1971,7 @@ describe("Atlas pipeline slices", () => {
 			markdownChatGeneratedFileId: "file-md",
 		}));
 
-		const result = await runAtlasPipeline({
+		const result = await runAtlasPipelineWithNoopReranker({
 			job: atlasJob({
 				id: "atlas-soft-retry",
 				profile: "overview",
@@ -1679,11 +2041,10 @@ describe("Atlas pipeline slices", () => {
 	});
 
 	it("renders structured image candidates when assembly does not author Markdown images", async () => {
-		const { runAtlasPipeline } = await import("./pipeline");
 		let renderedBlocks: Array<{ type?: string; [key: string]: unknown }> = [];
 		let checkpoint: unknown = null;
 
-		const result = await runAtlasPipeline({
+		const result = await runAtlasPipelineWithNoopReranker({
 			job: {
 				id: "atlas-image-job",
 				userId: "user-1",
@@ -1829,10 +2190,9 @@ describe("Atlas pipeline slices", () => {
 	});
 
 	it("continues successfully when Atlas image search fails", async () => {
-		const { runAtlasPipeline } = await import("./pipeline");
 		let renderedBlocks: Array<{ type?: string; [key: string]: unknown }> = [];
 
-		const result = await runAtlasPipeline({
+		const result = await runAtlasPipelineWithNoopReranker({
 			job: {
 				id: "atlas-image-failure-job",
 				userId: "user-1",
@@ -1923,7 +2283,6 @@ describe("Atlas pipeline slices", () => {
 	});
 
 	it("threads same-family lifecycle seeds into prompts, checkpoints, and rendered source metadata", async () => {
-		const { runAtlasPipeline } = await import("./pipeline");
 		const prompts: Record<string, string> = {};
 		const writeCheckpoint = vi.fn(async () => {});
 		const renderOutputs = vi.fn(async () => ({
@@ -1933,7 +2292,7 @@ describe("Atlas pipeline slices", () => {
 			markdownChatGeneratedFileId: "file-md",
 		}));
 
-		await runAtlasPipeline({
+		await runAtlasPipelineWithNoopReranker({
 			job: {
 				id: "atlas-child-1",
 				userId: "user-1",
@@ -1962,9 +2321,19 @@ describe("Atlas pipeline slices", () => {
 						curatedSourcePool: {
 							local: [{ id: "parent-local", title: "Parent source" }],
 						},
-						checkpoint: { assembledMarkdown: "Prior report" },
+						checkpoint: {
+							assembledMarkdown:
+								"PRIOR_RAW_CHECKPOINT_SENTINEL raw appendix text from the parent checkpoint",
+						},
 						documentSourceSummary: {
 							atlasFamily: { familyId: "atlas-family-1" },
+							evidenceAppendixSummary: {
+								status: "checkpoint_only",
+								publishedReportIncludesRawExcerpts: false,
+								rawExcerptPresent: true,
+								rawSentinelForTest:
+									"PRIOR_RAW_APPENDIX_SUMMARY_SENTINEL should not enter writer context",
+							},
 						},
 					},
 				},
@@ -2023,6 +2392,9 @@ describe("Atlas pipeline slices", () => {
 			detectedLanguage: "en",
 			parentCompressedFindings: { synthesize: "Prior compressed findings" },
 		});
+		expect(JSON.stringify(prompts)).not.toMatch(
+			/PRIOR_RAW_CHECKPOINT_SENTINEL|PRIOR_RAW_APPENDIX_SUMMARY_SENTINEL/,
+		);
 		expect(writeCheckpoint).toHaveBeenCalledWith(
 			expect.objectContaining({
 				documentSourceSummary: expect.objectContaining({
@@ -2049,7 +2421,6 @@ describe("Atlas pipeline slices", () => {
 	});
 
 	it("assembles final report content from curated evidence and synthesized findings rather than process summaries", async () => {
-		const { runAtlasPipeline } = await import("./pipeline");
 		const prompts: Record<string, string> = {};
 		const renderOutputs = vi.fn(async () => ({
 			fileProductionJobId: "fp-job-1",
@@ -2058,7 +2429,7 @@ describe("Atlas pipeline slices", () => {
 			markdownChatGeneratedFileId: "file-md",
 		}));
 
-		await runAtlasPipeline({
+		await runAtlasPipelineWithNoopReranker({
 			job: {
 				id: "atlas-findings-1",
 				userId: "user-1",
@@ -2141,11 +2512,20 @@ describe("Atlas pipeline slices", () => {
 		});
 
 		const assemblePrompt = JSON.parse(prompts.assemble);
-		expect(assemblePrompt.curatedEvidence).toContain("Curated fact");
 		expect(assemblePrompt.synthesis).toContain("Finding: hybrid retrieval");
 		expect(assemblePrompt.outline).toContain("Hybrid retrieval tradeoffs");
+		expect(assemblePrompt.curatedEvidence).toBeUndefined();
+		expect(assemblePrompt.writerEvidenceCards).toEqual([
+			expect.objectContaining({
+				sourceTitle: "Evaluation report",
+				relevantFacts: expect.arrayContaining([
+					expect.stringContaining("Hybrid retrieval improves recall"),
+				]),
+			}),
+		]);
+		expect(assemblePrompt.instructions).toContain("decision-quality");
 		expect(assemblePrompt.instructions).toContain(
-			"Do not write a process report",
+			"Do not write Markdown Sources",
 		);
 		expect(renderOutputs).toHaveBeenCalledWith(
 			expect.objectContaining({
@@ -2159,8 +2539,613 @@ describe("Atlas pipeline slices", () => {
 		);
 	});
 
+	it("keeps raw fetched excerpts out of the writer prompt while preserving them in checkpoints", async () => {
+		const rawSnippet = [
+			"Search result snippet: Retrieval docs explain hybrid retrieval ownership.",
+			"Fetched page excerpt:",
+			Array.from(
+				{ length: 60 },
+				(_, index) =>
+					`RAW_WRITER_PROMPT_SENTINEL_${index} navigation boilerplate copied from the fetched page`,
+			).join(" "),
+		].join(" ");
+		const prompts: Record<string, string> = {};
+		const checkpoints: Array<{
+			curatedSourcePool: {
+				web: Array<{ snippet: string | null }>;
+			};
+		}> = [];
+
+		await runAtlasPipelineWithNoopReranker({
+			job: atlasJob({
+				id: "atlas-writer-cards-no-source-dump",
+				profile: "overview",
+				query:
+					"Recommend the best retrieval architecture for a regulated SaaS knowledge assistant",
+			}),
+			now: new Date("2026-06-21T10:00:00.000Z"),
+			dependencies: {
+				resolveSources: vi.fn(async () => ({ localSources: [] })),
+				searchWeb: vi.fn(async () => ({
+					sources: [
+						{
+							id: "web-hybrid",
+							title: "Hybrid retrieval evidence",
+							url: "https://example.com/hybrid",
+							snippet: rawSnippet,
+						},
+					],
+					rejectedSources: [],
+					limitation: null,
+				})),
+				runModelStage: vi.fn(async (input) => {
+					prompts[input.stage] = input.prompt;
+					if (input.stage === "decompose") {
+						return {
+							text: "hybrid retrieval regulated SaaS",
+							usage: stageUsage(),
+						};
+					}
+					if (input.stage === "coverage-review") {
+						return { text: coverageReviewText([], true), usage: stageUsage() };
+					}
+					if (input.stage === "assemble") {
+						return {
+							text: JSON.stringify({
+								generatedTitle: "Hybrid Retrieval Recommendation",
+								bodyMarkdown: decisionQualityReport(),
+								sectionBriefs: [
+									{
+										sectionTitle: "Recommended Architecture",
+										brief: "Recommends hybrid retrieval with reranking.",
+										evidencePackIds: [],
+									},
+								],
+								limitations: [],
+							}),
+							usage: stageUsage(),
+						};
+					}
+					return { text: `${input.stage} result`, usage: stageUsage() };
+				}),
+				auditBasis: vi.fn(async () => ({
+					passed: true,
+					honestyMarkers: [],
+					retryRequested: false,
+				})),
+				writeCheckpoint: vi.fn(async (input) => {
+					checkpoints.push(input as (typeof checkpoints)[number]);
+				}),
+				renderOutputs: vi.fn(async () => ({
+					fileProductionJobId: "fp-job-writer-cards",
+					htmlChatGeneratedFileId: "file-html",
+					pdfChatGeneratedFileId: "file-pdf",
+					markdownChatGeneratedFileId: "file-md",
+				})),
+			},
+		});
+
+		const assemblePrompt = JSON.parse(prompts.assemble);
+		expect(assemblePrompt.writerEvidenceCards).toEqual([
+			expect.objectContaining({
+				sourceTitle: "Hybrid retrieval evidence",
+				url: "https://example.com/hybrid",
+				evidencePackIds: [expect.stringMatching(/^atlas-pack-v1-/)],
+			}),
+		]);
+		expect(assemblePrompt.evidencePacks).toBeUndefined();
+		expect(assemblePrompt.curatedEvidence).toBeUndefined();
+		expect(JSON.stringify(assemblePrompt)).not.toMatch(
+			/Fetched page excerpt|Search result snippet|RAW_WRITER_PROMPT_SENTINEL/i,
+		);
+		expect(checkpoints.at(-1)?.curatedSourcePool.web[0]?.snippet).toContain(
+			"RAW_WRITER_PROMPT_SENTINEL_59",
+		);
+		expect(checkpoints.at(-1)).toMatchObject({
+			checkpoint: {
+				writer: {
+					evidenceCards: {
+						version: "atlas.writer-evidence-card.v1",
+						count: 1,
+					},
+					improvement: {
+						ran: false,
+					},
+				},
+			},
+		});
+	});
+
+	it("runs one bounded writer improvement pass for a thin non-decisive first draft", async () => {
+		const assemblePrompts: string[] = [];
+		const checkpoints: Array<{
+			checkpoint: Record<string, unknown>;
+			qualityDiagnostics: Record<string, unknown>;
+		}> = [];
+		const auditBasis = vi.fn(async () => ({
+			passed: true,
+			honestyMarkers: [],
+			retryRequested: false,
+		}));
+		const firstDraft = [
+			"## Executive Summary",
+			"Hybrid retrieval is relevant for regulated SaaS, but the first draft does not decide the architecture or explain the tradeoffs in enough detail.",
+			"",
+			"## Findings",
+			"The accepted evidence mentions exact recall, semantic discovery, reranking, governance, latency, and validation, but the draft remains shallow.",
+			"",
+			"## Recommendation",
+			"The evidence remains broad, and the final path is left unresolved.",
+			"",
+			"## Limitations",
+			"Evidence is representative rather than exhaustive.",
+		].join("\n");
+		const secondDraft = [
+			"## Executive Summary",
+			"The report still remains concise after the bounded improvement pass, but it now states that hybrid retrieval with reranking is the preferred starting point.",
+			"",
+			"## Findings",
+			"Hybrid retrieval keeps exact terms visible while semantic retrieval broadens recall, and reranking narrows candidates before generation. The draft is still intentionally compact for this regression.",
+			"",
+			"## Recommendation",
+			"Use hybrid retrieval with reranking as the default and validate latency on the production corpus before rollout.",
+			"",
+			"## Limitations",
+			"Evidence is representative rather than exhaustive.",
+		].join("\n");
+
+		await runAtlasPipelineWithNoopReranker({
+			job: atlasJob({
+				id: "atlas-writer-improvement",
+				profile: "overview",
+				query:
+					"Choose the best retrieval architecture for regulated SaaS with minimal latency",
+			}),
+			now: new Date("2026-06-21T10:00:00.000Z"),
+			dependencies: {
+				resolveSources: vi.fn(async () => ({ localSources: [] })),
+				searchWeb: vi.fn(async () => ({
+					sources: [
+						{
+							id: "web-retrieval",
+							title: "Hybrid retrieval latency evidence",
+							url: "https://example.com/retrieval-latency",
+							snippet:
+								"Hybrid retrieval combines exact recall, semantic discovery, reranking, governance logging, and latency validation for regulated teams.",
+						},
+					],
+					rejectedSources: [],
+					limitation: null,
+				})),
+				runModelStage: vi.fn(async (input) => {
+					if (input.stage === "decompose") {
+						return {
+							text: "hybrid retrieval latency regulated SaaS",
+							usage: stageUsage(),
+						};
+					}
+					if (input.stage === "coverage-review") {
+						return { text: coverageReviewText([], true), usage: stageUsage() };
+					}
+					if (input.stage === "assemble") {
+						assemblePrompts.push(input.prompt);
+						return {
+							text: JSON.stringify({
+								generatedTitle: "Regulated SaaS Retrieval Choice",
+								bodyMarkdown:
+									assemblePrompts.length === 1 ? firstDraft : secondDraft,
+								sectionBriefs: [],
+								limitations: ["Evidence is representative."],
+							}),
+							usage: stageUsage(),
+						};
+					}
+					return { text: `${input.stage} result`, usage: stageUsage() };
+				}),
+				auditBasis,
+				writeCheckpoint: vi.fn(async (input) => {
+					checkpoints.push(input as (typeof checkpoints)[number]);
+				}),
+				renderOutputs: vi.fn(async () => ({
+					fileProductionJobId: "fp-job-writer-improvement",
+					htmlChatGeneratedFileId: "file-html",
+					pdfChatGeneratedFileId: "file-pdf",
+					markdownChatGeneratedFileId: "file-md",
+				})),
+			},
+		});
+
+		expect(assemblePrompts).toHaveLength(2);
+		const improvementPrompt = JSON.parse(assemblePrompts[1]);
+		expect(improvementPrompt.writerImprovement).toMatchObject({
+			pass: 1,
+			maxPasses: 1,
+		});
+		expect(improvementPrompt.currentDraft).toContain("does not decide");
+		expect(JSON.stringify(improvementPrompt)).toContain("Do not add sources");
+		expect(improvementPrompt.writerEvidenceCards).toEqual([
+			expect.objectContaining({
+				sourceTitle: "Hybrid retrieval latency evidence",
+			}),
+		]);
+		expect(auditBasis).toHaveBeenCalledWith(
+			expect.objectContaining({
+				assembledMarkdown: expect.stringContaining("preferred starting point"),
+			}),
+		);
+		expect(checkpoints.at(-1)).toMatchObject({
+			checkpoint: {
+				reportShapeDiagnostics: expect.objectContaining({
+					warnings: expect.arrayContaining([
+						expect.objectContaining({
+							code: "atlas_report_body_too_thin",
+						}),
+					]),
+				}),
+				writer: {
+					improvement: {
+						ran: true,
+						passCount: 1,
+					},
+				},
+			},
+			qualityDiagnostics: {
+				reportShapeDiagnostics: expect.objectContaining({
+					warnings: expect.any(Array),
+				}),
+				writerImprovement: expect.objectContaining({
+					ran: true,
+					passCount: 1,
+				}),
+			},
+		});
+	});
+
+	it("runs the bounded writer improvement pass after structural assembly repair returns a thin draft", async () => {
+		const assemblePrompts: string[] = [];
+		const auditBasis = vi.fn(async () => ({
+			passed: true,
+			honestyMarkers: [],
+			retryRequested: false,
+		}));
+		const repairedThinDraft = [
+			"## Executive Summary",
+			"Hybrid retrieval is relevant for regulated SaaS, but this repaired draft still does not decide the path or explain operational tradeoffs.",
+			"",
+			"## Findings",
+			"The accepted evidence mentions exact recall, semantic discovery, reranking, governance, latency, and validation, but the synthesis remains shallow.",
+			"",
+			"## Recommendation",
+			"The evidence remains broad, and the final path is left unresolved.",
+			"",
+			"## Limitations",
+			"Evidence is representative rather than exhaustive.",
+		].join("\n");
+		const improvedDraft = [
+			"## Executive Summary",
+			decisionQualityReport().replace(/^## Executive Summary\n/, ""),
+		].join("\n");
+
+		await runAtlasPipelineWithNoopReranker({
+			job: atlasJob({
+				id: "atlas-repair-then-improve",
+				profile: "overview",
+				query:
+					"Choose the best retrieval architecture for regulated SaaS with minimal latency",
+			}),
+			now: new Date("2026-06-21T10:00:00.000Z"),
+			dependencies: {
+				resolveSources: vi.fn(async () => ({ localSources: [] })),
+				searchWeb: vi.fn(async () => ({
+					sources: [
+						{
+							id: "web-retrieval-repair",
+							title: "Hybrid retrieval repair evidence",
+							url: "https://example.com/retrieval-repair",
+							snippet:
+								"Hybrid retrieval combines exact recall, semantic discovery, reranking, governance logging, latency validation, and auditability for regulated teams.",
+						},
+					],
+					rejectedSources: [],
+					limitation: null,
+				})),
+				runModelStage: vi.fn(async (input) => {
+					if (input.stage === "decompose") {
+						return {
+							text: "hybrid retrieval latency regulated SaaS",
+							usage: stageUsage(),
+						};
+					}
+					if (input.stage === "coverage-review") {
+						return { text: coverageReviewText([], true), usage: stageUsage() };
+					}
+					if (input.stage === "assemble") {
+						assemblePrompts.push(input.prompt);
+						const assembleCall = assemblePrompts.length;
+						return {
+							text:
+								assembleCall === 1
+									? "I checked the sources and synthesized findings for the report."
+									: JSON.stringify({
+											generatedTitle: "Regulated SaaS Retrieval Choice",
+											bodyMarkdown:
+												assembleCall === 2 ? repairedThinDraft : improvedDraft,
+											sectionBriefs: [],
+											limitations: ["Evidence is representative."],
+										}),
+							usage: stageUsage(),
+						};
+					}
+					return { text: `${input.stage} result`, usage: stageUsage() };
+				}),
+				auditBasis,
+				writeCheckpoint: vi.fn(async () => {}),
+				renderOutputs: vi.fn(async () => ({
+					fileProductionJobId: "fp-job-repair-then-improve",
+					htmlChatGeneratedFileId: "file-html",
+					pdfChatGeneratedFileId: "file-pdf",
+					markdownChatGeneratedFileId: "file-md",
+				})),
+			},
+		});
+
+		expect(assemblePrompts).toHaveLength(3);
+		expect(JSON.parse(assemblePrompts[1]).repairInstruction).toContain(
+			"process summary",
+		);
+		expect(JSON.parse(assemblePrompts[2]).writerImprovement).toMatchObject({
+			pass: 1,
+			maxPasses: 1,
+		});
+		expect(auditBasis).toHaveBeenCalledWith(
+			expect.objectContaining({
+				assembledMarkdown: expect.stringContaining(
+					"We recommend starting with hybrid retrieval",
+				),
+			}),
+		);
+	});
+
+	it("does not run the writer improvement pass for a substantive first draft", async () => {
+		const assemblePrompts: string[] = [];
+		const checkpoints: Array<{ checkpoint: Record<string, unknown> }> = [];
+
+		await runAtlasPipelineWithNoopReranker({
+			job: atlasJob({
+				id: "atlas-writer-no-improvement",
+				profile: "overview",
+				query: "Recommend the best retrieval architecture for regulated SaaS",
+			}),
+			now: new Date("2026-06-21T10:00:00.000Z"),
+			dependencies: {
+				resolveSources: vi.fn(async () => ({ localSources: [] })),
+				searchWeb: vi.fn(async () => ({
+					sources: [
+						{
+							id: "web-retrieval-good",
+							title: "Hybrid retrieval decision evidence",
+							url: "https://example.com/retrieval-good",
+							snippet:
+								"Hybrid retrieval evidence supports exact recall, semantic discovery, reranking, governance, latency validation, and auditability for regulated SaaS.",
+						},
+					],
+					rejectedSources: [],
+					limitation: null,
+				})),
+				runModelStage: vi.fn(async (input) => {
+					if (input.stage === "decompose") {
+						return {
+							text: "hybrid retrieval regulated SaaS",
+							usage: stageUsage(),
+						};
+					}
+					if (input.stage === "coverage-review") {
+						return { text: coverageReviewText([], true), usage: stageUsage() };
+					}
+					if (input.stage === "assemble") {
+						assemblePrompts.push(input.prompt);
+						return {
+							text: JSON.stringify({
+								generatedTitle: "Hybrid Retrieval Decision",
+								bodyMarkdown: decisionQualityReport(),
+								sectionBriefs: [],
+								limitations: [],
+							}),
+							usage: stageUsage(),
+						};
+					}
+					return { text: `${input.stage} result`, usage: stageUsage() };
+				}),
+				auditBasis: vi.fn(async () => ({
+					passed: true,
+					honestyMarkers: [],
+					retryRequested: false,
+				})),
+				writeCheckpoint: vi.fn(async (input) => {
+					checkpoints.push(input as (typeof checkpoints)[number]);
+				}),
+				renderOutputs: vi.fn(async () => ({
+					fileProductionJobId: "fp-job-no-improvement",
+					htmlChatGeneratedFileId: "file-html",
+					pdfChatGeneratedFileId: "file-pdf",
+					markdownChatGeneratedFileId: "file-md",
+				})),
+			},
+		});
+
+		expect(assemblePrompts).toHaveLength(1);
+		expect(checkpoints.at(-1)).toMatchObject({
+			checkpoint: {
+				reportShapeDiagnostics: expect.objectContaining({
+					warnings: [],
+				}),
+				writer: {
+					improvement: {
+						ran: false,
+						passCount: 0,
+					},
+				},
+			},
+		});
+	});
+
+	it("checkpoints final report-shape diagnostics from the rendered document source", async () => {
+		const checkpoints: Array<{
+			checkpoint: Record<string, unknown>;
+			qualityDiagnostics: Record<string, unknown>;
+			documentSourceSummary: Record<string, unknown>;
+		}> = [];
+		const renderOutputs = vi.fn(async (_source: GeneratedDocumentSource) => ({
+			fileProductionJobId: "fp-job-document-source-shape",
+			htmlChatGeneratedFileId: "file-html",
+			pdfChatGeneratedFileId: "file-pdf",
+			markdownChatGeneratedFileId: "file-md",
+		}));
+		const thinMarkdownWithoutImages = [
+			"## Executive Summary",
+			"We recommend hybrid retrieval for regulated SaaS because it preserves exact policy language while still supporting semantic discovery.",
+			"",
+			"## Hybrid Architecture",
+			"Hybrid retrieval keeps lexical and vector search separate so reviewers can inspect why evidence was selected.",
+			"",
+			"## Reranking Layer",
+			"Reranking narrows noisy candidates before generation and gives the team a clear review point.",
+			"",
+			"## Governance Controls",
+			"Governance logging should record source selection and final citations for later audit.",
+			"",
+			"## Latency Budget",
+			"Teams should validate the reranking step against their own latency target before rollout.",
+			"",
+			"## Limitations",
+			"Evidence is representative and should be validated against the production corpus.",
+		].join("\n");
+
+		await runAtlasPipelineWithNoopReranker({
+			job: atlasJob({
+				id: "atlas-document-source-shape",
+				profile: "overview",
+				query: "Recommend hybrid retrieval architecture for regulated SaaS",
+			}),
+			now: new Date("2026-06-21T10:00:00.000Z"),
+			dependencies: {
+				resolveSources: vi.fn(async () => ({ localSources: [] })),
+				searchWeb: vi.fn(async () => ({
+					sources: [
+						{
+							id: "web-document-source-shape",
+							title: "Hybrid retrieval architecture evidence",
+							url: "https://example.com/hybrid-architecture",
+							snippet:
+								"Hybrid retrieval architecture evidence covers reranking, governance controls, and latency budgets for regulated SaaS.",
+						},
+					],
+					rejectedSources: [],
+					limitation: null,
+				})),
+				searchImages: vi.fn(async () => ({
+					imageCandidates: [
+						{
+							id: "image-hybrid-architecture",
+							query: "hybrid retrieval architecture regulated SaaS",
+							title: "Hybrid retrieval architecture diagram",
+							imageUrl: "https://cdn.example.com/hybrid-architecture.png",
+							sourcePageUrl: "https://example.com/hybrid-architecture",
+							sourceTitle: "Hybrid retrieval architecture evidence",
+							thumbnailUrl:
+								"https://cdn.example.com/hybrid-architecture-thumb.png",
+							width: 1200,
+							height: 675,
+							caption:
+								"Hybrid retrieval architecture diagram for regulated SaaS evidence selection.",
+							selectionReason:
+								"Matches the hybrid architecture section in the report.",
+						},
+						{
+							id: "image-reranking-layer",
+							query: "reranking layer evidence selection",
+							title: "Reranking layer workflow",
+							imageUrl: "https://cdn.example.com/reranking-layer.png",
+							sourcePageUrl: "https://example.com/reranking-layer",
+							sourceTitle: "Hybrid retrieval architecture evidence",
+							thumbnailUrl: "https://cdn.example.com/reranking-layer-thumb.png",
+							width: 1200,
+							height: 675,
+							caption:
+								"Reranking layer workflow for narrowing evidence candidates before generation.",
+							selectionReason:
+								"Matches the reranking layer section in the report.",
+						},
+					],
+					imageLimitation: null,
+				})),
+				runModelStage: vi.fn(async (input) => {
+					if (input.stage === "decompose") {
+						return {
+							text: "hybrid retrieval architecture regulated SaaS",
+							usage: stageUsage(),
+						};
+					}
+					if (input.stage === "coverage-review") {
+						return { text: coverageReviewText([], true), usage: stageUsage() };
+					}
+					if (input.stage === "assemble") {
+						return {
+							text: JSON.stringify({
+								generatedTitle: "Rendered Source Shape Atlas",
+								bodyMarkdown: thinMarkdownWithoutImages,
+								sectionBriefs: [],
+								limitations: [],
+							}),
+							usage: stageUsage(),
+						};
+					}
+					return { text: `${input.stage} result`, usage: stageUsage() };
+				}),
+				auditBasis: vi.fn(async () => ({
+					passed: true,
+					honestyMarkers: [],
+					retryRequested: false,
+				})),
+				writeCheckpoint: vi.fn(async (input) => {
+					checkpoints.push(input as (typeof checkpoints)[number]);
+				}),
+				renderOutputs,
+			},
+		});
+
+		const finalCheckpoint = checkpoints.at(-1);
+		const renderedSource = renderOutputs.mock.calls[0]?.[0];
+		expect(
+			renderedSource?.blocks.filter((block) => block.type === "image"),
+		).toHaveLength(2);
+		expect(finalCheckpoint).toMatchObject({
+			checkpoint: {
+				reportShapeDiagnostics: expect.objectContaining({
+					imageCount: 2,
+					warnings: expect.arrayContaining([
+						expect.objectContaining({
+							code: "atlas_too_many_images_for_body_size",
+						}),
+					]),
+				}),
+			},
+			qualityDiagnostics: {
+				reportShapeDiagnostics: expect.objectContaining({
+					imageCount: 2,
+				}),
+			},
+			documentSourceSummary: {
+				writer: {
+					reportShapeDiagnostics: expect.objectContaining({
+						imageCount: 2,
+					}),
+				},
+			},
+		});
+	});
+
 	it("repairs a process-only assembled draft before audit and rendering", async () => {
-		const { runAtlasPipeline } = await import("./pipeline");
 		let assembleCalls = 0;
 		const auditBasis = vi.fn(async () => ({
 			passed: true,
@@ -2174,7 +3159,7 @@ describe("Atlas pipeline slices", () => {
 			markdownChatGeneratedFileId: "file-md",
 		}));
 
-		await runAtlasPipeline({
+		await runAtlasPipelineWithNoopReranker({
 			job: {
 				id: "atlas-process-repair",
 				userId: "user-1",
@@ -2279,7 +3264,6 @@ describe("Atlas pipeline slices", () => {
 	});
 
 	it("falls back to synthesized findings when assembly remains source-only", async () => {
-		const { runAtlasPipeline } = await import("./pipeline");
 		const auditBasis = vi.fn(async () => ({
 			passed: true,
 			honestyMarkers: [],
@@ -2292,7 +3276,7 @@ describe("Atlas pipeline slices", () => {
 			markdownChatGeneratedFileId: "file-md",
 		}));
 
-		await runAtlasPipeline({
+		await runAtlasPipelineWithNoopReranker({
 			job: {
 				id: "atlas-source-only",
 				userId: "user-1",
@@ -2374,7 +3358,6 @@ describe("Atlas pipeline slices", () => {
 	});
 
 	it("falls back before audit when assembly turns metadata and source titles into sections", async () => {
-		const { runAtlasPipeline } = await import("./pipeline");
 		let assembleCalls = 0;
 		const auditBasis = vi.fn(async () => ({
 			passed: true,
@@ -2388,7 +3371,7 @@ describe("Atlas pipeline slices", () => {
 			markdownChatGeneratedFileId: "file-md",
 		}));
 
-		await runAtlasPipeline({
+		await runAtlasPipelineWithNoopReranker({
 			job: {
 				id: "atlas-metadata-source-heading-collapse",
 				userId: "user-1",
@@ -2555,7 +3538,6 @@ describe("Atlas pipeline slices", () => {
 	});
 
 	it("repairs scalar-only report headings before audit", async () => {
-		const { runAtlasPipeline } = await import("./pipeline");
 		let assembleCalls = 0;
 		const auditBasis = vi.fn(async () => ({
 			passed: true,
@@ -2569,7 +3551,7 @@ describe("Atlas pipeline slices", () => {
 			markdownChatGeneratedFileId: "file-md",
 		}));
 
-		await runAtlasPipeline({
+		await runAtlasPipelineWithNoopReranker({
 			job: {
 				id: "atlas-scalar-heading-repair",
 				userId: "user-1",
@@ -2679,7 +3661,6 @@ describe("Atlas pipeline slices", () => {
 	});
 
 	it("keeps deterministic fallback required sections when the outline is malformed", async () => {
-		const { runAtlasPipeline } = await import("./pipeline");
 		let assembleCalls = 0;
 		const auditBasis = vi.fn(async () => ({
 			passed: true,
@@ -2693,7 +3674,7 @@ describe("Atlas pipeline slices", () => {
 			markdownChatGeneratedFileId: "file-md",
 		}));
 
-		await runAtlasPipeline({
+		await runAtlasPipelineWithNoopReranker({
 			job: {
 				id: "atlas-live-outline-collapse",
 				userId: "user-1",
@@ -2849,7 +3830,6 @@ describe("Atlas pipeline slices", () => {
 	});
 
 	it("preserves synthesized structure instead of stitching source excerpts when assembly collapses", async () => {
-		const { runAtlasPipeline } = await import("./pipeline");
 		const auditBasis = vi.fn(async () => ({
 			passed: true,
 			honestyMarkers: [],
@@ -2862,7 +3842,7 @@ describe("Atlas pipeline slices", () => {
 			markdownChatGeneratedFileId: "file-md",
 		}));
 
-		await runAtlasPipeline({
+		await runAtlasPipelineWithNoopReranker({
 			job: {
 				id: "atlas-source-derived-fallback",
 				userId: "user-1",
@@ -2996,8 +3976,148 @@ describe("Atlas pipeline slices", () => {
 		);
 	});
 
+	it("publishes compact source projection while preserving raw snippets in checkpoints", async () => {
+		const rawSnippet = [
+			"Search result snippet: Routing docs explain filesystem route ownership.",
+			"Fetched page excerpt:",
+			Array.from(
+				{ length: 100 },
+				(_, index) =>
+					`RAW_EXCERPT_SENTINEL_${index} route documentation boilerplate copied from the fetched page`,
+			).join(" "),
+		].join(" ");
+		const checkpoints: Array<{
+			curatedSourcePool: {
+				web: Array<{ snippet: string | null }>;
+			};
+			documentSourceSummary: {
+				evidenceAppendixSummary?: unknown;
+			};
+		}> = [];
+		const renderOutputs = vi.fn(async () => ({
+			fileProductionJobId: "fp-job-compact-sources",
+			htmlChatGeneratedFileId: "file-html",
+			pdfChatGeneratedFileId: "file-pdf",
+			markdownChatGeneratedFileId: "file-md",
+		}));
+
+		const result = await runAtlasPipelineWithNoopReranker({
+			job: atlasJob({
+				id: "atlas-compact-published-sources",
+				profile: "overview",
+				query: "Explain routing boundaries for a SvelteKit-style app",
+			}),
+			now: new Date("2026-06-21T10:00:00.000Z"),
+			dependencies: {
+				resolveSources: vi.fn(async () => ({ localSources: [] })),
+				searchWeb: vi.fn(async () => ({
+					sources: [
+						{
+							id: "web-routing",
+							title: "Routing docs",
+							url: "https://example.com/routing",
+							snippet: rawSnippet,
+						},
+					],
+					rejectedSources: [
+						{
+							id: "web-rejected-routing",
+							title: "Rejected routing copy",
+							url: "https://example.com/rejected-routing",
+							snippet:
+								"Fetched page excerpt: RAW_REJECTED_SENTINEL rejected raw source text",
+							rejectionReason: "duplicate_url",
+						},
+					],
+					limitation: null,
+				})),
+				runModelStage: vi.fn(async (input) => {
+					if (input.stage === "decompose") {
+						return { text: "routing boundaries", usage: stageUsage() };
+					}
+					if (input.stage === "coverage-review") {
+						return { text: coverageReviewText([], true), usage: stageUsage() };
+					}
+					if (input.stage === "assemble") {
+						return {
+							text: [
+								"## Executive Summary",
+								"Routing boundaries should stay explicit so page, layout, and endpoint responsibilities remain understandable during maintenance.",
+								"",
+								"## Recommendation",
+								"Use the route tree as the durable framework boundary, and document where page views, layouts, and API endpoints are allowed to own behavior.",
+								"",
+								"## Limitations",
+								"This conclusion depends on representative routing evidence and should be checked against the app's actual route conventions.",
+							].join("\n"),
+							usage: stageUsage(),
+						};
+					}
+					return {
+						text: `${input.stage} result`,
+						usage: stageUsage(),
+					};
+				}),
+				auditBasis: vi.fn(async () => ({
+					passed: true,
+					honestyMarkers: [],
+					retryRequested: false,
+				})),
+				writeCheckpoint: vi.fn(async (input) => {
+					checkpoints.push(input as (typeof checkpoints)[number]);
+				}),
+				renderOutputs,
+			},
+		});
+
+		expect(result.status).toBe("succeeded");
+		expect(checkpoints.at(-1)?.curatedSourcePool.web[0]?.snippet).toContain(
+			"RAW_EXCERPT_SENTINEL_99",
+		);
+		expect(checkpoints.at(-1)?.documentSourceSummary).toMatchObject({
+			evidenceAppendixSummary: {
+				status: "checkpoint_only",
+				acceptedWebSourceCount: 1,
+				acceptedLocalSourceCount: 0,
+				rejectedWebSourceCount: 1,
+				rawExcerptPresent: true,
+				publishedReportIncludesRawExcerpts: false,
+				rejectedReasonCounts: {
+					duplicate_url: 1,
+				},
+			},
+		});
+		expect(
+			JSON.stringify(
+				checkpoints.at(-1)?.documentSourceSummary.evidenceAppendixSummary,
+			),
+		).not.toMatch(
+			/Fetched page excerpt|Search result snippet|RAW_EXCERPT_SENTINEL|RAW_REJECTED_SENTINEL/i,
+		);
+
+		const renderCalls = renderOutputs.mock.calls as unknown as Array<
+			[GeneratedDocumentSource]
+		>;
+		const renderedSource = renderCalls[0]?.[0];
+		const webSources = renderedSource?.blocks.find(
+			(block) => block.type === "sourceChips" && block.title === "Web Sources",
+		);
+		if (webSources?.type !== "sourceChips") {
+			throw new Error("Expected deterministic Web Sources source chips.");
+		}
+		const reasoning = webSources.sources[0]?.reasoning ?? "";
+
+		expect(webSources.sources[0]).toMatchObject({
+			title: "Routing docs",
+			url: "https://example.com/routing",
+		});
+		expect(reasoning.length).toBeLessThanOrEqual(240);
+		expect(reasoning).not.toMatch(
+			/Fetched page excerpt|Search result snippet|RAW_EXCERPT_SENTINEL/i,
+		);
+	});
+
 	it("falls back to generated search variants when decompose returns no usable search queries", async () => {
-		const { runAtlasPipeline } = await import("./pipeline");
 		const searchWeb = vi.fn(async () => ({
 			sources: [
 				{
@@ -3011,7 +4131,7 @@ describe("Atlas pipeline slices", () => {
 		}));
 		const heartbeat = vi.fn(async () => {});
 
-		await runAtlasPipeline({
+		await runAtlasPipelineWithNoopReranker({
 			job: {
 				id: "atlas-fallback-queries",
 				userId: "user-1",
@@ -3079,7 +4199,6 @@ describe("Atlas pipeline slices", () => {
 	});
 
 	it("adds current-date grounding to freshness-sensitive news searches instead of trusting stale model years", async () => {
-		const { runAtlasPipeline } = await import("./pipeline");
 		const searchWeb = vi.fn(async () => ({
 			sources: [
 				{
@@ -3092,7 +4211,7 @@ describe("Atlas pipeline slices", () => {
 			limitation: null,
 		}));
 
-		await runAtlasPipeline({
+		await runAtlasPipelineWithNoopReranker({
 			job: {
 				id: "atlas-current-news",
 				userId: "user-1",
@@ -3159,7 +4278,6 @@ describe("Atlas pipeline slices", () => {
 	});
 
 	it("does not surface the original prompt as the only research query when decompose echoes it", async () => {
-		const { runAtlasPipeline } = await import("./pipeline");
 		const userPrompt =
 			"Please research the current enterprise RAG architecture patterns for regulated SaaS teams";
 		const searchWeb = vi.fn(async () => ({
@@ -3175,7 +4293,7 @@ describe("Atlas pipeline slices", () => {
 		}));
 		const heartbeat = vi.fn(async () => {});
 
-		await runAtlasPipeline({
+		await runAtlasPipelineWithNoopReranker({
 			job: {
 				id: "atlas-prompt-echo",
 				userId: "user-1",
@@ -3246,7 +4364,6 @@ describe("Atlas pipeline slices", () => {
 	});
 
 	it("uses the selected Atlas profile to change search breadth", async () => {
-		const { runAtlasPipeline } = await import("./pipeline");
 		const queryCountsByProfile: Record<string, number> = {};
 		const decomposeSystemsByProfile: Record<string, string> = {};
 		const manyQueries = Array.from(
@@ -3255,7 +4372,7 @@ describe("Atlas pipeline slices", () => {
 		).join("\n");
 
 		for (const profile of ["overview", "in-depth", "exhaustive"] as const) {
-			await runAtlasPipeline({
+			await runAtlasPipelineWithNoopReranker({
 				job: {
 					id: `atlas-profile-${profile}`,
 					userId: "user-1",
@@ -3356,9 +4473,7 @@ describe("Atlas pipeline slices", () => {
 	});
 
 	it("fails the pipeline instead of rendering outputs when the audit gate has critical markers", async () => {
-		const { AtlasPipelineQualityError, runAtlasPipeline } = await import(
-			"./pipeline"
-		);
+		const { AtlasPipelineQualityError } = await import("./pipeline");
 		const writeCheckpoint = vi.fn(async () => {});
 		const renderOutputs = vi.fn(async () => ({
 			fileProductionJobId: "fp-job-1",
@@ -3368,7 +4483,7 @@ describe("Atlas pipeline slices", () => {
 		}));
 
 		await expect(
-			runAtlasPipeline({
+			runAtlasPipelineWithNoopReranker({
 				job: {
 					id: "atlas-no-sources",
 					userId: "user-1",
@@ -3438,7 +4553,6 @@ describe("Atlas pipeline slices", () => {
 	});
 
 	it("detects Hungarian Atlas requests and carries that language through stage prompts and audit", async () => {
-		const { runAtlasPipeline } = await import("./pipeline");
 		const systems: Record<string, string> = {};
 		const auditBasis = vi.fn(async () => ({
 			passed: true,
@@ -3446,7 +4560,7 @@ describe("Atlas pipeline slices", () => {
 			retryRequested: false,
 		}));
 
-		await runAtlasPipeline({
+		await runAtlasPipelineWithNoopReranker({
 			job: {
 				id: "atlas-hu-1",
 				userId: "user-1",

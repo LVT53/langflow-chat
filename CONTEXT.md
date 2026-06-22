@@ -2367,6 +2367,18 @@ _Avoid_: citation list, evidence appendix, source ledger, audit trail
 A compact, structured evidence unit created from accepted **Atlas Web Sources** and **Atlas Local Sources** before final synthesis. An Evidence Pack groups what a source or evidence cluster supports, the relevant excerpt or summary, source authority, conflicts or limitations, and the report facet it helps cover. It is the model-facing memory for later Atlas stages and rounds; it is not a second persistence system or a raw search dump.
 _Avoid_: evidence database, raw source pile, search dump, vector memory, citation pile
 
+**Atlas Writer Evidence Card**:
+A compact, final-writing evidence unit distilled from **Atlas Evidence Packs** for the report-writing step. It carries the source identity, authority, relevant facts, limitations, conflicts, and likely supported report sections in a form the model can synthesize from without rereading raw fetched pages. It is a writer input, not a rendered source appendix or durable evidence database.
+_Avoid_: raw excerpt card, source dump card, vector memory card, citation pile
+
+**Atlas Published Report**:
+The reader-facing **Atlas** document body plus compact deterministic source projection. It should answer the user's request with useful synthesis, decision framing, tradeoffs, recommendations, limitations, and evidence-derived basis markers. It is not the place for long fetched-page excerpts, rejected-source diagnostics, or the research scratchpad.
+_Avoid_: research scratchpad, source dump, raw evidence report, diagnostic appendix
+
+**Atlas Evidence Appendix**:
+An optional companion artifact or diagnostic view containing raw fetched excerpts, accepted/rejected source diagnostics, and other inspection material that would make the **Atlas Published Report** harder to read. It supports auditability without becoming the main report.
+_Avoid_: main Sources section, published report body, model-authored bibliography
+
 **Atlas Coverage Review**:
 A bounded review inside one **Atlas Turn** where Atlas compares the intended report questions or outline against the current **Atlas Evidence Packs** and identifies high-value missing evidence. The model may propose gaps and concrete search targets, but the server decides whether a profile still allows another **Atlas Gap-Fill Round**.
 _Avoid_: plan approval, autonomous planning loop, model-owned continuation, self-reflection loop
@@ -2384,7 +2396,7 @@ The compact report UI affordance that exposes **Atlas Basis** details in the rep
 _Avoid_: confidence pill, inline text badge, bulky marker, always-visible rationale, decorative citation icon
 
 **Atlas Source Projection**:
-The deterministic Sources section and source-chip rendering generated from accepted **Atlas Web Sources**, **Atlas Local Sources**, and structured source/basis metadata. The model may emit source rationale and desired claim/source associations as structured data for Atlas to validate and render, but it must not write its own Markdown Sources section above or beside the canonical Sources section.
+The deterministic Sources section and source-chip rendering generated from accepted **Atlas Web Sources**, **Atlas Local Sources**, and structured source/basis metadata. The default projection in an **Atlas Published Report** should be compact: enough to identify the source and why it matters, not a long raw excerpt dump. The model may emit source rationale and desired claim/source associations as structured data for Atlas to validate and render, but it must not write its own Markdown Sources section above or beside the canonical Sources section.
 _Avoid_: model-authored sources section, duplicate sources section, prose bibliography, freeform citation appendix
 
 **Atlas Report Opening**:
@@ -2449,7 +2461,9 @@ _Avoid_: research notification, Atlas email alert, separate notification center
 - **Atlas Basis Markers** are the preferred future marker surface for both ordinary claim support and audit-concern states. **Atlas Honesty Marker** remains the v1/audit-domain term and should fold into Basis Marker rendering rather than become a parallel UI system.
 - **Atlas Basis Markers** use only three support states: supported, partial, and unsupported. They are placed by logical claim content, not by paragraph length alone.
 - **Atlas Evidence Packs** are the bridge between curation and synthesis. They give later stages structured, source-grounded material without creating a parallel evidence database.
+- **Atlas Writer Evidence Cards** distill Evidence Packs into compact final-writing inputs. They help the model write a useful **Atlas Published Report** without receiving or rendering a raw source pile.
 - **Atlas Source Projection** owns the rendered Sources section. Model-authored Sources sections are invalid output and should be replaced by deterministic source chips/sections built from accepted sources and structured metadata.
+- An **Atlas Published Report** is the main reader-facing artifact. Raw fetched excerpts and source diagnostics belong in an **Atlas Evidence Appendix** or diagnostic surface when needed, not in the default published report body.
 - **Atlas Generated Title** is the canonical report title. **Atlas Report Opening** renders it once through app-owned chrome/header, and model-authored content should begin with Executive Summary rather than a second title block.
 - **Atlas Coverage Review** and **Atlas Gap-Fill Rounds** are bounded adaptive work inside one **Atlas Turn**. The model may judge what is missing; the server owns whether another round may run.
 - **Atlas Profiles** may cap the number of **Atlas Gap-Fill Rounds** differently, but they must not introduce different execution graphs. Overview, In-Depth, and Exhaustive remain the same Atlas architecture with different budgets and posture.
