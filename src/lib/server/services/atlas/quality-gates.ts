@@ -293,6 +293,7 @@ export async function auditAtlasBasis(
 		modelText: audit.text,
 		evidencePacks,
 		sectionBriefs,
+		assembledMarkdown: input.assembledMarkdown,
 	});
 
 	if (shouldRetryBasis(basis)) {
@@ -309,6 +310,7 @@ export async function auditAtlasBasis(
 			modelText: retryAudit.text,
 			evidencePacks,
 			sectionBriefs,
+			assembledMarkdown: input.assembledMarkdown,
 		});
 		basis.diagnostics.unshift({
 			code: "atlas_claim_basis_retry_attempted",

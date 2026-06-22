@@ -24,7 +24,7 @@ export { ATLAS_CLAIM_BASIS_SCHEMA_VERSION, ATLAS_CLAIM_SUPPORT_LEVELS };
 
 const MAX_RATIONALE_LENGTH = 280;
 const MAX_CLAIM_TEXT_LENGTH = 360;
-const MAX_FALLBACK_SECTION_BASIS = 6;
+const MAX_FALLBACK_SECTION_BASIS = 24;
 const MAX_FALLBACK_SOURCE_REFS = 8;
 const SOURCE_AUTHORITIES = [
 	"explicit_local",
@@ -722,7 +722,7 @@ function failedOrFallbackResult(input: {
 			{
 				code: "atlas_claim_basis_section_fallback",
 				message:
-					"Fine-grained Claim Basis generation was unavailable; Basis Markers show section-level evidence coverage rather than claim-by-claim verification.",
+					"Fine-grained Claim Basis generation was unavailable; Basis Markers show paragraph-level evidence coverage rather than claim-by-claim verification.",
 				basisIds: claimBasis.map((basis) => basis.id),
 				sectionTitle: null,
 			},
@@ -737,7 +737,7 @@ function failedOrFallbackResult(input: {
 				code: "atlas_claim_basis_section_fallback",
 				severity: "warning",
 				message:
-					"Atlas created partial section-level Basis Markers from accepted Evidence Packs because fine-grained Claim Basis JSON was unavailable.",
+					"Atlas created partial paragraph-level Basis Markers from accepted Evidence Packs because fine-grained Claim Basis JSON was unavailable.",
 			},
 		],
 		coverageBySection: buildCoverageBySection({
@@ -764,43 +764,169 @@ function fallbackSectionClaimBasis(input: {
 	if (defaultPacks.length === 0) return [];
 
 	const sections = fallbackSections(input);
+	const paragraphs = parseParagraphsBySection(
+		input.assembledMarkdown ?? "",
+		sections,
+	);
+	const hasParagraphs = paragraphs.some((s) => s.paragraphs.length > 0);
 	const claimBasis: AtlasClaimBasis[] = [];
 	const seen = new Set<string>();
-	for (const [index, section] of sections.entries()) {
+
+	if (!hasParagraphs) {
+		for (const [index, section] of sections.entries()) {
+			if (claimBasis.length >= MAX_FALLBACK_SECTION_BASIS) break;
+			const packs = fallbackPacksForSection({
+				section,
+				evidencePacks: input.evidencePacks,
+				evidencePacksById,
+				defaultPacks,
+				index,
+			});
+			if (packs.length === 0) continue;
+			const raw = {
+				locator: {
+					sectionTitle: section.title,
+					paragraphIndex: null,
+					claimIndex: null,
+					claimText: `Section-level evidence coverage for ${section.title}`,
+					quote: null,
+					startOffset: null,
+					endOffset: null,
+				},
+				supportLevel: "partial" as const,
+				evidencePackIds: packs.map((pack) => pack.id),
+				sourceRefs: packs.flatMap((pack) => pack.sourceRefs),
+				supportRationale: fallbackBasisRationale({
+					sectionTitle: section.title,
+					packs,
+				}),
+				auditConcernCode: "atlas_claim_basis_section_fallback",
+			};
+			const normalized = normalizeClaimBasis({ raw, evidencePacksById });
+			if (seen.has(normalized.id)) continue;
+			seen.add(normalized.id);
+			claimBasis.push(normalized);
+		}
+		return claimBasis;
+	}
+
+	for (const secParagraphs of paragraphs) {
 		if (claimBasis.length >= MAX_FALLBACK_SECTION_BASIS) break;
-		const packs = fallbackPacksForSection({
-			section,
-			evidencePacks: input.evidencePacks,
-			evidencePacksById,
-			defaultPacks,
-			index,
-		});
-		if (packs.length === 0) continue;
-		const raw = {
-			locator: {
-				sectionTitle: section.title,
-				paragraphIndex: null,
-				claimIndex: null,
-				claimText: `Section-level evidence coverage for ${section.title}`,
-				quote: null,
-				startOffset: null,
-				endOffset: null,
-			},
-			supportLevel: "partial" as const,
-			evidencePackIds: packs.map((pack) => pack.id),
-			sourceRefs: packs.flatMap((pack) => pack.sourceRefs),
-			supportRationale: fallbackBasisRationale({
-				sectionTitle: section.title,
-				packs,
-			}),
-			auditConcernCode: "atlas_claim_basis_section_fallback",
-		};
-		const normalized = normalizeClaimBasis({ raw, evidencePacksById });
-		if (seen.has(normalized.id)) continue;
-		seen.add(normalized.id);
-		claimBasis.push(normalized);
+		for (const [paraIndex, paraText] of secParagraphs.paragraphs.entries()) {
+			if (claimBasis.length >= MAX_FALLBACK_SECTION_BASIS) break;
+			if (!paraText) continue;
+			const sectionIndex = sections.findIndex(
+				(s) => s.title === secParagraphs.sectionTitle,
+			);
+			const packs = fallbackPacksForSection({
+				section: {
+					title: secParagraphs.sectionTitle,
+					evidencePackIds:
+						sectionIndex >= 0
+							? (sections[sectionIndex]?.evidencePackIds ?? [])
+							: [],
+				},
+				evidencePacks: input.evidencePacks,
+				evidencePacksById,
+				defaultPacks,
+				index: sectionIndex >= 0 ? sectionIndex : 0,
+			});
+			if (packs.length === 0) continue;
+			const claimText = compactText(paraText, 160);
+			const raw = {
+				locator: {
+					sectionTitle: secParagraphs.sectionTitle,
+					paragraphIndex: paraIndex,
+					claimIndex: null,
+					claimText,
+					quote: null,
+					startOffset: null,
+					endOffset: null,
+				},
+				supportLevel: "partial" as const,
+				evidencePackIds: packs.map((pack) => pack.id),
+				sourceRefs: packs.flatMap((pack) => pack.sourceRefs),
+				supportRationale: fallbackBasisRationale({
+					sectionTitle: secParagraphs.sectionTitle,
+					packs,
+					paragraphIndex: paraIndex,
+				}),
+				auditConcernCode: "atlas_claim_basis_section_fallback",
+			};
+			const normalized = normalizeClaimBasis({ raw, evidencePacksById });
+			if (seen.has(normalized.id)) continue;
+			seen.add(normalized.id);
+			claimBasis.push(normalized);
+		}
 	}
 	return claimBasis;
+}
+
+interface ParagraphSection {
+	sectionTitle: string;
+	paragraphs: string[];
+}
+
+function parseParagraphsBySection(
+	markdown: string,
+	sections: Array<{ title: string }>,
+): ParagraphSection[] {
+	const lines = markdown.split(/\r?\n/);
+	const result: ParagraphSection[] = [];
+	let currentSection: ParagraphSection | null = null;
+	let currentBuf: string[] = [];
+
+	function flushParagraph(): void {
+		const text = currentBuf.join("\n").trim();
+		if (text) {
+			const sec = currentSection ?? result[result.length - 1];
+			if (sec) {
+				sec.paragraphs.push(text);
+			}
+		}
+		currentBuf = [];
+	}
+
+	for (const line of lines) {
+		const headingMatch = line.match(/^#{2,3}\s+(.+?)\s*#*\s*$/);
+		if (headingMatch) {
+			flushParagraph();
+			const title = headingMatch[1].replace(/^["']|["']$/g, "").trim();
+			const matchedSection = sections.find(
+				(s) =>
+					normalizeText(s.title)?.toLowerCase() ===
+					normalizeText(title)?.toLowerCase(),
+			);
+			currentSection = {
+				sectionTitle: matchedSection?.title ?? title,
+				paragraphs: [],
+			};
+			result.push(currentSection);
+			continue;
+		}
+		if (line === "") {
+			flushParagraph();
+			continue;
+		}
+		currentBuf.push(line);
+	}
+	flushParagraph();
+
+	if (result.length === 0) {
+		const fallbackSectionTitle = sections[0]?.title ?? "Atlas report";
+		const paras = markdown
+			.split(/\n\s*\n/)
+			.map((p) => p.trim())
+			.filter(Boolean);
+		if (paras.length > 0) {
+			result.push({
+				sectionTitle: fallbackSectionTitle,
+				paragraphs: paras,
+			});
+		}
+	}
+
+	return result;
 }
 
 function fallbackSections(input: {
@@ -896,6 +1022,7 @@ function fallbackPacksForSection(input: {
 function fallbackBasisRationale(input: {
 	sectionTitle: string;
 	packs: AtlasEvidencePack[];
+	paragraphIndex?: number;
 }): string {
 	const sourceTitles = uniqueStrings(
 		input.packs.flatMap((pack) =>
@@ -908,8 +1035,12 @@ function fallbackBasisRationale(input: {
 		extra > 0
 			? `"${leadSource}" and ${extra} other source(s)`
 			: `"${leadSource}"`;
+	const paraLabel =
+		input.paragraphIndex != null
+			? `paragraph ${input.paragraphIndex + 1} of `
+			: "";
 	return compactText(
-		`${sourcePhrase} provide section-level evidence for ${input.sectionTitle}; fine-grained claim verification was unavailable, so this marker is partial.`,
+		`${sourcePhrase} provide paragraph-level evidence for ${paraLabel}${input.sectionTitle}; fine-grained claim verification was unavailable, so this marker is partial.`,
 		MAX_RATIONALE_LENGTH,
 	);
 }

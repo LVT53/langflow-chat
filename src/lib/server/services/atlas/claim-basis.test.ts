@@ -348,7 +348,7 @@ describe("Atlas Claim Basis", () => {
 		});
 	});
 
-	it("falls back to partial section-level basis markers when parsing fails but accepted evidence exists", () => {
+	it("falls back to partial paragraph-level basis markers when parsing fails but accepted evidence exists", () => {
 		const result = parseAtlasClaimBasisModelResult({
 			modelText: "not json",
 			evidencePacks: [evidencePack],
@@ -366,9 +366,10 @@ describe("Atlas Claim Basis", () => {
 			auditConcernCode: "atlas_claim_basis_section_fallback",
 			locator: expect.objectContaining({
 				sectionTitle: "Executive Summary",
-				paragraphIndex: null,
+				paragraphIndex: 0,
 			}),
 		});
+		expect(result.claimBasis[0].locator.claimText).toContain("Hybrid");
 		expect(result.limitations).toContainEqual(
 			expect.objectContaining({
 				code: "atlas_claim_basis_section_fallback",
@@ -382,6 +383,63 @@ describe("Atlas Claim Basis", () => {
 				code: "atlas_claim_basis_section_fallback",
 			}),
 		);
+	});
+
+	it("produces per-paragraph fallback markers with non-null paragraphIndex when multiple paragraphs exist", () => {
+		const result = parseAtlasClaimBasisModelResult({
+			modelText: "not json",
+			evidencePacks: [evidencePack, stalePack],
+			sectionBriefs,
+			assembledMarkdown: [
+				"## Executive Summary",
+				"Hybrid retrieval combines lexical and semantic recall for broad candidate retrieval.",
+				"",
+				"Reranking improves precision by narrowing noisy candidates before final answer generation.",
+				"",
+				"A third paragraph discusses evaluation methodology and benchmark results.",
+				"",
+				"## Findings",
+				"Evidence from multiple sources confirms that hybrid + rerank outperforms either approach alone.",
+				"",
+				"Production deployments at scale show measurable latency improvements.",
+				"",
+				"## Limitations",
+				"Current evidence lacks long-term longitudinal studies.",
+			].join("\n"),
+		});
+
+		expect(result.status).toBe("succeeded");
+		expect(result.claimBasis.length).toBeGreaterThanOrEqual(6);
+		expect(result.claimBasis.length).toBeLessThanOrEqual(24);
+
+		const withParagraphIndex = result.claimBasis.filter(
+			(b) => b.locator.paragraphIndex !== null,
+		);
+		expect(withParagraphIndex.length).toBe(result.claimBasis.length);
+
+		const executiveMarkers = result.claimBasis.filter(
+			(b) => b.locator.sectionTitle === "Executive Summary",
+		);
+		expect(executiveMarkers.length).toBe(3);
+		expect(executiveMarkers.map((b) => b.locator.paragraphIndex)).toEqual([
+			0, 1, 2,
+		]);
+
+		for (const marker of result.claimBasis) {
+			expect(marker.supportLevel).toBe("partial");
+			expect(marker.auditConcernCode).toBe(
+				"atlas_claim_basis_section_fallback",
+			);
+			expect(marker.locator.claimText.length).toBeGreaterThan(0);
+			expect(marker.locator.claimText.length).toBeLessThanOrEqual(160);
+			expect(marker.locator.claimText).not.toContain(
+				"Section-level evidence coverage",
+			);
+			expect(marker.locator.claimText).not.toContain(
+				"paragraph-level evidence",
+			);
+			expect(marker.evidencePackIds.length).toBeGreaterThan(0);
+		}
 	});
 
 	it("does not fabricate claim basis data when parsing fails without accepted evidence", () => {
