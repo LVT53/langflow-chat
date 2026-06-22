@@ -2,7 +2,9 @@
 
 Date: 2026-06-22
 Implementation base: `a73d47bb Reduce Atlas fallback boilerplate repetition`
-Status: local verification passed; remote live testing pending
+Deployed commit: `dd8ac242 Replace Atlas fallback writer with honest evidence fallback`
+Live base URL: `https://ai.alfydesign.com`
+Status: live test completed; awaiting human review
 
 ## Trigger
 
@@ -47,8 +49,78 @@ Replaced the deterministic fallback writer with an honest terminal fallback:
 
 `src/lib/server/services/atlas/writer-evidence-cards.test.ts` was formatted by Biome because `npm run lint` failed on a pre-existing import-order/format issue in that Atlas test file. This was formatter-only and required for the prompt's lint gate.
 
-## Pending
+## Remote Deployment
 
-- Commit and push to `main`.
-- Deploy and run remote live testing against production models.
-- Update this log with live conversation/job/artifact IDs and manual report assessment.
+- Pushed `dd8ac242` to `origin/main`.
+- Remote deploy pulled `dd8ac242`, installed dependencies, verified migrations, applied migrations, built successfully, and restarted `langflow-chat.service`.
+- Live health check after restart returned `{"status":"OK"}`.
+- Service state after the live test: `active`.
+- Remote checkout had pre-existing live-only files before deploy: modified `package-lock.json`, untracked `SELECT`, `eng.traineddata`, `hun.traineddata`, and `nld.traineddata`. They were not removed.
+- Journal note: the previous service instance reported `Failed with result 'timeout'` during restart, then a fresh process started cleanly, listened on port 3001, and completed the Atlas job. No application exception was seen in the filtered journal check.
+
+## Live Test Command Shape
+
+```sh
+LIVE_AI_BASE_URL=https://ai.alfydesign.com \
+LIVE_AI_EMAIL=tester@tester.com \
+LIVE_AI_PASSWORD=<redacted> \
+LIVE_AI_OUTPUT_DIR=/private/tmp/atlas-live-regression-2026-06-22-dd8ac242 \
+LIVE_AI_TIMEOUT_MS=1200000 \
+node /private/tmp/atlas-live-regression.mjs
+```
+
+## Live IDs And Artifacts
+
+- Conversation: `b953ed44-fecb-4ddf-8db8-8cf3c706c568`
+- Atlas job: `48666eae-bfba-4fef-914b-0661a5f020e2`
+- File-production job: `49eeaba5-a714-4dd7-ae11-9fba957b1bea`
+- Markdown file id: `cb8a990b-daa9-4295-bce4-22e874182845`
+- HTML file id: `fabd7af0-25d0-46e6-b3bf-48bdd61433f3`
+- PDF file id: `e1d3138b-fd96-4381-9ac9-4c39ae5ca1ff`
+- Markdown artifact: `/private/tmp/atlas-live-regression-2026-06-22-dd8ac242/48666eae-bfba-4fef-914b-0661a5f020e2.md`
+- HTML artifact: `/private/tmp/atlas-live-regression-2026-06-22-dd8ac242/48666eae-bfba-4fef-914b-0661a5f020e2.html`
+
+## Live Automated Result
+
+- Terminal status: nonzero because the old regression script expected a normal decision report.
+- Atlas job status: `succeeded`
+- Title: `Self-hosted embedding models for English technical-document retrieval in 2026`
+- Accepted sources: 16
+- Rejected sources: 82
+- Token usage: 127,861 total
+- Cost: 20,100 micros
+- Top-level sections: 6 including source appendix
+- Headings: 7
+- Images: 1
+- Inline basis markers: 3
+- Standalone basis-marker blocks: 1
+- Old deterministic fallback phrase: absent
+- Honest fallback `Evidence Summary`: present
+- `Additional Limitations`: present
+- `could not synthesize`: present
+- Recommendation heading: absent
+
+The script failed these two assertions:
+
+- `report has no recommendation heading`
+- `HTML contains 1 standalone basis marker block(s)`
+
+## Manual Metrics
+
+- Total words: 1,137
+- Body words before source appendix: 554
+- Source appendix words: 583
+- Source share: 51.3%
+- Image count: 1
+
+## Manual Assessment
+
+This live test confirms the root fallback change is active in production: Atlas did not manufacture a fake Findings/Tradeoffs/Recommendation report. It emitted the honest fallback shape: `Executive Summary`, `Evidence Summary`, `Limitations`, and `Additional Limitations`.
+
+As a decision-quality report, this output is still not acceptable. It is explicitly a fallback evidence listing and says Atlas could not synthesize the evidence into a report. The source snippets are also noisy: examples include menu/decision-tree residue from Milvus, `Back to Blog Guides` text from FutureAGI, and a typo-like `ixedbread` fragment. The selected image is a generic Unsplash document stack rather than a useful embedding-model visual. The confidence/basis marker placement issue also persists in this fallback output because one marker rendered as a standalone block.
+
+The important difference from attempts 001-003 is that the failure is now honest and visible rather than masked by deterministic template analysis.
+
+## Acceptance
+
+Accepted as verification that the deterministic fallback writer was removed from the production path. Not accepted as a satisfactory Atlas report. Stop here for human review.
