@@ -722,7 +722,7 @@ function failedOrFallbackResult(input: {
 			{
 				code: "atlas_claim_basis_section_fallback",
 				message:
-					"Fine-grained Claim Basis generation was unavailable; Basis Markers show paragraph-level evidence coverage rather than claim-by-claim verification.",
+					"Fine-grained Claim Basis generation was unavailable; Basis Markers show evidence coverage rather than claim-by-claim verification.",
 				basisIds: claimBasis.map((basis) => basis.id),
 				sectionTitle: null,
 			},
@@ -1040,7 +1040,7 @@ function fallbackBasisRationale(input: {
 			? `paragraph ${input.paragraphIndex + 1} of `
 			: "";
 	return compactText(
-		`${sourcePhrase} provide paragraph-level evidence for ${paraLabel}${input.sectionTitle}; fine-grained claim verification was unavailable, so this marker is partial.`,
+		`${sourcePhrase} provide paragraph-level evidence for ${paraLabel}${input.sectionTitle}.`,
 		MAX_RATIONALE_LENGTH,
 	);
 }
@@ -1064,11 +1064,7 @@ function isLimitationLocator(basis: AtlasClaimBasis): boolean {
 }
 
 function legacyMarkerMessage(basis: AtlasClaimBasis): string {
-	const label =
-		basis.supportLevel === "partial"
-			? "Partially supported claim"
-			: "Unsupported claim";
-	return `${label}${basis.locator.sectionTitle ? ` in ${basis.locator.sectionTitle}` : ""}: ${basis.supportRationale}`;
+	return `${basis.locator.sectionTitle ? `${basis.locator.sectionTitle}: ` : ""}${basis.supportRationale}`;
 }
 
 function pushMarker(
