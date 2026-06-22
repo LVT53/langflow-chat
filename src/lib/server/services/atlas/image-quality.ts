@@ -3,19 +3,27 @@ import type { AtlasImageCandidate } from "./types";
 const IMAGE_TOKEN_STOPWORDS = new Set([
 	"about",
 	"after",
+	"ai",
 	"atlas",
 	"best",
 	"blog",
 	"chart",
+	"coding",
+	"diagram",
+	"flowchart",
 	"from",
 	"image",
 	"images",
+	"integration",
 	"into",
 	"logo",
 	"logos",
 	"market",
+	"model",
+	"models",
 	"photo",
 	"picture",
+	"process",
 	"report",
 	"source",
 	"that",
@@ -125,9 +133,7 @@ function hasStrongQueryRelevance(candidate: AtlasImageCandidate): boolean {
 		candidate.query,
 		atlasImageCandidateSourceContextText(candidate),
 	);
-	return (
-		visualScore > 0 && visualScore + sourceContextScore >= requiredOverlap
-	);
+	return visualScore > 0 && visualScore + sourceContextScore >= requiredOverlap;
 }
 
 function isLikelyLogoOrIcon(candidate: AtlasImageCandidate): boolean {

@@ -523,6 +523,44 @@ describe("Atlas renderer output", () => {
 		).toHaveLength(0);
 	});
 
+	it("rejects generic AI model stock images for embedding retrieval reports", async () => {
+		const { buildAtlasDocumentSource } = await import("./renderer-output");
+
+		const source = buildAtlasDocumentSource({
+			title: "Embedding Model Atlas",
+			assembledMarkdown: [
+				"## Executive Summary",
+				"English technical-document retrieval decisions should compare embedding quality, reranking fit, latency, memory, and deployment constraints.",
+				"",
+				"## Findings",
+				"Relevant visuals should show embedding retrieval, vectors, indexing, or document-search architecture rather than generic AI artwork.",
+			].join("\n"),
+			sources: [],
+			honestyMarkers: [],
+			imageCandidates: [
+				{
+					id: "image-candidate-stock-ai",
+					query: "best self-hosted embedding models English retrieval",
+					title: "Flowchart of vibe coding process with ai model integration",
+					imageUrl: "https://images.unsplash.com/photo-stock-flowchart.jpg",
+					sourcePageUrl: "https://unsplash.com/photos/stock-ai-flowchart",
+					sourceTitle: "Unsplash",
+					thumbnailUrl: null,
+					width: 1080,
+					height: 720,
+					caption:
+						"Flowchart of vibe coding process with ai model integration.",
+					selectionReason: "Image result for embedding models.",
+				},
+			],
+			maxRenderedImages: 1,
+		});
+
+		expect(
+			source.blocks.filter((block) => block.type === "image"),
+		).toHaveLength(0);
+	});
+
 	it("keeps source-backed image candidates when visual text and source title both support the report query", async () => {
 		const { buildAtlasDocumentSource } = await import("./renderer-output");
 

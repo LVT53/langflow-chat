@@ -2937,6 +2937,12 @@ describe("Atlas pipeline slices", () => {
 			"## Recommendation",
 			"We recommend deploying a compact, well-supported embedding model with a compatible reranker as the default path, then promoting a larger model only if corpus tests show a material recall gain within the latency budget. This gives the team a measurable rollout path: benchmark the shortlist, keep source-level logging, and tune reranking depth before scaling.",
 			"",
+			"## Key tradeoff",
+			"8B-class models can improve benchmark quality, but they are not the default for a latency-constrained single-RT deployment unless measured corpus recall justifies the memory and serving cost.",
+			"",
+			"## - Nemotron-8B",
+			"Nemotron-style larger models belong in the high-accuracy evaluation lane, not as a heading that replaces the recommendation structure.",
+			"",
 			"## Limitations",
 			"The accepted evidence does not provide identical hardware and corpus measurements for every candidate, so the recommendation should be treated as a deployment starting point. Final selection still depends on licensing, serving runtime, available memory, and measured latency on the user's documents.",
 		].join("\n");
@@ -3069,6 +3075,14 @@ describe("Atlas pipeline slices", () => {
 				),
 			}),
 		);
+		const auditCalls = auditBasis.mock.calls as unknown as Array<
+			[Parameters<RunAtlasPipelineInput["dependencies"]["auditBasis"]>[0]]
+		>;
+		const auditInput = auditCalls[0]?.[0];
+		expect(auditInput?.assembledMarkdown).not.toContain("## Key tradeoff");
+		expect(auditInput?.assembledMarkdown).not.toContain("## - Nemotron-8B");
+		expect(auditInput?.assembledMarkdown).toContain("**Key tradeoff.**");
+		expect(auditInput?.assembledMarkdown).toContain("**Nemotron-8B.**");
 		expect(checkpoints.at(-1)).toMatchObject({
 			checkpoint: {
 				writer: {
@@ -3314,27 +3328,22 @@ describe("Atlas pipeline slices", () => {
 		const renderedSource = renderOutputs.mock.calls[0]?.[0];
 		expect(
 			renderedSource?.blocks.filter((block) => block.type === "image"),
-		).toHaveLength(2);
+		).toHaveLength(1);
 		expect(finalCheckpoint).toMatchObject({
 			checkpoint: {
 				reportShapeDiagnostics: expect.objectContaining({
-					imageCount: 2,
-					warnings: expect.arrayContaining([
-						expect.objectContaining({
-							code: "atlas_too_many_images_for_body_size",
-						}),
-					]),
+					imageCount: 1,
 				}),
 			},
 			qualityDiagnostics: {
 				reportShapeDiagnostics: expect.objectContaining({
-					imageCount: 2,
+					imageCount: 1,
 				}),
 			},
 			documentSourceSummary: {
 				writer: {
 					reportShapeDiagnostics: expect.objectContaining({
-						imageCount: 2,
+						imageCount: 1,
 					}),
 				},
 			},
@@ -3996,7 +4005,7 @@ describe("Atlas pipeline slices", () => {
 			},
 		});
 
-		expect(assembleCalls).toBe(2);
+		expect(assembleCalls).toBe(3);
 		const auditCalls = auditBasis.mock.calls as unknown as Array<
 			[Parameters<RunAtlasPipelineInput["dependencies"]["auditBasis"]>[0]]
 		>;

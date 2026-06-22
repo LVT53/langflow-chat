@@ -1467,6 +1467,62 @@ function looksLikeMalformedAssembledReport(input: {
 	);
 }
 
+const MALFORMED_WRITER_HEADING_LABELS = new Set([
+	"core insight",
+	"lead candidates",
+	"key tradeoff",
+	"report outline",
+	"table",
+	"top models",
+	"key model characteristics",
+]);
+
+function isMalformedWriterHeading(
+	title: string,
+	acceptedSourceTitles: string[],
+): boolean {
+	const trimmed = title.trim();
+	const normalized = normalizedReportShapeText(trimmed);
+	if (!normalized) return true;
+	if (trimmed.startsWith("-") || trimmed.startsWith("*")) return true;
+	if (MALFORMED_WRITER_HEADING_LABELS.has(normalized)) return true;
+	if (isReportEnvelopeHeading(trimmed)) return true;
+	if (isReportScalarOnlyHeading(trimmed)) return true;
+	if (isEvidencePackIdFragment(trimmed)) return true;
+	if (isFallbackTableFragment(trimmed)) return true;
+	if (/[|]/.test(trimmed)) return true;
+	if (isLikelyAcceptedSourceTitleHeading(trimmed, acceptedSourceTitles)) {
+		return true;
+	}
+	return false;
+}
+
+function sanitizeMalformedWriterHeadings(input: {
+	markdown: string;
+	acceptedSourceTitles: string[];
+}): string {
+	return input.markdown
+		.split(/\r?\n/)
+		.map((line) => {
+			const match = /^(\s*)#{1,6}\s+(.+?)\s*#*\s*$/.exec(line);
+			if (!match) return line;
+			const title = match[2].trim();
+			if (!isMalformedWriterHeading(title, input.acceptedSourceTitles)) {
+				return line;
+			}
+			const demotedTitle = title
+				.replace(/^[-*]\s+/, "")
+				.replace(/[|]+/g, " ")
+				.replace(/\s+/g, " ")
+				.trim();
+			if (!demotedTitle) return "";
+			return `${match[1]}**${demotedTitle.replace(/[.:;]+$/g, "")}.**`;
+		})
+		.join("\n")
+		.replace(/\n{3,}/g, "\n\n")
+		.trim();
+}
+
 function needsAssemblyRepair(input: {
 	markdown: string;
 	acceptedSourceTitles: string[];
@@ -2397,6 +2453,10 @@ export async function runAtlasPipeline(
 		usedDeterministicFallbackBeforeImprovement = true;
 	}
 
+	finalAssembledMarkdown = sanitizeMalformedWriterHeadings({
+		markdown: finalAssembledMarkdown,
+		acceptedSourceTitles,
+	});
 	firstDraftReportShapeDiagnostics = diagnoseAtlasReportShape(
 		finalAssembledMarkdown,
 	);
@@ -2453,6 +2513,10 @@ export async function runAtlasPipeline(
 				fallbackReport.metadata,
 			);
 		}
+		finalAssembledMarkdown = sanitizeMalformedWriterHeadings({
+			markdown: finalAssembledMarkdown,
+			acceptedSourceTitles,
+		});
 		reportShapeDiagnostics = diagnoseAtlasReportShape(finalAssembledMarkdown);
 	}
 
@@ -2518,6 +2582,10 @@ export async function runAtlasPipeline(
 			assemblyOutput.metadata,
 		);
 		finalAssembledMarkdown = assemblyOutput.markdown;
+		finalAssembledMarkdown = sanitizeMalformedWriterHeadings({
+			markdown: finalAssembledMarkdown,
+			acceptedSourceTitles,
+		});
 		reportShapeDiagnostics = diagnoseAtlasReportShape(finalAssembledMarkdown);
 		await input.dependencies.heartbeat?.({
 			stage: "audit",
