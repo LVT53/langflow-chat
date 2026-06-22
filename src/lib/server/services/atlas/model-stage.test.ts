@@ -151,8 +151,8 @@ describe("Atlas model stage", () => {
 
 		expect(calls).toEqual([
 			{ profile: "overview", maxOutputTokens: 12000 },
-			{ profile: "in-depth", maxOutputTokens: 12000 },
-			{ profile: "exhaustive", maxOutputTokens: 16000 },
+			{ profile: "in-depth", maxOutputTokens: 24000 },
+			{ profile: "exhaustive", maxOutputTokens: 32000 },
 		]);
 	});
 
@@ -251,7 +251,7 @@ describe("Atlas model stage", () => {
 		expect(result.finishReason).toBe("stop");
 		expect(runModel).toHaveBeenCalledWith(
 			expect.objectContaining({
-				maxOutputTokens: 16000,
+				maxOutputTokens: 32000,
 			}),
 		);
 	});
