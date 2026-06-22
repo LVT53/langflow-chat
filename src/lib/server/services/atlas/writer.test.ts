@@ -132,7 +132,8 @@ describe("Atlas writer prompt", () => {
 				"sectionBriefs",
 				"limitations",
 			],
-			optionalFields: ["sourceAssociations"],
+			optionalFields: ["sourceAssociations", "claimBasis"],
+			claimBasisDescription: expect.any(String),
 		});
 		expect(parsed.instructions).toContain("decision-quality");
 	});
@@ -157,7 +158,7 @@ describe("Atlas writer prompt", () => {
 		expect(prompt.length).toBeLessThanOrEqual(50000);
 	});
 
-	it("truncates synthesis and outline to 2000 chars when prompt input is large", () => {
+	it("truncates synthesis and outline to 1500 chars when prompt input is large", () => {
 		const bigSynthesis = "A".repeat(8000);
 		const bigOutline = "B".repeat(8000);
 		const cards = Array.from({ length: 16 }, (_, i) =>
@@ -173,17 +174,17 @@ describe("Atlas writer prompt", () => {
 		const prompt = buildAtlasWriterPrompt(input);
 		const parsed = JSON.parse(prompt);
 
-		// Synthesis and outline should be truncated
-		expect(parsed.synthesis.length).toBeLessThanOrEqual(2000);
-		expect(parsed.outline.length).toBeLessThanOrEqual(2000);
+		// Synthesis and outline should be truncated to 1500 at level 1 (new priority)
+		expect(parsed.synthesis.length).toBeLessThanOrEqual(1500);
+		expect(parsed.outline.length).toBeLessThanOrEqual(1500);
 		// Report intent should also have truncated versions
-		expect(parsed.reportIntent.synthesis.length).toBeLessThanOrEqual(2000);
+		expect(parsed.reportIntent.synthesis.length).toBeLessThanOrEqual(1500);
 		expect(parsed.reportIntent.integratedOutline.length).toBeLessThanOrEqual(
-			2000,
+			1500,
 		);
 	});
 
-	it("caps evidence card relevantFacts at 3 per card when prompt is large", () => {
+	it("preserves evidence card facts at level 1 truncation (synthesis cut to 1500)", () => {
 		const cards = Array.from({ length: 16 }, (_, i) =>
 			makeEvidenceCard(`Evidence source ${i + 1}`, 10),
 		);
@@ -191,6 +192,27 @@ describe("Atlas writer prompt", () => {
 
 		const input = defaultWriterInput({
 			synthesis: bigSynthesis,
+			writerEvidenceCards: cards,
+		});
+
+		const prompt = buildAtlasWriterPrompt(input);
+		const parsed = JSON.parse(prompt);
+		expect(parsed.synthesis.length).toBeLessThanOrEqual(1500);
+		for (const card of parsed.writerEvidenceCards) {
+			expect(card.relevantFacts.length).toBe(10);
+		}
+	});
+
+	it("caps evidence card relevantFacts at 3 per card when prompt requires level 2 truncation", () => {
+		const cards = Array.from({ length: 30 }, (_, i) =>
+			makeEvidenceCard(`Evidence source ${i + 1}`, 10),
+		);
+		const bigSynthesis = "X".repeat(12000);
+		const bigOutline = "Y".repeat(12000);
+
+		const input = defaultWriterInput({
+			synthesis: bigSynthesis,
+			outline: bigOutline,
 			writerEvidenceCards: cards,
 		});
 
@@ -410,5 +432,62 @@ describe("Atlas writer prompt", () => {
 		expect(parsed.instructions).toContain(
 			"Do not emit list items that have only a label and colon",
 		);
+	});
+
+	it("includes claimBasis in output contract optionalFields and description", () => {
+		const prompt = buildAtlasWriterPrompt(defaultWriterInput());
+		const parsed = JSON.parse(prompt);
+
+		expect(parsed.outputContract.optionalFields).toContain("claimBasis");
+		expect(parsed.outputContract.claimBasisDescription).toContain("Optional");
+	});
+
+	it("claimBasis description mentions supportLevel and evidenceCardIds", () => {
+		const prompt = buildAtlasWriterPrompt(defaultWriterInput());
+		const parsed = JSON.parse(prompt);
+
+		expect(parsed.outputContract.claimBasisDescription).toContain(
+			"supportLevel",
+		);
+		expect(parsed.outputContract.claimBasisDescription).toContain(
+			"evidenceCardIds",
+		);
+	});
+
+	it("truncation preserves evidence card facts longer than synthesis text", () => {
+		const cards = Array.from({ length: 16 }, (_, i) =>
+			makeEvidenceCard(`Source ${i + 1}`, 10),
+		);
+		const input = defaultWriterInput({
+			synthesis: "X".repeat(8000),
+			outline: "Y".repeat(8000),
+			writerEvidenceCards: cards,
+		});
+
+		const prompt = buildAtlasWriterPrompt(input);
+		const parsed = JSON.parse(prompt);
+
+		expect(parsed.synthesis.length).toBeLessThanOrEqual(1500);
+		for (const card of parsed.writerEvidenceCards) {
+			expect(card.relevantFacts.length).toBe(10);
+		}
+	});
+
+	it("evidence card facts capped at 2 as last resort", () => {
+		const cards = Array.from({ length: 40 }, (_, i) =>
+			makeEvidenceCard(`Source ${i + 1}`, 10),
+		);
+		const input = defaultWriterInput({
+			synthesis: "X".repeat(20000),
+			outline: "Y".repeat(20000),
+			writerEvidenceCards: cards,
+		});
+
+		const prompt = buildAtlasWriterPrompt(input);
+		const parsed = JSON.parse(prompt);
+
+		for (const card of parsed.writerEvidenceCards) {
+			expect(card.relevantFacts.length).toBeLessThanOrEqual(2);
+		}
 	});
 });

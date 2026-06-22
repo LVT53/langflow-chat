@@ -107,6 +107,14 @@ export interface AtlasWriterEvidenceCardDiagnostic {
 	message: string;
 }
 
+export interface AtlasWriterClaimBasisEntry {
+	claimText: string;
+	sectionTitle: string;
+	supportLevel: AtlasClaimSupportLevel;
+	evidenceCardIds: string[];
+	rationale: string;
+}
+
 export interface AtlasEvidencePackDiagnostic {
 	code: string;
 	severity: "info" | "warning";

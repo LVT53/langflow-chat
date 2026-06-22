@@ -76,6 +76,7 @@ function writerInstructions(language: SupportedLanguage): string {
 			"Képet csak az imageCandidates mezőből válassz, HTTPS URL-lel; ne találj ki kép URL-eket, és ne használj logót, ikont, devicont, SVG/vektor vagy dekoratív képet.",
 			"Each sectionBrief must preserve relevant evidencePackIds and sourceAssociations when the section depends on specific cards.",
 			"Ne írj olyan lista elemet, amely csak egy címkét és kettőspontot tartalmaz tartalom nélkül (pl. '- **Hardware fit:**' érvénytelen). Minden lista elemnek tartalmaznia kell leíró szöveget a címke után.",
+			"Opcionálisan adj meg egy claimBasis tömböt kulcsfontosságú tényszerű állítások ellenőrzéséhez, ahol minden bejegyzés tartalmazza a claimText, sectionTitle, supportLevel (supported/partial/unsupported), evidenceCardIds és rationale mezőket.",
 		].join(" ");
 	}
 	return [
@@ -92,6 +93,7 @@ function writerInstructions(language: SupportedLanguage): string {
 		"Choose images only from imageCandidates with HTTPS URLs; do not invent image URLs and do not use logos, icons, devicons, SVG/vector assets, or decorative images.",
 		"Each sectionBrief must preserve relevant evidencePackIds and sourceAssociations when the section depends on specific cards.",
 		"Do not emit list items that have only a label and colon with no content after the colon (e.g., '- **Hardware fit:**' is invalid). Every list item must have descriptive text after any label.",
+		"Optionally return a claimBasis array to verify key factual claims against evidence cards; each entry should include claimText, sectionTitle, supportLevel (supported/partial/unsupported), evidenceCardIds, and rationale.",
 	].join(" ");
 }
 
@@ -181,12 +183,10 @@ function baseWriterPrompt(
 	truncationLevel = 0,
 ) {
 	const factsPerCard =
-		truncationLevel >= 2 ? 2 : truncationLevel >= 1 ? 3 : null;
-	const synthesisMaxLen =
-		truncationLevel >= 3 ? 1500 : truncationLevel >= 1 ? 2000 : null;
-	const outlineMaxLen =
-		truncationLevel >= 3 ? 1500 : truncationLevel >= 1 ? 2000 : null;
-	const trimCoverageReview = truncationLevel >= 4;
+		truncationLevel >= 4 ? 2 : truncationLevel >= 2 ? 3 : null;
+	const synthesisMaxLen = truncationLevel >= 1 ? 1500 : null;
+	const outlineMaxLen = truncationLevel >= 1 ? 1500 : null;
+	const trimCoverageReview = truncationLevel >= 3;
 
 	const synthesis =
 		synthesisMaxLen !== null
@@ -235,7 +235,9 @@ function baseWriterPrompt(
 				"sectionBriefs",
 				"limitations",
 			],
-			optionalFields: ["sourceAssociations"],
+			optionalFields: ["sourceAssociations", "claimBasis"],
+			claimBasisDescription:
+				"Optional array of AtlasWriterClaimBasisEntry objects for verifying key factual claims. Each entry must include claimText, sectionTitle, supportLevel (supported/partial/unsupported), evidenceCardIds, and rationale. When absent, the audit stage will generate claim basis post-hoc.",
 		},
 		reportIntent: {
 			originalQuery: input.query,

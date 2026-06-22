@@ -1473,11 +1473,50 @@ function countReportEnvelopeScalarLines(markdown: string): number {
 }
 
 function hasLimitationsHeading(markdown: string): boolean {
-	return markdownHeadingTitles(markdown).some((heading) =>
-		/\b(limitations?|constraints?|caveats?|korlatok)\b/i.test(
-			normalizedReportShapeText(heading),
-		),
-	);
+	return markdownHeadingTitles(markdown).some((heading) => {
+		const normalized = normalizedReportShapeText(heading);
+		if (!normalized) return false;
+		return /(?:\blimitations?\b(?:\s+(?:and|&)\s+(?:caveats|constraints|gaps))?|\bconstraints?\b|\bcaveats?\b|\breport\s*limitations?\b|\bkorlatok\b)/i.test(
+			normalized,
+		);
+	});
+}
+
+export function stripModelBoilerplate(markdown: string): string {
+	const patterns = [
+		/Report generated at the \w+ stage/gi,
+		/Generated (?:at|during|by) the (?:Atlas )?(?:assemble|synthesize|integrate|audit) stage/gi,
+		/This report was (?:compiled|generated|produced) (?:by|during|at) Atlas/gi,
+		/Use (?:this|the above) as a starting point for further investigation/gi,
+	];
+	let result = markdown;
+	for (const pattern of patterns) {
+		result = result.replace(pattern, "");
+	}
+	return result.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+export function deduplicateHeadings(markdown: string): string {
+	const seen = new Set<string>();
+	const lines = markdown.split(/\r?\n/);
+	const result: string[] = [];
+	for (const line of lines) {
+		const match = /^(\s*#{2}\s+)(.+?)\s*#*\s*$/.exec(line);
+		if (match) {
+			const headingText = match[2].trim();
+			const normalized = headingText
+				.normalize("NFD")
+				.replace(/[\u0300-\u036f]/g, "")
+				.toLowerCase()
+				.trim();
+			if (seen.has(normalized)) {
+				continue;
+			}
+			seen.add(normalized);
+		}
+		result.push(line);
+	}
+	return result.join("\n");
 }
 
 export function looksLikeMalformedAssembledReport(input: {
@@ -2475,6 +2514,8 @@ export async function runAtlasPipeline(
 			markdown: finalAssembledMarkdown,
 			acceptedSourceTitles,
 		});
+		finalAssembledMarkdown = stripModelBoilerplate(finalAssembledMarkdown);
+		finalAssembledMarkdown = deduplicateHeadings(finalAssembledMarkdown);
 	}
 	firstDraftReportShapeDiagnostics = diagnoseAtlasReportShape(
 		finalAssembledMarkdown,
@@ -2556,6 +2597,8 @@ export async function runAtlasPipeline(
 				markdown: finalAssembledMarkdown,
 				acceptedSourceTitles,
 			});
+			finalAssembledMarkdown = stripModelBoilerplate(finalAssembledMarkdown);
+			finalAssembledMarkdown = deduplicateHeadings(finalAssembledMarkdown);
 		}
 	}
 
