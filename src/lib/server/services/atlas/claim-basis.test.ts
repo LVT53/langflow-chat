@@ -1021,7 +1021,7 @@ describe("Atlas Claim Basis", () => {
 		expect(prompt.report.length).toBeGreaterThan(7000);
 	});
 
-	it("preserves all 10 instructions and Hungarian parity check in compacted prompt", () => {
+	it("preserves all 11 instructions and Hungarian parity check in compacted prompt", () => {
 		const prompt = JSON.parse(
 			buildAtlasClaimBasisPrompt({
 				language: "en",
@@ -1038,11 +1038,35 @@ describe("Atlas Claim Basis", () => {
 			languageParityCheck: string;
 		};
 
-		expect(prompt.instructions).toHaveLength(10);
+		expect(prompt.instructions).toHaveLength(11);
 		expect(prompt.instructions.join(" ")).toContain("accepted Evidence Packs");
 		expect(prompt.instructions.join(" ")).toContain(
 			"Hallucinated facts or invented logical links must be unsupported",
 		);
 		expect(prompt.languageParityCheck).toContain("language drift");
+	});
+
+	it("includes an instruction to skip Executive Summary in the audit prompt", () => {
+		const prompt = JSON.parse(
+			buildAtlasClaimBasisPrompt({
+				language: "en",
+				currentDate: "2026-06-22",
+				assembledMarkdown: "## Summary\nTest.",
+				evidencePacks: [evidencePack],
+				evidencePackDiagnostics: [],
+				sectionBriefs,
+				sources: [{ title: "Example", url: "https://example.com" }],
+				limitation: null,
+			}),
+		) as {
+			instructions: string[];
+		};
+
+		expect(prompt.instructions.join(" ")).toContain(
+			"Do not generate Claim Basis entries for the Executive Summary section",
+		);
+		expect(prompt.instructions.join(" ")).toContain(
+			"it is descriptive, not a factual claim section",
+		);
 	});
 });

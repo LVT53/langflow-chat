@@ -215,6 +215,7 @@ export function buildAtlasClaimBasisPrompt(
 			"Write one compact supportRationale suitable for user display.",
 			"Do not include hidden chain-of-thought or model-certainty scores.",
 			"If Claim Basis generation is not possible, return an empty claimBasis array plus diagnostics and limitations; do not invent support data.",
+			"Do not generate Claim Basis entries for the Executive Summary section — it is descriptive, not a factual claim section.",
 		],
 		expectedJsonShape: {
 			retryRequested: "boolean",

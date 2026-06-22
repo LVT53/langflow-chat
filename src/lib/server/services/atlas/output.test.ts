@@ -1111,17 +1111,10 @@ describe("Atlas renderer output", () => {
 				{ type: "paragraph" }
 			> => block.type === "paragraph",
 		);
-		expect(paragraphs[0].basisMarkers).toEqual([
-			{
-				type: "basisMarker",
-				id: "basis-supported",
-				support: "supported",
-				anchorText: "local authority and web freshness",
-				occurrence: 0,
-				rationale:
-					"Accepted source states both local authority and web freshness are required.",
-			},
-		]);
+		// Executive Summary section claim basis entries are skipped
+		expect(
+			paragraphs[0].basisMarkers,
+		).toBeUndefined();
 		expect(paragraphs[1].basisMarkers).toEqual([
 			{
 				type: "basisMarker",
@@ -1150,7 +1143,114 @@ describe("Atlas renderer output", () => {
 		);
 	});
 
-	it("attaches unlocatable Atlas Claim Basis markers to nearby paragraph text", async () => {
+	it("skips claim basis markers for Executive Summary but still marks Evidence Summary sections", async () => {
+		const { buildAtlasDocumentSource } = await import("./renderer-output");
+
+		const source = buildAtlasDocumentSource({
+			title: "Exec Summary Exemption Atlas",
+			assembledMarkdown: [
+				"## Executive Summary",
+				"Hybrid retrieval improves recall before reranking.",
+				"",
+				"## Evidence Summary",
+				"Multiple sources confirm the hybrid approach is effective.",
+				"",
+				"## Cost Summary",
+				"Implementation costs are estimated at $50K.",
+			].join("\n"),
+			sources: [],
+			honestyMarkers: [],
+			claimBasis: [
+				{
+					version: "atlas.claim-basis.v1",
+					id: "basis-exec",
+					locator: {
+						sectionTitle: "Executive Summary",
+						paragraphIndex: 0,
+						claimIndex: 0,
+						claimText:
+							"Hybrid retrieval improves recall before reranking.",
+						quote: null,
+						startOffset: null,
+						endOffset: null,
+					},
+					supportLevel: "supported",
+					evidencePackIds: ["pack-1"],
+					sourceRefs: [],
+					supportRationale:
+						"Hybrid retrieval evidence confirms recall improvement.",
+					auditConcernCode: null,
+				},
+				{
+					version: "atlas.claim-basis.v1",
+					id: "basis-evidence-summary",
+					locator: {
+						sectionTitle: "Evidence Summary",
+						paragraphIndex: 0,
+						claimIndex: 0,
+						claimText:
+							"Multiple sources confirm the hybrid approach is effective.",
+						quote: null,
+						startOffset: null,
+						endOffset: null,
+					},
+					supportLevel: "supported",
+					evidencePackIds: ["pack-2"],
+					sourceRefs: [],
+					supportRationale:
+						"Multiple accepted evidence packs confirm effectiveness.",
+					auditConcernCode: null,
+				},
+				{
+					version: "atlas.claim-basis.v1",
+					id: "basis-cost",
+					locator: {
+						sectionTitle: "Cost Summary",
+						paragraphIndex: 0,
+						claimIndex: 0,
+						claimText:
+							"Implementation costs are estimated at $50K.",
+						quote: null,
+						startOffset: null,
+						endOffset: null,
+					},
+					supportLevel: "partial",
+					evidencePackIds: [],
+					sourceRefs: [],
+					supportRationale:
+						"Cost estimates are preliminary and not fully sourced.",
+					auditConcernCode: "atlas_unanchored_risk",
+				},
+			],
+		});
+
+		const paragraphs = source.blocks.filter(
+			(
+				block,
+			): block is Extract<
+				(typeof source.blocks)[number],
+				{ type: "paragraph" }
+			> => block.type === "paragraph",
+		);
+		// Executive Summary paragraph has NO basis markers (exempted)
+		expect(
+			paragraphs[0].basisMarkers,
+		).toBeUndefined();
+		// Evidence Summary paragraph still has a basis marker
+		expect(paragraphs[1].basisMarkers).toHaveLength(1);
+		expect(paragraphs[1].basisMarkers?.[0]).toMatchObject({
+			id: "basis-evidence-summary",
+			support: "supported",
+		});
+		// Cost Summary paragraph still has a basis marker
+		expect(paragraphs[2].basisMarkers).toHaveLength(1);
+		expect(paragraphs[2].basisMarkers?.[0]).toMatchObject({
+			id: "basis-cost",
+			support: "partial",
+		});
+	});
+
+	it("drops unlocatable Atlas Claim Basis markers without an Executive Summary section fallback", async () => {
 		const { buildAtlasDocumentSource } = await import("./renderer-output");
 
 		const source = buildAtlasDocumentSource({
@@ -1195,9 +1295,11 @@ describe("Atlas renderer output", () => {
 				{ type: "paragraph" }
 			> => block.type === "paragraph",
 		);
-		expect(paragraphs.some((paragraph) => paragraph.basisMarkers?.length)).toBe(
-			true,
-		);
+		// No paragraph should have basis markers since the only target
+		// section does not exist and the exec summary fallback is skipped
+		expect(
+			paragraphs.some((paragraph) => paragraph.basisMarkers?.length),
+		).toBe(false);
 		expect(source.blocks).not.toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
@@ -1294,12 +1396,10 @@ describe("Atlas renderer output", () => {
 				{ type: "paragraph" }
 			> => block.type === "paragraph",
 		);
-		expect(paragraphs[0].basisMarkers).toHaveLength(1);
-		expect(paragraphs[0].basisMarkers?.[0]).toMatchObject({
-			id: "basis-exec-plain",
-			anchorText:
-				"Embedding retrieval selection needs a measured rollout path.",
-		});
+		// Executive Summary section claim basis entries are skipped
+		expect(
+			paragraphs[0].basisMarkers,
+		).toBeUndefined();
 		expect(paragraphs[1].basisMarkers).toEqual([
 			expect.objectContaining({
 				id: "basis-model-tradeoffs",

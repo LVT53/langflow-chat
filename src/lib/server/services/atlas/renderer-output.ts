@@ -1243,7 +1243,7 @@ function fallbackIndexForClaimBasis(
 		);
 		if (headingIndex >= 0) return headingIndex + 1;
 	}
-	return executiveSummaryFallbackIndex(blocks);
+	return -1;
 }
 
 function nearestParagraphIndexForClaimBasisFallback(
@@ -1313,6 +1313,21 @@ function applyAtlasClaimBasisMarkers(
 	const unplacedPerParagraph = new Map<number, number>();
 
 	for (const [basisIndex, basis] of claimBasis.entries()) {
+		// Skip claim basis entries targeting the Executive Summary section
+		if (basis.locator.sectionTitle) {
+			const normalized = normalizedHeading(basis.locator.sectionTitle);
+			if (
+				[
+					"executive summary",
+					"summary",
+					"vezetoi osszefoglalo",
+					"osszefoglalo",
+				].includes(normalized)
+			) {
+				continue;
+			}
+		}
+
 		const candidates = contexts.filter(
 			(context) =>
 				sectionMatchesLocator(
@@ -1380,6 +1395,7 @@ function applyAtlasClaimBasisMarkers(
 		}
 
 		const insertionIndex = fallbackIndexForClaimBasis(blocks, basis, contexts);
+		if (insertionIndex < 0) continue;
 		const nearestParagraphIndex = nearestParagraphIndexForClaimBasisFallback(
 			blocks,
 			insertionIndex,
@@ -1523,31 +1539,6 @@ function atlasImageVisualKeysOverlap(left: string, right: string): boolean {
 		if (rightTokens.has(token)) overlap += 1;
 	}
 	return overlap >= Math.min(4, leftTokens.size, rightTokens.size);
-}
-
-function executiveSummaryFallbackIndex(
-	blocks: GeneratedDocumentSource["blocks"],
-): number {
-	const headingIndex = blocks.findIndex(
-		(block) =>
-			block.type === "heading" &&
-			/^(executive summary|vezetői összefoglaló|összefoglaló)$/i.test(
-				block.text.trim(),
-			),
-	);
-	if (headingIndex < 0) return Math.min(1, blocks.length);
-	for (let index = headingIndex + 1; index < blocks.length; index += 1) {
-		const block = blocks[index];
-		if (block?.type === "heading") break;
-		if (
-			block?.type === "paragraph" ||
-			block?.type === "list" ||
-			block?.type === "callout"
-		) {
-			return index + 1;
-		}
-	}
-	return headingIndex + 1;
 }
 
 function insertionIndexForImageCandidate(
