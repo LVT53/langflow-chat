@@ -184,7 +184,9 @@ describe("isUnusableAtlasSnippet", () => {
 			),
 		).toBe(true);
 		expect(
-			isUnusableAtlasSnippet("Policy & Safety How YouTube works Test new features"),
+			isUnusableAtlasSnippet(
+				"Policy & Safety How YouTube works Test new features",
+			),
 		).toBe(true);
 	});
 
@@ -412,8 +414,7 @@ describe("Atlas search stage", () => {
 					id: "web-search-artifact",
 					title: "Search results",
 					url: "https://searxng.example/results",
-					snippet:
-						"Nem tartalmazza: English | Tartalmaznia kell: technical | ",
+					snippet: "Nem tartalmazza: English | Tartalmaznia kell: technical | ",
 				},
 				{
 					id: "web-good-2",
@@ -436,9 +437,7 @@ describe("Atlas search stage", () => {
 			),
 		).toHaveLength(3);
 		expect(
-			result.rejectedSources.filter(
-				(s) => s.rejectionReason === "source_cap",
-			),
+			result.rejectedSources.filter((s) => s.rejectionReason === "source_cap"),
 		).toHaveLength(0);
 	});
 

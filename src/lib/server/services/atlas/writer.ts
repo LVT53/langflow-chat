@@ -185,7 +185,13 @@ function baseWriterPrompt(
 	truncationLevel = 0,
 ) {
 	const factsPerCard =
-		truncationLevel >= 5 ? 1 : truncationLevel >= 4 ? 2 : truncationLevel >= 2 ? 3 : null;
+		truncationLevel >= 5
+			? 1
+			: truncationLevel >= 4
+				? 2
+				: truncationLevel >= 2
+					? 3
+					: null;
 	const synthesisMaxLen = truncationLevel >= 1 ? 1500 : null;
 	const outlineMaxLen = truncationLevel >= 1 ? 1500 : null;
 	const trimCoverageReview = truncationLevel >= 3;
@@ -283,7 +289,9 @@ function baseWriterPrompt(
 			? [
 					...(input.limitation ? [input.limitation.message] : []),
 					...(input.coverageReview.limitations.length > 0
-						? ["Evidence coverage limitations suppressed under aggressive truncation."]
+						? [
+								"Evidence coverage limitations suppressed under aggressive truncation.",
+							]
 						: []),
 				]
 			: [

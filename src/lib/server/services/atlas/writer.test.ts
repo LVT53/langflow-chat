@@ -509,7 +509,9 @@ describe("Atlas writer prompt", () => {
 		expect(parsed.instructions).toContain(
 			"Use H2 headings for major report sections",
 		);
-		expect(parsed.instructions).toContain("not use a heading for text that is a single sentence");
+		expect(parsed.instructions).toContain(
+			"not use a heading for text that is a single sentence",
+		);
 	});
 
 	it("includes positive heading guidance in Hungarian writer instructions", () => {
@@ -519,7 +521,9 @@ describe("Atlas writer prompt", () => {
 		expect(parsed.instructions).toContain(
 			"H2 címsorokat használj a fő jelentésszakaszokhoz",
 		);
-		expect(parsed.instructions).toContain("Ne használj címsort egyetlen mondat számára");
+		expect(parsed.instructions).toContain(
+			"Ne használj címsort egyetlen mondat számára",
+		);
 	});
 
 	it("truncation level 5 drops diagnostics and reduces coverage review for massive prompts", () => {
@@ -533,11 +537,13 @@ describe("Atlas writer prompt", () => {
 			coverageReview: {
 				...defaultCoverageReview(),
 				diagnostics: [
-					{ code: "coverage_thin", severity: "warning" as const, message: "Thin coverage" },
+					{
+						code: "coverage_thin",
+						severity: "warning" as const,
+						message: "Thin coverage",
+					},
 				],
-				limitations: [
-					{ code: "coverage_gap", message: "Coverage gap" },
-				],
+				limitations: [{ code: "coverage_gap", message: "Coverage gap" }],
 				proposals: [
 					{
 						missingQuestion: "Fill gap",

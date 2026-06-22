@@ -636,10 +636,13 @@ function renderBlock(
 ): string {
 	switch (block.type) {
 		case "heading": {
-			const recommendationClass = /^(recommend|recommendation|javaslat|ajánlás)/i.test(block.text)
-				? " report-recommendation-heading"
+			const recommendationClass =
+				/^(recommend|recommendation|javaslat|ajánlás)/i.test(block.text)
+					? " report-recommendation-heading"
+					: "";
+			const classAttr = recommendationClass
+				? ` class="${recommendationClass.trim()}"`
 				: "";
-			const classAttr = recommendationClass ? ` class="${recommendationClass.trim()}"` : "";
 			return `<h${block.level}${options.headingId ? ` id="${escapeHtml(options.headingId)}"` : ""}${classAttr}>${escapeHtml(block.text)}</h${block.level}>`;
 		}
 		case "paragraph":

@@ -1112,9 +1112,7 @@ describe("Atlas renderer output", () => {
 			> => block.type === "paragraph",
 		);
 		// Executive Summary section claim basis entries are skipped
-		expect(
-			paragraphs[0].basisMarkers,
-		).toBeUndefined();
+		expect(paragraphs[0].basisMarkers).toBeUndefined();
 		expect(paragraphs[1].basisMarkers).toEqual([
 			{
 				type: "basisMarker",
@@ -1168,8 +1166,7 @@ describe("Atlas renderer output", () => {
 						sectionTitle: "Executive Summary",
 						paragraphIndex: 0,
 						claimIndex: 0,
-						claimText:
-							"Hybrid retrieval improves recall before reranking.",
+						claimText: "Hybrid retrieval improves recall before reranking.",
 						quote: null,
 						startOffset: null,
 						endOffset: null,
@@ -1208,8 +1205,7 @@ describe("Atlas renderer output", () => {
 						sectionTitle: "Cost Summary",
 						paragraphIndex: 0,
 						claimIndex: 0,
-						claimText:
-							"Implementation costs are estimated at $50K.",
+						claimText: "Implementation costs are estimated at $50K.",
 						quote: null,
 						startOffset: null,
 						endOffset: null,
@@ -1233,9 +1229,7 @@ describe("Atlas renderer output", () => {
 			> => block.type === "paragraph",
 		);
 		// Executive Summary paragraph has NO basis markers (exempted)
-		expect(
-			paragraphs[0].basisMarkers,
-		).toBeUndefined();
+		expect(paragraphs[0].basisMarkers).toBeUndefined();
 		// Evidence Summary paragraph still has a basis marker
 		expect(paragraphs[1].basisMarkers).toHaveLength(1);
 		expect(paragraphs[1].basisMarkers?.[0]).toMatchObject({
@@ -1297,9 +1291,9 @@ describe("Atlas renderer output", () => {
 		);
 		// No paragraph should have basis markers since the only target
 		// section does not exist and the exec summary fallback is skipped
-		expect(
-			paragraphs.some((paragraph) => paragraph.basisMarkers?.length),
-		).toBe(false);
+		expect(paragraphs.some((paragraph) => paragraph.basisMarkers?.length)).toBe(
+			false,
+		);
 		expect(source.blocks).not.toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({
@@ -1397,9 +1391,7 @@ describe("Atlas renderer output", () => {
 			> => block.type === "paragraph",
 		);
 		// Executive Summary section claim basis entries are skipped
-		expect(
-			paragraphs[0].basisMarkers,
-		).toBeUndefined();
+		expect(paragraphs[0].basisMarkers).toBeUndefined();
 		expect(paragraphs[1].basisMarkers).toEqual([
 			expect.objectContaining({
 				id: "basis-model-tradeoffs",
@@ -1470,12 +1462,12 @@ describe("Atlas renderer output", () => {
 			id: "basis-heat-pumps",
 			support: "supported",
 		});
-		const marker = paragraphs[0].basisMarkers![0];
-		expect(marker.anchorText).toBeTruthy();
+		const marker = paragraphs[0].basisMarkers?.[0];
+		expect(marker?.anchorText).toBeTruthy();
 		expect(
 			paragraphs[0].text
 				.toLowerCase()
-				.includes(marker.anchorText.toLowerCase()),
+				.includes((marker?.anchorText ?? "").toLowerCase()),
 		).toBe(true);
 	});
 
@@ -1498,7 +1490,8 @@ describe("Atlas renderer output", () => {
 						sectionTitle: "Risks",
 						paragraphIndex: 0,
 						claimIndex: 0,
-						claimText: "A claim that does not appear verbatim in the report text.",
+						claimText:
+							"A claim that does not appear verbatim in the report text.",
 						quote: "text that is nowhere in the paragraph",
 						startOffset: null,
 						endOffset: null,
@@ -1506,7 +1499,8 @@ describe("Atlas renderer output", () => {
 					supportLevel: "partial",
 					evidencePackIds: ["pack-1"],
 					sourceRefs: [],
-					supportRationale: "Section-level evidence without claim-level anchor.",
+					supportRationale:
+						"Section-level evidence without claim-level anchor.",
 					auditConcernCode: "atlas_claim_basis_section_fallback",
 				},
 			],
@@ -1522,7 +1516,7 @@ describe("Atlas renderer output", () => {
 		);
 		expect(paragraphs).toHaveLength(1);
 		expect(paragraphs[0].basisMarkers).toHaveLength(1);
-		const anchorText = paragraphs[0].basisMarkers![0].anchorText;
+		const anchorText = paragraphs[0].basisMarkers?.[0]?.anchorText ?? "";
 		const fullParagraphText = paragraphs[0].text;
 		expect(anchorText).not.toBe(fullParagraphText);
 		expect(anchorText.length).toBeLessThan(fullParagraphText.length);
@@ -1609,7 +1603,7 @@ describe("Atlas renderer output", () => {
 		);
 		expect(paragraphs).toHaveLength(1);
 		expect(paragraphs[0].basisMarkers).toHaveLength(3);
-		const anchors = paragraphs[0].basisMarkers!.map((m) => m.anchorText);
+		const anchors = paragraphs[0].basisMarkers?.map((m) => m.anchorText) ?? [];
 		expect(anchors[0]).toBe("First claim point.");
 		expect(anchors[1]).toBe("Second claim area.");
 		expect(anchors[2]).toBe("Third claim topic.");

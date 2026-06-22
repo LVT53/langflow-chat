@@ -334,8 +334,7 @@ describe("Atlas Claim Basis", () => {
 						},
 						supportLevel: "supported",
 						evidencePackIds: ["pack-stale-only"],
-						supportRationale:
-							"The 2024 parent evidence is no longer current.",
+						supportRationale: "The 2024 parent evidence is no longer current.",
 					},
 				],
 			}),

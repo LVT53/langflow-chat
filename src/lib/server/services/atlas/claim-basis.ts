@@ -564,9 +564,7 @@ function normalizeSupportLevel(input: {
 	if (
 		input.declared === "supported" &&
 		input.citedPacks.some(
-			(pack) =>
-				pack.conflicts.length > 0 ||
-				!pack.freshness.isCurrentEvidence,
+			(pack) => pack.conflicts.length > 0 || !pack.freshness.isCurrentEvidence,
 		)
 	) {
 		return "partial";

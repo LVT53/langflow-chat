@@ -22,7 +22,11 @@ export interface AtlasSearchSource {
 }
 
 export interface RejectedAtlasSearchSource extends AtlasSearchSource {
-	rejectionReason: "unsafe_adult_content" | "duplicate_url" | "source_cap" | "unusable_snippet";
+	rejectionReason:
+		| "unsafe_adult_content"
+		| "duplicate_url"
+		| "source_cap"
+		| "unusable_snippet";
 }
 
 export interface AtlasSearchLimitation {

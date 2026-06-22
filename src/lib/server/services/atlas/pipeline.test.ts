@@ -449,48 +449,48 @@ describe("Atlas pipeline slices", () => {
 				passed: true,
 				honestyMarkers: [],
 				retryRequested: false,
-			claimBasis: [
-				{
-					version: "atlas.claim-basis.v1" as const,
-					id: "atlas-claim-test",
-					locator: {
-						sectionTitle: "Findings",
-						paragraphIndex: 0,
-						claimIndex: 0,
-						claimText:
-							"Hybrid retrieval remains the strongest architecture pattern.",
-						quote:
-							"Hybrid retrieval remains the strongest architecture pattern",
-						startOffset: 0,
-						endOffset: 63,
+				claimBasis: [
+					{
+						version: "atlas.claim-basis.v1" as const,
+						id: "atlas-claim-test",
+						locator: {
+							sectionTitle: "Findings",
+							paragraphIndex: 0,
+							claimIndex: 0,
+							claimText:
+								"Hybrid retrieval remains the strongest architecture pattern.",
+							quote:
+								"Hybrid retrieval remains the strongest architecture pattern",
+							startOffset: 0,
+							endOffset: 63,
+						},
+						supportLevel: "supported" as const,
+						evidencePackIds: [packId],
+						sourceRefs: input.evidencePacks[0]?.sourceRefs ?? [],
+						supportRationale:
+							"The accepted Evidence Pack supports the hybrid retrieval recommendation.",
+						auditConcernCode: null,
 					},
-					supportLevel: "supported" as const,
-					evidencePackIds: [packId],
-					sourceRefs: input.evidencePacks[0]?.sourceRefs ?? [],
-					supportRationale:
-						"The accepted Evidence Pack supports the hybrid retrieval recommendation.",
-					auditConcernCode: null,
-				},
-			],
-			basisLimitations: [],
-			basisDiagnostics: [
-				{
-					code: "atlas_claim_basis_generated",
-					severity: "info" as const,
-					message: "Claim Basis generated for accepted evidence.",
-				},
-			],
-			claimBasisCoverageBySection: [
-				{
-					sectionTitle: "Findings",
-					factualClaimCount: 1,
-					basisCount: 1,
-					supportedCount: 1,
-					partialCount: 0,
-					unsupportedCount: 0,
-					density: 1,
-				},
-			],
+				],
+				basisLimitations: [],
+				basisDiagnostics: [
+					{
+						code: "atlas_claim_basis_generated",
+						severity: "info" as const,
+						message: "Claim Basis generated for accepted evidence.",
+					},
+				],
+				claimBasisCoverageBySection: [
+					{
+						sectionTitle: "Findings",
+						factualClaimCount: 1,
+						basisCount: 1,
+						supportedCount: 1,
+						partialCount: 0,
+						unsupportedCount: 0,
+						density: 1,
+					},
+				],
 				claimBasisStatus: "succeeded" as const,
 				claimBasisFailureReason: null,
 			};
@@ -877,7 +877,8 @@ describe("Atlas pipeline slices", () => {
 							id: "web-good",
 							title: "Good RAG source",
 							url: "https://example.com/rag-good",
-							snippet: "Substantive evidence about RAG architectures with detailed benchmarks and deployment patterns for enterprise environments.",
+							snippet:
+								"Substantive evidence about RAG architectures with detailed benchmarks and deployment patterns for enterprise environments.",
 						},
 					],
 					rejectedSources: [
@@ -4998,8 +4999,12 @@ describe("Atlas pipeline slices", () => {
 			[Parameters<RunAtlasPipelineInput["dependencies"]["auditBasis"]>[0]]
 		>;
 		const auditInput = auditCalls[0]?.[0];
-		expect(auditInput?.assembledMarkdown).toContain("### Architecture Overview");
-		expect(auditInput?.assembledMarkdown).not.toMatch(/^## Architecture Overview$/m);
+		expect(auditInput?.assembledMarkdown).toContain(
+			"### Architecture Overview",
+		);
+		expect(auditInput?.assembledMarkdown).not.toMatch(
+			/^## Architecture Overview$/m,
+		);
 	});
 
 	it("guard: auto-appends Limitations and sanitizes headings instead of honest-fallback when outline has 4+ headings but no Limitations", async () => {
@@ -7068,36 +7073,36 @@ describe("Atlas pipeline slices", () => {
 					passed: true,
 					honestyMarkers: [],
 					retryRequested: false,
-			claimBasis: [
-				{
-					version: "atlas.claim-basis.v1" as const,
-					id: "atlas-claim-audit",
-					locator: {
-						sectionTitle: "Findings",
-						paragraphIndex: 0,
-						claimIndex: 0,
-						claimText:
-							"Hybrid retrieval is the strongest architecture pattern for regulated SaaS deployments",
-						quote: "Hybrid retrieval is the strongest architecture pattern",
-						startOffset: 0,
-						endOffset: 53,
-					},
-					supportLevel: "supported" as const,
-					evidencePackIds: ["pack-web-anchor"],
-					sourceRefs: [],
-					supportRationale:
-						"Accepted evidence supports hybrid retrieval as a strong pattern.",
-					auditConcernCode: null,
-				},
-			],
-			basisLimitations: [],
-			basisDiagnostics: [],
-			claimBasisCoverageBySection: [],
-			claimBasisStatus: "succeeded" as const,
-			claimBasisFailureReason: null,
-		})),
-		writeCheckpoint: vi.fn(async () => {}),
-		renderOutputs,
+					claimBasis: [
+						{
+							version: "atlas.claim-basis.v1" as const,
+							id: "atlas-claim-audit",
+							locator: {
+								sectionTitle: "Findings",
+								paragraphIndex: 0,
+								claimIndex: 0,
+								claimText:
+									"Hybrid retrieval is the strongest architecture pattern for regulated SaaS deployments",
+								quote: "Hybrid retrieval is the strongest architecture pattern",
+								startOffset: 0,
+								endOffset: 53,
+							},
+							supportLevel: "supported" as const,
+							evidencePackIds: ["pack-web-anchor"],
+							sourceRefs: [],
+							supportRationale:
+								"Accepted evidence supports hybrid retrieval as a strong pattern.",
+							auditConcernCode: null,
+						},
+					],
+					basisLimitations: [],
+					basisDiagnostics: [],
+					claimBasisCoverageBySection: [],
+					claimBasisStatus: "succeeded" as const,
+					claimBasisFailureReason: null,
+				})),
+				writeCheckpoint: vi.fn(async () => {}),
+				renderOutputs,
 			},
 		});
 

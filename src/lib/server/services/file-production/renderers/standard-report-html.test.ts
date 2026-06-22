@@ -764,13 +764,17 @@ describe("AlfyAI Standard Report HTML renderer", () => {
 		);
 
 		expect(html).toContain('<figure class="table-figure">');
-		expect(html).toContain(".table-figure{overflow-x:auto;-webkit-overflow-scrolling:touch;}");
+		expect(html).toContain(
+			".table-figure{overflow-x:auto;-webkit-overflow-scrolling:touch;}",
+		);
 		expect(html).toContain("word-break:break-word;overflow-wrap:anywhere;");
 		expect(html).toContain(
 			"th,td{padding:4px;font-size:.82rem;}.table-figure{overflow-x:auto;}",
 		);
 		expect(html).toContain("@media print{.table-figure{overflow-x:visible;}}");
-		expect(html).toContain(".table-title{font-weight:600;color:var(--report-text);}");
+		expect(html).toContain(
+			".table-title{font-weight:600;color:var(--report-text);}",
+		);
 	});
 
 	it("marks recommendation headings with a prominence class", () => {
@@ -793,12 +797,24 @@ describe("AlfyAI Standard Report HTML renderer", () => {
 			"utf8",
 		);
 
-		expect(html).toContain(".report-recommendation-heading{font-size:1.1em;font-weight:800;border-left-width:4px;margin-top:28px;padding-top:4px;}");
-		expect(html).toContain('class="report-recommendation-heading">Recommendations</h2>');
-		expect(html).toContain('class="report-recommendation-heading">Recommendation: do this</h3>');
-		expect(html).toContain('class="report-recommendation-heading">Javaslatok</h2>');
-		expect(html).toContain('class="report-recommendation-heading">Ajánlás</h2>');
-		expect(html).not.toContain('class="report-recommendation-heading">Findings</h2>');
+		expect(html).toContain(
+			".report-recommendation-heading{font-size:1.1em;font-weight:800;border-left-width:4px;margin-top:28px;padding-top:4px;}",
+		);
+		expect(html).toContain(
+			'class="report-recommendation-heading">Recommendations</h2>',
+		);
+		expect(html).toContain(
+			'class="report-recommendation-heading">Recommendation: do this</h3>',
+		);
+		expect(html).toContain(
+			'class="report-recommendation-heading">Javaslatok</h2>',
+		);
+		expect(html).toContain(
+			'class="report-recommendation-heading">Ajánlás</h2>',
+		);
+		expect(html).not.toContain(
+			'class="report-recommendation-heading">Findings</h2>',
+		);
 		expect(html).not.toContain('class="">Findings</h2>');
 	});
 });
