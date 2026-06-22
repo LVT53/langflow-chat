@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AtlasReportShapeDiagnostics } from "./report-shape-diagnostics";
 import type {
 	AtlasCoverageReview,
@@ -238,6 +238,51 @@ describe("Atlas writer prompt", () => {
 		expect(parsed.synthesis).toBe("Short synthesis.");
 		expect(parsed.outline).toBe("Short outline.");
 		expect(parsed.writerEvidenceCards[0].relevantFacts.length).toBe(4);
+	});
+
+	it("logs truncation info when prompt exceeds MAX_WRITER_PROMPT_CHARS", () => {
+		const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+		try {
+			const cards = Array.from({ length: 16 }, (_, i) =>
+				makeEvidenceCard(`Source ${i + 1}`, 12),
+			);
+			const input = defaultWriterInput({
+				synthesis: "X".repeat(8000),
+				outline: "Y".repeat(8000),
+				writerEvidenceCards: cards,
+			});
+
+			buildAtlasWriterPrompt(input);
+
+			expect(infoSpy).toHaveBeenCalledWith(
+				"[ATLAS_WRITER] Prompt truncated",
+				expect.objectContaining({
+					originalLength: expect.any(Number),
+					maxChars: 50000,
+					profile: "overview",
+					evidenceCardCount: 16,
+				}),
+			);
+		} finally {
+			infoSpy.mockRestore();
+		}
+	});
+
+	it("does not log truncation info when prompt fits within limit", () => {
+		const infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
+		try {
+			const input = defaultWriterInput({
+				synthesis: "Short synthesis.",
+				outline: "Short outline.",
+				writerEvidenceCards: [makeEvidenceCard("Single source", 4)],
+			});
+
+			buildAtlasWriterPrompt(input);
+
+			expect(infoSpy).not.toHaveBeenCalled();
+		} finally {
+			infoSpy.mockRestore();
+		}
 	});
 
 	it("buildAtlasWriterImprovementPrompt includes writerImprovement fields", () => {

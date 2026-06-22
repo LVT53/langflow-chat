@@ -254,6 +254,12 @@ export function buildAtlasWriterPrompt(
 ): string {
 	const firstPass = JSON.stringify(baseWriterPrompt(input));
 	if (firstPass.length <= MAX_WRITER_PROMPT_CHARS) return firstPass;
+	console.info("[ATLAS_WRITER] Prompt truncated", {
+		originalLength: firstPass.length,
+		maxChars: MAX_WRITER_PROMPT_CHARS,
+		profile: input.profile,
+		evidenceCardCount: input.writerEvidenceCards.length,
+	});
 	return JSON.stringify(baseWriterPrompt(input, true));
 }
 
