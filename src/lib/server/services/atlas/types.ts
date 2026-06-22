@@ -174,6 +174,7 @@ export interface AtlasAssemblyMetadata {
 	sectionBriefs: AtlasSectionBrief[];
 	limitations: string[];
 	structured: boolean;
+	writerClaimBasis?: AtlasWriterClaimBasisEntry[] | null;
 }
 
 export interface AtlasAssemblyDiagnostics {

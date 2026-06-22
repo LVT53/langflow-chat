@@ -6702,6 +6702,397 @@ describe("Atlas pipeline slices", () => {
 		expect(diag.firstPassParsedAsJson).toBe(false);
 		expect(diag.firstPassRepairReason).toBe("process_only");
 	});
+
+	it("extracts writer claimBasis from assembly output and passes it to audit", async () => {
+		const auditBasis = vi.fn(async () => ({
+			passed: true,
+			honestyMarkers: [],
+			retryRequested: false,
+		}));
+		const renderOutputs = vi.fn(async () => ({
+			fileProductionJobId: "fp-job-writer-claimbasis",
+			htmlChatGeneratedFileId: "file-html",
+			pdfChatGeneratedFileId: "file-pdf",
+			markdownChatGeneratedFileId: "file-md",
+		}));
+
+		await runAtlasPipelineWithNoopReranker({
+			job: atlasJob({
+				id: "atlas-writer-claimbasis",
+				profile: "overview",
+				query: "Compare retrieval architectures",
+			}),
+			now: new Date("2026-06-22T10:00:00.000Z"),
+			dependencies: {
+				resolveSources: vi.fn(async () => ({ localSources: [] })),
+				searchWeb: vi.fn(async () => ({
+					sources: [
+						{
+							id: "web-claimbasis",
+							title: "Retrieval architecture evidence",
+							url: "https://example.com/claimbasis",
+							snippet: "Hybrid retrieval evidence.",
+						},
+					],
+					rejectedSources: [],
+					limitation: null,
+				})),
+				runModelStage: vi.fn(async (input) => {
+					if (input.stage === "decompose") {
+						return { text: "retrieval architectures", usage: stageUsage() };
+					}
+					if (input.stage === "coverage-review") {
+						return { text: coverageReviewText([], true), usage: stageUsage() };
+					}
+					if (input.stage === "assemble") {
+						return {
+							text: JSON.stringify({
+								generatedTitle: "Retrieval Architecture Report",
+								bodyMarkdown: decisionQualityReport(),
+								sectionBriefs: [],
+								limitations: [],
+								claimBasis: [
+									{
+										claimText:
+											"Hybrid retrieval is the strongest architecture pattern",
+										sectionTitle: "Recommended Architecture",
+										supportLevel: "supported",
+										evidenceCardIds: ["card-1"],
+										rationale:
+											"Evidence cards support hybrid retrieval as the default pattern.",
+									},
+								],
+							}),
+							usage: stageUsage(),
+						};
+					}
+					return { text: `${input.stage} result`, usage: stageUsage() };
+				}),
+				auditBasis,
+				writeCheckpoint: vi.fn(async () => {}),
+				renderOutputs,
+			},
+		});
+
+		expect(auditBasis).toHaveBeenCalledWith(
+			expect.objectContaining({
+				writerClaimBasis: [
+					expect.objectContaining({
+						claimText: "Hybrid retrieval is the strongest architecture pattern",
+						supportLevel: "supported",
+					}),
+				],
+			}),
+		);
+	});
+
+	it("uses writer claimText as anchor when writer provides claimBasis", async () => {
+		const renderOutputs = vi.fn(async (_source: GeneratedDocumentSource) => ({
+			fileProductionJobId: "fp-job-writer-anchor",
+			htmlChatGeneratedFileId: "file-html",
+			pdfChatGeneratedFileId: "file-pdf",
+			markdownChatGeneratedFileId: "file-md",
+		}));
+
+		await runAtlasPipelineWithNoopReranker({
+			job: atlasJob({
+				id: "atlas-writer-anchor",
+				profile: "overview",
+				title: "Writer Anchor Report",
+				query: "Compare retrieval architectures",
+			}),
+			now: new Date("2026-06-22T10:00:00.000Z"),
+			dependencies: {
+				resolveSources: vi.fn(async () => ({ localSources: [] })),
+				searchWeb: vi.fn(async () => ({
+					sources: [
+						{
+							id: "web-anchor",
+							title: "Architecture evidence",
+							url: "https://example.com/anchor",
+							snippet: "Evidence for architecture comparison.",
+						},
+					],
+					rejectedSources: [],
+					limitation: null,
+				})),
+				runModelStage: vi.fn(async (input) => {
+					if (input.stage === "decompose") {
+						return { text: "retrieval architectures", usage: stageUsage() };
+					}
+					if (input.stage === "coverage-review") {
+						return { text: coverageReviewText([], true), usage: stageUsage() };
+					}
+					if (input.stage === "assemble") {
+						const bodyMarkdown = [
+							"## Executive Summary",
+							"Hybrid retrieval is the strongest architecture pattern for regulated SaaS deployments because it preserves exact policy language while also supporting semantic discovery. The evidence shows that combining lexical and semantic search gives the best balance of recall and auditability.",
+							"",
+							"## Findings",
+							"The evidence supports hybrid retrieval as the most defensible default architecture pattern.",
+							"",
+							"## Limitations",
+							"Evidence is representative rather than exhaustive.",
+						].join("\n");
+						return {
+							text: JSON.stringify({
+								generatedTitle: "Writer Anchor Report",
+								bodyMarkdown,
+								sectionBriefs: [],
+								limitations: [],
+								claimBasis: [
+									{
+										claimText:
+											"Hybrid retrieval is the strongest architecture pattern",
+										sectionTitle: "Executive Summary",
+										supportLevel: "supported",
+										evidenceCardIds: ["card-1"],
+										rationale:
+											"Evidence cards support this claim with source-grounded data.",
+									},
+								],
+							}),
+							usage: stageUsage(),
+						};
+					}
+					return { text: `${input.stage} result`, usage: stageUsage() };
+				}),
+				auditBasis: vi.fn(async () => ({
+					passed: true,
+					honestyMarkers: [],
+					retryRequested: false,
+					claimBasis: [
+						{
+							version: "atlas.claim-basis.v1" as const,
+							id: "atlas-claim-audit",
+							locator: {
+								sectionTitle: "Executive Summary",
+								paragraphIndex: 0,
+								claimIndex: 0,
+								claimText:
+									"Hybrid retrieval is the strongest architecture pattern for regulated SaaS deployments",
+								quote: "Hybrid retrieval is the strongest architecture pattern",
+								startOffset: 0,
+								endOffset: 53,
+							},
+							supportLevel: "supported" as const,
+							evidencePackIds: ["pack-web-anchor"],
+							sourceRefs: [],
+							supportRationale:
+								"Accepted evidence supports hybrid retrieval as a strong pattern.",
+							auditConcernCode: null,
+						},
+					],
+					basisLimitations: [],
+					basisDiagnostics: [],
+					claimBasisCoverageBySection: [],
+					claimBasisStatus: "succeeded" as const,
+					claimBasisFailureReason: null,
+				})),
+				writeCheckpoint: vi.fn(async () => {}),
+				renderOutputs,
+			},
+		});
+
+		const renderedSource = renderOutputs.mock.calls[0]?.[0];
+		expect(renderedSource.blocks).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					type: "paragraph",
+					basisMarkers: expect.arrayContaining([
+						expect.objectContaining({
+							id: "atlas-claim-audit",
+							support: "supported",
+							anchorText: expect.stringContaining("Hybrid retrieval"),
+						}),
+					]),
+				}),
+			]),
+		);
+	});
+
+	it("falls back to audit-only path when writer omits claimBasis", async () => {
+		const renderOutputs = vi.fn(async (_source: GeneratedDocumentSource) => ({
+			fileProductionJobId: "fp-job-no-writer-claimbasis",
+			htmlChatGeneratedFileId: "file-html",
+			pdfChatGeneratedFileId: "file-pdf",
+			markdownChatGeneratedFileId: "file-md",
+		}));
+
+		await runAtlasPipelineWithNoopReranker({
+			job: atlasJob({
+				id: "atlas-no-writer-claimbasis",
+				profile: "overview",
+				title: "No Writer Claim Basis",
+				query: "Compare retrieval architectures",
+			}),
+			now: new Date("2026-06-22T10:00:00.000Z"),
+			dependencies: {
+				resolveSources: vi.fn(async () => ({ localSources: [] })),
+				searchWeb: vi.fn(async () => ({
+					sources: [
+						{
+							id: "web-no-writer",
+							title: "Architecture evidence",
+							url: "https://example.com/no-writer",
+							snippet: "Architecture comparison evidence.",
+						},
+					],
+					rejectedSources: [],
+					limitation: null,
+				})),
+				runModelStage: vi.fn(async (input) => {
+					if (input.stage === "decompose") {
+						return { text: "retrieval architectures", usage: stageUsage() };
+					}
+					if (input.stage === "coverage-review") {
+						return { text: coverageReviewText([], true), usage: stageUsage() };
+					}
+					if (input.stage === "assemble") {
+						return {
+							text: JSON.stringify({
+								generatedTitle: "No Writer Claim Basis",
+								bodyMarkdown: decisionQualityReport(),
+								sectionBriefs: [],
+								limitations: [],
+							}),
+							usage: stageUsage(),
+						};
+					}
+					return { text: `${input.stage} result`, usage: stageUsage() };
+				}),
+				auditBasis: vi.fn(async (input) => {
+					expect(input.writerClaimBasis).toBeNull();
+					return {
+						passed: true,
+						honestyMarkers: [],
+						retryRequested: false,
+						claimBasis: [],
+						basisLimitations: [],
+						basisDiagnostics: [],
+						claimBasisCoverageBySection: [],
+						claimBasisStatus: "succeeded" as const,
+						claimBasisFailureReason: null,
+					};
+				}),
+				writeCheckpoint: vi.fn(async () => {}),
+				renderOutputs,
+			},
+		});
+	});
+
+	it("preserves writer-only claims when merged with audit claim basis", async () => {
+		const auditBasis = vi.fn(async () => ({
+			passed: true,
+			honestyMarkers: [],
+			retryRequested: false,
+			claimBasis: [
+				{
+					version: "atlas.claim-basis.v1" as const,
+					id: "atlas-claim-audit-only",
+					locator: {
+						sectionTitle: "Executive Summary",
+						paragraphIndex: 0,
+						claimIndex: 0,
+						claimText: "Audit-generated claim about hybrid retrieval",
+						quote: "Audit-generated quote",
+						startOffset: 0,
+						endOffset: 20,
+					},
+					supportLevel: "supported" as const,
+					evidencePackIds: ["pack-audit"],
+					sourceRefs: [],
+					supportRationale: "Audit rationale.",
+					auditConcernCode: null,
+				},
+			],
+			basisLimitations: [],
+			basisDiagnostics: [],
+			claimBasisCoverageBySection: [],
+			claimBasisStatus: "succeeded" as const,
+			claimBasisFailureReason: null,
+		}));
+
+		await runAtlasPipelineWithNoopReranker({
+			job: atlasJob({
+				id: "atlas-writer-only-claims",
+				profile: "overview",
+				title: "Writer-Only Claims",
+				query: "Compare retrieval architectures",
+			}),
+			now: new Date("2026-06-22T10:00:00.000Z"),
+			dependencies: {
+				resolveSources: vi.fn(async () => ({ localSources: [] })),
+				searchWeb: vi.fn(async () => ({
+					sources: [
+						{
+							id: "web-writer-only",
+							title: "Architecture evidence",
+							url: "https://example.com/writer-only",
+							snippet: "Evidence for architecture comparison.",
+						},
+					],
+					rejectedSources: [],
+					limitation: null,
+				})),
+				runModelStage: vi.fn(async (input) => {
+					if (input.stage === "decompose") {
+						return { text: "retrieval architectures", usage: stageUsage() };
+					}
+					if (input.stage === "coverage-review") {
+						return { text: coverageReviewText([], true), usage: stageUsage() };
+					}
+					if (input.stage === "assemble") {
+						const bodyMarkdown = [
+							"## Executive Summary",
+							"Audit-generated claim about hybrid retrieval is supported by accepted evidence. Writer-specific deployment claim about latency tradeoffs also appears in the report body.",
+							"",
+							"## Limitations",
+							"Evidence is representative rather than exhaustive.",
+						].join("\n");
+						return {
+							text: JSON.stringify({
+								generatedTitle: "Writer-Only Claims Report",
+								bodyMarkdown,
+								sectionBriefs: [],
+								limitations: [],
+								claimBasis: [
+									{
+										claimText:
+											"Writer-specific deployment claim about latency tradeoffs",
+										sectionTitle: "Executive Summary",
+										supportLevel: "supported",
+										evidenceCardIds: ["card-writer"],
+										rationale:
+											"Writer evidence on deployment latency tradeoffs.",
+									},
+								],
+							}),
+							usage: stageUsage(),
+						};
+					}
+					return { text: `${input.stage} result`, usage: stageUsage() };
+				}),
+				auditBasis,
+				writeCheckpoint: vi.fn(async () => {}),
+				renderOutputs: vi.fn(async () => ({
+					fileProductionJobId: "fp-job-writer-only",
+					htmlChatGeneratedFileId: "file-html",
+					pdfChatGeneratedFileId: "file-pdf",
+					markdownChatGeneratedFileId: "file-md",
+				})),
+			},
+		});
+
+		const auditCalls = auditBasis.mock.calls as unknown as Array<
+			[Parameters<RunAtlasPipelineInput["dependencies"]["auditBasis"]>[0]]
+		>;
+		expect(auditCalls[0]?.[0].writerClaimBasis).toEqual([
+			expect.objectContaining({
+				claimText: "Writer-specific deployment claim about latency tradeoffs",
+			}),
+		]);
+	});
 });
 
 describe("Atlas guard functions", () => {

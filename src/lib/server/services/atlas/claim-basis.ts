@@ -18,6 +18,7 @@ import {
 	type AtlasEvidencePackSourceRef,
 	type AtlasHonestyMarker,
 	type AtlasSectionBrief,
+	type AtlasWriterClaimBasisEntry,
 } from "./types";
 
 export { ATLAS_CLAIM_BASIS_SCHEMA_VERSION, ATLAS_CLAIM_SUPPORT_LEVELS };
@@ -1129,4 +1130,72 @@ function integerOrNull(value: unknown): number | null {
 	return typeof value === "number" && Number.isInteger(value) && value >= 0
 		? value
 		: null;
+}
+
+export function mergeWriterAndAuditClaimBasis(
+	writerBasis: AtlasWriterClaimBasisEntry[] | null | undefined,
+	auditBasis: AtlasClaimBasis[],
+): AtlasClaimBasis[] {
+	if (!writerBasis || writerBasis.length === 0) return auditBasis;
+
+	const result: AtlasClaimBasis[] = [...auditBasis];
+	const matchedWriterClaimTexts = new Set<string>();
+
+	for (const writerEntry of writerBasis) {
+		const normalizedWriter = normalizeClaimTextForMatch(writerEntry.claimText);
+		if (!normalizedWriter) continue;
+
+		const matched = auditBasis.some((auditEntry) => {
+			const normalizedAudit = normalizeClaimTextForMatch(
+				auditEntry.locator.claimText,
+			);
+			if (!normalizedAudit) return false;
+			return (
+				normalizedAudit === normalizedWriter ||
+				normalizedAudit.includes(normalizedWriter) ||
+				normalizedWriter.includes(normalizedAudit)
+			);
+		});
+		if (matched) {
+			matchedWriterClaimTexts.add(normalizedWriter);
+			continue;
+		}
+
+		// Unmatched writer entry: create a basic AtlasClaimBasis
+		const writerId = stableClaimBasisId({
+			version: ATLAS_CLAIM_BASIS_SCHEMA_VERSION,
+			locator: {
+				claimText: writerEntry.claimText,
+				sectionTitle: writerEntry.sectionTitle,
+			},
+			supportLevel: writerEntry.supportLevel,
+			supportRationale: writerEntry.rationale,
+			auditConcernCode: "atlas_writer_claim_unverified",
+		});
+		result.push({
+			version: ATLAS_CLAIM_BASIS_SCHEMA_VERSION,
+			id: writerId,
+			locator: {
+				sectionTitle: writerEntry.sectionTitle,
+				paragraphIndex: null,
+				claimIndex: null,
+				claimText: writerEntry.claimText,
+				quote: null,
+				startOffset: null,
+				endOffset: null,
+			},
+			supportLevel: writerEntry.supportLevel,
+			evidencePackIds: [],
+			sourceRefs: [],
+			supportRationale: writerEntry.rationale,
+			auditConcernCode: "atlas_writer_claim_unverified",
+		});
+	}
+
+	return result;
+}
+
+function normalizeClaimTextForMatch(text: string): string | null {
+	const normalized = text.replace(/\s+/g, " ").trim().toLowerCase();
+	return normalized || null;
 }

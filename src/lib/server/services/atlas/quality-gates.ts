@@ -2,6 +2,7 @@ import type { SupportedLanguage } from "$lib/server/services/language";
 import {
 	atlasClaimBasisToLegacyHonestyMarkers,
 	buildAtlasClaimBasisPrompt,
+	mergeWriterAndAuditClaimBasis,
 	parseAtlasClaimBasisModelResult,
 } from "./claim-basis";
 import type {
@@ -16,6 +17,7 @@ import type {
 	AtlasEvidencePackDiagnostic,
 	AtlasHonestyMarker,
 	AtlasSectionBrief,
+	AtlasWriterClaimBasisEntry,
 } from "./types";
 
 const RETRY_FAILURE_CODES = [
@@ -73,6 +75,7 @@ export interface AtlasAuditBasisInput {
 	coverageReview?: AtlasCoverageReview | null;
 	sectionBriefs?: AtlasSectionBrief[];
 	assemblyMetadata?: AtlasAssemblyMetadata;
+	writerClaimBasis?: AtlasWriterClaimBasisEntry[] | null;
 	runAuditModel?: (prompt: string) => Promise<AtlasAuditModelResult>;
 	auditModelWarning?: string | null;
 	maxChars?: number;
@@ -332,6 +335,20 @@ export async function auditAtlasBasis(
 	honestyMarkers.push(...legacy.markers);
 	if (legacy.retryRequested && !basis.retryRequested) {
 		basis.retryRequested = true;
+	}
+
+	// Merge writer claim basis with audit claim basis
+	const writerBasis = input.writerClaimBasis;
+	if (writerBasis && writerBasis.length > 0) {
+		basis.claimBasis = mergeWriterAndAuditClaimBasis(
+			writerBasis,
+			basis.claimBasis,
+		);
+		console.log(
+			`[ATLAS] Claim basis source: writer+audit (${writerBasis.length} writer entries, ${basis.claimBasis.length} merged total)`,
+		);
+	} else {
+		console.log("[ATLAS] Claim basis source: audit-only");
 	}
 
 	return resultFromBasis({

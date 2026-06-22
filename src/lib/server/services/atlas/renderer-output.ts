@@ -25,6 +25,7 @@ import type {
 	AtlasDocumentFamilyMetadata,
 	AtlasHonestyMarker,
 	AtlasImageCandidate,
+	AtlasWriterClaimBasisEntry,
 } from "./types";
 
 export interface AtlasReportSource {
@@ -43,6 +44,7 @@ export interface BuildAtlasDocumentSourceInput {
 	sources: AtlasReportSource[];
 	honestyMarkers: AtlasHonestyMarker[];
 	claimBasis?: AtlasClaimBasis[];
+	writerClaimBasis?: AtlasWriterClaimBasisEntry[] | null;
 	imageCandidates?: AtlasImageCandidate[];
 	maxRenderedImages?: number;
 	date?: string | null;
@@ -1102,8 +1104,13 @@ function occurrenceForAnchor(
 function findClaimAnchor(
 	text: string,
 	basis: AtlasClaimBasis,
+	writerClaimText?: string | null,
 ): { anchorText: string; occurrence: number } | null {
-	const candidates = [basis.locator.quote, basis.locator.claimText]
+	const candidates = [
+		writerClaimText,
+		basis.locator.quote,
+		basis.locator.claimText,
+	]
 		.map(cleanText)
 		.filter((candidate): candidate is string => Boolean(candidate));
 	for (const candidate of candidates) {
@@ -1116,6 +1123,36 @@ function findClaimAnchor(
 		}
 	}
 	return null;
+}
+
+function buildWriterClaimTextMap(
+	writerBasis: AtlasWriterClaimBasisEntry[] | null | undefined,
+	claimBasis: AtlasClaimBasis[],
+): Map<string, string | null> {
+	const map = new Map<string, string | null>();
+	if (!writerBasis || writerBasis.length === 0) return map;
+	for (const basis of claimBasis) {
+		const normalizedClaim = normalizeClaimAnchorText(basis.locator.claimText);
+		for (const writerEntry of writerBasis) {
+			const normalizedWriter = normalizeClaimAnchorText(writerEntry.claimText);
+			if (
+				normalizedClaim &&
+				normalizedWriter &&
+				(normalizedClaim === normalizedWriter ||
+					normalizedClaim.includes(normalizedWriter) ||
+					normalizedWriter.includes(normalizedClaim))
+			) {
+				map.set(basis.id, writerEntry.claimText);
+				break;
+			}
+		}
+	}
+	return map;
+}
+
+function normalizeClaimAnchorText(text: string): string | null {
+	const normalized = text.replace(/\s+/g, " ").trim().toLowerCase();
+	return normalized || null;
 }
 
 function paragraphContexts(blocks: GeneratedDocumentSource["blocks"]): Array<{
@@ -1226,6 +1263,7 @@ function paragraphWithBasisMarker(
 function applyAtlasClaimBasisMarkers(
 	blocks: GeneratedDocumentSource["blocks"],
 	claimBasis: AtlasClaimBasis[] = [],
+	writerClaimBasis?: AtlasWriterClaimBasisEntry[] | null,
 ): void {
 	if (claimBasis.length === 0) return;
 	const contexts = paragraphContexts(blocks);
@@ -1233,6 +1271,10 @@ function applyAtlasClaimBasisMarkers(
 		number,
 		GeneratedDocumentBasisMarkerBlock[]
 	>();
+	const writerClaimTextMap = buildWriterClaimTextMap(
+		writerClaimBasis,
+		claimBasis,
+	);
 
 	for (const [basisIndex, basis] of claimBasis.entries()) {
 		const candidates = contexts.filter(
@@ -1245,8 +1287,13 @@ function applyAtlasClaimBasisMarkers(
 					context.paragraphIndexInSection === basis.locator.paragraphIndex),
 		);
 		let anchored = false;
+		const preferredClaimText = writerClaimTextMap.get(basis.id);
 		for (const context of candidates) {
-			const anchor = findClaimAnchor(context.block.text, basis);
+			const anchor = findClaimAnchor(
+				context.block.text,
+				basis,
+				preferredClaimText,
+			);
 			if (!anchor) continue;
 			const marker = paragraphMarkerForClaim({
 				basis,
@@ -1635,7 +1682,11 @@ export function buildAtlasDocumentSource(
 		input.imageCandidates,
 		input.maxRenderedImages,
 	);
-	applyAtlasClaimBasisMarkers(blocks, input.claimBasis ?? []);
+	applyAtlasClaimBasisMarkers(
+		blocks,
+		input.claimBasis ?? [],
+		input.writerClaimBasis,
+	);
 
 	const librarySources = input.sources.filter((source) => !source.url);
 	const webSources = input.sources.filter((source) => Boolean(source.url));

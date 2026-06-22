@@ -48,8 +48,12 @@ import type {
 	AtlasPipelineStage,
 	AtlasSectionBrief,
 	AtlasSectionBriefSourceAssociation,
+	AtlasWriterClaimBasisEntry,
 } from "./types";
-import { ATLAS_ASSEMBLY_SCHEMA_VERSION } from "./types";
+import {
+	ATLAS_ASSEMBLY_SCHEMA_VERSION,
+	ATLAS_CLAIM_SUPPORT_LEVELS,
+} from "./types";
 import {
 	buildAtlasWriterImprovementPrompt,
 	buildAtlasWriterPrompt,
@@ -126,6 +130,7 @@ export interface RunAtlasPipelineInput {
 			coverageReview: AtlasCoverageReview;
 			sectionBriefs: AtlasSectionBrief[];
 			assemblyMetadata: AtlasAssemblyMetadata;
+			writerClaimBasis?: AtlasWriterClaimBasisEntry[] | null;
 			maxChars?: number;
 		}) => Promise<{
 			passed: boolean;
@@ -1276,6 +1281,7 @@ function parseAtlasAssemblyOutput(text: string): {
 					: typeof parsed.markdown === "string"
 						? parsed.markdown
 						: null;
+	const writerClaimBasis = parseWriterClaimBasis(parsed.claimBasis);
 	return {
 		markdown: markdown ?? text,
 		metadata: {
@@ -1284,8 +1290,45 @@ function parseAtlasAssemblyOutput(text: string): {
 			sectionBriefs: parseSectionBriefs(parsed.sectionBriefs),
 			limitations: stringArray(parsed.limitations),
 			structured: true,
+			writerClaimBasis,
 		},
 	};
+}
+
+function parseWriterClaimBasis(
+	value: unknown,
+): AtlasWriterClaimBasisEntry[] | null {
+	if (!Array.isArray(value)) return null;
+	const entries: AtlasWriterClaimBasisEntry[] = [];
+	for (const entry of value) {
+		if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+		const record = entry as Record<string, unknown>;
+		const claimText = normalizeAssemblyText(record.claimText);
+		if (!claimText) continue;
+		const supportLevel = record.supportLevel;
+		if (
+			typeof supportLevel !== "string" ||
+			!ATLAS_CLAIM_SUPPORT_LEVELS.includes(supportLevel as never)
+		) {
+			continue;
+		}
+		entries.push({
+			claimText,
+			sectionTitle:
+				normalizeAssemblyText(record.sectionTitle) ??
+				normalizeAssemblyText(record.title) ??
+				"Atlas report",
+			supportLevel: supportLevel as AtlasWriterClaimBasisEntry["supportLevel"],
+			evidenceCardIds: stringArray(
+				record.evidenceCardIds ?? record.cardIds ?? record.evidenceCards,
+			),
+			rationale:
+				normalizeAssemblyText(record.rationale) ??
+				normalizeAssemblyText(record.reasoning) ??
+				"Writer provided no rationale.",
+		});
+	}
+	return entries.length > 0 ? entries : null;
 }
 
 function mergeAssemblyMetadata(
@@ -1302,6 +1345,7 @@ function mergeAssemblyMetadata(
 		limitations:
 			next.limitations.length > 0 ? next.limitations : previous.limitations,
 		structured: previous.structured || next.structured,
+		writerClaimBasis: next.writerClaimBasis ?? previous.writerClaimBasis,
 	};
 }
 
@@ -2636,6 +2680,7 @@ export async function runAtlasPipeline(
 		coverageReview,
 		sectionBriefs: assemblyMetadata.sectionBriefs,
 		assemblyMetadata,
+		writerClaimBasis: assemblyMetadata.writerClaimBasis,
 		maxChars: claimBasisReportMaxChars,
 	});
 	if (audit.usage) {
@@ -2689,6 +2734,7 @@ export async function runAtlasPipeline(
 			coverageReview,
 			sectionBriefs: assemblyMetadata.sectionBriefs,
 			assemblyMetadata,
+			writerClaimBasis: assemblyMetadata.writerClaimBasis,
 			maxChars: claimBasisReportMaxChars,
 		});
 		if (audit.usage) {
@@ -2721,6 +2767,7 @@ export async function runAtlasPipeline(
 			sources: publishedSources,
 			honestyMarkers: audit.honestyMarkers,
 			claimBasis,
+			writerClaimBasis: assemblyMetadata.writerClaimBasis,
 			imageCandidates: imageSearch.imageCandidates,
 			maxRenderedImages: profileConfig.maxRenderedImages,
 			date: currentDate,
