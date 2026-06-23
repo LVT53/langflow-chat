@@ -152,7 +152,7 @@ function isUnsafeAdultText(haystack: string): boolean {
 export function hasSubstantiveAtlasSourceTitle(title: string): boolean {
 	const trimmed = title.trim();
 	if (!trimmed) return false;
-	if (trimmed.length < 15) return false;
+	if (trimmed.length < 10) return false;
 	// Bare URLs (no spaces, looks like a domain)
 	if (/^https?:\/\//i.test(trimmed)) return false;
 	if (/^[\w.-]+\.[a-z]{2,}(\/.*)?$/i.test(trimmed) && !/\s/.test(trimmed))
@@ -174,13 +174,27 @@ export function hasSubstantiveAtlasSourceTitle(title: string): boolean {
  * contributing to Evidence Packs.
  *
  * When an optional `title` is provided and the only rejection reason is a
- * short (< 12 char) sanitized snippet, a substantive title can override the
+ * short (< 8 char) sanitized snippet, a substantive title can override the
  * rejection so the source is accepted for evidence extraction.
+ *
+ * Sources whose title is a login, sign-in, sign-up, or registration page
+ * are always rejected, regardless of snippet quality, so they never consume
+ * acceptance slots.
  */
 export function isUnusableAtlasSnippet(
 	snippet: string | null,
 	title?: string,
 ): boolean {
+	// Login / auth / registration page titles are never usable as sources
+	if (
+		title &&
+		/^(log\s*in|sign\s*in|sign\s*up|register|login|signin|signup|bejelentkezés|regisztráció)$/i.test(
+			title.trim(),
+		)
+	) {
+		return true;
+	}
+
 	if (!snippet) return false;
 	const sanitized = sanitizeSearchSnippet(snippet);
 	if (!sanitized) return true;
@@ -213,7 +227,7 @@ export function isUnusableAtlasSnippet(
 	).length;
 	if (footerHits >= 2) return true;
 
-	if (sanitized.length < 12) {
+	if (sanitized.length < 8) {
 		// Title exemption: a substantive title can compensate for a short snippet
 		if (title && hasSubstantiveAtlasSourceTitle(title)) return false;
 		return true;
@@ -307,6 +321,24 @@ export function sanitizeSearchSnippet(snippet: string): string {
 	// Hungarian date prefixes
 	result = result.replace(
 		/^\d{4}\. (?:jan\.|febr\.|márc\.|ápr\.|máj\.|jún\.|júl\.|aug\.|szept\.|okt\.|nov\.|dec\.|január|február|március|április|május|június|július|augusztus|szeptember|október|november|december) \d{1,2}\. ·\s*/,
+		"",
+	);
+
+	// Common boilerplate prefixes that survive SearXNG snippet extraction
+	result = result.replace(
+		/^(?:Loading\.\.\.\s*|Please wait\.\.\.\s*|Please enable JavaScript(?:[^.]*\.)?\s*|Enable JavaScript(?:[^.]*\.)?\s*)+/i,
+		"",
+	);
+
+	// Cookie consent banners
+	result = result.replace(
+		/^(?:This (?:website|site) uses cookies[^.]*\.\s*|We use cookies[^.]*\.\s*|Accept (?:all\s+)?cookies[^.]*\.\s*|Cookie (?:Settings|Preferences)[^.]*\.\s*)+/i,
+		"",
+	);
+
+	// SEO / calculator / login placeholder prefixes
+	result = result.replace(
+		/^(?:Please log in to continue[.!]?\s*|Sign in to continue[.!]?\s*|Log in to (?:read|view)[^.]*\.\s*|View on (?:Instagram|Facebook|Twitter)[.!]?\s*)+/i,
 		"",
 	);
 

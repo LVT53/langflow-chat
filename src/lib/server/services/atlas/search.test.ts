@@ -111,6 +111,61 @@ describe("sanitizeSearchSnippet", () => {
 		);
 		expect(result).toBe("Actual relevant content here");
 	});
+
+	it("strips loading and JavaScript boilerplate prefixes", async () => {
+		const { sanitizeSearchSnippet } = await import("./search");
+		expect(sanitizeSearchSnippet("Loading... Please wait...")).toBe("");
+		expect(
+			sanitizeSearchSnippet(
+				"Please enable JavaScript to view this page. Real content starts here.",
+			),
+		).toBe("Real content starts here.");
+		expect(
+			sanitizeSearchSnippet(
+				"Enable JavaScript. The full article covers deployment patterns.",
+			),
+		).toBe("The full article covers deployment patterns.");
+	});
+
+	it("strips cookie consent banner prefixes", async () => {
+		const { sanitizeSearchSnippet } = await import("./search");
+		expect(
+			sanitizeSearchSnippet(
+				"This website uses cookies to improve your experience. Vector databases are essential for modern RAG pipelines.",
+			),
+		).toBe("Vector databases are essential for modern RAG pipelines.");
+		expect(
+			sanitizeSearchSnippet(
+				"We use cookies. The best embedding models in 2026 include BGE-M3 and Cohere Embed v4.",
+			),
+		).toBe(
+			"The best embedding models in 2026 include BGE-M3 and Cohere Embed v4.",
+		);
+		expect(
+			sanitizeSearchSnippet(
+				"Accept all cookies. Detailed comparison of self-hosted embedding models.",
+			),
+		).toBe("Detailed comparison of self-hosted embedding models.");
+	});
+
+	it("strips login and social-media placeholder prefixes", async () => {
+		const { sanitizeSearchSnippet } = await import("./search");
+		expect(
+			sanitizeSearchSnippet(
+				"Please log in to continue. Enterprise RAG architecture patterns vary by deployment.",
+			),
+		).toBe("Enterprise RAG architecture patterns vary by deployment.");
+		expect(
+			sanitizeSearchSnippet(
+				"Sign in to continue. The MTEB leaderboard shows BGE-M3 leading in retrieval tasks.",
+			),
+		).toBe("The MTEB leaderboard shows BGE-M3 leading in retrieval tasks.");
+		expect(
+			sanitizeSearchSnippet(
+				"View on Instagram. Model deployment best practices.",
+			),
+		).toBe("Model deployment best practices.");
+	});
 });
 
 describe("sanitizeSourceTitle (applied to search titles)", () => {
@@ -190,18 +245,18 @@ describe("isUnusableAtlasSnippet", () => {
 		).toBe(true);
 	});
 
-	it("rejects very short sanitized snippets (< 12 chars)", async () => {
+	it("rejects very short sanitized snippets (< 8 chars)", async () => {
 		const { isUnusableAtlasSnippet } = await import("./search");
 		expect(isUnusableAtlasSnippet("Short.")).toBe(true);
 		expect(isUnusableAtlasSnippet("Log in")).toBe(true);
-		expect(isUnusableAtlasSnippet("Read more")).toBe(true);
+		expect(isUnusableAtlasSnippet("Read")).toBe(true);
 	});
 
-	it("accepts 12-14 char sanitized snippets that were previously rejected", async () => {
+	it("accepts 8-11 char sanitized snippets that were previously rejected", async () => {
 		const { isUnusableAtlasSnippet } = await import("./search");
-		expect(isUnusableAtlasSnippet("2026 AI guide")).toBe(false);
-		expect(isUnusableAtlasSnippet("Detailed docs")).toBe(false);
-		expect(isUnusableAtlasSnippet("Python tutorial")).toBe(false);
+		expect(isUnusableAtlasSnippet("Read more")).toBe(false);
+		expect(isUnusableAtlasSnippet("Click here")).toBe(false);
+		expect(isUnusableAtlasSnippet("View more")).toBe(false);
 	});
 
 	it("accepts short snippets when the source title is substantive", async () => {
@@ -218,14 +273,26 @@ describe("isUnusableAtlasSnippet", () => {
 				"Comprehensive Vector Database Comparison and Benchmarks",
 			),
 		).toBe(false);
+		expect(
+			isUnusableAtlasSnippet(
+				"Read",
+				"Best Embedding Models for Enterprise Search 2026",
+			),
+		).toBe(false);
+		expect(
+			isUnusableAtlasSnippet(
+				"Hi",
+				"Vector Database Performance Benchmarks and Analysis",
+			),
+		).toBe(false);
 	});
 
 	it("still rejects short snippets when the title is not substantive", async () => {
 		const { isUnusableAtlasSnippet } = await import("./search");
 		expect(isUnusableAtlasSnippet("Short.", "Log in")).toBe(true);
 		expect(isUnusableAtlasSnippet("Read more", "Sign Up")).toBe(true);
-		expect(isUnusableAtlasSnippet("Click here", "example.com")).toBe(true);
-		expect(isUnusableAtlasSnippet("View now", "")).toBe(true);
+		expect(isUnusableAtlasSnippet("Hi", "example.com")).toBe(true);
+		expect(isUnusableAtlasSnippet("Ok", "")).toBe(true);
 	});
 
 	it("still rejects YouTube footer boilerplate even with a substantive title", async () => {
@@ -263,13 +330,43 @@ describe("isUnusableAtlasSnippet", () => {
 
 	it("accepts social media snippets that are not pure boilerplate", async () => {
 		const { isUnusableAtlasSnippet } = await import("./search");
-		expect(isUnusableAtlasSnippet("View on Instagram")).toBe(false);
-		expect(isUnusableAtlasSnippet("Log in to continue")).toBe(false);
 		expect(
 			isUnusableAtlasSnippet(
 				"Reddit discussion: The best embedding models in 2026 include E5, BGE-M3, and Cohere Embed v4. Users report that BGE-M3 outperforms OpenAI on multilingual benchmarks.",
 			),
 		).toBe(false);
+	});
+
+	it("strips social media placeholder prefixes from snippets", async () => {
+		const { isUnusableAtlasSnippet } = await import("./search");
+		expect(isUnusableAtlasSnippet("View on Instagram")).toBe(true);
+		expect(isUnusableAtlasSnippet("View on Facebook")).toBe(true);
+		expect(isUnusableAtlasSnippet("View on Twitter")).toBe(true);
+	});
+
+	it("rejects sources whose title is a login, sign-in, or registration page regardless of snippet quality", async () => {
+		const { isUnusableAtlasSnippet } = await import("./search");
+		expect(
+			isUnusableAtlasSnippet(
+				"A comprehensive comparison of the best embedding models for enterprise search in 2026.",
+				"Log in",
+			),
+		).toBe(true);
+		expect(
+			isUnusableAtlasSnippet(
+				"Substantive evidence about RAG architectures.",
+				"Sign Up",
+			),
+		).toBe(true);
+		expect(
+			isUnusableAtlasSnippet("Click here to view the article.", "Register"),
+		).toBe(true);
+		expect(
+			isUnusableAtlasSnippet(
+				"Detailed deployment guide content.",
+				"Bejelentkezés",
+			),
+		).toBe(true);
 	});
 });
 
@@ -289,11 +386,18 @@ describe("hasSubstantiveAtlasSourceTitle", () => {
 		).toBe(true);
 	});
 
-	it("rejects titles that are too short (< 15 chars)", async () => {
+	it("rejects titles that are too short (< 10 chars)", async () => {
 		const { hasSubstantiveAtlasSourceTitle } = await import("./search");
-		expect(hasSubstantiveAtlasSourceTitle("Short title")).toBe(false);
+		expect(hasSubstantiveAtlasSourceTitle("Short")).toBe(false);
 		expect(hasSubstantiveAtlasSourceTitle("Log in")).toBe(false);
 		expect(hasSubstantiveAtlasSourceTitle("")).toBe(false);
+	});
+
+	it("accepts titles with 10-14 chars that were previously rejected", async () => {
+		const { hasSubstantiveAtlasSourceTitle } = await import("./search");
+		expect(hasSubstantiveAtlasSourceTitle("RAG Overview")).toBe(true);
+		expect(hasSubstantiveAtlasSourceTitle("Model Guide")).toBe(true);
+		expect(hasSubstantiveAtlasSourceTitle("Best Embedding")).toBe(true);
 	});
 
 	it("rejects bare URLs as titles", async () => {
@@ -538,7 +642,7 @@ describe("Atlas search stage", () => {
 			search: vi.fn(async () => [
 				{
 					id: "web-bad-snippet-first",
-					title: "Short title",
+					title: "Log in",
 					url: "https://example.com/reusable-url",
 					snippet: "Hi",
 				},
