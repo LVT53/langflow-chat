@@ -2775,15 +2775,24 @@ export async function runAtlasPipeline(
 		}
 		auditFinishReason = audit.finishReason;
 	}
-	let auditedMarkdown =
-		audit.passed && !audit.retryRequested
-			? finalAssembledMarkdown
-			: [
-					finalAssembledMarkdown,
-					"",
-					"## Limitations",
-					"Atlas audit requested additional verification. This version ships with explicit limitations and Basis Markers instead of unsupported certainty.",
-				].join("\n");
+	const auditFailedOrRetry = !audit.passed || audit.retryRequested;
+	const auditAddendum =
+		"Atlas audit requested additional verification. This version ships with explicit limitations and Basis Markers instead of unsupported certainty.";
+	let auditedMarkdown = finalAssembledMarkdown;
+	if (auditFailedOrRetry) {
+		if (hasLimitationsHeading(finalAssembledMarkdown)) {
+			auditedMarkdown = [finalAssembledMarkdown.trim(), "", auditAddendum].join(
+				"\n",
+			);
+		} else {
+			auditedMarkdown = [
+				finalAssembledMarkdown,
+				"",
+				"## Limitations",
+				auditAddendum,
+			].join("\n");
+		}
+	}
 	const claimBasis = audit.claimBasis ?? [];
 	const basisLimitations = audit.basisLimitations ?? [];
 	const basisDiagnostics = audit.basisDiagnostics ?? [];

@@ -7874,3 +7874,143 @@ describe("Atlas guard functions", () => {
 		});
 	});
 });
+
+it("does not add a duplicate Limitations heading when audit addendum is appended to a report that already has a Limitations section", {
+	timeout: 15000,
+}, async () => {
+	const { runAtlasPipeline } = await import("./pipeline");
+	const auditBasis = vi.fn(async () => ({
+		passed: false,
+		honestyMarkers: [
+			{
+				code: "limited_web",
+				message: "Web evidence is representative, not exhaustive.",
+				severity: "warning" as const,
+			},
+		],
+		retryRequested: false,
+	}));
+	const renderOutputs = vi.fn(async () => ({
+		fileProductionJobId: "fp-job-dedup-limitations",
+		htmlChatGeneratedFileId: "file-html",
+		pdfChatGeneratedFileId: "file-pdf",
+		markdownChatGeneratedFileId: "file-md",
+	}));
+
+	await runAtlasPipeline({
+		job: {
+			id: "atlas-dedup-limitations",
+			userId: "user-1",
+			conversationId: "conv-1",
+			assistantMessageId: "assistant-1",
+			action: "create" as const,
+			parentAtlasJobId: null,
+			profile: "overview",
+			title: "Dedup Limitations Audit",
+			query: "Compare retrieval architectures for regulated SaaS",
+			lifecycle: {
+				family: {
+					familyId: "atlas-dedup-limitations",
+					mode: "new_family" as const,
+					action: "create" as const,
+					rootAtlasJobId: "atlas-dedup-limitations",
+					currentAtlasJobId: "atlas-dedup-limitations",
+					parentAtlasJobId: null,
+					forkedFromAtlasJobId: null,
+				},
+				seed: null,
+			},
+		},
+		now: new Date("2026-06-22T10:00:00.000Z"),
+		dependencies: {
+			resolveSources: vi.fn(async () => ({ localSources: [] })),
+			searchWeb: vi.fn(async () => ({
+				sources: [
+					{
+						id: "web-dedup-lim",
+						title: "Architecture evidence",
+						url: "https://example.com/dedup-lim",
+						snippet:
+							"Hybrid retrieval architecture evidence for regulated SaaS.",
+					},
+				],
+				rejectedSources: [],
+				limitation: null,
+			})),
+			runModelStage: vi.fn(async (input) => {
+				const texts: Record<string, string> = {
+					decompose: "retrieval architectures",
+					curate: "Curated evidence for hybrid retrieval.",
+					synthesize: "Synthesized findings about hybrid retrieval.",
+					integrate: "Executive Summary; Findings; Limitations.",
+					"coverage-review": JSON.stringify({
+						sufficient: true,
+						proposals: [],
+					}),
+					assemble: JSON.stringify({
+						generatedTitle: "Dedup Limitations Report",
+						bodyMarkdown: [
+							"## Executive Summary",
+							"Hybrid retrieval offers the best balance for regulated SaaS deployments because it preserves exact policy language for compliance while supporting semantic discovery across diverse document collections and query types, making it the most defensible choice for production environments that require both auditability and broad recall across technical and policy content.",
+							"",
+							"## Findings",
+							"Lexical and semantic retrieval together improve precision and recall when evaluated against representative technical documents in regulated domains. Reranking after the first pass narrows candidate documents into a manageable and reviewable evidence set, ensuring that final claims are grounded in the strongest accepted sources rather than broad search results. The combination of these layers gives compliance reviewers clear control points and operators measurable quality signals before any answer reaches the user.",
+							"",
+							"## Limitations",
+							"This report is based on representative sources and should be validated against the specific corpus, access model, and latency budget before implementation. Different compliance frameworks and document types may require different retrieval configurations, and the evidence set does not claim universal coverage across all regulated industries.",
+						].join("\n"),
+						sectionBriefs: [],
+						limitations: [],
+					}),
+				};
+				return {
+					text: texts[input.stage] ?? `${input.stage} result`,
+					usage: {
+						inputTokens: 1,
+						outputTokens: 1,
+						totalTokens: 2,
+						costUsdMicros: 1,
+					},
+				};
+			}),
+			auditBasis,
+			writeCheckpoint: vi.fn(async () => {}),
+			renderOutputs,
+		},
+	});
+
+	const auditCalls = auditBasis.mock.calls as Array<
+		Array<{ assembledMarkdown: string }>
+	>;
+	const renderCalls = renderOutputs.mock.calls as Array<
+		Array<{ blocks: Array<{ type: string; text?: string; items?: string[] }> }>
+	>;
+	const auditedMarkdown = auditCalls[0]?.[0]?.assembledMarkdown;
+	const renderedSource = renderCalls[0]?.[0];
+	expect(auditedMarkdown).toBeDefined();
+	expect(auditedMarkdown).toContain("## Limitations");
+	// Audit addendum is applied AFTER the audit call, so it appears in the rendered output
+	expect(renderedSource).toBeDefined();
+	const renderedText = renderedSource?.blocks
+		.flatMap((block: { type: string; text?: string; items?: string[] }) => {
+			if (block.type === "heading" || block.type === "paragraph") {
+				return [block.text];
+			}
+			if (block.type === "list") return block.items;
+			return [];
+		})
+		.join("\n");
+	expect(renderedText).toContain("Limitations");
+	expect(renderedText).toContain(
+		"Atlas audit requested additional verification",
+	);
+	// Verify only one Limitations heading exists in the rendered blocks
+	const limitationHeadings = renderedSource?.blocks.filter(
+		(block: { type: string; text?: string }) =>
+			block.type === "heading" && block.text?.includes("Limitations"),
+	);
+	expect(limitationHeadings.length).toBe(1);
+	expect(renderedText).toContain(
+		"should be validated against the specific corpus",
+	);
+});
