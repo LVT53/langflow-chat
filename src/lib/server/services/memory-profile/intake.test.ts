@@ -1268,9 +1268,9 @@ describe("memory intake gate", () => {
 			userMessageId: "user-message-trivial-shorter",
 		});
 
-		expect(
-			await listPendingMemoryDirtyEntries({ userId: "user-1" }),
-		).toEqual([]);
+		expect(await listPendingMemoryDirtyEntries({ userId: "user-1" })).toEqual(
+			[],
+		);
 	});
 
 	it("does not mark deferred_intake for speculative rejected turns", async () => {
@@ -1280,8 +1280,7 @@ describe("memory intake gate", () => {
 		const result = await intakePostTurnMemory({
 			userId: "user-1",
 			conversationId: "conv-speculative",
-			userMessage:
-				"Today I am debugging the memory intake gate.",
+			userMessage: "Today I am debugging the memory intake gate.",
 			userMessageId: "user-message-speculative",
 		});
 		expect(result).toEqual({
@@ -1289,9 +1288,9 @@ describe("memory intake gate", () => {
 			reason: "no_explicit_durable_intent",
 		});
 
-		expect(
-			await listPendingMemoryDirtyEntries({ userId: "user-1" }),
-		).toEqual([]);
+		expect(await listPendingMemoryDirtyEntries({ userId: "user-1" })).toEqual(
+			[],
+		);
 	});
 
 	it("coalesces repeated substantive deferred_intake entries in the same conversation", async () => {

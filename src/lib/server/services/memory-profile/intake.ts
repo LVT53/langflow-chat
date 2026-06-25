@@ -320,13 +320,13 @@ function parseStableSelfStatement(
 	if (lang === "hu") {
 		if (
 			// Location suffix + élek (e.g., "Budapesten élek")
-			/^[\p{L}]+(?:ban|ben|on|en|ön|n)\s+élek$/ui.test(text) ||
+			/^[\p{L}]+(?:ban|ben|on|en|ön|n)\s+élek$/iu.test(text) ||
 			// Work: [article?] [name]-nál/-nél dolgozom (e.g., "A Google-nél dolgozom")
-			/^(?:a\s+)?[\p{L}\-.]+(?:nál|nél)\s+dolgozom$/ui.test(text) ||
+			/^(?:a\s+)?[\p{L}\-.]+(?:nál|nél)\s+dolgozom$/iu.test(text) ||
 			// Name: A nevem ... (e.g., "A nevem Kovács János")
-			/^a\s+nevem\s+.+$/ui.test(text) ||
+			/^a\s+nevem\s+.+$/iu.test(text) ||
 			// Company/workplace: A cégem/A munkahelyem ...
-			/^(?:a\s+)?(?:cégem|munkahelyem)\s+(?:az\s+|a\s+)?.+$/ui.test(text)
+			/^(?:a\s+)?(?:cégem|munkahelyem)\s+(?:az\s+|a\s+)?.+$/iu.test(text)
 		) {
 			return parsedStatement("about_you", text, parserRule);
 		}
@@ -420,7 +420,9 @@ export function parsePostTurnMemoryIntake(
 		/^(?:please\s+)?remember(?:\s+that)?\s+(.+)$/i.exec(message) ??
 		/^can you remember(?:\s+that)?\s+(.+)$/i.exec(message);
 	const huRememberMatch =
-		/^(?:emlékezz\s+arra|jegyezd\s+meg|tartsd\s+észben)\s*,?\s+hogy\s+(.+)$/iu.exec(message);
+		/^(?:emlékezz\s+arra|jegyezd\s+meg|tartsd\s+észben)\s*,?\s+hogy\s+(.+)$/iu.exec(
+			message,
+		);
 
 	const rememberMatch = enRememberMatch ?? huRememberMatch;
 	if (rememberMatch?.[1]) {

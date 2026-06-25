@@ -2,10 +2,17 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import { db } from "$lib/server/db";
 import {
 	conversations,
-	memoryProfileItemProvenance,
 	memoryProfileItems,
 	messages,
 } from "$lib/server/db/schema";
+import { truncateToTokenBudget } from "$lib/server/utils/prompt-context";
+import { getConversationSummary } from "../conversation-summaries";
+import {
+	getHonchoSessionId,
+	getUserPeer,
+	isHonchoEnabled,
+	isHonchoMissingError,
+} from "../honcho";
 import { getActiveMemoryProfileContext } from "./active-context";
 import {
 	type ClaimedDirtyLedgerRow,
@@ -30,8 +37,8 @@ import {
 	type LegacyMemoryCurator,
 } from "./legacy-curation";
 import {
-	createMemoryProfileItem,
 	addMemoryProfileItemProvenance,
+	createMemoryProfileItem,
 } from "./projection-store";
 import {
 	getCurrentMemoryResetGeneration,
@@ -52,18 +59,10 @@ import {
 	type LegacyMemoryCandidateLoader,
 	MEMORY_DIRTY_REASONS,
 	MEMORY_PROFILE_CATEGORIES,
-	type MemoryProfileCategory,
 	type MemoryDirtyLedgerReconciliationResult,
+	type MemoryProfileCategory,
 	readMemoryProfileCategory,
 } from "./types";
-import { getConversationSummary } from "../conversation-summaries";
-import {
-	getHonchoSessionId,
-	getUserPeer,
-	isHonchoEnabled,
-	isHonchoMissingError,
-} from "../honcho";
-import { truncateToTokenBudget } from "$lib/server/utils/prompt-context";
 
 const DEFAULT_MEMORY_DIRTY_LEDGER_BATCH_SIZE = 25;
 const DEFAULT_MEMORY_DIRTY_LEDGER_MAX_RUNTIME_MS = 1500;
@@ -187,17 +186,14 @@ function parseDeferredIntakeCandidates(
 				};
 			})
 			.filter(
-				(candidate): candidate is DeferredIntakeCandidate =>
-					candidate !== null,
+				(candidate): candidate is DeferredIntakeCandidate => candidate !== null,
 			);
 	} catch {
 		return [];
 	}
 }
 
-function lazySendJsonControlMessage(
-	message: string,
-) {
+function lazySendJsonControlMessage(message: string) {
 	return async () => {
 		const { sendJsonControlMessage } = await import(
 			"../normal-chat-control-model"
@@ -297,9 +293,7 @@ async function loadRawConversationTurns(params: {
 	return pairs;
 }
 
-async function conversationExists(
-	conversationId: string,
-): Promise<boolean> {
+async function conversationExists(conversationId: string): Promise<boolean> {
 	const [row] = await db
 		.select({ id: conversations.id })
 		.from(conversations)
@@ -397,7 +391,7 @@ async function computeDeferredIntakeResult(params: {
 			const scope =
 				params.candidate.scope === "conversation"
 					? { type: "conversation" as const, id: params.conversationId }
-					: ({ type: "global" as const });
+					: { type: "global" as const };
 
 			const item = await createMemoryProfileItem({
 				userId: params.userId,
@@ -664,9 +658,7 @@ async function handleDeferredIntakeExtraction(params: {
 		limit: DEFERRED_INTAKE_RAW_TURN_LIMIT,
 	});
 
-	const userTurns = rawTurns.filter(
-		(turn) => turn.role === "user",
-	);
+	const userTurns = rawTurns.filter((turn) => turn.role === "user");
 	if (rawTurns.length === 0 || userTurns.length === 0) {
 		await recordMemoryReworkTelemetry({
 			userId: params.userId,
@@ -766,10 +758,7 @@ async function handleDeferredIntakeExtraction(params: {
 		.where(
 			and(
 				eq(memoryProfileItems.userId, params.userId),
-				eq(
-					memoryProfileItems.resetGeneration,
-					params.row.resetGeneration,
-				),
+				eq(memoryProfileItems.resetGeneration, params.row.resetGeneration),
 				eq(memoryProfileItems.status, "review_needed"),
 			),
 		)

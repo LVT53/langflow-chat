@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { readFileSync, unlinkSync } from "node:fs";
+import { unlinkSync } from "node:fs";
 import Database from "better-sqlite3";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
@@ -8,7 +8,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as schema from "$lib/server/db/schema";
 
 let dbPath: string;
-let seedConnections: Array<{ sqlite: Database.Database; db: ReturnType<typeof drizzle> }> = [];
+const seedConnections: Array<{
+	sqlite: Database.Database;
+	db: ReturnType<typeof drizzle>;
+}> = [];
 
 function openSeedDatabase() {
 	const sqlite = new Database(dbPath);
@@ -29,7 +32,8 @@ function seedUserAndConversation(params: {
 	const userId = params.userId ?? "user-1";
 	const conversationId = params.conversationId ?? "conv-1";
 
-	params.db.insert(schema.users)
+	params.db
+		.insert(schema.users)
 		.values({
 			id: userId,
 			email: `${userId}@example.com`,
@@ -39,7 +43,8 @@ function seedUserAndConversation(params: {
 		})
 		.run();
 
-	params.db.insert(schema.conversations)
+	params.db
+		.insert(schema.conversations)
 		.values({
 			id: conversationId,
 			userId,
@@ -56,17 +61,22 @@ function seedUserAndConversation(params: {
 function seedMessages(params: {
 	db: ReturnType<typeof drizzle>;
 	conversationId: string;
-	entries: Array<{ role: "user" | "assistant"; content: string; sequence?: number }>;
+	entries: Array<{
+		role: "user" | "assistant";
+		content: string;
+		sequence?: number;
+	}>;
 	now?: Date;
 }) {
 	const now = params.now ?? new Date("2026-06-01T10:00:00.000Z");
 	for (let i = 0; i < params.entries.length; i++) {
 		const entry = params.entries[i];
-		params.db.insert(schema.messages)
+		params.db
+			.insert(schema.messages)
 			.values({
 				id: `msg-${i}`,
 				conversationId: params.conversationId,
-				messageSequence: entry.sequence ?? (i + 1),
+				messageSequence: entry.sequence ?? i + 1,
 				role: entry.role,
 				content: entry.content,
 				createdAt: new Date(now.getTime() + i * 60_000),
@@ -83,7 +93,8 @@ function seedConversationSummary(params: {
 	now?: Date;
 }) {
 	const now = params.now ?? new Date("2026-06-01T10:00:00.000Z");
-	params.db.insert(schema.conversationSummaries)
+	params.db
+		.insert(schema.conversationSummaries)
 		.values({
 			conversationId: params.conversationId,
 			userId: params.userId,
@@ -102,7 +113,8 @@ function seedMemoryResetGeneration(params: {
 	now?: Date;
 }) {
 	const now = params.now ?? new Date("2026-06-01T10:00:00.000Z");
-	params.db.insert(schema.memoryResetGenerations)
+	params.db
+		.insert(schema.memoryResetGenerations)
 		.values({
 			userId: params.userId,
 			resetGeneration: params.generation ?? 0,
@@ -176,7 +188,8 @@ describe("dirty-ledger deferred_intake reconciliation", () => {
 				},
 				{
 					role: "assistant",
-					content: "Got it! I'll remember that you prefer dark mode and Hungarian.",
+					content:
+						"Got it! I'll remember that you prefer dark mode and Hungarian.",
 				},
 			],
 			now,
@@ -286,11 +299,13 @@ describe("dirty-ledger deferred_intake reconciliation", () => {
 			entries: [
 				{
 					role: "user",
-					content: "I might be interested in learning Python for data analysis.",
+					content:
+						"I might be interested in learning Python for data analysis.",
 				},
 				{
 					role: "assistant",
-					content: "That's a great choice! Python is excellent for data analysis.",
+					content:
+						"That's a great choice! Python is excellent for data analysis.",
 				},
 			],
 			now,
@@ -383,7 +398,11 @@ describe("dirty-ledger deferred_intake reconciliation", () => {
 
 		const responseText = makeDeferredIntakeCandidates({
 			candidates: [
-				{ statement: "Asked about weather once", category: "about_you", confidence: 0.1 },
+				{
+					statement: "Asked about weather once",
+					category: "about_you",
+					confidence: 0.1,
+				},
 			],
 		});
 
@@ -432,7 +451,10 @@ describe("dirty-ledger deferred_intake reconciliation", () => {
 			.where(
 				and(
 					eq(schema.memoryReworkTelemetry.userId, userId),
-					eq(schema.memoryReworkTelemetry.eventName, "deferred_intake_extraction"),
+					eq(
+						schema.memoryReworkTelemetry.eventName,
+						"deferred_intake_extraction",
+					),
 				),
 			)
 			.all();
@@ -645,7 +667,10 @@ describe("dirty-ledger deferred_intake reconciliation", () => {
 	it("deduplicates via itemKey and does not create duplicate projection items", async () => {
 		const { db: seedDb } = openSeedDatabase();
 		const now = new Date("2026-06-01T10:00:00.000Z");
-		const { userId, conversationId } = seedUserAndConversation({ db: seedDb, now });
+		const { userId, conversationId } = seedUserAndConversation({
+			db: seedDb,
+			now,
+		});
 		seedMessages({
 			db: seedDb,
 			conversationId,
@@ -732,7 +757,10 @@ describe("dirty-ledger deferred_intake reconciliation", () => {
 	it("creates review item when candidate contradicts active item", async () => {
 		const { db: seedDb } = openSeedDatabase();
 		const now = new Date("2026-06-01T10:00:00.000Z");
-		const { userId, conversationId } = seedUserAndConversation({ db: seedDb, now });
+		const { userId, conversationId } = seedUserAndConversation({
+			db: seedDb,
+			now,
+		});
 		seedMessages({
 			db: seedDb,
 			conversationId,
@@ -886,7 +914,8 @@ describe("dirty-ledger deferred_intake reconciliation", () => {
 			entries: [
 				{
 					role: "user",
-					content: "I have many preferences. I like Python, VSCode, dark themes, remote work.",
+					content:
+						"I have many preferences. I like Python, VSCode, dark themes, remote work.",
 				},
 				{ role: "assistant", content: "Great! I'll keep note." },
 			],
@@ -967,7 +996,10 @@ describe("dirty-ledger deferred_intake reconciliation", () => {
 			.where(
 				and(
 					eq(schema.memoryReworkTelemetry.userId, userId),
-					eq(schema.memoryReworkTelemetry.eventName, "deferred_intake_extraction"),
+					eq(
+						schema.memoryReworkTelemetry.eventName,
+						"deferred_intake_extraction",
+					),
 				),
 			)
 			.all();
@@ -1189,8 +1221,7 @@ describe("dirty-ledger honcho_reconciliation", () => {
 			getUserPeer: vi.fn().mockResolvedValue(mockPeer),
 			getHonchoSessionId: vi.fn().mockReturnValue("honcho-session-test"),
 			isHonchoMissingError: (error: unknown) => {
-				const message =
-					error instanceof Error ? error.message : String(error);
+				const message = error instanceof Error ? error.message : String(error);
 				return /\b404\b|not found|does not exist|unknown peer|unknown session/i.test(
 					message,
 				);
@@ -1270,8 +1301,7 @@ describe("dirty-ledger honcho_reconciliation", () => {
 			getUserPeer: vi.fn().mockResolvedValue(mockPeer),
 			getHonchoSessionId: vi.fn().mockReturnValue("honcho-session-test"),
 			isHonchoMissingError: (error: unknown) => {
-				const message =
-					error instanceof Error ? error.message : String(error);
+				const message = error instanceof Error ? error.message : String(error);
 				return /\b404\b|not found|does not exist|unknown peer|unknown session/i.test(
 					message,
 				);
@@ -1331,8 +1361,7 @@ describe("dirty-ledger honcho_reconciliation", () => {
 			getUserPeer: vi.fn().mockResolvedValue(mockPeer),
 			getHonchoSessionId: vi.fn().mockReturnValue("honcho-session-test"),
 			isHonchoMissingError: (error: unknown) => {
-				const message =
-					error instanceof Error ? error.message : String(error);
+				const message = error instanceof Error ? error.message : String(error);
 				return /\b404\b|not found|does not exist|unknown peer|unknown session/i.test(
 					message,
 				);
@@ -1389,8 +1418,7 @@ describe("dirty-ledger honcho_reconciliation", () => {
 			getUserPeer: vi.fn().mockResolvedValue(mockPeer),
 			getHonchoSessionId: vi.fn().mockReturnValue("honcho-session-test"),
 			isHonchoMissingError: (error: unknown) => {
-				const message =
-					error instanceof Error ? error.message : String(error);
+				const message = error instanceof Error ? error.message : String(error);
 				return /\b404\b|not found|does not exist|unknown peer|unknown session/i.test(
 					message,
 				);
@@ -1447,8 +1475,7 @@ describe("dirty-ledger honcho_reconciliation", () => {
 			getUserPeer: vi.fn().mockResolvedValue(mockPeer),
 			getHonchoSessionId: vi.fn().mockReturnValue("honcho-session-test"),
 			isHonchoMissingError: (error: unknown) => {
-				const message =
-					error instanceof Error ? error.message : String(error);
+				const message = error instanceof Error ? error.message : String(error);
 				return /\b404\b|not found|does not exist|unknown peer|unknown session/i.test(
 					message,
 				);
@@ -1508,8 +1535,7 @@ describe("dirty-ledger honcho_reconciliation", () => {
 			getUserPeer: vi.fn().mockResolvedValue(mockPeer),
 			getHonchoSessionId: vi.fn().mockReturnValue("honcho-session-test"),
 			isHonchoMissingError: (error: unknown) => {
-				const message =
-					error instanceof Error ? error.message : String(error);
+				const message = error instanceof Error ? error.message : String(error);
 				return /\b404\b|not found|does not exist|unknown peer|unknown session/i.test(
 					message,
 				);

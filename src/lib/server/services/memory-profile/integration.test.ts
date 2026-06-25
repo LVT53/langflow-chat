@@ -398,8 +398,7 @@ describe("Memory extraction integration tests", () => {
 			getUserPeer: vi.fn().mockResolvedValue(mockPeer),
 			getHonchoSessionId: vi.fn().mockReturnValue("honcho-session-test"),
 			isHonchoMissingError: (error: unknown) => {
-				const message =
-					error instanceof Error ? error.message : String(error);
+				const message = error instanceof Error ? error.message : String(error);
 				return /\b404\b|not found|does not exist|unknown peer|unknown session/i.test(
 					message,
 				);
@@ -853,13 +852,11 @@ describe("Memory extraction integration tests", () => {
 			entries: [
 				{
 					role: "user",
-					content:
-						"I've been working as a software engineer for 10 years.",
+					content: "I've been working as a software engineer for 10 years.",
 				},
 				{
 					role: "assistant",
-					content:
-						"That's great! Software engineering is a rewarding field.",
+					content: "That's great! Software engineering is a rewarding field.",
 				},
 			],
 			now,
@@ -868,16 +865,14 @@ describe("Memory extraction integration tests", () => {
 			db,
 			userId,
 			conversationId: conv2Id,
-			summary:
-				"User is a software engineer with 10 years of experience.",
+			summary: "User is a software engineer with 10 years of experience.",
 			now,
 		});
 
 		await intakePostTurnMemory({
 			userId,
 			conversationId: conv2Id,
-			userMessage:
-				"I've been working as a software engineer for 10 years.",
+			userMessage: "I've been working as a software engineer for 10 years.",
 			assistantMessage:
 				"That's great! Software engineering is a rewarding field.",
 			userMessageId: "msg-u-t2",
@@ -950,9 +945,7 @@ describe("Memory extraction integration tests", () => {
 			allStatements.some((s) => s.toLowerCase().includes("amsterdam")),
 		).toBe(true);
 		expect(
-			allStatements.some((s) =>
-				s.toLowerCase().includes("software engineer"),
-			),
+			allStatements.some((s) => s.toLowerCase().includes("software engineer")),
 		).toBe(true);
 
 		vi.doUnmock("../normal-chat-control-model");
