@@ -90,7 +90,7 @@ async function buildModelSummary(params: {
 	try {
 		const summary = await requestContextSummarizer({
 			system:
-				"Write a compact durable conversation summary in 50-100 words. Preserve concrete user goals, decisions, constraints, and next steps. Do not mention that you are summarizing.",
+				"Write a compact durable conversation summary in 50-100 words. Preserve concrete user goals, decisions, constraints, next steps, and any stable facts or preferences the user has expressed. Do not mention that you are summarizing.",
 			user: [
 				params.previousSummary
 					? `Existing durable summary:\n${params.previousSummary}`

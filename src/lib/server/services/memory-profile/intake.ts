@@ -1,3 +1,5 @@
+import { detectLanguage } from "../language";
+
 import {
 	addMemoryProfileItemProvenance,
 	createMemoryProfileItem,
@@ -65,6 +67,7 @@ type ParsedDurableMemory =
 			reason: string;
 	  };
 
+const MEANINGFUL_TURN_MIN_CHARS = 40;
 const GLOBAL_SCOPE: MemoryProfileScope = { type: "global" };
 
 function cleanText(value: string): string {
@@ -75,6 +78,13 @@ function stripTerminalPunctuation(value: string): string {
 	return cleanText(value)
 		.replace(/[.!?]+$/g, "")
 		.trim();
+}
+
+function splitSentences(text: string): string[] {
+	return text
+		.split(/(?<=[.!?])\s+/)
+		.map((s) => s.trim())
+		.filter((s) => s.length > 0);
 }
 
 function sentence(value: string): string {
@@ -169,6 +179,24 @@ function parsePreferenceStatement(
 		);
 	}
 
+	// Hungarian: Inkább ...
+	const inkabbMatch = /^inkább\s+(.+)$/iu.exec(text);
+	if (inkabbMatch?.[1]) {
+		return parsedStatement("preferences", text, parserRule);
+	}
+
+	// Hungarian: ... preferálok/preferálom
+	const hunPreferMatch = /^(.+)\s+preferál(?:ok|om|od|ol)$/iu.exec(text);
+	if (hunPreferMatch?.[1]) {
+		return parsedStatement("preferences", text, parserRule);
+	}
+
+	// Hungarian: ... szeretek/szeretem/szereted/szereti
+	const hunSzeretMatch = /^(.+)\s+szeret(?:ek|em|ed|i)$/iu.exec(text);
+	if (hunSzeretMatch?.[1]) {
+		return parsedStatement("preferences", text, parserRule);
+	}
+
 	return null;
 }
 
@@ -177,13 +205,21 @@ function parseWorkingStatement(
 	parserRule: string,
 ): ParsedStatement | null {
 	const match = /^i am working on\s+(.+)$/i.exec(text);
-	return match?.[1]
-		? parsedStatement(
-				"goals_ongoing_work",
-				`Working on ${lowerInitial(match[1])}`,
-				parserRule,
-			)
-		: null;
+	if (match?.[1]) {
+		return parsedStatement(
+			"goals_ongoing_work",
+			`Working on ${lowerInitial(match[1])}`,
+			parserRule,
+		);
+	}
+
+	// Hungarian: [subject](on/en/ön/ban/ben) dolgozom
+	const hunWorkMatch = /^(.+)(?:on|en|ön|ban|ben)\s+dolgozom$/iu.exec(text);
+	if (hunWorkMatch?.[1]) {
+		return parsedStatement("goals_ongoing_work", text, parserRule);
+	}
+
+	return null;
 }
 
 function parseConstraintStatement(
@@ -225,13 +261,27 @@ function parseConstraintStatement(
 	) {
 		return null;
 	}
-	return match?.[2]
-		? parsedStatement(
-				"constraints_boundaries",
-				`Do not ${lowerInitial(match[2])}`,
-				parserRule,
-			)
-		: null;
+	if (match?.[2]) {
+		return parsedStatement(
+			"constraints_boundaries",
+			`Do not ${lowerInitial(match[2])}`,
+			parserRule,
+		);
+	}
+
+	// Hungarian: Mindig ... (Always ...)
+	const hunAlwaysMatch = /^mindig\s+(.+)$/iu.exec(text);
+	if (hunAlwaysMatch?.[1]) {
+		return parsedStatement("constraints_boundaries", text, parserRule);
+	}
+
+	// Hungarian: Soha ne ... (Never ...)
+	const hunNeverMatch = /^soha\s+ne\s+(.+)$/iu.exec(text);
+	if (hunNeverMatch?.[1]) {
+		return parsedStatement("constraints_boundaries", text, parserRule);
+	}
+
+	return null;
 }
 
 function parseStableSelfStatement(
@@ -240,6 +290,11 @@ function parseStableSelfStatement(
 ): ParsedStatement | null {
 	if (looksTemporaryOrSpeculative(text)) return null;
 
+	const lang = detectLanguage(text);
+
+	// English patterns always tried first — they are specific enough not to
+	// match Hungarian self-statement structures (Hungarian does not use "I",
+	// "my", etc. as sentence starters for these patterns).
 	if (
 		/^i\s+(?:live|reside)\s+in\s+.+$/i.test(text) ||
 		/^i\s+am\s+(?:based|located)\s+in\s+.+$/i.test(text) ||
@@ -261,11 +316,27 @@ function parseStableSelfStatement(
 		return parsedStatement("about_you", text, parserRule);
 	}
 
+	// Hungarian patterns only when language is detected as Hungarian
+	if (lang === "hu") {
+		if (
+			// Location suffix + élek (e.g., "Budapesten élek")
+			/^[\p{L}]+(?:ban|ben|on|en|ön|n)\s+élek$/ui.test(text) ||
+			// Work: [article?] [name]-nál/-nél dolgozom (e.g., "A Google-nél dolgozom")
+			/^(?:a\s+)?[\p{L}\-.]+(?:nál|nél)\s+dolgozom$/ui.test(text) ||
+			// Name: A nevem ... (e.g., "A nevem Kovács János")
+			/^a\s+nevem\s+.+$/ui.test(text) ||
+			// Company/workplace: A cégem/A munkahelyem ...
+			/^(?:a\s+)?(?:cégem|munkahelyem)\s+(?:az\s+|a\s+)?.+$/ui.test(text)
+		) {
+			return parsedStatement("about_you", text, parserRule);
+		}
+	}
+
 	return null;
 }
 
 function looksTemporaryOrSpeculative(value: string): boolean {
-	return /\b(?:might|may|maybe|probably|possibly|thinking about|considering|today|tonight|tomorrow|this week|right now|for now|temporarily)\b/i.test(
+	return /\b(?:might|may|maybe|probably|possibly|thinking about|considering|today|tonight|tomorrow|this week|right now|for now|temporarily|talán|ma|holnap|most|ideiglenesen|esetleg|gondolom)\b/i.test(
 		value,
 	);
 }
@@ -345,9 +416,13 @@ export function parsePostTurnMemoryIntake(
 		};
 	}
 
-	const rememberMatch =
+	const enRememberMatch =
 		/^(?:please\s+)?remember(?:\s+that)?\s+(.+)$/i.exec(message) ??
 		/^can you remember(?:\s+that)?\s+(.+)$/i.exec(message);
+	const huRememberMatch =
+		/^(?:emlékezz\s+arra|jegyezd\s+meg|tartsd\s+észben)\s*,?\s+hogy\s+(.+)$/iu.exec(message);
+
+	const rememberMatch = enRememberMatch ?? huRememberMatch;
 	if (rememberMatch?.[1]) {
 		const candidate = rememberMatch[1];
 		const normalizedCandidate = normalizeExplicitMemoryCandidate(candidate);
@@ -386,6 +461,20 @@ export function parsePostTurnMemoryIntake(
 	);
 	if (directStatement) {
 		return { decision: "admit", ...directStatement };
+	}
+
+	// Sentence-level matching for multi-sentence messages
+	const sentences = splitSentences(message);
+	if (sentences.length > 1) {
+		for (const sentenceText of sentences) {
+			const sentenceStatement = statementFromCandidate(
+				sentenceText,
+				"direct_user_self_statement",
+			);
+			if (sentenceStatement) {
+				return { decision: "admit", ...sentenceStatement };
+			}
+		}
 	}
 
 	return { decision: "reject", reason: "no_explicit_durable_intent" };
@@ -560,6 +649,19 @@ export async function intakePostTurnMemory(
 			})
 		) {
 			return staleIntakeResult();
+		}
+		if (
+			parsed.reason === "no_explicit_durable_intent" &&
+			cleanText(params.userMessage).length >= MEANINGFUL_TURN_MIN_CHARS &&
+			!looksTemporaryOrSpeculative(params.userMessage)
+		) {
+			await markIntakeDirty({
+				intake: params,
+				resetGeneration,
+				reason: "deferred_intake",
+				status: "rejected",
+				scope: { type: "conversation", id: params.conversationId },
+			});
 		}
 		await recordIntakeTelemetry({
 			intake: params,

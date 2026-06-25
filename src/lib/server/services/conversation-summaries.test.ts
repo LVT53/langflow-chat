@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { unlinkSync } from "node:fs";
+import { readFileSync, unlinkSync } from "node:fs";
 import Database from "better-sqlite3";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
@@ -180,5 +180,15 @@ describe("conversation summaries", () => {
 				conversationId: "conv-1",
 			}),
 		).resolves.toBeNull();
+	});
+
+	it("includes stable facts or preferences instruction in the summary system prompt", () => {
+		const source = readFileSync(
+			"./src/lib/server/services/conversation-summaries.ts",
+			"utf-8",
+		);
+		expect(source).toContain(
+			"stable facts or preferences the user has expressed",
+		);
 	});
 });

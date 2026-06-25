@@ -287,8 +287,6 @@ async function runAtlasSendTurn({
 			contextTraceSections: [],
 			persistenceMode: "strict",
 			waitForEvidenceBeforePostTurnTasks: false,
-			skipAssistantProseMemoryIntake: true,
-			skipHonchoEnrichment: true,
 		});
 		if (completion.userMessage?.id) {
 			await snapshotAtlasLinkedSources({

@@ -765,9 +765,19 @@ describe("memory intake gate", () => {
 		const profile = await getMemoryProfileReadModel({ userId: "user-1" });
 		expect(profile.categories.flatMap((group) => group.items)).toEqual([]);
 		expect(profile.review.visibleItems).toEqual([]);
-		expect(await listPendingMemoryDirtyEntries({ userId: "user-1" })).toEqual(
-			[],
-		);
+		const dirty = await listPendingMemoryDirtyEntries({ userId: "user-1" });
+		expect(dirty).toEqual([
+			expect.objectContaining({
+				reason: "deferred_intake",
+				scope: { type: "conversation", id: "conv-1" },
+				metadata: expect.objectContaining({
+					intakeStatus: "rejected",
+					conversationId: "conv-1",
+				}),
+			}),
+		]);
+		expect(JSON.stringify(dirty)).not.toContain("vendor contract");
+		expect(JSON.stringify(dirty)).not.toContain("30 June");
 		const telemetry = await listMemoryReworkTelemetry({ userId: "user-1" });
 		expect(telemetry).toEqual([
 			expect.objectContaining({
@@ -1202,5 +1212,241 @@ describe("memory intake gate", () => {
 				}),
 			}),
 		]);
+	});
+
+	it("marks deferred_intake for a substantive rejected turn", async () => {
+		const { listPendingMemoryDirtyEntries } = await import("./index");
+		const { intakePostTurnMemory } = await import("./intake");
+
+		const result = await intakePostTurnMemory({
+			userId: "user-1",
+			conversationId: "conv-deferred-1",
+			userMessage:
+				"Can you explain the difference between React and Vue? I've been using Vue for years.",
+			userMessageId: "user-message-deferred-substantive",
+		});
+		expect(result).toEqual({
+			status: "rejected",
+			reason: "no_explicit_durable_intent",
+		});
+
+		const dirty = await listPendingMemoryDirtyEntries({ userId: "user-1" });
+		expect(dirty).toEqual([
+			expect.objectContaining({
+				reason: "deferred_intake",
+				scope: { type: "conversation", id: "conv-deferred-1" },
+				metadata: expect.objectContaining({
+					intakeStatus: "rejected",
+					conversationId: "conv-deferred-1",
+				}),
+			}),
+		]);
+		expect(JSON.stringify(dirty)).not.toContain("React");
+		expect(JSON.stringify(dirty)).not.toContain("Vue");
+	});
+
+	it("does not mark deferred_intake for trivial rejected turns", async () => {
+		const { listPendingMemoryDirtyEntries } = await import("./index");
+		const { intakePostTurnMemory } = await import("./intake");
+
+		await intakePostTurnMemory({
+			userId: "user-1",
+			conversationId: "conv-trivial",
+			userMessage: "ok",
+			userMessageId: "user-message-trivial-ok",
+		});
+		await intakePostTurnMemory({
+			userId: "user-1",
+			conversationId: "conv-trivial",
+			userMessage: "thanks",
+			userMessageId: "user-message-trivial-thanks",
+		});
+		await intakePostTurnMemory({
+			userId: "user-1",
+			conversationId: "conv-trivial",
+			userMessage: "make this shorter",
+			userMessageId: "user-message-trivial-shorter",
+		});
+
+		expect(
+			await listPendingMemoryDirtyEntries({ userId: "user-1" }),
+		).toEqual([]);
+	});
+
+	it("does not mark deferred_intake for speculative rejected turns", async () => {
+		const { listPendingMemoryDirtyEntries } = await import("./index");
+		const { intakePostTurnMemory } = await import("./intake");
+
+		const result = await intakePostTurnMemory({
+			userId: "user-1",
+			conversationId: "conv-speculative",
+			userMessage:
+				"Today I am debugging the memory intake gate.",
+			userMessageId: "user-message-speculative",
+		});
+		expect(result).toEqual({
+			status: "rejected",
+			reason: "no_explicit_durable_intent",
+		});
+
+		expect(
+			await listPendingMemoryDirtyEntries({ userId: "user-1" }),
+		).toEqual([]);
+	});
+
+	it("coalesces repeated substantive deferred_intake entries in the same conversation", async () => {
+		const { listPendingMemoryDirtyEntries } = await import("./index");
+		const { intakePostTurnMemory } = await import("./intake");
+
+		const first = await intakePostTurnMemory({
+			userId: "user-1",
+			conversationId: "conv-coalesce",
+			userMessage:
+				"Can you explain the difference between React and Vue? I've been using Vue for years.",
+			userMessageId: "user-message-coalesce-1",
+		});
+		expect(first).toEqual({
+			status: "rejected",
+			reason: "no_explicit_durable_intent",
+		});
+
+		const second = await intakePostTurnMemory({
+			userId: "user-1",
+			conversationId: "conv-coalesce",
+			userMessage:
+				"What do you think about TypeScript versus JavaScript for large projects?",
+			userMessageId: "user-message-coalesce-2",
+		});
+		expect(second).toEqual({
+			status: "rejected",
+			reason: "no_explicit_durable_intent",
+		});
+
+		const dirty = await listPendingMemoryDirtyEntries({ userId: "user-1" });
+		expect(dirty).toEqual([
+			expect.objectContaining({
+				reason: "deferred_intake",
+				scope: { type: "conversation", id: "conv-coalesce" },
+				count: 2,
+				metadata: expect.objectContaining({
+					intakeStatus: "rejected",
+					conversationId: "conv-coalesce",
+				}),
+			}),
+		]);
+	});
+});
+
+describe("parsePostTurnMemoryIntake sentence-level and Hungarian", () => {
+	it("admits a self-statement embedded in a multi-sentence English message", async () => {
+		const { parsePostTurnMemoryIntake } = await import("./intake");
+		const result = parsePostTurnMemoryIntake(
+			"Can you help me? I live in Amsterdam.",
+		);
+		expect(result).toEqual(
+			expect.objectContaining({
+				decision: "admit",
+				category: "about_you",
+				parserRule: "direct_user_self_statement",
+			}),
+		);
+	});
+
+	it("admits a Hungarian self-statement without an explicit remember command", async () => {
+		const { parsePostTurnMemoryIntake } = await import("./intake");
+
+		const result = parsePostTurnMemoryIntake("Budapesten élek.");
+		expect(result).toEqual(
+			expect.objectContaining({
+				decision: "admit",
+				category: "about_you",
+			}),
+		);
+	});
+
+	it("admits a Hungarian name statement", async () => {
+		const { parsePostTurnMemoryIntake } = await import("./intake");
+
+		const result = parsePostTurnMemoryIntake("A nevem Kovács János.");
+		expect(result).toEqual(
+			expect.objectContaining({
+				decision: "admit",
+				category: "about_you",
+			}),
+		);
+	});
+
+	it("admits a Hungarian workplace self-statement", async () => {
+		const { parsePostTurnMemoryIntake } = await import("./intake");
+
+		const result = parsePostTurnMemoryIntake("A Google-nél dolgozom.");
+		expect(result).toEqual(
+			expect.objectContaining({
+				decision: "admit",
+				category: "about_you",
+			}),
+		);
+	});
+
+	it("admits a Hungarian remembered preference via Emlékezz arra, hogy", async () => {
+		const { parsePostTurnMemoryIntake } = await import("./intake");
+
+		const result = parsePostTurnMemoryIntake(
+			"Emlékezz arra, hogy sötét módot preferálok.",
+		);
+		expect(result).toEqual(
+			expect.objectContaining({
+				decision: "admit",
+				category: "preferences",
+			}),
+		);
+	});
+
+	it("admits a Hungarian constraint via Soha ne", async () => {
+		const { parsePostTurnMemoryIntake } = await import("./intake");
+
+		const result = parsePostTurnMemoryIntake(
+			"Soha ne használj JSON formátumot.",
+		);
+		expect(result).toEqual(
+			expect.objectContaining({
+				decision: "admit",
+				category: "constraints_boundaries",
+			}),
+		);
+	});
+
+	it("admits a Hungarian ongoing work statement via dolgozom", async () => {
+		const { parsePostTurnMemoryIntake } = await import("./intake");
+
+		const result = parsePostTurnMemoryIntake("Egy új projekten dolgozom.");
+		expect(result).toEqual(
+			expect.objectContaining({
+				decision: "admit",
+				category: "goals_ongoing_work",
+			}),
+		);
+	});
+
+	it("rejects a Hungarian self-statement with speculative prefix", async () => {
+		const { parsePostTurnMemoryIntake } = await import("./intake");
+
+		const result = parsePostTurnMemoryIntake("Talán Budapesten élek.");
+		expect(result).toEqual(
+			expect.objectContaining({
+				decision: "reject",
+			}),
+		);
+	});
+
+	it("rejects a bare one-off instruction in English", async () => {
+		const { parsePostTurnMemoryIntake } = await import("./intake");
+
+		const result = parsePostTurnMemoryIntake("Make this shorter");
+		expect(result).toEqual(
+			expect.objectContaining({
+				decision: "reject",
+			}),
+		);
 	});
 });
