@@ -202,8 +202,57 @@ export class AtlasPipelineQualityError extends Error {
 	}
 }
 
-function hasCriticalAuditFinding(markers: AtlasHonestyMarker[]): boolean {
-	return markers.some((marker) => marker.severity === "critical");
+/**
+ * Critical marker codes that represent a structurally broken report (e.g. no
+ * sources at all).  These warrant throwing away the entire job because the
+ * output cannot be trusted regardless of what the writer produced.
+ *
+ * Model-generated critical markers (e.g. `multiplier_mismatch`,
+ * `misleading_comparison`) are NOT included here — those flag specific
+ * claim-level issues that the audit addendum already surfaces as limitations.
+ * Throwing the whole job away for a single model-generated critical marker
+ * wastes a full research run and leaves the user with no report at all.
+ */
+const STRUCTURAL_CRITICAL_MARKER_CODES = new Set(["atlas_no_sources"]);
+
+function hasStructuralCriticalAuditFinding(
+	markers: AtlasHonestyMarker[],
+): boolean {
+	return markers.some(
+		(marker) =>
+			marker.severity === "critical" &&
+			STRUCTURAL_CRITICAL_MARKER_CODES.has(marker.code),
+	);
+}
+
+/**
+ * Downgrade non-structural critical audit markers to warnings so the pipeline
+ * can proceed to render with the audit addendum already appended.  Structural
+ * critical markers (e.g. `atlas_no_sources`) are preserved as-is and will
+ * cause the pipeline to throw via {@link hasStructuralCriticalAuditFinding}.
+ */
+function downgradeNonStructuralCriticalMarkers(
+	markers: AtlasHonestyMarker[],
+): AtlasHonestyMarker[] {
+	const downgraded: AtlasHonestyMarker[] = [];
+	let hasNonStructuralCritical = false;
+	for (const marker of markers) {
+		if (
+			marker.severity === "critical" &&
+			!STRUCTURAL_CRITICAL_MARKER_CODES.has(marker.code)
+		) {
+			hasNonStructuralCritical = true;
+			downgraded.push({ ...marker, severity: "warning" });
+		} else {
+			downgraded.push(marker);
+		}
+	}
+	if (hasNonStructuralCritical) {
+		console.warn(
+			"[ATLAS] Downgraded non-structural critical audit markers to warnings — proceeding to render with audit addendum",
+		);
+	}
+	return downgraded;
 }
 
 function localSourceProjectionFallback(
@@ -3033,9 +3082,13 @@ export async function runAtlasPipeline(
 		});
 	}
 
-	if (hasCriticalAuditFinding(audit.honestyMarkers)) {
+	if (hasStructuralCriticalAuditFinding(audit.honestyMarkers)) {
 		throw new AtlasPipelineQualityError(audit.honestyMarkers);
 	}
+	audit = {
+		...audit,
+		honestyMarkers: downgradeNonStructuralCriticalMarkers(audit.honestyMarkers),
+	};
 
 	await input.dependencies.heartbeat?.({
 		stage: "render",

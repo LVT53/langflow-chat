@@ -6330,7 +6330,7 @@ describe("Atlas pipeline slices", () => {
 		);
 	});
 
-	it("fails the pipeline instead of rendering outputs when the audit gate has critical markers", async () => {
+	it("fails the pipeline instead of rendering outputs when the audit gate has structural critical markers (atlas_no_sources)", async () => {
 		const { AtlasPipelineQualityError } = await import("./pipeline");
 		const writeCheckpoint = vi.fn(async () => {});
 		const renderOutputs = vi.fn(async () => ({
@@ -6408,6 +6408,114 @@ describe("Atlas pipeline slices", () => {
 			}),
 		);
 		expect(renderOutputs).not.toHaveBeenCalled();
+	});
+
+	it("proceeds to render when the audit gate has non-structural critical markers (model-generated)", async () => {
+		const renderOutputs = vi.fn(async () => ({
+			fileProductionJobId: "fp-job-1",
+			htmlChatGeneratedFileId: "file-html",
+			pdfChatGeneratedFileId: "file-pdf",
+			markdownChatGeneratedFileId: "file-md",
+		}));
+
+		const result = await runAtlasPipelineWithNoopReranker({
+			job: {
+				id: "atlas-model-critical",
+				userId: "user-1",
+				conversationId: "conv-1",
+				assistantMessageId: "assistant-1",
+				action: "create",
+				parentAtlasJobId: null,
+				profile: "in-depth",
+				title: "Report with model critical markers",
+				query: "Compare products with different multipliers",
+				lifecycle: {
+					family: {
+						familyId: "atlas-model-critical",
+						mode: "new_family",
+						action: "create",
+						rootAtlasJobId: "atlas-model-critical",
+						currentAtlasJobId: "atlas-model-critical",
+						parentAtlasJobId: null,
+						forkedFromAtlasJobId: null,
+					},
+					seed: null,
+				},
+			},
+			dependencies: {
+				resolveSources: vi.fn(async () => ({ localSources: [] })),
+				searchWeb: vi.fn(async () => ({
+					sources: [
+						{
+							id: "src-1",
+							title: "Source A",
+							url: "https://example.com/a",
+							snippet: "Relevant snippet",
+							relevanceScore: 0.9,
+							selected: true,
+						},
+					],
+					limitation: null,
+				})),
+				runModelStage: vi.fn(async (input) => ({
+					text:
+						input.stage === "decompose"
+							? "Compare products"
+							: `${input.stage} result`,
+					usage: {
+						inputTokens: 1,
+						outputTokens: 1,
+						totalTokens: 2,
+						costUsdMicros: 1,
+					},
+				})),
+				auditBasis: vi.fn(async () => ({
+					passed: false,
+					honestyMarkers: [
+						{
+							code: "multiplier_mismatch",
+							message:
+								"Report compares values with different unit multipliers.",
+							severity: "critical" as const,
+						},
+						{
+							code: "misleading_comparison",
+							message: "Comparison between unrelated metrics is misleading.",
+							severity: "critical" as const,
+						},
+						{
+							code: "atlas_claim_partial",
+							message: "Some claims only have partial evidence support.",
+							severity: "warning" as const,
+						},
+					],
+					retryRequested: false,
+					usage: {
+						inputTokens: 100,
+						outputTokens: 50,
+						totalTokens: 150,
+						costUsdMicros: 10,
+					},
+				})),
+				writeCheckpoint: vi.fn(async () => {}),
+				renderOutputs,
+			},
+		});
+
+		expect(result.status).toBe("succeeded");
+		expect(renderOutputs).toHaveBeenCalled();
+		const downgradedMarkers = result.audit?.honestyMarkers ?? [];
+		const stillCritical = downgradedMarkers.filter(
+			(m: { severity: string }) => m.severity === "critical",
+		);
+		expect(stillCritical).toHaveLength(0);
+		const asWarnings = downgradedMarkers.filter(
+			(m: { code: string; severity: string }) =>
+				(m.code === "multiplier_mismatch" ||
+					m.code === "misleading_comparison") &&
+				m.severity === "warning",
+		);
+		expect(asWarnings.length).toBeGreaterThanOrEqual(2);
 	});
 
 	it("detects Hungarian Atlas requests and carries that language through stage prompts and audit", async () => {
