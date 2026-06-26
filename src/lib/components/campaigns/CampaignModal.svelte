@@ -630,7 +630,7 @@ onDestroy(() => {
 		border-radius: 6px;
 		color: var(--text-muted);
 		font-size: 1.25rem;
-		line-height: 0;
+		line-height: 1;
 		transition:
 			background 0.15s ease,
 			color 0.15s ease;
