@@ -163,6 +163,54 @@ describe("Atlas renderer output", () => {
 		});
 	});
 
+	it("converts confidence-marker paragraphs that follow headings into callout blocks", async () => {
+		const { buildAtlasDocumentSource } = await import("./renderer-output");
+
+		const source = buildAtlasDocumentSource({
+			title: "Test Confidence Markers",
+			assembledMarkdown:
+				"## Analysis\n\n✅ Confirmed: This fact is verified by official sources.\n\n⚠️ Unverified: This claim fluctuates year to year.\n\n## Other Section\n\nRegular paragraph with no marker.",
+			sources: [],
+			honestyMarkers: [],
+		});
+
+		const analysisHeadingIndex = source.blocks.findIndex(
+			(block) => block.type === "heading" && block.text === "Analysis",
+		);
+		expect(analysisHeadingIndex).toBeGreaterThanOrEqual(0);
+
+		const confirmedCallout = source.blocks[analysisHeadingIndex + 1];
+		expect(confirmedCallout?.type).toBe("callout");
+		if (confirmedCallout?.type === "callout") {
+			expect(confirmedCallout.title).toBe("✅ Confirmed");
+			expect(confirmedCallout.tone).toBe("tip");
+			expect(confirmedCallout.text).toBe(
+				"This fact is verified by official sources.",
+			);
+		}
+
+		const unverifiedCallout = source.blocks[analysisHeadingIndex + 2];
+		expect(unverifiedCallout?.type).toBe("callout");
+		if (unverifiedCallout?.type === "callout") {
+			expect(unverifiedCallout.title).toBe("⚠️ Unverified");
+			expect(unverifiedCallout.tone).toBe("warning");
+			expect(unverifiedCallout.text).toBe(
+				"This claim fluctuates year to year.",
+			);
+		}
+
+		// Regular paragraph after "Other Section" heading should remain unchanged
+		const otherHeadingIndex = source.blocks.findIndex(
+			(block) => block.type === "heading" && block.text === "Other Section",
+		);
+		expect(otherHeadingIndex).toBeGreaterThanOrEqual(0);
+		const regularParagraph = source.blocks[otherHeadingIndex + 1];
+		expect(regularParagraph?.type).toBe("paragraph");
+		if (regularParagraph?.type === "paragraph") {
+			expect(regularParagraph.text).toBe("Regular paragraph with no marker.");
+		}
+	});
+
 	it("converts Atlas Markdown into semantic document blocks for rendered HTML and PDF", async () => {
 		const { buildAtlasDocumentSource } = await import("./renderer-output");
 
@@ -2615,5 +2663,34 @@ describe("sanitizeMarkdownForLexer", () => {
 		const sanitized = sanitizeMarkdownForLexer("## This is a heading");
 		const tokens = marked.lexer(sanitized, { gfm: true });
 		expect(tokens.some((t) => t.type === "heading")).toBe(true);
+	});
+
+	it("escapes stray pipe-delimited line without table separator so marked.lexer sees a paragraph", async () => {
+		const { sanitizeMarkdownForLexer } = await import("./renderer-output");
+		const sanitized = sanitizeMarkdownForLexer(
+			"| 2 H5 & 4 O6/H7 in six Leaving Certificate subjects | ✅ Confirmed | Official TUS course page |",
+		);
+		const tokens = marked.lexer(sanitized, { gfm: true });
+		expect(tokens.some((t) => t.type === "table")).toBe(false);
+		expect(tokens.some((t) => t.type === "paragraph")).toBe(true);
+	});
+
+	it("preserves valid GFM table with separator row so marked.lexer produces a table", async () => {
+		const { sanitizeMarkdownForLexer } = await import("./renderer-output");
+		const sanitized = sanitizeMarkdownForLexer(
+			"| Requirement | Confidence | Source |\n|---|---|---|\n| 2 H5 & 4 O6/H7 | ✅ Confirmed | TUS page |",
+		);
+		const tokens = marked.lexer(sanitized, { gfm: true });
+		expect(tokens.some((t) => t.type === "table")).toBe(true);
+	});
+
+	it("preserves valid GFM table with separator on adjacent line", async () => {
+		const { sanitizeMarkdownForLexer } = await import("./renderer-output");
+		const sanitized = sanitizeMarkdownForLexer(
+			"Before text.\n\n| Col A | Col B |\n|---|---|\n| Data 1 | Data 2 |\n\nAfter text.",
+		);
+		const tokens = marked.lexer(sanitized, { gfm: true });
+		expect(tokens.some((t) => t.type === "table")).toBe(true);
+		expect(tokens.some((t) => t.type === "paragraph")).toBe(true);
 	});
 });

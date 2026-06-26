@@ -399,7 +399,7 @@ function makeColumnKey(
 
 /**
  * Applies bounded sanitization to model-generated markdown before it reaches
- * {@link https://github.com/markedjs/marked | marked.lexer()}.  Only three
+ * {@link https://github.com/markedjs/marked | marked.lexer()}.  Four
  * accidental-syntax patterns are escaped:
  *
  * 1. Stray `>` at line start that is **not** part of a consecutive blockquote
@@ -408,13 +408,34 @@ function makeColumnKey(
  *    paragraphs (no blank line above or below).
  * 3. `#` at line start that does **not** match the heading pattern
  *    `^#{1,6}\s`.
+ * 4. Stray `|` characters that look like table rows but are **not** part of a
+ *    valid GFM table (no separator row `---|---|` within 2 lines).
  *
- * Intentional blockquotes, headings, and horizontal rules with proper blank‑line
- * separation are left unchanged.
+ * Intentional blockquotes, headings, tables, and horizontal rules with proper
+ * blank‑line separation are left unchanged.
  */
 export function sanitizeMarkdownForLexer(markdown: string): string {
 	const lines = markdown.split("\n");
 	const result: string[] = [];
+
+	const hasTableSeparatorNearby = (lineIndex: number): boolean => {
+		const separatorRe = /^\s*\|?\s*:?-{3,}:?\s*\|/;
+		// Search backward to the nearest blank line or non-pipe line
+		for (let idx = lineIndex - 1; idx >= 0; idx--) {
+			const l = lines[idx].trim();
+			if (l === "") break;
+			if (separatorRe.test(lines[idx])) return true;
+			if (!l.startsWith("|")) break;
+		}
+		// Search forward to the nearest blank line or non-pipe line
+		for (let idx = lineIndex + 1; idx < lines.length; idx++) {
+			const l = lines[idx].trim();
+			if (l === "") break;
+			if (separatorRe.test(lines[idx])) return true;
+			if (!l.startsWith("|")) break;
+		}
+		return false;
+	};
 
 	for (let i = 0; i < lines.length; i++) {
 		let line = lines[i];
@@ -443,6 +464,15 @@ export function sanitizeMarkdownForLexer(markdown: string): string {
 			line = `\\${line}`;
 		}
 
+		if (
+			line.includes("|") &&
+			!/^\s*\|?\s*:?-{3,}:?\s*\|/.test(line) &&
+			!hasTableSeparatorNearby(i) &&
+			line.trimStart().startsWith("|")
+		) {
+			line = `\\${line}`;
+		}
+
 		result.push(line);
 	}
 
@@ -461,6 +491,73 @@ function findNextNonBlankLine(lines: string[], currentIndex: number): number {
 		if (lines[i].trim() !== "") return i;
 	}
 	return -1;
+}
+
+const CONFIDENCE_MARKER_PATTERNS: Array<{
+	pattern: RegExp;
+	label: string;
+	tone: "tip" | "warning" | "info";
+}> = [
+	{ pattern: /^✅\s*Confirmed\b/i, label: "✅ Confirmed", tone: "tip" },
+	{ pattern: /^✅\s*Megerősítve\b/i, label: "✅ Megerősítve", tone: "tip" },
+	{ pattern: /^⚠️\s*Unverified\b/i, label: "⚠️ Unverified", tone: "warning" },
+	{
+		pattern: /^⚠️\s*Nem\s+ellenőrzött\b/i,
+		label: "⚠️ Nem ellenőrzött",
+		tone: "warning",
+	},
+	{
+		pattern: /^⚠️\s*Partially\s+(?:Confirmed|Verified)\b/i,
+		label: "⚠️ Partially Confirmed",
+		tone: "warning",
+	},
+	{
+		pattern: /^⚠️\s*Részben\s+(?:megerősítve|ellenőrzött)\b/i,
+		label: "⚠️ Részben megerősítve",
+		tone: "warning",
+	},
+	{
+		pattern: /^❌\s*(?:Unsupported|Not\s+verified)\b/i,
+		label: "❌ Unsupported",
+		tone: "warning",
+	},
+	{
+		pattern: /^❌\s*(?:Nem\s+támogatott|Nem\s+ellenőrzött)\b/i,
+		label: "❌ Nem támogatott",
+		tone: "warning",
+	},
+];
+
+function convertConfidenceParagraphsAfterHeadings(
+	blocks: GeneratedDocumentSource["blocks"],
+): void {
+	for (let i = 1; i < blocks.length; i++) {
+		const prev = blocks[i - 1];
+		const current = blocks[i];
+
+		const followsHeadingOrCallout =
+			prev?.type === "heading" || prev?.type === "callout";
+
+		if (!followsHeadingOrCallout || current?.type !== "paragraph") {
+			continue;
+		}
+
+		for (const entry of CONFIDENCE_MARKER_PATTERNS) {
+			if (entry.pattern.test(current.text)) {
+				const remainingText = current.text
+					.replace(entry.pattern, "")
+					.replace(/^[:\s-]+/, "")
+					.trim();
+				blocks[i] = {
+					type: "callout",
+					tone: entry.tone,
+					title: entry.label,
+					text: remainingText || current.text,
+				};
+				break;
+			}
+		}
+	}
 }
 
 function appendMarkdownBlocks(
@@ -584,6 +681,8 @@ function appendMarkdownBlocks(
 			blocks.push({ type: "divider" });
 		}
 	}
+
+	convertConfidenceParagraphsAfterHeadings(blocks);
 }
 
 function valueAsNumber(value: GeneratedDocumentScalar): {
