@@ -138,7 +138,8 @@ async function runNormalChatModelBoundary(
 			model2: runtimeConfig.model2,
 		},
 	);
-	return model.runPlainNormalChatModelRun({
+
+	const stream = model.runStreamingNormalChatModelRun({
 		provider,
 		modelId: resolvedModelId,
 		runtimeConfig,
@@ -146,6 +147,41 @@ async function runNormalChatModelBoundary(
 		system: input.system,
 		maxOutputTokens: input.maxOutputTokens,
 	});
+
+	let text = "";
+	let finishReason: string | null = null;
+	let usage: AtlasNormalChatModelBoundaryResult["usage"];
+	let modelMeta: AtlasNormalChatModelBoundaryResult["model"];
+
+	for await (const event of stream) {
+		switch (event.type) {
+			case "text_delta":
+				text += event.text;
+				break;
+			case "usage":
+				usage = event.usage;
+				break;
+			case "finish":
+				finishReason = event.finishReason;
+				modelMeta = {
+					modelId: event.model.modelId,
+					providerId: event.model.providerId,
+					displayName: event.model.displayName,
+					requestedModelName: event.model.requestedModelName,
+					responseModelName: event.model.responseModelName,
+				};
+				break;
+			case "error":
+				throw new Error(event.error);
+		}
+	}
+
+	return {
+		text,
+		finishReason,
+		usage,
+		model: modelMeta,
+	};
 }
 
 export async function runAtlasModelStage(
