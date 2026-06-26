@@ -104,7 +104,9 @@ const progressPercent = $derived(
 const orbitDurationMs = $derived(
 	Math.max(833, Math.round(3750 - (progressPercent / 100) * 2917)),
 );
-let displayedOrbitMs = $state(3750);
+let orbitGroupEl = $state<SVGGElement | null>(null);
+let orbitAngle = 0;
+let orbitSpeed = 360 / 3750;
 const displayTitle = $derived(getProgressTitle(job));
 const downloadOptions = $derived(getDownloadOptions(job.outputs));
 
@@ -202,17 +204,25 @@ $effect(() => {
 });
 
 $effect(() => {
-	if (typeof window === "undefined") return;
-	const target = orbitDurationMs;
+	if (!orbitGroupEl || typeof window === "undefined") return;
+	if (
+		typeof window.matchMedia === "function" &&
+		window.matchMedia("(prefers-reduced-motion: reduce)").matches
+	) {
+		return;
+	}
+	const targetSpeed = 360 / orbitDurationMs;
 	let rafId = 0;
-	const lerp = 0.06;
-	function tick() {
-		const diff = target - displayedOrbitMs;
-		if (Math.abs(diff) < 5) {
-			displayedOrbitMs = target;
-			return;
+	let lastTime = 0;
+	function tick(time: number) {
+		if (lastTime === 0) lastTime = time;
+		const delta = time - lastTime;
+		lastTime = time;
+		orbitSpeed += (targetSpeed - orbitSpeed) * 0.04;
+		orbitAngle = (orbitAngle + orbitSpeed * delta) % 360;
+		if (orbitGroupEl) {
+			orbitGroupEl.style.transform = `rotate(${orbitAngle}deg)`;
 		}
-		displayedOrbitMs += diff * lerp;
 		rafId = requestAnimationFrame(tick);
 	}
 	rafId = requestAnimationFrame(tick);
@@ -477,9 +487,8 @@ function submitLifecycleAction() {
 					stroke-linecap="round"
 					stroke-linejoin="round"
 					aria-hidden="true"
-					style={`--atlas-orbit-duration: ${Math.round(displayedOrbitMs)}ms;`}
 				>
-					<g class="orbit-group">
+					<g class="orbit-group orbit-group--driven" bind:this={orbitGroupEl}>
 						<circle cx="28" cy="28" r="22" opacity="0.25"></circle>
 						<g transform="translate(28, 6)">
 							<path
@@ -755,6 +764,10 @@ function submitLifecycleAction() {
 		animation: atlas-orbit var(--atlas-orbit-duration, 2.6s) linear infinite;
 		transform-box: view-box;
 		transform-origin: 28px 28px;
+	}
+
+	.atlas-card__exploration-svg .orbit-group--driven {
+		animation: none;
 	}
 
 	.atlas-card__title-block {
@@ -1095,6 +1108,10 @@ function submitLifecycleAction() {
 		.atlas-card--completion-enter .atlas-card__mark--complete,
 		.atlas-card__exploration-svg .orbit-group {
 			animation: none;
+		}
+
+		.atlas-card__exploration-svg .orbit-group--driven {
+			transform: none !important;
 		}
 
 		.atlas-card__open,

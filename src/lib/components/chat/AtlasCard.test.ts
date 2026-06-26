@@ -100,9 +100,7 @@ describe("AtlasCard", () => {
 
 		const icon = screen.getByTestId("atlas-progress-cycle-icon");
 		expect(icon).toHaveClass("atlas-card__exploration-svg");
-		expect(icon.getAttribute("style") ?? "").toContain(
-			"--atlas-orbit-duration:",
-		);
+		expect(icon.querySelector(".orbit-group--driven")).toBeTruthy();
 	});
 
 	it("renders an animated exploration icon for running Atlas jobs", () => {
@@ -121,10 +119,7 @@ describe("AtlasCard", () => {
 		expect(progressIcon).toHaveClass("atlas-card__exploration-svg");
 		expect(progressIcon).toHaveAttribute("width", "56");
 		expect(progressIcon).toHaveAttribute("height", "56");
-		expect(progressIcon.getAttribute("style") ?? "").toContain(
-			"--atlas-orbit-duration:",
-		);
-		expect(progressIcon.querySelector(".orbit-group")).toBeTruthy();
+		expect(progressIcon.querySelector(".orbit-group--driven")).toBeTruthy();
 		expect(
 			screen.queryByTestId("atlas-exploration-svg"),
 		).not.toBeInTheDocument();
