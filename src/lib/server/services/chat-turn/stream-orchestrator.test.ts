@@ -5,7 +5,11 @@ import {
 	requestActiveChatStreamStop,
 	unregisterActiveChatStream,
 } from "$lib/server/services/chat-turn/active-streams";
-import { runChatStreamOrchestrator } from "./stream-orchestrator";
+import { getCurrentMemoryResetGeneration } from "$lib/server/services/memory-profile";
+import {
+	runChatStreamOrchestrator,
+	startStartedResetGenerationFact,
+} from "./stream-orchestrator";
 import type { ChatTurnPreflight } from "./types";
 
 vi.mock("$lib/server/config-store", () => ({
@@ -43,6 +47,10 @@ vi.mock("$lib/server/services/chat-turn/plain-normal-chat-model-run", () => ({
 vi.mock("$lib/server/services/messages", () => ({
 	createMessage: vi.fn().mockResolvedValue({ id: "msg-1" }),
 	listConversationMessagesForExport: vi.fn(() => Promise.resolve([])),
+}));
+
+vi.mock("$lib/server/services/memory-profile", () => ({
+	getCurrentMemoryResetGeneration: vi.fn(() => Promise.resolve(0)),
 }));
 
 vi.mock("$lib/server/services/task-state", () => ({
@@ -156,6 +164,16 @@ async function readSseResponse(response: Response): Promise<string[]> {
 	}
 	if (buffer.trim()) chunks.push(buffer);
 	return chunks;
+}
+
+async function readNextSseChunk(
+	reader: ReadableStreamDefaultReader<Uint8Array>,
+): Promise<string> {
+	const { done, value } = await reader.read();
+	if (done || !value) {
+		throw new Error("Expected another SSE chunk");
+	}
+	return new TextDecoder().decode(value);
 }
 
 function parseUiStreamParts(
@@ -274,9 +292,11 @@ async function resetCompletionMocks() {
 	} = await import("$lib/server/services/chat-turn/finalize");
 	const { getChatFilesForAssistantMessage, syncGeneratedFilesToMemory } =
 		await import("$lib/server/services/chat-files");
-	const { submitFileProductionIntake } = await import(
-		"$lib/server/services/file-production"
-	);
+	const {
+		assignFileProductionJobsToAssistantMessage,
+		listConversationFileProductionJobs,
+		submitFileProductionIntake,
+	} = await import("$lib/server/services/file-production");
 	const { estimateTokenCount } = await import("$lib/utils/tokens");
 
 	(touchConversation as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
@@ -305,6 +325,12 @@ async function resetCompletionMocks() {
 	(syncGeneratedFilesToMemory as ReturnType<typeof vi.fn>).mockResolvedValue(
 		undefined,
 	);
+	(
+		assignFileProductionJobsToAssistantMessage as ReturnType<typeof vi.fn>
+	).mockResolvedValue(undefined);
+	(
+		listConversationFileProductionJobs as ReturnType<typeof vi.fn>
+	).mockResolvedValue([]);
 	(submitFileProductionIntake as ReturnType<typeof vi.fn>).mockResolvedValue({
 		ok: true,
 		status: 202,
@@ -372,6 +398,115 @@ describe("stream-orchestrator SSE contract", () => {
 				signal: expect.any(AbortSignal),
 			}),
 		);
+	});
+
+	it("starts the Memory Reset Generation fact with an immediate rejection handler", async () => {
+		const startedError = new Error("reset generation failed");
+		let rejectStartedGeneration!: (reason: unknown) => void;
+		const startedGeneration = new Promise<number>((_resolve, reject) => {
+			rejectStartedGeneration = reject;
+		});
+		const catchSpy = vi.spyOn(startedGeneration, "catch");
+		(
+			getCurrentMemoryResetGeneration as ReturnType<typeof vi.fn>
+		).mockReturnValueOnce(startedGeneration);
+
+		const fact = startStartedResetGenerationFact("u1");
+
+		expect(getCurrentMemoryResetGeneration).toHaveBeenCalledWith("u1");
+		expect(fact).toBe(startedGeneration);
+		expect(catchSpy).toHaveBeenCalledWith(expect.any(Function));
+
+		rejectStartedGeneration(startedError);
+		await expect(fact).rejects.toBe(startedError);
+	});
+
+	it("does not let a slow file-production start snapshot block context/model startup", async () => {
+		const { runStreamingNormalChatSendModel } = await import(
+			"$lib/server/services/chat-turn/streaming-normal-chat-model-run"
+		);
+		const { listConversationFileProductionJobs } = await import(
+			"$lib/server/services/file-production"
+		);
+		let resolveSnapshot!: (jobs: Array<{ id: string }>) => void;
+		let snapshotResolved = false;
+		const slowSnapshot = new Promise<Array<{ id: string }>>((resolve) => {
+			resolveSnapshot = (jobs) => {
+				snapshotResolved = true;
+				resolve(jobs);
+			};
+		});
+		(
+			listConversationFileProductionJobs as ReturnType<typeof vi.fn>
+		).mockReturnValueOnce(slowSnapshot);
+		(
+			runStreamingNormalChatSendModel as ReturnType<typeof vi.fn>
+		).mockResolvedValue(
+			createNeutralStreamingResult([
+				{ type: "text_delta", text: "Hi" },
+				finishEvent,
+			]),
+		);
+
+		const response = runStream({
+			conversationId: "slow-snapshot-conv",
+			streamId: "slow-snapshot-stream",
+		});
+		const reader = response.body?.getReader();
+		if (!reader) throw new Error("Missing response body");
+
+		try {
+			const initialChunks = [
+				await readNextSseChunk(reader),
+				await readNextSseChunk(reader),
+			].join("\n\n");
+
+			expect(initialChunks).toContain(":");
+			expect(initialChunks).toContain("depth-selected");
+			expect(listConversationFileProductionJobs).toHaveBeenCalledWith(
+				"u1",
+				"slow-snapshot-conv",
+			);
+			await vi.waitFor(
+				() => expect(runStreamingNormalChatSendModel).toHaveBeenCalled(),
+				{ timeout: 100 },
+			);
+		} finally {
+			if (!snapshotResolved) {
+				resolveSnapshot([]);
+			}
+			await reader.cancel().catch(() => undefined);
+		}
+	});
+
+	it("handles a rejected hot file-production start snapshot when no file tool runs", async () => {
+		const { runStreamingNormalChatSendModel } = await import(
+			"$lib/server/services/chat-turn/streaming-normal-chat-model-run"
+		);
+		const {
+			assignFileProductionJobsToAssistantMessage,
+			listConversationFileProductionJobs,
+		} = await import("$lib/server/services/file-production");
+		(
+			listConversationFileProductionJobs as ReturnType<typeof vi.fn>
+		).mockReturnValueOnce(Promise.reject(new Error("snapshot failed")));
+		(
+			runStreamingNormalChatSendModel as ReturnType<typeof vi.fn>
+		).mockResolvedValue(
+			createNeutralStreamingResult([
+				{ type: "text_delta", text: "Hi" },
+				finishEvent,
+			]),
+		);
+
+		const response = runStream({
+			conversationId: "rejected-snapshot-conv",
+			streamId: "rejected-snapshot-stream",
+		});
+		const chunks = await readSseResponse(response);
+
+		expect(chunks.join("\n\n")).toContain("Hi");
+		expect(assignFileProductionJobsToAssistantMessage).not.toHaveBeenCalled();
 	});
 
 	it("emits response activity milestones for depth, context preparation, and drafting", async () => {

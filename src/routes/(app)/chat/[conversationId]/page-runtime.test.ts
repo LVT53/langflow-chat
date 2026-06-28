@@ -387,8 +387,40 @@ function renderPage(data = pageData()) {
 	});
 }
 
+type AnimationFrameTimer = number;
+
+let animationFrameId = 0;
+let animationFrameTimers = new Map<number, AnimationFrameTimer>();
+
+function installAnimationFrameMock() {
+	animationFrameTimers.clear();
+	vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+		const frameId = ++animationFrameId;
+		const timerId = window.setTimeout(() => {
+			animationFrameTimers.delete(frameId);
+			callback(window.performance.now());
+		}, 16);
+		animationFrameTimers.set(frameId, timerId);
+		return frameId;
+	});
+	vi.spyOn(window, "cancelAnimationFrame").mockImplementation((frameId) => {
+		const timerId = animationFrameTimers.get(frameId);
+		if (timerId === undefined) return;
+		window.clearTimeout(timerId);
+		animationFrameTimers.delete(frameId);
+	});
+}
+
+function clearAnimationFrameMockTimers() {
+	for (const timerId of animationFrameTimers.values()) {
+		window.clearTimeout(timerId);
+	}
+	animationFrameTimers.clear();
+}
+
 describe("chat page runtime integration", () => {
 	afterEach(() => {
+		clearAnimationFrameMockTimers();
 		vi.restoreAllMocks();
 	});
 
@@ -413,10 +445,7 @@ describe("chat page runtime integration", () => {
 				dispatchEvent: vi.fn(),
 			})),
 		});
-		vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
-			callback(0);
-			return 0;
-		});
+		installAnimationFrameMock();
 		Object.defineProperty(document, "visibilityState", {
 			configurable: true,
 			value: "visible",

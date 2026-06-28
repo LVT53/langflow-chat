@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>AlfyAI Chat Streaming Stability Deepening Report</title>
+	<script src="https://cdn.tailwindcss.com"></script>
+	<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+	<script>
+		mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+	</script>
+	<style>
+		body { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+		.mermaid { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; }
+		code { word-break: break-word; }
+	</style>
+</head>
+<body class="bg-slate-50 text-slate-950">
+	<main class="mx-auto max-w-7xl px-6 py-8">
+		<section class="mb-8">
+			<p class="text-sm font-semibold uppercase tracking-wide text-cyan-700">Architecture scan</p>
+			<h1 class="mt-2 text-3xl font-semibold tracking-normal">Chat Streaming Stability And Preparing Response Speed</h1>
+			<p class="mt-3 max-w-4xl text-sm leading-6 text-slate-700">
+				Scan date: 2026-06-28. Focus: stabilize AI SDK/OpenAI-compatible streaming across DeepSeek V4, Xiaomi, Kimi K2.X, GLM 5.X, and Qwen 3.X model families, while making the app-side path before the first meaningful streamed event as fast as practical.
+			</p>
+			<div class="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+				<div class="rounded-lg border border-slate-200 bg-white p-4">
+					<div class="text-2xl font-semibold">11,339</div>
+					<div class="text-xs text-slate-600">lines in the inspected chat stream path</div>
+				</div>
+				<div class="rounded-lg border border-slate-200 bg-white p-4">
+					<div class="text-2xl font-semibold">5</div>
+					<div class="text-xs text-slate-600">deepening candidates</div>
+				</div>
+				<div class="rounded-lg border border-slate-200 bg-white p-4">
+					<div class="text-2xl font-semibold">2</div>
+					<div class="text-xs text-slate-600">docs sources checked through Context7</div>
+				</div>
+				<div class="rounded-lg border border-slate-200 bg-white p-4">
+					<div class="text-2xl font-semibold">0</div>
+					<div class="text-xs text-slate-600">runtime code edits in this scan</div>
+				</div>
+			</div>
+		</section>
+
+		<section class="mb-8 rounded-lg border border-cyan-200 bg-cyan-50 p-5">
+			<h2 class="text-lg font-semibold text-cyan-950">Evidence Base</h2>
+			<p class="mt-2 text-sm leading-6 text-cyan-950">
+				Context7 AI SDK docs confirm that <code>streamText().fullStream</code> carries structured start, text, reasoning, source, file, tool, finish, error, abort, and raw parts. Context7 SvelteKit docs confirm <code>+server.ts</code> handlers return standard Web <code>Response</code> objects, so a streamed response can be returned as soon as the route has enough validated state. Local ADRs confirm AI SDK UI streams are the browser-facing seam and Normal Chat Model Run owns provider attempt and fallback policy.
+			</p>
+		</section>
+
+		<section class="space-y-6">
+			<article class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+				<div class="flex flex-wrap items-center gap-3">
+					<h2 class="text-xl font-semibold">1. Add a Stream Intake Fast Path</h2>
+					<span class="rounded-full bg-red-100 px-3 py-1 text-xs font-semibold text-red-800">Highest leverage</span>
+					<span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">Hidden coupling</span>
+				</div>
+				<div class="mt-4 grid gap-4 lg:grid-cols-2">
+					<div>
+						<h3 class="text-sm font-semibold">Files involved</h3>
+						<ul class="mt-2 space-y-1 text-sm text-slate-700">
+							<li><code>src/routes/api/chat/stream/+server.ts</code></li>
+							<li><code>src/lib/server/services/chat-turn/stream-orchestrator.ts</code></li>
+							<li><code>src/lib/server/services/chat-turn/stream-completion.ts</code></li>
+							<li><code>src/lib/server/services/memory-profile</code></li>
+							<li><code>src/lib/server/services/file-production</code></li>
+						</ul>
+					</div>
+					<div>
+						<h3 class="text-sm font-semibold">What leaks</h3>
+						<p class="mt-2 text-sm leading-6 text-slate-700">
+							The route currently waits on <code>getCurrentMemoryResetGeneration</code> before returning the streamed <code>Response</code>. The orchestrator then snapshots file-production jobs before provider context preparation. These are durable completion facts, but their current location makes them part of the response-start interface.
+						</p>
+					</div>
+				</div>
+				<div class="mt-5 grid gap-4 lg:grid-cols-2">
+					<div>
+						<h3 class="mb-2 text-sm font-semibold">Before</h3>
+						<pre class="mermaid">flowchart TD
+  Browser["browser fetch"]
+  Route["stream route parse, capacity, preflight"]
+  Reset["memory reset generation read"]
+  Response["return streamed Response"]
+  Start["stream start prelude"]
+  Jobs["file-production job snapshot"]
+  Context["context-preparing"]
+  Model["provider stream"]
+  Browser --> Route --> Reset --> Response --> Start --> Jobs --> Context --> Model
+						</pre>
+					</div>
+					<div>
+						<h3 class="mb-2 text-sm font-semibold">After</h3>
+						<pre class="mermaid">flowchart TD
+  Browser["browser fetch"]
+  Route["stream route parse, capacity, preflight"]
+  Response["return streamed Response"]
+  Start["prelude plus preparation activity"]
+  LazyFacts["lazy completion facts"]
+  Context["context-preparing"]
+  Model["provider stream"]
+  Completion["complete stream turn"]
+  Browser --> Route --> Response --> Start --> Context --> Model --> Completion
+  Start -.-> LazyFacts -.-> Completion
+						</pre>
+					</div>
+				</div>
+				<div class="mt-5 grid gap-4 lg:grid-cols-3">
+					<div>
+						<h3 class="text-sm font-semibold">Problem</h3>
+						<p class="mt-2 text-sm leading-6 text-slate-700">
+							The module interface says "start a stream", but the implementation performs completion-oriented reads before the stream can visibly start. That reduces perceived speed and makes unrelated storage latency look like model latency.
+						</p>
+					</div>
+					<div>
+						<h3 class="text-sm font-semibold">Solution</h3>
+						<p class="mt-2 text-sm leading-6 text-slate-700">
+							Create an internal stream intake module with a small interface: validate the turn, return the streamed <code>Response</code>, and hand lazy completion facts to the orchestrator. Move memory reset generation and file-production start snapshots into lazy promises consumed at completion.
+						</p>
+					</div>
+					<div>
+						<h3 class="text-sm font-semibold">Wins</h3>
+						<ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
+							<li>Faster response headers and prelude.</li>
+							<li>Better locality for "preparing response" timing.</li>
+							<li>Cleaner distinction between intake facts and completion facts.</li>
+							<li>More precise phase timing for app-side delay vs provider delay.</li>
+						</ul>
+					</div>
+				</div>
+				<div class="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-950">
+					<strong>ADR callout:</strong> Preserves ADR-0019 and ADR-0025 because the browser stream seam remains AI SDK UI frames; only the order of app-owned preparation work changes.
+				</div>
+			</article>
+
+			<article class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+				<div class="flex flex-wrap items-center gap-3">
+					<h2 class="text-xl font-semibold">2. Deepen the OpenAI-Compatible Provider Adapter</h2>
+					<span class="rounded-full bg-orange-100 px-3 py-1 text-xs font-semibold text-orange-800">High leverage</span>
+					<span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">Duplicated seam</span>
+				</div>
+				<div class="mt-4 grid gap-4 lg:grid-cols-2">
+					<div>
+						<h3 class="text-sm font-semibold">Files involved</h3>
+						<ul class="mt-2 space-y-1 text-sm text-slate-700">
+							<li><code>src/lib/server/services/normal-chat-model/provider-compatibility.ts</code></li>
+							<li><code>src/lib/server/services/normal-chat-model/openai-compatible-provider.ts</code></li>
+							<li><code>src/lib/server/services/normal-chat-model/openai-compatible-stream-normalizer.ts</code></li>
+							<li><code>src/lib/server/services/normal-chat-model/mimo-reasoning-replay.ts</code></li>
+							<li><code>src/lib/server/services/normal-chat-model/index.ts</code></li>
+						</ul>
+					</div>
+					<div>
+						<h3 class="text-sm font-semibold">What leaks</h3>
+						<p class="mt-2 text-sm leading-6 text-slate-700">
+							Provider family knowledge is split across request-body transforms, provider options, stream normalization, Xiaomi MiMo reasoning replay, and the model-run event adapter. DeepSeek, Kimi, Qwen, and MiMo are partly known; GLM is absent as an explicit family.
+						</p>
+					</div>
+				</div>
+				<div class="mt-5 grid gap-4 lg:grid-cols-2">
+					<div>
+						<h3 class="mb-2 text-sm font-semibold">Before</h3>
+						<pre class="mermaid">flowchart TD
+  Family["identify family"]
+  Options["provider options"]
+  Body["request body transform"]
+  StreamNorm["tool-call stream normalizer"]
+  MiMo["Xiaomi MiMo replay fetch"]
+  ModelRun["model-run fullStream mapping"]
+  Family --> Options
+  Family --> Body
+  Family --> MiMo
+  StreamNorm --> ModelRun
+						</pre>
+					</div>
+					<div>
+						<h3 class="mb-2 text-sm font-semibold">After</h3>
+						<pre class="mermaid">flowchart TD
+  Adapter["provider adapter interface"]
+  Profiles["family profiles: DeepSeek, Xiaomi, Kimi, GLM, Qwen, generic"]
+  Request["request shaping"]
+  Stream["stream shaping"]
+  Events["neutral event mapping"]
+  Adapter --> Profiles
+  Profiles --> Request
+  Profiles --> Stream
+  Stream --> Events
+						</pre>
+					</div>
+				</div>
+				<div class="mt-5 grid gap-4 lg:grid-cols-3">
+					<div>
+						<h3 class="text-sm font-semibold">Problem</h3>
+						<p class="mt-2 text-sm leading-6 text-slate-700">
+							The module is shallow for new model families: adding GLM 5.X or a Qwen 3.X quirk means touching several files and remembering which quirks belong before the AI SDK call and which belong after provider bytes arrive.
+						</p>
+					</div>
+					<div>
+						<h3 class="text-sm font-semibold">Solution</h3>
+						<p class="mt-2 text-sm leading-6 text-slate-700">
+							Introduce a single provider adapter interface that returns request transforms, provider options, stream transforms, reasoning/tool-call normalization rules, usage expectations, and retryable error classification for a provider family.
+						</p>
+					</div>
+					<div>
+						<h3 class="text-sm font-semibold">Wins</h3>
+						<ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
+							<li>One seam for DeepSeek V4, Xiaomi, Kimi K2.X, GLM 5.X, and Qwen 3.X quirks.</li>
+							<li>Higher depth in tests: one adapter fixture can exercise request and stream behavior together.</li>
+							<li>Less provider-specific leakage into the generic model-run implementation.</li>
+							<li>Safer future version bumps when providers change OpenAI-compatible details.</li>
+						</ul>
+					</div>
+				</div>
+				<div class="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-950">
+					<strong>ADR callout:</strong> Preserves ADR-0027 because Provider Models still identify model capability and runtime defaults; this only deepens the provider execution adapter.
+				</div>
+			</article>
+
+			<article class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+				<div class="flex flex-wrap items-center gap-3">
+					<h2 class="text-xl font-semibold">3. Add a Provider Stream Fixture Harness</h2>
+					<span class="rounded-full bg-orange-100 px-3 py-1 text-xs font-semibold text-orange-800">High leverage</span>
+					<span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">Shallow tests</span>
+				</div>
+				<div class="mt-4 grid gap-4 lg:grid-cols-2">
+					<div>
+						<h3 class="text-sm font-semibold">Files involved</h3>
+						<ul class="mt-2 space-y-1 text-sm text-slate-700">
+							<li><code>src/lib/server/services/normal-chat-model/index.test.ts</code></li>
+							<li><code>src/lib/server/services/normal-chat-model/openai-compatible-stream-normalizer.test.ts</code></li>
+							<li><code>src/lib/server/services/chat-turn/stream-orchestrator.test.ts</code></li>
+							<li><code>src/lib/services/ai-sdk-ui-stream-contract.ts</code></li>
+						</ul>
+					</div>
+					<div>
+						<h3 class="text-sm font-semibold">What leaks</h3>
+						<p class="mt-2 text-sm leading-6 text-slate-700">
+							Current tests cover generic AI SDK parts and compatibility helpers, but the interface for a provider-family stream is implicit. There is no compact place to replay real-ish DeepSeek, Kimi, GLM, Qwen, and Xiaomi chunks through the same implementation used in production.
+						</p>
+					</div>
+				</div>
+				<div class="mt-5 grid gap-4 lg:grid-cols-2">
+					<div>
+						<h3 class="mb-2 text-sm font-semibold">Before</h3>
+						<pre class="mermaid">flowchart TD
+  FixtureA["normalizer fixture"]
+  FixtureB["model-run fixture"]
+  FixtureC["orchestrator fixture"]
+  Prod["production path"]
+  FixtureA -.partial.-> Prod
+  FixtureB -.partial.-> Prod
+  FixtureC -.partial.-> Prod
+						</pre>
+					</div>
+					<div>
+						<h3 class="mb-2 text-sm font-semibold">After</h3>
+						<pre class="mermaid">flowchart TD
+  Harness["provider stream fixture harness"]
+  Families["family fixtures"]
+  Adapter["provider adapter"]
+  ModelRun["model-run stream"]
+  Contract["AI SDK UI stream contract"]
+  Families --> Harness --> Adapter --> ModelRun --> Contract
+						</pre>
+					</div>
+				</div>
+				<div class="mt-5 grid gap-4 lg:grid-cols-3">
+					<div>
+						<h3 class="text-sm font-semibold">Problem</h3>
+						<p class="mt-2 text-sm leading-6 text-slate-700">
+							Stability depends on provider-specific stream shapes, but the tests do not give enough locality for adding a new family or version. The practical interface is "a provider emits odd OpenAI-compatible bytes"; tests should cross that same seam.
+						</p>
+					</div>
+					<div>
+						<h3 class="text-sm font-semibold">Solution</h3>
+						<p class="mt-2 text-sm leading-6 text-slate-700">
+							Add a fixture harness that feeds provider-family SSE and JSON completion samples into the adapter, model-run, and AI SDK UI stream contract. Keep fixtures small, anonymized, and version-labeled.
+						</p>
+					</div>
+					<div>
+						<h3 class="text-sm font-semibold">Wins</h3>
+						<ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
+							<li>Fast local proof for new providers before live smoke checks.</li>
+							<li>Tests become the interface for stream compatibility.</li>
+							<li>More confidence around reasoning, tool-call, finish, usage, and abrupt-close behavior.</li>
+							<li>Lower blast radius when updating the AI SDK or provider transforms.</li>
+						</ul>
+					</div>
+				</div>
+				<div class="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-950">
+					<strong>ADR callout:</strong> Preserves ADR-0026 by testing the Vercel AI SDK Normal Chat path, not reintroducing a second model runtime.
+				</div>
+			</article>
+
+			<article class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+				<div class="flex flex-wrap items-center gap-3">
+					<h2 class="text-xl font-semibold">4. Make Context Preparation a Staged Module</h2>
+					<span class="rounded-full bg-yellow-100 px-3 py-1 text-xs font-semibold text-yellow-800">Medium leverage</span>
+					<span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">Large interface</span>
+				</div>
+				<div class="mt-4 grid gap-4 lg:grid-cols-2">
+					<div>
+						<h3 class="text-sm font-semibold">Files involved</h3>
+						<ul class="mt-2 space-y-1 text-sm text-slate-700">
+							<li><code>src/lib/server/services/normal-chat-context.ts</code></li>
+							<li><code>src/lib/server/services/chat-turn/context-selection.ts</code></li>
+							<li><code>src/lib/server/services/chat-turn/streaming-normal-chat-model-run.ts</code></li>
+							<li><code>src/lib/server/services/chat-turn/deliberation-runner.ts</code></li>
+						</ul>
+					</div>
+					<div>
+						<h3 class="text-sm font-semibold">What leaks</h3>
+						<p class="mt-2 text-sm leading-6 text-slate-700">
+							<code>prepareOutboundChatContext</code> builds constructed context, prompt text, automatic compression, forced web prefetch, token budgets, and trace data in one sequential implementation. Callers only learn that it is "preparing"; they cannot see the stages or optimize independent work.
+						</p>
+					</div>
+				</div>
+				<div class="mt-5 grid gap-4 lg:grid-cols-2">
+					<div>
+						<h3 class="mb-2 text-sm font-semibold">Before</h3>
+						<pre class="mermaid">flowchart TD
+  Prepare["prepareOutboundChatContext"]
+  Construct["constructed context"]
+  Prompt["system prompt"]
+  Compress["automatic compression"]
+  Prefetch["forced web prefetch"]
+  Budget["prompt budget"]
+  Prepare --> Construct --> Prompt --> Compress --> Prefetch --> Budget
+						</pre>
+					</div>
+					<div>
+						<h3 class="mb-2 text-sm font-semibold">After</h3>
+						<pre class="mermaid">flowchart TD
+  Plan["context preparation plan"]
+  Base["base prompt and static guidance"]
+  Context["constructed context"]
+  Compression["compression decision"]
+  Prefetch["prefetch decision"]
+  Final["final prompt"]
+  Activity["typed stage activity"]
+  Plan --> Base
+  Plan --> Context
+  Base --> Compression
+  Context --> Compression
+  Compression --> Prefetch --> Final
+  Plan --> Activity
+						</pre>
+					</div>
+				</div>
+				<div class="mt-5 grid gap-4 lg:grid-cols-3">
+					<div>
+						<h3 class="text-sm font-semibold">Problem</h3>
+						<p class="mt-2 text-sm leading-6 text-slate-700">
+							The module has useful implementation depth but a coarse interface. That makes "preparing response" opaque and makes performance work depend on reading a 1,496-line file.
+						</p>
+					</div>
+					<div>
+						<h3 class="text-sm font-semibold">Solution</h3>
+						<p class="mt-2 text-sm leading-6 text-slate-700">
+							Keep the public function but give it an internal staged implementation with typed stage results and activity emissions. Run independent prompt/static work alongside constructed-context work where possible.
+						</p>
+					</div>
+					<div>
+						<h3 class="text-sm font-semibold">Wins</h3>
+						<ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
+							<li>Better locality for context latency.</li>
+							<li>Clearer "preparing response" activity in the UI.</li>
+							<li>Safer changes to compression and prefetch sequencing.</li>
+							<li>Smaller focused tests around each stage.</li>
+						</ul>
+					</div>
+				</div>
+				<div class="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-950">
+					<strong>ADR callout:</strong> Preserves ADR-0002, ADR-0003, and ADR-0006 because context selection still owns prompt-context construction and budgeting.
+				</div>
+			</article>
+
+			<article class="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+				<div class="flex flex-wrap items-center gap-3">
+					<h2 class="text-xl font-semibold">5. Deepen Stream Activity And Timing</h2>
+					<span class="rounded-full bg-yellow-100 px-3 py-1 text-xs font-semibold text-yellow-800">Medium leverage</span>
+					<span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">Leaky interface</span>
+				</div>
+				<div class="mt-4 grid gap-4 lg:grid-cols-2">
+					<div>
+						<h3 class="text-sm font-semibold">Files involved</h3>
+						<ul class="mt-2 space-y-1 text-sm text-slate-700">
+							<li><code>src/lib/server/services/chat-turn/stream-orchestrator.ts</code></li>
+							<li><code>src/lib/server/services/chat-turn/stream.ts</code></li>
+							<li><code>src/lib/services/streaming.ts</code></li>
+							<li><code>src/lib/client/normal-chat-client-turn-runtime.ts</code></li>
+							<li><code>src/routes/(app)/chat/[conversationId]</code></li>
+						</ul>
+					</div>
+					<div>
+						<h3 class="text-sm font-semibold">What leaks</h3>
+						<p class="mt-2 text-sm leading-6 text-slate-700">
+							Phase timing, response activity, stream metadata, and browser timing are related but live in different shapes. The UI sees generic activity such as <code>context-preparing</code>, while logs track route phases, prelude, first upstream event, first thinking, and first visible token.
+						</p>
+					</div>
+				</div>
+				<div class="mt-5 grid gap-4 lg:grid-cols-2">
+					<div>
+						<h3 class="mb-2 text-sm font-semibold">Before</h3>
+						<pre class="mermaid">flowchart TD
+  Orchestrator["orchestrator phase map"]
+  Activity["response activity data parts"]
+  BrowserTiming["browser timing snapshot"]
+  Metadata["terminal metadata"]
+  UI["chat UI"]
+  Orchestrator --> Metadata
+  Activity --> UI
+  BrowserTiming --> UI
+						</pre>
+					</div>
+					<div>
+						<h3 class="mb-2 text-sm font-semibold">After</h3>
+						<pre class="mermaid">flowchart TD
+  Timeline["stream timeline module"]
+  Server["server phase marks"]
+  Activity["user-visible activity"]
+  Browser["browser timing"]
+  Metadata["terminal metadata"]
+  UI["chat UI"]
+  Timeline --> Server
+  Timeline --> Activity
+  Timeline --> Browser
+  Timeline --> Metadata
+  Activity --> UI
+						</pre>
+					</div>
+				</div>
+				<div class="mt-5 grid gap-4 lg:grid-cols-3">
+					<div>
+						<h3 class="text-sm font-semibold">Problem</h3>
+						<p class="mt-2 text-sm leading-6 text-slate-700">
+							Performance work needs one mental model, but the implementation exposes several. That makes it hard to prove whether "preparing response" is route intake, context, provider connection, or delayed visible token emission.
+						</p>
+					</div>
+					<div>
+						<h3 class="text-sm font-semibold">Solution</h3>
+						<p class="mt-2 text-sm leading-6 text-slate-700">
+							Add a stream timeline module with a small interface for server marks, user-visible activity, terminal metadata, and browser timing correlation. Keep frame encoding in the existing AI SDK UI stream contract.
+						</p>
+					</div>
+					<div>
+						<h3 class="text-sm font-semibold">Wins</h3>
+						<ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
+							<li>One place to measure first byte, first activity, first upstream event, and first visible token.</li>
+							<li>Better diagnostics for provider-family stability.</li>
+							<li>Fewer ad hoc strings for activity ids and phase names.</li>
+							<li>Cleaner tests for progress UI during slow providers.</li>
+						</ul>
+					</div>
+				</div>
+				<div class="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-950">
+					<strong>ADR callout:</strong> Preserves ADR-0019 because the browser client runtime remains above transport parsing; the timeline module only deepens activity and timing locality.
+				</div>
+			</article>
+		</section>
+
+		<section class="mt-8 rounded-lg border border-slate-200 bg-white p-5">
+			<h2 class="text-lg font-semibold">Recommended First Grill</h2>
+			<p class="mt-2 text-sm leading-6 text-slate-700">
+				Start with Candidate 1, then Candidate 2. Candidate 1 should produce immediate perceived-speed gains without changing provider semantics. Candidate 2 is the best stability investment for DeepSeek V4, Xiaomi, Kimi K2.X, GLM 5.X, and Qwen 3.X because it turns provider quirks into a deep adapter module instead of scattered implementation checks.
+			</p>
+		</section>
+	</main>
+</body>
+</html>

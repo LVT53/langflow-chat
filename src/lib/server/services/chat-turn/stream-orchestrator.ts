@@ -39,7 +39,11 @@ import {
 	streamErrorEvent,
 	streamResponseActivityEvent,
 } from "$lib/server/services/chat-turn/stream";
-import { completeStreamTurn } from "$lib/server/services/chat-turn/stream-completion";
+import {
+	completeStreamTurn,
+	type FileProductionStartSnapshot,
+	type StreamCompletionFact,
+} from "$lib/server/services/chat-turn/stream-completion";
 import { runNonStreamFallback } from "$lib/server/services/chat-turn/stream-fallback";
 import { doReconnect as runReconnect } from "$lib/server/services/chat-turn/stream-reconnect";
 import { runStreamingNormalChatSendModel } from "$lib/server/services/chat-turn/streaming-normal-chat-model-run";
@@ -49,6 +53,7 @@ import {
 	assignFileProductionJobsToAssistantMessage,
 	listConversationFileProductionJobs,
 } from "$lib/server/services/file-production";
+import { getCurrentMemoryResetGeneration } from "$lib/server/services/memory-profile";
 import { createMessage } from "$lib/server/services/messages";
 import { isModelTimeoutError } from "$lib/server/services/normal-chat-failover";
 import { mapNormalChatModelRunUsageToProviderSnapshot } from "$lib/server/services/normal-chat-model";
@@ -186,6 +191,35 @@ function mapModelRunUsage(
 	);
 }
 
+export function startStartedResetGenerationFact(
+	userId: string,
+): StreamCompletionFact<number> {
+	const startedResetGeneration = getCurrentMemoryResetGeneration(userId);
+	void startedResetGeneration.catch(() => undefined);
+	return startedResetGeneration;
+}
+
+function startFileProductionJobIdsAtStartFact(params: {
+	userId: string;
+	conversationId: string;
+}): StreamCompletionFact<FileProductionStartSnapshot> {
+	const snapshotStartedAt = Date.now();
+	let snapshot: Promise<FileProductionStartSnapshot>;
+	try {
+		snapshot = listConversationFileProductionJobs(
+			params.userId,
+			params.conversationId,
+		).then((jobs) => ({
+			jobIds: new Set(jobs.map((job) => job.id)),
+			snapshotStartedAt,
+		}));
+	} catch (error) {
+		snapshot = Promise.reject(error);
+	}
+	void snapshot.catch(() => undefined);
+	return snapshot;
+}
+
 export interface StreamOrchestratorOptions {
 	user: {
 		id: string;
@@ -196,7 +230,7 @@ export interface StreamOrchestratorOptions {
 	upstreamMessage: string;
 	downstreamAbortSignal: AbortSignal;
 	requestStartTime: number;
-	startedResetGeneration?: number;
+	startedResetGeneration?: StreamCompletionFact<number>;
 	isReconnect?: boolean;
 	skipHonchoContext?: boolean;
 	systemPromptAppendix?: string;
@@ -612,24 +646,11 @@ export function runChatStreamOrchestrator(
 				status: "done",
 				detail: turn.depthMetadata?.appliedProfile ?? "standard",
 			});
-
-			let fileProductionJobIdsAtStart = new Set<string>();
-			try {
-				fileProductionJobIdsAtStart = new Set(
-					(
-						await listConversationFileProductionJobs(user.id, conversationId)
-					).map((job) => job.id),
-				);
-			} catch (error) {
-				console.warn(
-					"[CHAT_STREAM] Failed to snapshot file-production jobs at stream start",
-					{
-						conversationId,
-						streamId,
-						error,
-					},
-				);
-			}
+			const fileProductionJobIdsAtStart =
+				startFileProductionJobIdsAtStartFact({
+					userId: user.id,
+					conversationId,
+				});
 
 			const emitError = (code: StreamErrorCode) =>
 				enqueueChunk(streamErrorEvent(code));

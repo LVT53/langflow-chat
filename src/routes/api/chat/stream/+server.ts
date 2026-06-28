@@ -5,8 +5,10 @@ import { checkStreamCapacity } from "$lib/server/services/chat-turn/active-strea
 import { preflightChatTurn } from "$lib/server/services/chat-turn/preflight";
 import { parseChatTurnRequest } from "$lib/server/services/chat-turn/request";
 import { createStreamJsonErrorResponse } from "$lib/server/services/chat-turn/stream";
-import { runChatStreamOrchestrator } from "$lib/server/services/chat-turn/stream-orchestrator";
-import { getCurrentMemoryResetGeneration } from "$lib/server/services/memory-profile";
+import {
+	runChatStreamOrchestrator,
+	startStartedResetGenerationFact,
+} from "$lib/server/services/chat-turn/stream-orchestrator";
 import { buildSkillSystemPromptAppendix } from "$lib/server/services/skills/prompt-context";
 
 export const POST: RequestHandler = async (event) => {
@@ -99,7 +101,7 @@ export const POST: RequestHandler = async (event) => {
 	const skillSystemPromptAppendix = buildSkillSystemPromptAppendix(
 		turn.skillPromptContext,
 	);
-	const startedResetGeneration = await getCurrentMemoryResetGeneration(user.id);
+	const startedResetGeneration = startStartedResetGenerationFact(user.id);
 
 	return runChatStreamOrchestrator({
 		user: {

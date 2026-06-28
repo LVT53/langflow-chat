@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
 	parseChatTurnRequest: vi.fn(),
 	preflightChatTurn: vi.fn(),
 	runChatStreamOrchestrator: vi.fn(),
+	startStartedResetGenerationFact: vi.fn(),
 	getCurrentMemoryResetGeneration: vi.fn(),
 	buildSkillSystemPromptAppendix: vi.fn(),
 }));
@@ -33,6 +34,7 @@ vi.mock("$lib/server/services/chat-turn/preflight", () => ({
 
 vi.mock("$lib/server/services/chat-turn/stream-orchestrator", () => ({
 	runChatStreamOrchestrator: mocks.runChatStreamOrchestrator,
+	startStartedResetGenerationFact: mocks.startStartedResetGenerationFact,
 }));
 
 vi.mock("$lib/server/services/memory-profile", () => ({
@@ -135,6 +137,20 @@ function makeStreamResponse() {
 	});
 }
 
+async function expectResolvedWithoutWaiting<T>(promise: Promise<T>): Promise<T> {
+	const timedOut = Symbol("timedOut");
+	const result = await Promise.race([
+		promise,
+		new Promise<typeof timedOut>((resolve) => {
+			setTimeout(() => resolve(timedOut), 0);
+		}),
+	]);
+	if (result === timedOut) {
+		throw new Error("POST did not return before the deferred fact settled");
+	}
+	return result as T;
+}
+
 describe("POST /api/chat/stream route adapter", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -149,6 +165,7 @@ describe("POST /api/chat/stream route adapter", () => {
 			ok: true,
 			value: preflightedTurn,
 		});
+		mocks.startStartedResetGenerationFact.mockReturnValue(Promise.resolve(0));
 		mocks.getCurrentMemoryResetGeneration.mockResolvedValue(0);
 		mocks.buildSkillSystemPromptAppendix.mockReturnValue(undefined);
 		mocks.runChatStreamOrchestrator.mockReturnValue(makeStreamResponse());
@@ -201,7 +218,7 @@ describe("POST /api/chat/stream route adapter", () => {
 				upstreamMessage: "Hello",
 				downstreamAbortSignal: event.request.signal,
 				isReconnect: false,
-				startedResetGeneration: 0,
+				startedResetGeneration: expect.any(Promise),
 				systemPromptAppendix: undefined,
 				routePhaseTimings: expect.objectContaining({
 					route_parse: expect.any(Number),
@@ -210,6 +227,47 @@ describe("POST /api/chat/stream route adapter", () => {
 				}),
 			}),
 		);
+	});
+
+	it("delegates the stream response without waiting for Memory Reset Generation", async () => {
+		let resolveGeneration!: (value: number) => void;
+		const deferredGeneration = new Promise<number>((resolve) => {
+			resolveGeneration = resolve;
+		});
+		mocks.getCurrentMemoryResetGeneration.mockReturnValueOnce(
+			deferredGeneration,
+		);
+		let startedBeforeOrchestration = false;
+		mocks.startStartedResetGenerationFact.mockImplementationOnce(() => {
+			startedBeforeOrchestration = true;
+			return deferredGeneration;
+		});
+		mocks.runChatStreamOrchestrator.mockImplementationOnce((options) => {
+			expect(startedBeforeOrchestration).toBe(true);
+			expect(options.startedResetGeneration).toBe(deferredGeneration);
+			return makeStreamResponse();
+		});
+
+		const postPromise = Promise.resolve(
+			POST(makeEvent({ message: "Hello", conversationId: "conv-1" })),
+		);
+		try {
+			const response = await expectResolvedWithoutWaiting(postPromise);
+
+			expect(response.status).toBe(200);
+			expect(mocks.startStartedResetGenerationFact).toHaveBeenCalledWith(
+				"user-1",
+			);
+			expect(mocks.getCurrentMemoryResetGeneration).not.toHaveBeenCalled();
+			expect(runChatStreamOrchestrator).toHaveBeenCalledWith(
+				expect.objectContaining({
+					startedResetGeneration: deferredGeneration,
+				}),
+			);
+		} finally {
+			resolveGeneration(0);
+			await postPromise.catch(() => undefined);
+		}
 	});
 
 	it("propagates auth failures before parsing the request", async () => {

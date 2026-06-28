@@ -1317,6 +1317,159 @@ describe("completeStreamTurn", () => {
 		);
 	});
 
+	it("uses eager completion facts for reset generation and file-production reconciliation", async () => {
+		mockGetFileProductionJobs.mockResolvedValue([
+			{ id: "job-existing" },
+			{ id: "job-new" },
+		]);
+
+		await completeStreamTurn({
+			...defaultParams,
+			startedResetGeneration: 7,
+			fileProductionJobIdsAtStart: new Set(["job-existing"]),
+			toolCallRecords: [{ name: "produce_file", input: {}, status: "done" }],
+		});
+
+		expect(mockAssignFileProductionJobs).toHaveBeenCalledWith(
+			"user-1",
+			"conv-1",
+			"asst-msg-1",
+			["job-new"],
+		);
+		expect(mockRunPostTurnTasks).toHaveBeenCalledWith(
+			expect.objectContaining({
+				startedResetGeneration: 7,
+			}),
+		);
+	});
+
+	it("resolves hot completion fact promises before persistence and file-production reconciliation", async () => {
+		const startedResetGeneration = Promise.resolve(11);
+		const fileProductionJobIdsAtStart = Promise.resolve(
+			new Set(["job-existing"]),
+		);
+		mockGetFileProductionJobs.mockResolvedValue([
+			{ id: "job-existing" },
+			{ id: "job-new" },
+		]);
+
+		await completeStreamTurn({
+			...defaultParams,
+			startedResetGeneration,
+			fileProductionJobIdsAtStart,
+			toolCallRecords: [{ name: "produce_file", input: {}, status: "done" }],
+		});
+
+		expect(mockAssignFileProductionJobs).toHaveBeenCalledWith(
+			"user-1",
+			"conv-1",
+			"asst-msg-1",
+			["job-new"],
+		);
+		expect(mockRunPostTurnTasks).toHaveBeenCalledWith(
+			expect.objectContaining({
+				startedResetGeneration: 11,
+			}),
+		);
+	});
+
+	it("attaches a same-turn file-production job when a late start snapshot includes it", async () => {
+		mockGetFileProductionJobs.mockResolvedValue([
+			{ id: "job-existing", createdAt: 999 },
+			{ id: "job-new", createdAt: 1001 },
+		]);
+
+		await completeStreamTurn({
+			...defaultParams,
+			fileProductionJobIdsAtStart: Promise.resolve({
+				jobIds: new Set(["job-existing", "job-new"]),
+				snapshotStartedAt: 1000,
+			}),
+			toolCallRecords: [
+				{
+					name: "produce_file",
+					input: {},
+					status: "done",
+				},
+			],
+		});
+
+		expect(mockAssignFileProductionJobs).toHaveBeenCalledWith(
+			"user-1",
+			"conv-1",
+			"asst-msg-1",
+			["job-new"],
+		);
+	});
+
+	it("attaches a produce_file metadata job even when the late start snapshot includes it", async () => {
+		mockGetFileProductionJobs.mockResolvedValue([
+			{ id: "job-existing", createdAt: 999 },
+			{ id: "job-new", createdAt: 999 },
+		]);
+
+		await completeStreamTurn({
+			...defaultParams,
+			fileProductionJobIdsAtStart: Promise.resolve({
+				jobIds: new Set(["job-existing", "job-new"]),
+				snapshotStartedAt: 1000,
+			}),
+			toolCallRecords: [
+				{
+					name: "produce_file",
+					input: {},
+					status: "done",
+					metadata: {
+						jobId: "job-new",
+					},
+				},
+			],
+		});
+
+		expect(mockAssignFileProductionJobs).toHaveBeenCalledWith(
+			"user-1",
+			"conv-1",
+			"asst-msg-1",
+			["job-new"],
+		);
+	});
+
+	it("does not attach current jobs when a hot file-production start snapshot rejects", async () => {
+		const snapshotError = new Error("snapshot failed");
+		const rejectedSnapshot = Promise.reject(snapshotError);
+		rejectedSnapshot.catch(() => undefined);
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+		mockGetFileProductionJobs.mockResolvedValue([
+			{ id: "job-existing" },
+			{ id: "job-new" },
+		]);
+
+		try {
+			await completeStreamTurn({
+				...defaultParams,
+				startedResetGeneration: 7,
+				fileProductionJobIdsAtStart: rejectedSnapshot,
+				toolCallRecords: [{ name: "produce_file", input: {}, status: "done" }],
+			});
+
+			expect(mockAssignFileProductionJobs).not.toHaveBeenCalled();
+			expect(getLatestEndPayload()).toMatchObject({
+				assistantMessageId: "asst-msg-1",
+				fileProductionJobs: [],
+			});
+			expect(warn).toHaveBeenCalledWith(
+				"[CHAT_STREAM] Failed to snapshot file-production jobs at stream start",
+				expect.objectContaining({
+					conversationId: "conv-1",
+					streamId: "stream-1",
+					error: snapshotError,
+				}),
+			);
+		} finally {
+			warn.mockRestore();
+		}
+	});
+
 	it("attaches new file-production jobs from file-production tool aliases", async () => {
 		mockGetFileProductionJobs.mockResolvedValue([{ id: "job-new" }]);
 

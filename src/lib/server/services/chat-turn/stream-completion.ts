@@ -60,7 +60,26 @@ type PersistedStreamTurnState = {
 	attachedArtifacts?: WorkingSetItem[];
 };
 
-export interface CompleteStreamTurnParams {
+export type StreamCompletionFact<T> = T | Promise<T>;
+
+export type FileProductionStartSnapshot =
+	| Set<string>
+	| {
+			jobIds: Set<string>;
+			snapshotStartedAt: number;
+	  };
+
+type NormalizedFileProductionStartSnapshot = {
+	jobIds: Set<string>;
+	snapshotStartedAt?: number;
+};
+
+export interface StreamCompletionFacts {
+	startedResetGeneration?: StreamCompletionFact<number>;
+	fileProductionJobIdsAtStart: StreamCompletionFact<FileProductionStartSnapshot>;
+}
+
+export interface CompleteStreamTurnParams extends StreamCompletionFacts {
 	wasStopped: boolean;
 	conversationId: string;
 	streamId: string | null;
@@ -71,7 +90,6 @@ export interface CompleteStreamTurnParams {
 	reasoningDepth?: ReasoningDepth;
 	depthMetadata?: DepthMetadata;
 	userId: string;
-	startedResetGeneration?: number;
 	normalizedMessage: string;
 	upstreamMessage: string;
 	skipPersistUserMessage: boolean;
@@ -87,7 +105,6 @@ export interface CompleteStreamTurnParams {
 	activeSkillSessionId?: string | null;
 	activeDocumentArtifactId: string | null;
 	requestStartTime: number;
-	fileProductionJobIdsAtStart: Set<string>;
 	latestContextStatus: ConversationContextStatus | null | undefined;
 	latestActiveWorkingSet: WorkingSetItem[] | undefined;
 	latestTaskState: TaskState | null | undefined;
@@ -168,7 +185,7 @@ export async function completeStreamTurn(
 		reasoningDepth,
 		depthMetadata,
 		userId,
-		startedResetGeneration,
+		startedResetGeneration: startedResetGenerationFact,
 		normalizedMessage,
 		upstreamMessage,
 		skipPersistUserMessage,
@@ -184,7 +201,7 @@ export async function completeStreamTurn(
 		activeSkillSessionId,
 		activeDocumentArtifactId,
 		requestStartTime,
-		fileProductionJobIdsAtStart,
+		fileProductionJobIdsAtStart: fileProductionJobIdsAtStartFact,
 		latestContextStatus,
 		latestActiveWorkingSet,
 		latestTaskState,
@@ -417,6 +434,25 @@ export async function completeStreamTurn(
 	};
 
 	try {
+		const startedResetGeneration = await resolveOptionalCompletionFact(
+			startedResetGenerationFact,
+		);
+		const fileProductionStartSnapshot = hadFileProductionToolCall
+			? await resolveFileProductionJobIdsAtStart({
+					conversationId,
+					streamId,
+					fact: fileProductionJobIdsAtStartFact,
+				})
+			: null;
+		const fileProductionJobIdsAtStart = fileProductionStartSnapshot
+			? await buildEffectiveFileProductionJobIdsAtStart({
+					userId,
+					conversationId,
+					snapshot: fileProductionStartSnapshot,
+					toolCallRecords,
+					getFileProductionJobs,
+				})
+			: null;
 		const persistedAssistantResponse =
 			wasStopped && finalResponse.trim().length === 0
 				? "Stopped"
@@ -487,19 +523,22 @@ export async function completeStreamTurn(
 			persistAssistantEvidence,
 			runPostTurnTasks,
 			persistUserAttachmentsBeforeAssistantMessage: false,
-			generatedOutputReconciliation: hadFileProductionToolCall
-				? {
-						fileProductionJobIdsAtStart,
-						getFileProductionJobs,
-						assignFileProductionJobsToAssistantMessage,
-						syncGeneratedFilesToMemory,
-						getChatFilesForAssistantMessage,
-					}
-				: undefined,
+			generatedOutputReconciliation:
+				hadFileProductionToolCall && fileProductionJobIdsAtStart
+					? {
+							fileProductionJobIdsAtStart,
+							getFileProductionJobs,
+							assignFileProductionJobsToAssistantMessage,
+							syncGeneratedFilesToMemory,
+							getChatFilesForAssistantMessage,
+						}
+					: undefined,
 		});
 		persistedGeneratedFiles = completion.generatedFiles;
 		persistedFileProductionJobs =
-			hadFileProductionToolCall && completion.assistantMessage
+			hadFileProductionToolCall &&
+			completion.assistantMessage &&
+			fileProductionJobIdsAtStart
 				? (
 						await getFileProductionJobs(userId, conversationId).catch(
 							() => [] as FileProductionJob[],
@@ -525,6 +564,105 @@ export async function completeStreamTurn(
 	} catch {
 		return sendEndAndClose();
 	}
+}
+
+function resolveCompletionFact<T>(fact: StreamCompletionFact<T>): Promise<T> {
+	return Promise.resolve(fact);
+}
+
+function resolveOptionalCompletionFact<T>(
+	fact: StreamCompletionFact<T> | undefined,
+): Promise<T | undefined> {
+	return fact === undefined
+		? Promise.resolve(undefined)
+		: resolveCompletionFact(fact);
+}
+
+async function resolveFileProductionJobIdsAtStart(params: {
+	conversationId: string;
+	streamId: string | null;
+	fact: StreamCompletionFact<FileProductionStartSnapshot>;
+}): Promise<NormalizedFileProductionStartSnapshot | null> {
+	try {
+		return normalizeFileProductionStartSnapshot(
+			await resolveCompletionFact(params.fact),
+		);
+	} catch (error) {
+		console.warn(
+			"[CHAT_STREAM] Failed to snapshot file-production jobs at stream start",
+			{
+				conversationId: params.conversationId,
+				streamId: params.streamId,
+				error,
+			},
+		);
+		return null;
+	}
+}
+
+function normalizeFileProductionStartSnapshot(
+	snapshot: FileProductionStartSnapshot,
+): NormalizedFileProductionStartSnapshot {
+	return snapshot instanceof Set
+		? { jobIds: snapshot }
+		: {
+				jobIds: snapshot.jobIds,
+				snapshotStartedAt: Number.isFinite(snapshot.snapshotStartedAt)
+					? snapshot.snapshotStartedAt
+					: undefined,
+			};
+}
+
+async function buildEffectiveFileProductionJobIdsAtStart(params: {
+	userId: string;
+	conversationId: string;
+	snapshot: NormalizedFileProductionStartSnapshot;
+	toolCallRecords: ToolCallEntry[];
+	getFileProductionJobs: (
+		userId: string,
+		conversationId: string,
+	) => Promise<FileProductionJob[]>;
+}): Promise<Set<string>> {
+	const effectiveJobIds = new Set(params.snapshot.jobIds);
+
+	for (const jobId of getSameTurnFileProductionJobIds(params.toolCallRecords)) {
+		effectiveJobIds.delete(jobId);
+	}
+
+	if (params.snapshot.snapshotStartedAt === undefined) {
+		return effectiveJobIds;
+	}
+
+	const currentJobs = await params
+		.getFileProductionJobs(params.userId, params.conversationId)
+		.catch(() => [] as FileProductionJob[]);
+	for (const job of currentJobs) {
+		if (
+			effectiveJobIds.has(job.id) &&
+			Number.isFinite(job.createdAt) &&
+			job.createdAt >= params.snapshot.snapshotStartedAt
+		) {
+			effectiveJobIds.delete(job.id);
+		}
+	}
+
+	return effectiveJobIds;
+}
+
+function getSameTurnFileProductionJobIds(
+	toolCallRecords: ToolCallEntry[],
+): Set<string> {
+	const jobIds = new Set<string>();
+	for (const record of toolCallRecords) {
+		if (!isFileProductionToolName(record.name) || record.status !== "done") {
+			continue;
+		}
+		const jobId = record.metadata?.jobId;
+		if (typeof jobId === "string" && jobId.trim()) {
+			jobIds.add(jobId.trim());
+		}
+	}
+	return jobIds;
 }
 
 function appendNotices(response: string, notices: string[]): string {
