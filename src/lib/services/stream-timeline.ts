@@ -1,8 +1,9 @@
 export const SERVER_STREAM_TIMELINE_MARKS = {
 	ROUTE_PARSE: "route_parse",
 	CAPACITY: "capacity",
-	PREFLIGHT: "preflight",
+	ADMISSION: "admission",
 	PRELUDE: "prelude",
+	TURN_PREPARATION: "turn_preparation",
 	MODEL_STREAM_REQUEST: "model_stream_request",
 	FIRST_UPSTREAM_EVENT: "first_upstream_event",
 	FIRST_THINKING: "first_thinking",

@@ -24,8 +24,9 @@ describe("stream timeline vocabulary", () => {
 		expect(SERVER_STREAM_TIMELINE_MARKS).toMatchObject({
 			ROUTE_PARSE: "route_parse",
 			CAPACITY: "capacity",
-			PREFLIGHT: "preflight",
+			ADMISSION: "admission",
 			PRELUDE: "prelude",
+			TURN_PREPARATION: "turn_preparation",
 			MODEL_STREAM_REQUEST: "model_stream_request",
 			FIRST_UPSTREAM_EVENT: "first_upstream_event",
 			FIRST_THINKING: "first_thinking",
@@ -170,21 +171,25 @@ describe("stream timeline vocabulary", () => {
 			formatServerTimingHeader({
 				route_parse: 1,
 				capacity: 2.06,
-				preflight: 0,
+				admission: 0,
+				turn_preparation: 4.44,
 				invalid_negative: -1,
 				invalid_infinite: Number.POSITIVE_INFINITY,
 			}),
-		).toBe("route_parse;dur=1.0, capacity;dur=2.1, preflight;dur=0.0");
+		).toBe(
+			"route_parse;dur=1.0, capacity;dur=2.1, admission;dur=0.0, turn_preparation;dur=4.4",
+		);
 	});
 
 	it("parses Server-Timing and keeps only finite non-negative durations", () => {
 		expect(
 			parseServerTimingHeader(
-				'route_parse;dur=1.0, capacity;dur=-2, preflight;desc="ok";dur=3.5, bad;dur=NaN, missing, empty;dur=, after_desc;desc="a,b";dur=5',
+				'route_parse;dur=1.0, capacity;dur=-2, admission;desc="ok";dur=3.5, turn_preparation;dur=4.4, bad;dur=NaN, missing, empty;dur=, after_desc;desc="a,b";dur=5',
 			),
 		).toEqual({
 			route_parse: 1,
-			preflight: 3.5,
+			admission: 3.5,
+			turn_preparation: 4.4,
 			after_desc: 5,
 		});
 	});

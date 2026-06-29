@@ -1,20 +1,31 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+	appendToStreamBuffer,
+	clearStreamBuffer,
+	getOrCreateStreamBuffer,
 	getStreamBuffer,
 	registerActiveChatStream,
 	requestActiveChatStreamStop,
+	subscribeToStream,
 	unregisterActiveChatStream,
 } from "$lib/server/services/chat-turn/active-streams";
 import { getCurrentMemoryResetGeneration } from "$lib/server/services/memory-profile";
 import {
 	SERVER_STREAM_TIMELINE_MARKS,
 	STREAM_TIMELINE_PAYLOAD_VERSION,
+	type StreamTimelineTerminalPayload,
 } from "$lib/services/stream-timeline";
 import {
 	runChatStreamOrchestrator,
 	startStartedResetGenerationFact,
 } from "./stream-orchestrator";
-import type { ChatTurnPreflight } from "./types";
+import type {
+	AdmittedChatTurn,
+	ChatTurnPreflight,
+	ChatTurnPreparationResult,
+	ChatTurnRequestError,
+	SkillPromptContext,
+} from "./types";
 
 vi.mock("$lib/server/config-store", () => ({
 	getConfig: vi.fn(() => ({
@@ -107,6 +118,10 @@ vi.mock("$lib/server/services/file-production", () => ({
 
 vi.mock("$lib/utils/tokens", () => ({
 	estimateTokenCount: vi.fn(() => 100),
+}));
+
+vi.mock("$lib/server/services/skills/prompt-context", () => ({
+	buildSkillSystemPromptAppendix: vi.fn(() => undefined),
 }));
 
 type NeutralStreamEvent =
@@ -238,6 +253,39 @@ function createTurn(
 	};
 }
 
+function createAdmittedTurn(
+	overrides: Partial<ChatTurnPreflight> = {},
+): AdmittedChatTurn {
+	const turn = createTurn(overrides);
+	const {
+		depthMetadata: _depthMetadata,
+		skillPromptContext: _skillPromptContext,
+		...admitted
+	} = turn;
+	return admitted as unknown as AdmittedChatTurn;
+}
+
+function createSkillPromptContext(
+	overrides: Partial<SkillPromptContext> = {},
+): SkillPromptContext {
+	return {
+		source: "pending_skill",
+		skillId: "skill-1",
+		skillOwnership: "user",
+		skillKind: "user_skill",
+		skillDisplayName: "Skill One",
+		skillDescription: "A focused test skill",
+		skillInstructions: "Follow the skill.",
+		durationPolicy: "next_message",
+		questionPolicy: "none",
+		notesPolicy: "none",
+		sourceScope: "current_conversation",
+		skillVersion: 1,
+		linkedSources: [],
+		...overrides,
+	};
+}
+
 function createNeutralStreamingResult(
 	events: NeutralStreamEvent[],
 	overrides: Record<string, unknown> = {},
@@ -281,6 +329,52 @@ function runStream(overrides: Partial<ChatTurnPreflight> = {}) {
 	});
 }
 
+function runAdmittedStreamWithPreparationFailure(params: {
+	error: ChatTurnRequestError;
+	turn?: Partial<ChatTurnPreflight>;
+}) {
+	const prepareTurn = vi.fn(
+		async (): Promise<ChatTurnPreparationResult> => ({
+			ok: false,
+			error: params.error,
+		}),
+	);
+	const response = runChatStreamOrchestrator({
+		user: {
+			id: "u1",
+			displayName: "User",
+			email: "u@test.com",
+		},
+		turn: createAdmittedTurn(params.turn),
+		prepareTurn,
+		upstreamMessage: "Hello",
+		downstreamAbortSignal: new AbortController().signal,
+		requestStartTime: Date.now(),
+	});
+
+	return { response, prepareTurn };
+}
+
+function expectTerminalRequestErrorParts(
+	chunks: string[],
+	expectedPayload: Record<string, unknown>,
+) {
+	const parts = parseUiStreamParts(chunks);
+	const errorIndex = parts.findIndex(
+		(part) => part !== "[DONE]" && part.type === "data-stream-error",
+	);
+	expect(errorIndex).toBeGreaterThanOrEqual(0);
+	expect(parts.slice(errorIndex)).toEqual([
+		expect.objectContaining({
+			type: "data-stream-error",
+			transient: true,
+			data: expect.objectContaining(expectedPayload),
+		}),
+		{ type: "finish", finishReason: "error" },
+		"[DONE]",
+	]);
+}
+
 async function resetCompletionMocks() {
 	const { touchConversation } = await import(
 		"$lib/server/services/conversations"
@@ -302,6 +396,9 @@ async function resetCompletionMocks() {
 		submitFileProductionIntake,
 	} = await import("$lib/server/services/file-production");
 	const { estimateTokenCount } = await import("$lib/utils/tokens");
+	const { buildSkillSystemPromptAppendix } = await import(
+		"$lib/server/services/skills/prompt-context"
+	);
 
 	(touchConversation as ReturnType<typeof vi.fn>).mockResolvedValue(undefined);
 	(createMessage as ReturnType<typeof vi.fn>).mockResolvedValue({
@@ -342,6 +439,9 @@ async function resetCompletionMocks() {
 		job: { id: "job-recovered-1" },
 	});
 	(estimateTokenCount as ReturnType<typeof vi.fn>).mockReturnValue(100);
+	(buildSkillSystemPromptAppendix as ReturnType<typeof vi.fn>).mockReturnValue(
+		undefined,
+	);
 }
 
 describe("stream-orchestrator SSE contract", () => {
@@ -402,6 +502,254 @@ describe("stream-orchestrator SSE contract", () => {
 				signal: expect.any(AbortSignal),
 			}),
 		);
+	});
+
+	it("opens the stream and reports preparation activity before deferred turn preparation resolves", async () => {
+		const { runStreamingNormalChatSendModel } = await import(
+			"$lib/server/services/chat-turn/streaming-normal-chat-model-run"
+		);
+		const { buildSkillSystemPromptAppendix } = await import(
+			"$lib/server/services/skills/prompt-context"
+		);
+		const skillPromptContext = createSkillPromptContext();
+		const preparedTurn = createTurn({
+			conversationId: "deferred-prep-conv",
+			streamId: "deferred-prep-stream",
+			depthMetadata: {
+				requested: "max",
+				appliedProfile: "maximum",
+				fallback: false,
+				modelId: "model1",
+				modelDisplayName: "Model One",
+			},
+			skillPromptContext,
+		});
+		let resolvePreparation!: (value: ChatTurnPreparationResult) => void;
+		let preparationSettled = false;
+		const deferredPreparation = new Promise<ChatTurnPreparationResult>(
+			(resolve) => {
+				resolvePreparation = (value) => {
+					preparationSettled = true;
+					resolve(value);
+				};
+			},
+		);
+		const prepareTurn = vi.fn(() => deferredPreparation);
+		(
+			buildSkillSystemPromptAppendix as ReturnType<typeof vi.fn>
+		).mockReturnValueOnce("skill appendix");
+		(
+			runStreamingNormalChatSendModel as ReturnType<typeof vi.fn>
+		).mockResolvedValue(
+			createNeutralStreamingResult([
+				{ type: "text_delta", text: "Prepared answer" },
+				finishEvent,
+			]),
+		);
+
+		const response = runChatStreamOrchestrator({
+			user: {
+				id: "u1",
+				displayName: "User",
+				email: "u@test.com",
+			},
+			turn: createAdmittedTurn({
+				conversationId: "deferred-prep-conv",
+				streamId: "deferred-prep-stream",
+			}),
+			prepareTurn,
+			upstreamMessage: "Hello",
+			downstreamAbortSignal: new AbortController().signal,
+			requestStartTime: Date.now(),
+		});
+		const reader = response.body?.getReader();
+		if (!reader) throw new Error("Missing response body");
+
+		const initialChunks = [
+			await readNextSseChunk(reader),
+			await readNextSseChunk(reader),
+		].join("\n\n");
+
+		expect(initialChunks).toContain(":");
+		expect(initialChunks).toContain("context-preparing");
+		expect(initialChunks).not.toContain("depth-selected");
+		expect(prepareTurn).toHaveBeenCalledTimes(1);
+		expect(preparationSettled).toBe(false);
+		expect(runStreamingNormalChatSendModel).not.toHaveBeenCalled();
+
+		resolvePreparation({ ok: true, value: preparedTurn });
+		const remainingChunks: string[] = [];
+		while (true) {
+			const { done, value } = await reader.read();
+			if (done) break;
+			if (value) remainingChunks.push(new TextDecoder().decode(value));
+		}
+		const remainingBody = remainingChunks.join("");
+
+		expect(remainingBody).toContain("depth-selected");
+		expect(remainingBody).toContain("Prepared answer");
+		expect(buildSkillSystemPromptAppendix).toHaveBeenCalledWith(
+			skillPromptContext,
+		);
+		expect(runStreamingNormalChatSendModel).toHaveBeenCalledWith(
+			expect.objectContaining({
+				depthMetadata: preparedTurn.depthMetadata,
+				systemPromptAppendix: "skill appendix",
+			}),
+		);
+	});
+
+	it("emits attachment readiness preparation failures as structured terminal stream frames", async () => {
+		const { runStreamingNormalChatSendModel } = await import(
+			"$lib/server/services/chat-turn/streaming-normal-chat-model-run"
+		);
+		const error: ChatTurnRequestError = {
+			status: 409,
+			error: "Some attachments are still being processed.",
+			code: "attachments_not_ready",
+			attachmentIds: ["attachment-1", "attachment-2"],
+		};
+		const { response, prepareTurn } = runAdmittedStreamWithPreparationFailure({
+			error,
+			turn: {
+				conversationId: "attachment-prep-failure-conv",
+				streamId: "attachment-prep-failure-stream",
+				attachmentIds: ["attachment-1", "attachment-2"],
+			},
+		});
+
+		const chunks = await readSseResponse(response);
+
+		expect(prepareTurn).toHaveBeenCalledTimes(1);
+		expectTerminalRequestErrorParts(chunks, {
+			code: "attachments_not_ready",
+			status: 409,
+			message: "Some attachments are still being processed.",
+			error: "Some attachments are still being processed.",
+			attachmentIds: ["attachment-1", "attachment-2"],
+		});
+		expect(runStreamingNormalChatSendModel).not.toHaveBeenCalled();
+	});
+
+	it("emits pending skill preparation failures as structured terminal stream frames", async () => {
+		const { runStreamingNormalChatSendModel } = await import(
+			"$lib/server/services/chat-turn/streaming-normal-chat-model-run"
+		);
+		const error: ChatTurnRequestError = {
+			status: 409,
+			error: "Another skill session is already active.",
+			code: "active_skill_session_conflict",
+		};
+		const { response } = runAdmittedStreamWithPreparationFailure({
+			error,
+			turn: {
+				conversationId: "skill-prep-failure-conv",
+				streamId: "skill-prep-failure-stream",
+				pendingSkill: {
+					id: "skill-1",
+					ownership: "user",
+					displayName: "Skill One",
+				},
+			},
+		});
+
+		const chunks = await readSseResponse(response);
+
+		expectTerminalRequestErrorParts(chunks, {
+			code: "active_skill_session_conflict",
+			status: 409,
+			message: "Another skill session is already active.",
+			error: "Another skill session is already active.",
+		});
+		expect(runStreamingNormalChatSendModel).not.toHaveBeenCalled();
+	});
+
+	it("emits generic depth preparation failures as structured terminal stream frames", async () => {
+		const { runStreamingNormalChatSendModel } = await import(
+			"$lib/server/services/chat-turn/streaming-normal-chat-model-run"
+		);
+		const error: ChatTurnRequestError = {
+			status: 422,
+			error: "Reasoning Depth could not be resolved for this model.",
+			code: "reasoning_depth_unavailable",
+		};
+		const { response } = runAdmittedStreamWithPreparationFailure({
+			error,
+			turn: {
+				conversationId: "depth-prep-failure-conv",
+				streamId: "depth-prep-failure-stream",
+				reasoningDepth: "max",
+			},
+		});
+
+		const chunks = await readSseResponse(response);
+
+		expectTerminalRequestErrorParts(chunks, {
+			code: "reasoning_depth_unavailable",
+			status: 422,
+			message: "Reasoning Depth could not be resolved for this model.",
+			error: "Reasoning Depth could not be resolved for this model.",
+		});
+		expect(runStreamingNormalChatSendModel).not.toHaveBeenCalled();
+	});
+
+	it("broadcasts preparation failure terminal frames before clearing the reconnect buffer", async () => {
+		const streamId = "prep-failure-listener-stream";
+		const conversationId = "prep-failure-listener-conv";
+		const { runStreamingNormalChatSendModel } = await import(
+			"$lib/server/services/chat-turn/streaming-normal-chat-model-run"
+		);
+		let resolvePreparation!: (value: ChatTurnPreparationResult) => void;
+		const deferredPreparation = new Promise<ChatTurnPreparationResult>(
+			(resolve) => {
+				resolvePreparation = resolve;
+			},
+		);
+		const prepareTurn = vi.fn(() => deferredPreparation);
+		const response = runChatStreamOrchestrator({
+			user: {
+				id: "u1",
+				displayName: "User",
+				email: "u@test.com",
+			},
+			turn: createAdmittedTurn({ conversationId, streamId }),
+			prepareTurn,
+			upstreamMessage: "Hello",
+			downstreamAbortSignal: new AbortController().signal,
+			requestStartTime: Date.now(),
+		});
+		const reader = response.body?.getReader();
+		if (!reader) throw new Error("Missing response body");
+		await readNextSseChunk(reader);
+		await readNextSseChunk(reader);
+
+		const listenerChunks: string[] = [];
+		expect(
+			subscribeToStream({ streamId, userId: "u1", conversationId }, (chunk) =>
+				listenerChunks.push(chunk),
+			),
+		).toBe(true);
+
+		resolvePreparation({
+			ok: false,
+			error: {
+				status: 403,
+				error: "Composer Command Registry is disabled.",
+				code: "composer_commands_disabled",
+			},
+		});
+		while (!(await reader.read()).done) {
+			/* drain */
+		}
+
+		expect(listenerChunks.join("")).toContain('"type":"data-stream-error"');
+		expect(listenerChunks.join("")).toContain(
+			'"code":"composer_commands_disabled"',
+		);
+		expect(
+			getStreamBuffer({ streamId, userId: "u1", conversationId }),
+		).toBeNull();
+		expect(runStreamingNormalChatSendModel).not.toHaveBeenCalled();
 	});
 
 	it("starts the Memory Reset Generation fact with an immediate rejection handler", async () => {
@@ -466,7 +814,7 @@ describe("stream-orchestrator SSE contract", () => {
 			].join("\n\n");
 
 			expect(initialChunks).toContain(":");
-			expect(initialChunks).toContain("depth-selected");
+			expect(initialChunks).toContain("context-preparing");
 			expect(listConversationFileProductionJobs).toHaveBeenCalledWith(
 				"u1",
 				"slow-snapshot-conv",
@@ -621,6 +969,64 @@ describe("stream-orchestrator SSE contract", () => {
 		}
 	});
 
+	it("reconnects to an active stream without preparing or starting a model run", async () => {
+		const { runStreamingNormalChatSendModel } = await import(
+			"$lib/server/services/chat-turn/streaming-normal-chat-model-run"
+		);
+		const ownerController = new AbortController();
+		registerActiveChatStream({
+			streamId: "active-reconnect-stream",
+			userId: "u1",
+			conversationId: "active-reconnect-conv",
+			controller: ownerController,
+		});
+		getOrCreateStreamBuffer({
+			streamId: "active-reconnect-stream",
+			userId: "u1",
+			conversationId: "active-reconnect-conv",
+			userMessage: "Hello",
+			reasoningDepth: "auto",
+		});
+		appendToStreamBuffer("active-reconnect-stream", "token", {
+			text: "Already streaming",
+		});
+		const prepareTurn = vi.fn(async (): Promise<ChatTurnPreparationResult> => {
+			throw new Error("Preparation must not run for active reconnects");
+		});
+
+		try {
+			const response = runChatStreamOrchestrator({
+				user: {
+					id: "u1",
+					displayName: "User",
+					email: "u@test.com",
+				},
+				turn: createAdmittedTurn({
+					conversationId: "active-reconnect-conv",
+					streamId: "active-reconnect-stream",
+				}),
+				prepareTurn,
+				upstreamMessage: "Hello",
+				downstreamAbortSignal: new AbortController().signal,
+				requestStartTime: Date.now(),
+				isReconnect: true,
+			});
+			const reader = response.body?.getReader();
+			if (!reader) throw new Error("Missing response body");
+
+			const firstChunk = await readNextSseChunk(reader);
+
+			expect(firstChunk).toContain(":");
+			expect(prepareTurn).not.toHaveBeenCalled();
+			expect(runStreamingNormalChatSendModel).not.toHaveBeenCalled();
+
+			await reader.cancel().catch(() => undefined);
+		} finally {
+			clearStreamBuffer("active-reconnect-stream");
+			unregisterActiveChatStream("active-reconnect-stream", ownerController);
+		}
+	});
+
 	it("logs provider-neutral stream timing without emitting timing SSE events", async () => {
 		const infoSpy = vi
 			.spyOn(console, "info")
@@ -647,17 +1053,29 @@ describe("stream-orchestrator SSE contract", () => {
 			]),
 		);
 
+		const preparedTurn = createTurn();
+		const prepareTurn = vi.fn(
+			async (): Promise<ChatTurnPreparationResult> => ({
+				ok: true,
+				value: preparedTurn,
+			}),
+		);
 		const response = runChatStreamOrchestrator({
 			user: {
 				id: "u1",
 				displayName: "User",
 				email: "u@test.com",
 			},
-			turn: createTurn(),
+			turn: createAdmittedTurn(),
+			prepareTurn,
 			upstreamMessage: "Hello",
 			downstreamAbortSignal: new AbortController().signal,
 			requestStartTime: Date.now(),
-			routePhaseTimings: { route_parse: 1, capacity: 2, preflight: 3 },
+			routePhaseTimings: {
+				[SERVER_STREAM_TIMELINE_MARKS.ROUTE_PARSE]: 1,
+				[SERVER_STREAM_TIMELINE_MARKS.CAPACITY]: 2,
+				[SERVER_STREAM_TIMELINE_MARKS.ADMISSION]: 3,
+			},
 		});
 
 		const chunks = await readSseResponse(response);
@@ -669,6 +1087,8 @@ describe("stream-orchestrator SSE contract", () => {
 			parseUiStreamParts(chunks),
 			"data-stream-metadata",
 		)[0];
+		const serverTimeline =
+			metadataPayload.serverTimeline as StreamTimelineTerminalPayload;
 		const phaseTimingLog = infoSpy.mock.calls.find(
 			([message]) => message === "[CHAT_STREAM] phase_timing",
 		);
@@ -687,13 +1107,14 @@ describe("stream-orchestrator SSE contract", () => {
 				"finish",
 			]),
 		);
-		expect(metadataPayload.serverTimeline).toEqual({
+		expect(serverTimeline).toEqual({
 			version: STREAM_TIMELINE_PAYLOAD_VERSION,
 			server: expect.objectContaining({
 				[SERVER_STREAM_TIMELINE_MARKS.ROUTE_PARSE]: 1,
 				[SERVER_STREAM_TIMELINE_MARKS.CAPACITY]: 2,
-				[SERVER_STREAM_TIMELINE_MARKS.PREFLIGHT]: 3,
+				[SERVER_STREAM_TIMELINE_MARKS.ADMISSION]: 3,
 				[SERVER_STREAM_TIMELINE_MARKS.PRELUDE]: expect.any(Number),
+				[SERVER_STREAM_TIMELINE_MARKS.TURN_PREPARATION]: expect.any(Number),
 				[SERVER_STREAM_TIMELINE_MARKS.MODEL_STREAM_REQUEST]: expect.any(Number),
 				[SERVER_STREAM_TIMELINE_MARKS.FIRST_UPSTREAM_EVENT]: expect.any(Number),
 				[SERVER_STREAM_TIMELINE_MARKS.FIRST_THINKING]: expect.any(Number),
@@ -701,12 +1122,15 @@ describe("stream-orchestrator SSE contract", () => {
 				[SERVER_STREAM_TIMELINE_MARKS.END]: expect.any(Number),
 			}),
 		});
+		expect(serverTimeline.server).not.toHaveProperty("preflight");
 		expect(phaseTimingLog?.[1]).toEqual(
 			expect.objectContaining({
 				conversationId: "test-conv",
 				streamId: "test-stream",
 				route_parse_ms: expect.any(Number),
+				admission_ms: expect.any(Number),
 				prelude_ms: expect.any(Number),
+				turn_preparation_ms: expect.any(Number),
 				model_stream_request_ms: expect.any(Number),
 				first_upstream_event_ms: expect.any(Number),
 				first_thinking_ms: expect.any(Number),
@@ -714,6 +1138,8 @@ describe("stream-orchestrator SSE contract", () => {
 				end_ms: expect.any(Number),
 			}),
 		);
+		expect(phaseTimingLog?.[1]).not.toHaveProperty("preflight_ms");
+		expect(prepareTurn).toHaveBeenCalledTimes(1);
 	});
 
 	it("propagates prepared context into finalization and end payload", async () => {

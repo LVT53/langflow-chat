@@ -18,9 +18,11 @@ import { resolveEffectiveSkillDefinition } from "$lib/server/services/skills/use
 import type { DepthMetadata } from "$lib/types";
 import { resolveReasoningDepthSelection } from "./depth-selection";
 import type {
+	AdmittedChatTurn,
+	ChatTurnAdmissionResult,
+	ChatTurnPreparationResult,
 	ChatTurnRequestError,
 	ParsedChatTurnRequest,
-	PreflightedChatTurn,
 } from "./types";
 
 const DEPTH_CLARIFICATION_CARRY_FORWARD_PROFILES = new Set([
@@ -28,11 +30,7 @@ const DEPTH_CLARIFICATION_CARRY_FORWARD_PROFILES = new Set([
 	"maximum",
 ]);
 
-type PreflightResult =
-	| { ok: true; value: PreflightedChatTurn }
-	| { ok: false; error: ChatTurnRequestError };
-
-type PreflightError = Extract<PreflightResult, { ok: false }>;
+type PreflightError = { ok: false; error: ChatTurnRequestError };
 
 type SkillSessionStartResult =
 	| { ok: true; value: Awaited<ReturnType<typeof startSkillSession>> }
@@ -41,7 +39,38 @@ type SkillSessionStartResult =
 export async function preflightChatTurn(params: {
 	userId: string;
 	request: ParsedChatTurnRequest;
-}): Promise<PreflightResult> {
+}): Promise<ChatTurnPreparationResult> {
+	const { userId, request } = params;
+	const admission = await admitChatTurn({ userId, request });
+	if (!admission.ok) return admission;
+
+	return prepareAdmittedChatTurn({
+		userId,
+		admittedTurn: admission.value,
+	});
+}
+
+export async function admitChatTurnStream(params: {
+	userId: string;
+	request: ParsedChatTurnRequest;
+}): Promise<ChatTurnAdmissionResult> {
+	return admitChatTurn(params);
+}
+
+export async function prepareAdmittedChatTurn(params: {
+	userId: string;
+	admittedTurn: AdmittedChatTurn;
+}): Promise<ChatTurnPreparationResult> {
+	return prepareChatTurn({
+		userId: params.userId,
+		request: params.admittedTurn,
+	});
+}
+
+async function admitChatTurn(params: {
+	userId: string;
+	request: ParsedChatTurnRequest;
+}): Promise<ChatTurnAdmissionResult> {
 	const { userId, request } = params;
 	const conversation = await getConversation(userId, request.conversationId);
 	if (!conversation) {
@@ -51,6 +80,17 @@ export async function preflightChatTurn(params: {
 		};
 	}
 
+	return {
+		ok: true,
+		value: request as AdmittedChatTurn,
+	};
+}
+
+async function prepareChatTurn(params: {
+	userId: string;
+	request: ParsedChatTurnRequest;
+}): Promise<ChatTurnPreparationResult> {
+	const { userId, request } = params;
 	const attachmentValidation = await validateAttachmentReadiness(
 		userId,
 		request,

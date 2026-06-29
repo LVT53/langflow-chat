@@ -37,6 +37,7 @@ import {
 	isAbruptUpstreamTermination,
 	type StreamPhaseTimings,
 	streamErrorEvent,
+	streamRequestErrorEvent,
 	streamResponseActivityEvent,
 } from "$lib/server/services/chat-turn/stream";
 import {
@@ -47,7 +48,12 @@ import {
 import { runNonStreamFallback } from "$lib/server/services/chat-turn/stream-fallback";
 import { doReconnect as runReconnect } from "$lib/server/services/chat-turn/stream-reconnect";
 import { runStreamingNormalChatSendModel } from "$lib/server/services/chat-turn/streaming-normal-chat-model-run";
-import type { ChatTurnPreflight } from "$lib/server/services/chat-turn/types";
+import type {
+	AdmittedChatTurn,
+	ChatTurnPreflight,
+	ChatTurnPreparationResult,
+	ChatTurnRequestError,
+} from "$lib/server/services/chat-turn/types";
 import { touchConversation } from "$lib/server/services/conversations";
 import {
 	assignFileProductionJobsToAssistantMessage,
@@ -58,6 +64,7 @@ import { createMessage } from "$lib/server/services/messages";
 import { isModelTimeoutError } from "$lib/server/services/normal-chat-failover";
 import { mapNormalChatModelRunUsageToProviderSnapshot } from "$lib/server/services/normal-chat-model";
 import { getPersonalityProfile } from "$lib/server/services/personality-profiles";
+import { buildSkillSystemPromptAppendix } from "$lib/server/services/skills/prompt-context";
 import {
 	attachContinuityToTaskState,
 	getContextDebugState,
@@ -236,6 +243,7 @@ export interface StreamOrchestratorOptions {
 		email: string | null;
 	};
 	turn: ChatTurnPreflight;
+	prepareTurn?: undefined;
 	upstreamMessage: string;
 	downstreamAbortSignal: AbortSignal;
 	requestStartTime: number;
@@ -246,8 +254,28 @@ export interface StreamOrchestratorOptions {
 	routePhaseTimings?: StreamPhaseTimings;
 }
 
+export type AdmittedStreamOrchestratorOptions = Omit<
+	StreamOrchestratorOptions,
+	"turn" | "prepareTurn"
+> & {
+	turn: AdmittedChatTurn;
+	prepareTurn: () => Promise<ChatTurnPreparationResult>;
+};
+
+function isPreparedChatTurn(
+	turn: ChatTurnPreflight | AdmittedChatTurn,
+): turn is ChatTurnPreflight {
+	return Boolean((turn as ChatTurnPreflight).depthMetadata);
+}
+
 export function runChatStreamOrchestrator(
 	options: StreamOrchestratorOptions,
+): Response;
+export function runChatStreamOrchestrator(
+	options: AdmittedStreamOrchestratorOptions,
+): Response;
+export function runChatStreamOrchestrator(
+	options: StreamOrchestratorOptions | AdmittedStreamOrchestratorOptions,
 ): Response {
 	const {
 		user,
@@ -260,6 +288,7 @@ export function runChatStreamOrchestrator(
 		skipHonchoContext,
 		systemPromptAppendix: retryAppendix,
 		routePhaseTimings,
+		prepareTurn,
 	} = options;
 	const conversationId = turn.conversationId;
 	const normalizedMessage = turn.normalizedMessage;
@@ -274,6 +303,10 @@ export function runChatStreamOrchestrator(
 	const personalityProfileId = turn.personalityProfileId;
 	const thinkingMode = turn.thinkingMode;
 	const skillControlEnabled = getConfig().composerCommandRegistryEnabled;
+	let preparedTurn: ChatTurnPreflight | null = isPreparedChatTurn(turn)
+		? turn
+		: null;
+	let preparedSkillSystemPromptAppendix: string | undefined;
 
 	const encoder = new TextEncoder();
 	let cancelStream = () => {};
@@ -662,14 +695,9 @@ export function runChatStreamOrchestrator(
 				streamStartTime,
 			);
 			emitResponseActivity({
-				id: RESPONSE_ACTIVITY_IDS.DEPTH_SELECTED,
-				kind: "depth",
-				status: "done",
-				detail: turn.depthMetadata?.appliedProfile ?? "standard",
-			});
-			const fileProductionJobIdsAtStart = startFileProductionJobIdsAtStartFact({
-				userId: user.id,
-				conversationId,
+				id: RESPONSE_ACTIVITY_IDS.CONTEXT_PREPARING,
+				kind: "context",
+				status: "running",
 			});
 
 			const emitError = (code: StreamErrorCode) =>
@@ -786,7 +814,8 @@ export function runChatStreamOrchestrator(
 			let latestModelId = modelId ?? "model1";
 			let latestModelDisplayName = modelDisplayName;
 			let latestProviderIconUrl: string | null = null;
-			let latestDepthMetadata: DepthMetadata = turn.depthMetadata;
+			let latestDepthMetadata: DepthMetadata | undefined =
+				preparedTurn?.depthMetadata;
 			let latestUpstreamFinishReason: FinishReason | null = null;
 			let latestUpstreamRawFinishReason: string | null = null;
 			let initialContextStatus: ConversationContextStatus | undefined;
@@ -795,6 +824,15 @@ export function runChatStreamOrchestrator(
 			let initialContextTraceSections:
 				| LegacyContextTraceSectionInput[]
 				| undefined;
+			let fileProductionJobIdsAtStart: StreamCompletionFact<FileProductionStartSnapshot> | null =
+				null;
+			const ensureFileProductionJobIdsAtStart = () => {
+				fileProductionJobIdsAtStart ??= startFileProductionJobIdsAtStartFact({
+					userId: user.id,
+					conversationId,
+				});
+				return fileProductionJobIdsAtStart;
+			};
 			const completeSuccess = async (
 				wasStopped = false,
 				options: { streamClosedWithoutFinish?: boolean } = {},
@@ -832,14 +870,14 @@ export function runChatStreamOrchestrator(
 					skillControlEnabled,
 					serverSegments: chunkRuntime.serverSegments,
 					attachmentIds: safeAttachmentIds,
-					linkedSources: turn.linkedSources,
+					linkedSources: preparedTurn?.linkedSources ?? turn.linkedSources,
 					activeSkillSessionId:
-						turn.skillPromptContext?.source === "active_session"
-							? turn.skillPromptContext.sessionId
+						preparedTurn?.skillPromptContext?.source === "active_session"
+							? preparedTurn.skillPromptContext.sessionId
 							: null,
 					activeDocumentArtifactId: activeDocumentArtifactId ?? null,
 					requestStartTime,
-					fileProductionJobIdsAtStart,
+					fileProductionJobIdsAtStart: ensureFileProductionJobIdsAtStart(),
 					latestContextStatus,
 					latestActiveWorkingSet,
 					latestTaskState,
@@ -882,6 +920,16 @@ export function runChatStreamOrchestrator(
 					clearStreamBuffer(streamId);
 				}
 				emitError(code);
+				closeDownstream();
+			};
+			const failPreparedTurnStream = (error: ChatTurnRequestError) => {
+				if (ended) return;
+				ended = true;
+				logPhaseTiming("error");
+				enqueueChunk(streamRequestErrorEvent(error));
+				if (streamId) {
+					clearStreamBuffer(streamId);
+				}
 				closeDownstream();
 			};
 
@@ -955,9 +1003,10 @@ export function runChatStreamOrchestrator(
 				| undefined;
 			let attemptedNonStreamFallback = false;
 			const currentSystemPromptAppendix = () => {
-				const appendices = [retryAppendix].filter((value): value is string =>
-					Boolean(value?.trim()),
-				);
+				const appendices = [
+					preparedSkillSystemPromptAppendix,
+					retryAppendix,
+				].filter((value): value is string => Boolean(value?.trim()));
 				return appendices.length > 0 ? appendices.join("\n\n") : undefined;
 			};
 			fallbackToNonStreaming = async (
@@ -1072,6 +1121,45 @@ export function runChatStreamOrchestrator(
 				return null;
 			};
 			try {
+				if (!preparedTurn) {
+					if (!prepareTurn) {
+						throw new Error("Stream turn preparation is required");
+					}
+					const turnPreparationStartedAt = Date.now();
+					let preparation: ChatTurnPreparationResult;
+					try {
+						preparation = await prepareTurn();
+					} finally {
+						recordDurationPhase(
+							SERVER_STREAM_TIMELINE_MARKS.TURN_PREPARATION,
+							turnPreparationStartedAt,
+						);
+					}
+					if (!preparation.ok) {
+						console.warn("[CHAT_STREAM] turn preparation failed", {
+							conversationId,
+							streamId,
+							status: preparation.error.status,
+							code: preparation.error.code,
+							error: preparation.error.error,
+						});
+						failPreparedTurnStream(preparation.error);
+						return;
+					}
+					preparedTurn = preparation.value;
+				}
+				preparedSkillSystemPromptAppendix = prepareTurn
+					? buildSkillSystemPromptAppendix(preparedTurn.skillPromptContext)
+					: undefined;
+				latestDepthMetadata = preparedTurn.depthMetadata;
+				emitResponseActivity({
+					id: RESPONSE_ACTIVITY_IDS.DEPTH_SELECTED,
+					kind: "depth",
+					status: "done",
+					detail: latestDepthMetadata.appliedProfile,
+				});
+				ensureFileProductionJobIdsAtStart();
+
 				if (personalityProfileId) {
 					const profile = await getPersonalityProfile(
 						personalityProfileId,
@@ -1108,11 +1196,6 @@ export function runChatStreamOrchestrator(
 					ReturnType<typeof runStreamingNormalChatSendModel>
 				> | null = null;
 				try {
-					emitResponseActivity({
-						id: RESPONSE_ACTIVITY_IDS.CONTEXT_PREPARING,
-						kind: "context",
-						status: "running",
-					});
 					modelRun = await runStreamingNormalChatSendModel(modelRunParams);
 					latestProviderIconUrl = modelRun.providerIconUrl ?? null;
 				} catch (error) {

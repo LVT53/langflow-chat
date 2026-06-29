@@ -102,6 +102,21 @@ export type PreflightedChatTurn = ParsedChatTurnRequest & {
 	depthMetadata: DepthMetadata;
 	skillPromptContext?: SkillPromptContext | null;
 };
+
+declare const admittedChatTurnBrand: unique symbol;
+
+export type AdmittedChatTurn = ParsedChatTurnRequest & {
+	readonly [admittedChatTurnBrand]: "admitted-chat-turn";
+};
+
+export type ChatTurnAdmissionResult =
+	| { ok: true; value: AdmittedChatTurn }
+	| { ok: false; error: ChatTurnRequestError };
+
+export type ChatTurnPreparationResult =
+	| { ok: true; value: PreflightedChatTurn }
+	| { ok: false; error: ChatTurnRequestError };
+
 export type ChatTurnPreflight = PreflightedChatTurn;
 
 export type WorkingSetItem = {

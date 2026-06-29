@@ -1187,6 +1187,23 @@ export function streamErrorEvent(code: StreamErrorCode): string {
 	].join("");
 }
 
+export function streamRequestErrorEvent(error: ChatTurnRequestError): string {
+	return [
+		streamDataPartEvent(
+			"data-stream-error",
+			stripUndefined({
+				code: error.code,
+				status: error.status,
+				message: error.error,
+				error: error.error,
+				attachmentIds: error.attachmentIds,
+			}),
+		),
+		streamFinishEvent("error"),
+		createUiMessageStreamDoneFrame(),
+	].join("");
+}
+
 function stripUndefined<T extends object>(value: T): T {
 	return Object.fromEntries(
 		Object.entries(value).filter(([, entry]) => entry !== undefined),

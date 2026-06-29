@@ -5,11 +5,12 @@ const mocks = vi.hoisted(() => ({
 	getConfig: vi.fn(),
 	requireAuth: vi.fn(),
 	parseChatTurnRequest: vi.fn(),
+	admitChatTurnStream: vi.fn(),
+	prepareAdmittedChatTurn: vi.fn(),
 	preflightChatTurn: vi.fn(),
 	runChatStreamOrchestrator: vi.fn(),
 	startStartedResetGenerationFact: vi.fn(),
 	getCurrentMemoryResetGeneration: vi.fn(),
-	buildSkillSystemPromptAppendix: vi.fn(),
 }));
 
 vi.mock("$lib/server/auth/hooks", () => ({
@@ -29,6 +30,8 @@ vi.mock("$lib/server/services/chat-turn/request", () => ({
 }));
 
 vi.mock("$lib/server/services/chat-turn/preflight", () => ({
+	admitChatTurnStream: mocks.admitChatTurnStream,
+	prepareAdmittedChatTurn: mocks.prepareAdmittedChatTurn,
 	preflightChatTurn: mocks.preflightChatTurn,
 }));
 
@@ -41,15 +44,14 @@ vi.mock("$lib/server/services/memory-profile", () => ({
 	getCurrentMemoryResetGeneration: mocks.getCurrentMemoryResetGeneration,
 }));
 
-vi.mock("$lib/server/services/skills/prompt-context", () => ({
-	buildSkillSystemPromptAppendix: mocks.buildSkillSystemPromptAppendix,
-}));
-
 import { checkStreamCapacity } from "$lib/server/services/chat-turn/active-streams";
-import { preflightChatTurn } from "$lib/server/services/chat-turn/preflight";
+import {
+	admitChatTurnStream,
+	prepareAdmittedChatTurn,
+} from "$lib/server/services/chat-turn/preflight";
 import { parseChatTurnRequest } from "$lib/server/services/chat-turn/request";
 import { runChatStreamOrchestrator } from "$lib/server/services/chat-turn/stream-orchestrator";
-import { buildSkillSystemPromptAppendix } from "$lib/server/services/skills/prompt-context";
+import type { ChatTurnPreparationResult } from "$lib/server/services/chat-turn/types";
 import { SERVER_STREAM_TIMELINE_MARKS } from "$lib/services/stream-timeline";
 import { POST } from "./+server";
 
@@ -99,6 +101,8 @@ const preflightedTurn = {
 	},
 	skillPromptContext: null,
 };
+
+const admittedTurn = parsedRequest;
 
 function makeEvent(
 	body: unknown,
@@ -154,6 +158,12 @@ async function expectResolvedWithoutWaiting<T>(
 	return result as T;
 }
 
+function ignoreDeferredPreparation(
+	promise: Promise<unknown> | null,
+): Promise<unknown> {
+	return promise?.catch(() => undefined) ?? Promise.resolve();
+}
+
 describe("POST /api/chat/stream route adapter", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -164,17 +174,24 @@ describe("POST /api/chat/stream route adapter", () => {
 			value: parsedRequest,
 		});
 		mocks.checkStreamCapacity.mockReturnValue({ allowed: true });
+		mocks.admitChatTurnStream.mockResolvedValue({
+			ok: true,
+			value: admittedTurn,
+		});
+		mocks.prepareAdmittedChatTurn.mockResolvedValue({
+			ok: true,
+			value: preflightedTurn,
+		});
 		mocks.preflightChatTurn.mockResolvedValue({
 			ok: true,
 			value: preflightedTurn,
 		});
 		mocks.startStartedResetGenerationFact.mockReturnValue(Promise.resolve(0));
 		mocks.getCurrentMemoryResetGeneration.mockResolvedValue(0);
-		mocks.buildSkillSystemPromptAppendix.mockReturnValue(undefined);
 		mocks.runChatStreamOrchestrator.mockReturnValue(makeStreamResponse());
 	});
 
-	it("returns the orchestrator SSE response and delegates the preflighted turn", async () => {
+	it("returns the orchestrator SSE response and delegates the admitted turn", async () => {
 		const abortController = new AbortController();
 		const event = makeEvent(
 			{
@@ -203,13 +220,11 @@ describe("POST /api/chat/stream route adapter", () => {
 			"stream",
 		);
 		expect(checkStreamCapacity).toHaveBeenCalledWith("user-1");
-		expect(preflightChatTurn).toHaveBeenCalledWith({
+		expect(admitChatTurnStream).toHaveBeenCalledWith({
 			userId: "user-1",
 			request: parsedRequest,
 		});
-		expect(buildSkillSystemPromptAppendix).toHaveBeenCalledWith(
-			preflightedTurn.skillPromptContext,
-		);
+		expect(mocks.preflightChatTurn).not.toHaveBeenCalled();
 		expect(runChatStreamOrchestrator).toHaveBeenCalledWith(
 			expect.objectContaining({
 				user: {
@@ -217,19 +232,72 @@ describe("POST /api/chat/stream route adapter", () => {
 					displayName: "Test User",
 					email: "test@example.com",
 				},
-				turn: preflightedTurn,
+				turn: admittedTurn,
 				upstreamMessage: "Hello",
 				downstreamAbortSignal: event.request.signal,
 				isReconnect: false,
 				startedResetGeneration: expect.any(Promise),
-				systemPromptAppendix: undefined,
+				prepareTurn: expect.any(Function),
 				routePhaseTimings: expect.objectContaining({
 					[SERVER_STREAM_TIMELINE_MARKS.ROUTE_PARSE]: expect.any(Number),
 					[SERVER_STREAM_TIMELINE_MARKS.CAPACITY]: expect.any(Number),
-					[SERVER_STREAM_TIMELINE_MARKS.PREFLIGHT]: expect.any(Number),
+					[SERVER_STREAM_TIMELINE_MARKS.ADMISSION]: expect.any(Number),
 				}),
 			}),
 		);
+		expect(
+			mocks.runChatStreamOrchestrator.mock.calls[0][0].routePhaseTimings,
+		).not.toHaveProperty("preflight");
+		const delegatedOptions = mocks.runChatStreamOrchestrator.mock.calls[0][0];
+		await delegatedOptions.prepareTurn();
+		expect(prepareAdmittedChatTurn).toHaveBeenCalledWith({
+			userId: "user-1",
+			admittedTurn,
+		});
+	});
+
+	it("delegates the stream response without awaiting deferred turn preparation", async () => {
+		let resolvePreparation!: (value: ChatTurnPreparationResult) => void;
+		const deferredPreparation = new Promise<ChatTurnPreparationResult>(
+			(resolve) => {
+				resolvePreparation = resolve;
+			},
+		);
+		let preparationSettled = false;
+		void deferredPreparation.then(() => {
+			preparationSettled = true;
+		});
+		let startedPreparation: Promise<unknown> | null = null;
+		mocks.prepareAdmittedChatTurn.mockReturnValueOnce(deferredPreparation);
+		mocks.runChatStreamOrchestrator.mockImplementationOnce((options) => {
+			startedPreparation = options.prepareTurn();
+			return makeStreamResponse();
+		});
+
+		const postPromise = Promise.resolve(
+			POST(makeEvent({ message: "Hello", conversationId: "conv-1" })),
+		);
+		try {
+			const response = await expectResolvedWithoutWaiting(postPromise);
+
+			expect(response.status).toBe(200);
+			expect(preparationSettled).toBe(false);
+			expect(startedPreparation).toBe(deferredPreparation);
+			expect(admitChatTurnStream).toHaveBeenCalledWith({
+				userId: "user-1",
+				request: parsedRequest,
+			});
+			expect(mocks.preflightChatTurn).not.toHaveBeenCalled();
+		} finally {
+			resolvePreparation({
+				ok: true,
+				value: preflightedTurn,
+			} as ChatTurnPreparationResult);
+			await Promise.all([
+				postPromise.catch(() => undefined),
+				ignoreDeferredPreparation(startedPreparation),
+			]);
+		}
 	});
 
 	it("delegates the stream response without waiting for Memory Reset Generation", async () => {
@@ -317,11 +385,12 @@ describe("POST /api/chat/stream route adapter", () => {
 			error: "Message must be a non-empty string",
 		});
 		expect(checkStreamCapacity).not.toHaveBeenCalled();
-		expect(preflightChatTurn).not.toHaveBeenCalled();
+		expect(admitChatTurnStream).not.toHaveBeenCalled();
+		expect(mocks.preflightChatTurn).not.toHaveBeenCalled();
 		expect(runChatStreamOrchestrator).not.toHaveBeenCalled();
 	});
 
-	it("rejects Atlas turns before capacity, preflight, or stream orchestration", async () => {
+	it("rejects Atlas turns before capacity, admission, or stream orchestration", async () => {
 		mocks.parseChatTurnRequest.mockResolvedValueOnce({
 			ok: true,
 			value: {
@@ -350,11 +419,12 @@ describe("POST /api/chat/stream route adapter", () => {
 			code: "ATLAS_STREAM_UNSUPPORTED",
 		});
 		expect(checkStreamCapacity).not.toHaveBeenCalled();
-		expect(preflightChatTurn).not.toHaveBeenCalled();
+		expect(admitChatTurnStream).not.toHaveBeenCalled();
+		expect(mocks.preflightChatTurn).not.toHaveBeenCalled();
 		expect(runChatStreamOrchestrator).not.toHaveBeenCalled();
 	});
 
-	it("returns capacity errors before preflight for new streams", async () => {
+	it("returns capacity errors before admission for new streams", async () => {
 		mocks.checkStreamCapacity.mockReturnValueOnce({
 			allowed: false,
 			reason: "global",
@@ -377,7 +447,8 @@ describe("POST /api/chat/stream route adapter", () => {
 			reason: "global",
 			retryAfter: 12,
 		});
-		expect(preflightChatTurn).not.toHaveBeenCalled();
+		expect(admitChatTurnStream).not.toHaveBeenCalled();
+		expect(mocks.preflightChatTurn).not.toHaveBeenCalled();
 		expect(runChatStreamOrchestrator).not.toHaveBeenCalled();
 	});
 
@@ -388,18 +459,13 @@ describe("POST /api/chat/stream route adapter", () => {
 			reconnectToStreamId: "orphan-stream",
 			normalizedMessage: "",
 		};
-		const reconnectTurn = {
-			...preflightedTurn,
-			...reconnectRequest,
-			skillPromptContext: null,
-		};
 		mocks.parseChatTurnRequest.mockResolvedValueOnce({
 			ok: true,
 			value: reconnectRequest,
 		});
-		mocks.preflightChatTurn.mockResolvedValueOnce({
+		mocks.admitChatTurnStream.mockResolvedValueOnce({
 			ok: true,
-			value: reconnectTurn,
+			value: reconnectRequest,
 		});
 
 		const response = await POST(
@@ -411,22 +477,27 @@ describe("POST /api/chat/stream route adapter", () => {
 
 		expect(response.status).toBe(200);
 		expect(checkStreamCapacity).not.toHaveBeenCalled();
+		expect(mocks.preflightChatTurn).not.toHaveBeenCalled();
 		expect(runChatStreamOrchestrator).toHaveBeenCalledWith(
 			expect.objectContaining({
-				turn: reconnectTurn,
+				turn: reconnectRequest,
 				upstreamMessage: "",
 				isReconnect: true,
+				prepareTurn: expect.any(Function),
 				routePhaseTimings: expect.objectContaining({
 					[SERVER_STREAM_TIMELINE_MARKS.ROUTE_PARSE]: expect.any(Number),
 					[SERVER_STREAM_TIMELINE_MARKS.CAPACITY]: expect.any(Number),
-					[SERVER_STREAM_TIMELINE_MARKS.PREFLIGHT]: expect.any(Number),
+					[SERVER_STREAM_TIMELINE_MARKS.ADMISSION]: expect.any(Number),
 				}),
 			}),
 		);
+		expect(
+			mocks.runChatStreamOrchestrator.mock.calls[0][0].routePhaseTimings,
+		).not.toHaveProperty("preflight");
 	});
 
-	it("returns preflight errors as JSON and skips orchestration", async () => {
-		mocks.preflightChatTurn.mockResolvedValueOnce({
+	it("returns admission errors as JSON and skips orchestration", async () => {
+		mocks.admitChatTurnStream.mockResolvedValueOnce({
 			ok: false,
 			error: {
 				status: 404,
@@ -444,6 +515,8 @@ describe("POST /api/chat/stream route adapter", () => {
 			status: 404,
 			error: "Conversation not found",
 		});
+		expect(mocks.preflightChatTurn).not.toHaveBeenCalled();
+		expect(prepareAdmittedChatTurn).not.toHaveBeenCalled();
 		expect(runChatStreamOrchestrator).not.toHaveBeenCalled();
 	});
 });

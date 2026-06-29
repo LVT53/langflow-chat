@@ -2,14 +2,16 @@ import type { RequestHandler } from "@sveltejs/kit";
 import { requireAuth } from "$lib/server/auth/hooks";
 import { getConfig } from "$lib/server/config-store";
 import { checkStreamCapacity } from "$lib/server/services/chat-turn/active-streams";
-import { preflightChatTurn } from "$lib/server/services/chat-turn/preflight";
+import {
+	admitChatTurnStream,
+	prepareAdmittedChatTurn,
+} from "$lib/server/services/chat-turn/preflight";
 import { parseChatTurnRequest } from "$lib/server/services/chat-turn/request";
 import { createStreamJsonErrorResponse } from "$lib/server/services/chat-turn/stream";
 import {
 	runChatStreamOrchestrator,
 	startStartedResetGenerationFact,
 } from "$lib/server/services/chat-turn/stream-orchestrator";
-import { buildSkillSystemPromptAppendix } from "$lib/server/services/skills/prompt-context";
 import { SERVER_STREAM_TIMELINE_MARKS } from "$lib/services/stream-timeline";
 
 export const POST: RequestHandler = async (event) => {
@@ -87,21 +89,18 @@ export const POST: RequestHandler = async (event) => {
 		recordPhase(SERVER_STREAM_TIMELINE_MARKS.CAPACITY);
 	}
 
-	const preflight = await preflightChatTurn({
+	const admission = await admitChatTurnStream({
 		userId: user.id,
 		request: parsedRequest.value,
 	});
-	if (!preflight.ok) {
-		return createStreamJsonErrorResponse(preflight.error);
+	if (!admission.ok) {
+		return createStreamJsonErrorResponse(admission.error);
 	}
-	recordPhase(SERVER_STREAM_TIMELINE_MARKS.PREFLIGHT);
+	recordPhase(SERVER_STREAM_TIMELINE_MARKS.ADMISSION);
 
-	const turn = preflight.value;
+	const turn = admission.value;
 
 	const upstreamMessage = turn.normalizedMessage;
-	const skillSystemPromptAppendix = buildSkillSystemPromptAppendix(
-		turn.skillPromptContext,
-	);
 	const startedResetGeneration = startStartedResetGenerationFact(user.id);
 
 	return runChatStreamOrchestrator({
@@ -111,12 +110,16 @@ export const POST: RequestHandler = async (event) => {
 			email: user.email,
 		},
 		turn,
+		prepareTurn: () =>
+			prepareAdmittedChatTurn({
+				userId: user.id,
+				admittedTurn: turn,
+			}),
 		upstreamMessage,
 		downstreamAbortSignal: event.request.signal,
 		requestStartTime,
 		startedResetGeneration,
 		isReconnect,
-		systemPromptAppendix: skillSystemPromptAppendix,
 		routePhaseTimings,
 	});
 };
