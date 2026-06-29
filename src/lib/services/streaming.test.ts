@@ -183,6 +183,39 @@ describe("streamChat", () => {
 		expect(cb.onError).not.toHaveBeenCalled();
 	});
 
+	it("reports the decoded finish part once before DONE while preserving single onEnd completion", async () => {
+		const events: string[] = [];
+		const callbacks = {
+			...makeCallbacks(),
+			onFinishPart: vi.fn((part: { finishReason?: string }) => {
+				events.push(`finish:${part.finishReason ?? ""}`);
+			}),
+		};
+		callbacks.onEnd.mockImplementation((fullText) => {
+			events.push(`end:${fullText}`);
+		});
+
+		const { done } = runStreamWithMockedResponse({
+			responseChunks: [
+				tokenEvent("Answer"),
+				uiFrame({ type: "finish", finishReason: "stop" }),
+				uiFrame({ type: "finish", finishReason: "stop" }),
+				uiFrame("[DONE]"),
+			],
+			callbacks,
+		});
+		await done;
+
+		expect(callbacks.onFinishPart).toHaveBeenCalledOnce();
+		expect(callbacks.onFinishPart).toHaveBeenCalledWith({
+			type: "finish",
+			finishReason: "stop",
+		});
+		expect(callbacks.onEnd).toHaveBeenCalledOnce();
+		expect(callbacks.onEnd).toHaveBeenCalledWith("Answer", undefined);
+		expect(events).toEqual(["finish:stop", "end:Answer"]);
+	});
+
 	it("maps AI SDK UI tool-call data parts onto the existing tool callback", async () => {
 		const onToolCall = vi.fn();
 		const { done } = runStreamWithMockedResponse({

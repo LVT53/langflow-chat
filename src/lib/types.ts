@@ -709,6 +709,13 @@ export interface SkillControlMessageMetadata {
 	};
 }
 
+export type NormalChatRuntimePhase =
+	| "idle"
+	| "preparing"
+	| "generating"
+	| "finalizing"
+	| "polling";
+
 export interface ChatMessage {
 	id: string;
 	// Stable client-side identity used for keyed rendering so stream finalization
@@ -719,6 +726,7 @@ export interface ChatMessage {
 	timestamp: number;
 	attachments?: ChatAttachment[];
 	isStreaming?: boolean;
+	runtimePhase?: NormalChatRuntimePhase;
 	thinking?: string;
 	isThinkingStreaming?: boolean;
 	thinkingTokenCount?: number;

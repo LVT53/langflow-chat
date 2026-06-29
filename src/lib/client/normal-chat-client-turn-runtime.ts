@@ -16,6 +16,7 @@ import type {
 	ChatMessage,
 	LinkedContextSource,
 	ModelId,
+	NormalChatRuntimePhase,
 	PendingAttachment,
 	PendingSkillSelection,
 	ReasoningDepth,
@@ -46,6 +47,7 @@ export type NormalChatSendPayload = {
 };
 
 export type NormalChatRuntimeSnapshot = {
+	phase: NormalChatRuntimePhase;
 	active: boolean;
 	isSending: boolean;
 	isPollingForCompletion: boolean;
@@ -111,6 +113,10 @@ export type NormalChatClientTurnRuntimeAdapters = {
 	applyResponseActivityUpdate?: (
 		placeholderId: string,
 		entry: ResponseActivityEntry,
+	) => void;
+	setAssistantRuntimePhase?: (
+		placeholderId: string,
+		phase: NormalChatRuntimePhase,
 	) => void;
 	shouldHydrateFileProductionJobsOnToolCall?: (
 		name: string,
@@ -258,6 +264,8 @@ export function createNormalChatClientTurnRuntime(
 	let activeStream: StreamHandle | null = null;
 	let activeTokenBuffer: TokenDisplayBuffer | null = null;
 	let activeThinkingBuffer: TokenDisplayBuffer | null = null;
+	let activePlaceholderId: string | null = null;
+	let phase: NormalChatRuntimePhase = "idle";
 	let isSending = false;
 	let isPollingForCompletion = false;
 	let streamInterruptedByBackground = false;
@@ -270,6 +278,7 @@ export function createNormalChatClientTurnRuntime(
 
 	function snapshot(): NormalChatRuntimeSnapshot {
 		return {
+			phase,
 			active: Boolean(activeStream),
 			isSending,
 			isPollingForCompletion,
@@ -293,14 +302,31 @@ export function createNormalChatClientTurnRuntime(
 
 	function beginTurn() {
 		isSending = true;
+		phase = "preparing";
 		emitState();
 	}
 
 	function completeTurn() {
 		isSending = false;
+		phase = "idle";
+		activePlaceholderId = null;
 		setActiveStream(null);
 		activeTokenBuffer = null;
 		activeThinkingBuffer = null;
+	}
+
+	function setPhase(
+		nextPhase: NormalChatRuntimePhase,
+		placeholderId = activePlaceholderId,
+	) {
+		const changed = phase !== nextPhase;
+		phase = nextPhase;
+		if (placeholderId && nextPhase !== "idle") {
+			adapters.setAssistantRuntimePhase?.(placeholderId, nextPhase);
+		}
+		if (changed) {
+			emitState();
+		}
 	}
 
 	function createAssistantPlaceholder(
@@ -314,6 +340,7 @@ export function createNormalChatClientTurnRuntime(
 			content: "",
 			timestamp: Date.now(),
 			isStreaming: true,
+			runtimePhase: "preparing",
 			...(generationDurationMs !== undefined ? { generationDurationMs } : {}),
 		};
 	}
@@ -366,6 +393,24 @@ export function createNormalChatClientTurnRuntime(
 		return serverAssistantId ?? null;
 	}
 
+	function isReceiptOnlyCompletionMetadata(metadata?: StreamMetadata): boolean {
+		if (!metadata?.assistantMessageId) return false;
+		const projectionFields = [
+			metadata.contextStatus,
+			metadata.contextSources,
+			metadata.activeWorkingSet,
+			metadata.taskState,
+			metadata.contextDebug,
+			metadata.messageEvidence,
+			metadata.generatedFiles,
+			metadata.fileProductionJobs,
+			metadata.contextCompressionSnapshots,
+			metadata.totalCostUsdMicros,
+			metadata.totalTokens,
+		];
+		return projectionFields.every((field) => field === undefined);
+	}
+
 	function takeQueuedContextCompression() {
 		if (!queuedContextCompression) return false;
 		queuedContextCompression = false;
@@ -411,12 +456,15 @@ export function createNormalChatClientTurnRuntime(
 
 		return {
 			onToken(chunk) {
+				setPhase("generating", params.placeholderId);
 				tokenBuffer.append(chunk);
 			},
 			onThinking(chunk) {
+				setPhase("generating", params.placeholderId);
 				thinkingBuffer.append(chunk);
 			},
 			onToolCall(name, input, status, details) {
+				setPhase("generating", params.placeholderId);
 				adapters.applyToolCallUpdate(
 					params.placeholderId,
 					name,
@@ -431,7 +479,16 @@ export function createNormalChatClientTurnRuntime(
 				}
 			},
 			onResponseActivity(entry) {
+				setPhase("generating", params.placeholderId);
 				adapters.applyResponseActivityUpdate?.(params.placeholderId, entry);
+			},
+			onFinishPart() {
+				if (isPollingForCompletion) {
+					return;
+				}
+				tokenBuffer.flush();
+				thinkingBuffer.flush();
+				setPhase("finalizing", params.placeholderId);
 			},
 			onTiming(timing) {
 				adapters.onStreamTiming?.(timing);
@@ -439,6 +496,8 @@ export function createNormalChatClientTurnRuntime(
 			onWaiting() {
 				activeStream?.detach();
 				isPollingForCompletion = true;
+				phase = "polling";
+				adapters.setAssistantRuntimePhase?.(params.placeholderId, "polling");
 				setActiveStream(null);
 				adapters.pollForCompletion(
 					params.placeholderId,
@@ -450,12 +509,12 @@ export function createNormalChatClientTurnRuntime(
 				thinkingBuffer.flush();
 
 				if (isPollingForCompletion) {
-					isPollingForCompletion = false;
-					emitState();
 					return;
 				}
 
 				lastAssistantResponse = fullText;
+				const shouldHydrateEventualMetadata =
+					isReceiptOnlyCompletionMetadata(metadata);
 				const serverAssistantId = applyMetadata(metadata);
 				adapters.finalizeStreamingMessage({
 					placeholderId: params.placeholderId,
@@ -466,6 +525,10 @@ export function createNormalChatClientTurnRuntime(
 				completeTurn();
 				if (serverAssistantId) {
 					adapters.pollMessageEvidence(serverAssistantId);
+					if (shouldHydrateEventualMetadata) {
+						adapters.refreshMessageCost(serverAssistantId);
+						adapters.hydrateConversationDetail();
+					}
 				}
 
 				adapters.maybeTriggerTitleGeneration(
@@ -574,6 +637,7 @@ export function createNormalChatClientTurnRuntime(
 
 	function startStream(params: StartStreamParams) {
 		const callbacks = buildCallbacks(params);
+		activePlaceholderId = params.placeholderId;
 		setActiveStream(
 			adapters.streamChat(
 				params.message,
@@ -855,6 +919,8 @@ export function createNormalChatClientTurnRuntime(
 		activeThinkingBuffer = null;
 		activeStream?.detach();
 		activeStream = null;
+		phase = "idle";
+		activePlaceholderId = null;
 		emitState();
 	}
 
@@ -866,6 +932,8 @@ export function createNormalChatClientTurnRuntime(
 		canRetry = false;
 		queuedTurn = null;
 		queuedContextCompression = false;
+		phase = "idle";
+		activePlaceholderId = null;
 		lastUserMessage = "";
 		lastAssistantResponse = "";
 		lastReasoningDepth = "auto";
@@ -979,6 +1047,8 @@ export function createNormalChatClientTurnRuntime(
 			isSending = false;
 			isPollingForCompletion = false;
 			canRetry = false;
+			phase = "idle";
+			activePlaceholderId = null;
 			setActiveStream(null);
 		},
 		restoreQueuedTurnToDraft,

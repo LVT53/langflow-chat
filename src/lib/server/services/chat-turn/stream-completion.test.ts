@@ -55,6 +55,22 @@ const defaultLatestContextTraceSections: LegacyContextTraceSectionInput[] = [
 	},
 ];
 
+function createDeferred<T>() {
+	let resolve!: (value: T) => void;
+	let reject!: (reason?: unknown) => void;
+	const promise = new Promise<T>((res, rej) => {
+		resolve = res;
+		reject = rej;
+	});
+	return { promise, resolve, reject };
+}
+
+async function flushMicrotasks(): Promise<void> {
+	await Promise.resolve();
+	await Promise.resolve();
+	await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 describe("completeStreamTurn", () => {
 	const mockCreateMessage = vi.fn();
 	const mockPersistUserTurnAttachments = vi.fn();
@@ -98,13 +114,6 @@ describe("completeStreamTurn", () => {
 		expect(finishEvent).toBeDefined();
 		if (!finishEvent) return {};
 		return finishEvent as Record<string, unknown>;
-	}
-
-	function getContextSourceGroups(payload: Record<string, unknown>): unknown[] {
-		const contextSources = payload.contextSources as
-			| { groups?: unknown[] }
-			| undefined;
-		return contextSources?.groups ?? [];
 	}
 
 	function isDataStreamMetadataEvent(
@@ -831,7 +840,7 @@ describe("completeStreamTurn", () => {
 		);
 	});
 
-	it("sends UI stream metadata with the old end payload shape", async () => {
+	it("sends UI stream metadata with the fast receipt payload shape", async () => {
 		await completeStreamTurn(defaultParams);
 
 		const data = getLatestEndPayload();
@@ -845,10 +854,13 @@ describe("completeStreamTurn", () => {
 				assistantMessageId: "asst-msg-1",
 				modelId: "model-1",
 				modelDisplayName: "Model One",
-				generatedFiles: [],
 				serverTimeline: defaultServerTimeline,
+				generationDurationMs: expect.any(Number),
 			}),
 		);
+		expect(data).not.toHaveProperty("generatedFiles");
+		expect(data).not.toHaveProperty("contextSources");
+		expect(data).not.toHaveProperty("contextCompressionSnapshots");
 		const partTypes = mockEnqueueChunk.mock.calls
 			.flatMap((call: string[]) => decodeUiMessageStreamParts(call[0] ?? ""))
 			.map((event) => (event === "[DONE]" ? "[DONE]" : event.type));
@@ -861,6 +873,108 @@ describe("completeStreamTurn", () => {
 				"[DONE]",
 			]),
 		);
+	});
+
+	it("emits terminal receipt before broad post-turn projection resolves", async () => {
+		const deferredTurnState = createDeferred<typeof defaultTurnState>();
+		mockPersistAssistantTurnState.mockImplementationOnce(
+			async () => deferredTurnState.promise,
+		);
+
+		const completion = completeStreamTurn(defaultParams);
+		await flushMicrotasks();
+
+		try {
+			expect(mockCloseDownstream).toHaveBeenCalledTimes(1);
+			const data = getLatestEndPayload();
+			expect(data).toEqual(
+				expect.objectContaining({
+					thinkingTokenCount: 100,
+					responseTokenCount: 100,
+					totalTokenCount: 200,
+					wasStopped: false,
+					userMessageId: "user-msg-1",
+					assistantMessageId: "asst-msg-1",
+					modelId: "model-1",
+					modelDisplayName: "Model One",
+					serverTimeline: defaultServerTimeline,
+					generationDurationMs: expect.any(Number),
+				}),
+			);
+			expect(data).not.toHaveProperty("contextSources");
+			expect(data).not.toHaveProperty("generatedFiles");
+			expect(data).not.toHaveProperty("fileProductionJobs");
+			expect(data).not.toHaveProperty("contextCompressionSnapshots");
+			expect(data).not.toHaveProperty("totalCostUsdMicros");
+			expect(data).not.toHaveProperty("activeWorkingSet");
+			expect(data).not.toHaveProperty("taskState");
+			expect(data).not.toHaveProperty("contextDebug");
+		} finally {
+			deferredTurnState.resolve(defaultTurnState);
+			await completion.catch(() => undefined);
+		}
+	});
+
+	it("continues deferred post-turn projection after the terminal receipt closes", async () => {
+		const deferredTurnState = createDeferred<typeof defaultTurnState>();
+		mockPersistAssistantTurnState.mockImplementationOnce(
+			async () => deferredTurnState.promise,
+		);
+
+		const completion = completeStreamTurn(defaultParams);
+		await flushMicrotasks();
+
+		expect(mockCloseDownstream).toHaveBeenCalledTimes(1);
+		expect(mockPersistAssistantEvidence).not.toHaveBeenCalled();
+		expect(mockRunPostTurnTasks).not.toHaveBeenCalled();
+
+		deferredTurnState.resolve(defaultTurnState);
+		await completion;
+		await flushMicrotasks();
+
+		expect(mockPersistAssistantEvidence).toHaveBeenCalledWith(
+			expect.objectContaining({
+				assistantMessageId: "asst-msg-1",
+			}),
+		);
+		expect(mockRunPostTurnTasks).toHaveBeenCalledWith(
+			expect.objectContaining({
+				assistantMessageId: "asst-msg-1",
+				maintenanceReason: "chat_stream",
+			}),
+		);
+	});
+
+	it("logs deferred projection failures without preventing terminal stream success", async () => {
+		const projectionError = new Error("projection offline");
+		const errorSpy = vi
+			.spyOn(console, "error")
+			.mockImplementation(() => undefined);
+		mockPersistAssistantTurnState.mockRejectedValueOnce(projectionError);
+
+		try {
+			await completeStreamTurn(defaultParams);
+
+			expect(mockCloseDownstream).toHaveBeenCalledTimes(1);
+			expect(getLatestEndPayload()).toMatchObject({
+				userMessageId: "user-msg-1",
+				assistantMessageId: "asst-msg-1",
+			});
+			expect(getLatestFinishPayload()).toMatchObject({
+				type: "finish",
+				finishReason: "stop",
+			});
+			expect(errorSpy).toHaveBeenCalledWith(
+				"[STREAM] Deferred post-turn projection failed",
+				expect.objectContaining({
+					conversationId: "conv-1",
+					assistantMessageId: "asst-msg-1",
+					error: projectionError,
+				}),
+			);
+		} finally {
+			errorSpy.mockRestore();
+		}
 	});
 
 	it("sends terminal server timeline metadata for stopped streams", async () => {
@@ -877,7 +991,7 @@ describe("completeStreamTurn", () => {
 		});
 	});
 
-	it("sends persisted conversation cost totals in UI stream metadata", async () => {
+	it("omits conversation cost totals from fast receipt metadata", async () => {
 		mockGetConversationCostSummary.mockResolvedValueOnce({
 			totalCostUsdMicros: 420_000,
 			totalTokens: 42,
@@ -885,16 +999,12 @@ describe("completeStreamTurn", () => {
 
 		await completeStreamTurn(defaultParams);
 
-		expect(mockGetConversationCostSummary).toHaveBeenCalledWith("conv-1");
-		expect(getLatestEndPayload()).toEqual(
-			expect.objectContaining({
-				totalCostUsdMicros: 420_000,
-				totalTokens: 42,
-			}),
-		);
+		expect(mockGetConversationCostSummary).not.toHaveBeenCalled();
+		expect(getLatestEndPayload()).not.toHaveProperty("totalCostUsdMicros");
+		expect(getLatestEndPayload()).not.toHaveProperty("totalTokens");
 	});
 
-	it("builds end metadata contextSources from persisted turn state and attached artifacts", async () => {
+	it("defers contextSources and turn-state projection outside fast receipt metadata", async () => {
 		const staleWorkingSet = [
 			artifact("artifact-stale-working", "Stale working"),
 		];
@@ -930,41 +1040,19 @@ describe("completeStreamTurn", () => {
 
 		const data = getLatestEndPayload();
 
-		expect(data.activeWorkingSet).toEqual(persistedWorkingSet);
-		expect(data.taskState).toEqual(persistedTaskState);
-		expect(data.contextDebug).toEqual(persistedContextDebug);
-		expect(getContextSourceGroups(data)).toEqual(
-			expect.arrayContaining([
-				expect.objectContaining({
-					kind: "attachments",
-					items: [
-						expect.objectContaining({
-							artifactId: "artifact-attached",
-							title: "Attached source",
-						}),
-					],
-				}),
-				expect.objectContaining({
-					kind: "working_set",
-					items: [
-						expect.objectContaining({
-							artifactId: "artifact-persisted-working",
-							title: "Persisted working",
-						}),
-					],
-				}),
-				expect.objectContaining({
-					kind: "task_evidence",
-					items: [
-						expect.objectContaining({
-							artifactId: "artifact-persisted-evidence",
-							title: "Persisted evidence",
-						}),
-					],
-				}),
-			]),
+		expect(mockPersistAssistantTurnState).toHaveBeenCalledWith(
+			expect.objectContaining({
+				assistantMessageId: "asst-msg-1",
+			}),
 		);
-		expect(JSON.stringify(data.contextSources)).not.toContain("Stale");
+		expect(mockGetProjectReferenceContext).toHaveBeenCalledWith({
+			userId: "user-1",
+			conversationId: "conv-1",
+		});
+		expect(data).not.toHaveProperty("activeWorkingSet");
+		expect(data).not.toHaveProperty("taskState");
+		expect(data).not.toHaveProperty("contextDebug");
+		expect(data).not.toHaveProperty("contextSources");
 	});
 
 	it("includes project folder awareness in end metadata and degrades lookup failures", async () => {
@@ -991,18 +1079,7 @@ describe("completeStreamTurn", () => {
 			userId: "user-1",
 			conversationId: "conv-1",
 		});
-		expect(getContextSourceGroups(data)).toEqual([
-			expect.objectContaining({
-				kind: "project_folder",
-				state: "inferred",
-				items: [
-					expect.objectContaining({
-						title: "Launch folder",
-						sourceType: "conversation",
-					}),
-				],
-			}),
-		]);
+		expect(data).not.toHaveProperty("contextSources");
 
 		vi.clearAllMocks();
 		mockCreateMessage
@@ -1024,7 +1101,7 @@ describe("completeStreamTurn", () => {
 		await completeStreamTurn(defaultParams);
 
 		const fallbackData = getLatestEndPayload();
-		expect(getContextSourceGroups(fallbackData)).toEqual([]);
+		expect(fallbackData).not.toHaveProperty("contextSources");
 	});
 
 	it("sets wasStopped to true in the end event when requested", async () => {
@@ -1181,33 +1258,8 @@ describe("completeStreamTurn", () => {
 			["job-new"],
 		);
 		const data = getLatestEndPayload();
-		expect(data.generatedFiles).toEqual([
-			expect.objectContaining({
-				id: "gf-new",
-				conversationId: "conv-1",
-				assistantMessageId: "asst-msg-1",
-				artifactId: "artifact-generated",
-				filename: "reconnect-output.pdf",
-				mimeType: "application/pdf",
-				sizeBytes: 456,
-				createdAt: 1_777_140_200,
-			}),
-		]);
-		expect(data.fileProductionJobs).toEqual([
-			expect.objectContaining({
-				id: "job-new",
-				assistantMessageId: "asst-msg-1",
-				status: "succeeded",
-				files: [
-					expect.objectContaining({
-						id: "gf-new",
-						filename: "reconnect-output.pdf",
-					}),
-				],
-			}),
-		]);
-		expect(JSON.stringify(data.generatedFiles)).not.toContain("storagePath");
-		expect(JSON.stringify(data.generatedFiles)).not.toContain("user-1");
+		expect(data).not.toHaveProperty("generatedFiles");
+		expect(data).not.toHaveProperty("fileProductionJobs");
 	});
 
 	it("attaches produce_file jobs for completed streams with empty visible text", async () => {
@@ -1265,28 +1317,8 @@ describe("completeStreamTurn", () => {
 		);
 		const data = getLatestEndPayload();
 		expect(data.assistantMessageId).toBe("asst-msg-1");
-		expect(data.generatedFiles).toEqual([
-			{
-				id: "gf-new",
-				conversationId: "conv-1",
-				assistantMessageId: "asst-msg-1",
-				artifactId: "artifact-generated",
-				documentFamilyId: "family-1",
-				documentFamilyStatus: "active",
-				documentLabel: "Output",
-				documentRole: "primary",
-				versionNumber: 2,
-				originConversationId: "conv-1",
-				originAssistantMessageId: "asst-msg-1",
-				sourceChatFileId: null,
-				filename: "output.txt",
-				mimeType: "text/plain",
-				sizeBytes: 123,
-				createdAt: 1_777_140_100,
-			},
-		]);
-		expect(JSON.stringify(data.generatedFiles)).not.toContain("storagePath");
-		expect(JSON.stringify(data.generatedFiles)).not.toContain("user-1");
+		expect(data).not.toHaveProperty("generatedFiles");
+		expect(data).not.toHaveProperty("fileProductionJobs");
 	});
 
 	it("attaches failed produce_file jobs and emits a visible failure notice", async () => {
@@ -1527,6 +1559,9 @@ describe("completeStreamTurn", () => {
 		const rejectedSnapshot = Promise.reject(snapshotError);
 		rejectedSnapshot.catch(() => undefined);
 		const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+		const errorSpy = vi
+			.spyOn(console, "error")
+			.mockImplementation(() => undefined);
 		mockGetFileProductionJobs.mockResolvedValue([
 			{ id: "job-existing" },
 			{ id: "job-new" },
@@ -1543,8 +1578,8 @@ describe("completeStreamTurn", () => {
 			expect(mockAssignFileProductionJobs).not.toHaveBeenCalled();
 			expect(getLatestEndPayload()).toMatchObject({
 				assistantMessageId: "asst-msg-1",
-				fileProductionJobs: [],
 			});
+			expect(getLatestEndPayload()).not.toHaveProperty("fileProductionJobs");
 			expect(warn).toHaveBeenCalledWith(
 				"[CHAT_STREAM] Failed to snapshot file-production jobs at stream start",
 				expect.objectContaining({
@@ -1555,6 +1590,7 @@ describe("completeStreamTurn", () => {
 			);
 		} finally {
 			warn.mockRestore();
+			errorSpy.mockRestore();
 		}
 	});
 

@@ -152,6 +152,10 @@ function makeAdapters(
 		}),
 		appendThinkingChunk: vi.fn(),
 		applyToolCallUpdate: vi.fn(),
+		setAssistantRuntimePhase: vi.fn((placeholderId, phase) => {
+			const message = messages.find((item) => item.id === placeholderId);
+			if (message) message.runtimePhase = phase;
+		}),
 		removeMessage: vi.fn((messageId) => {
 			const index = messages.findIndex((item) => item.id === messageId);
 			if (index !== -1) messages.splice(index, 1);
@@ -168,6 +172,7 @@ function makeAdapters(
 				if (message) {
 					message.id = metadata?.assistantMessageId ?? message.id;
 					message.isStreaming = false;
+					message.runtimePhase = undefined;
 				}
 			},
 		),
@@ -220,6 +225,8 @@ describe("Normal Chat Client Turn Runtime", () => {
 		const { adapters, streamInvocations, messages, snapshots } = makeAdapters();
 		const runtime = createNormalChatClientTurnRuntime(adapters);
 
+		expect(runtime.snapshot().phase).toBe("idle");
+
 		runtime.send({
 			message: "Hello",
 			attachmentIds: [],
@@ -245,8 +252,13 @@ describe("Normal Chat Client Turn Runtime", () => {
 		expect(snapshots.at(-1)).toMatchObject({
 			isSending: true,
 			active: true,
+			phase: "preparing",
 			canRetry: true,
 			queuedTurn: null,
+		});
+		expect(messages[1]).toMatchObject({
+			role: "assistant",
+			runtimePhase: "preparing",
 		});
 
 		const metadata: StreamMetadata = {
@@ -255,6 +267,20 @@ describe("Normal Chat Client Turn Runtime", () => {
 			contextStatus: conversationContextStatusFixture(),
 		};
 		streamInvocations[0].callbacks.onToken("Hi");
+		expect(runtime.snapshot().phase).toBe("generating");
+		expect(messages[1]).toMatchObject({ runtimePhase: "generating" });
+
+		streamInvocations[0].callbacks.onFinishPart?.({
+			type: "finish",
+			finishReason: "stop",
+		});
+		expect(runtime.snapshot()).toMatchObject({
+			phase: "finalizing",
+			active: true,
+			isSending: true,
+		});
+		expect(messages[1]).toMatchObject({ runtimePhase: "finalizing" });
+
 		streamInvocations[0].callbacks.onEnd("Hi", metadata);
 
 		expect(adapters.appendTokenChunk).toHaveBeenCalledWith("id-2", "Hi");
@@ -273,8 +299,57 @@ describe("Normal Chat Client Turn Runtime", () => {
 		expect(runtime.snapshot()).toMatchObject({
 			active: false,
 			isSending: false,
+			phase: "idle",
 			canRetry: false,
 		});
+		expect(messages[1]).toMatchObject({
+			id: "assistant-1",
+			runtimePhase: undefined,
+		});
+	});
+
+	it("clears sending before receipt-only completion metadata starts eventual hydration", () => {
+		const { adapters, streamInvocations } = makeAdapters();
+		const runtime = createNormalChatClientTurnRuntime(adapters);
+		const hydrationSnapshots: NormalChatRuntimeSnapshot[] = [];
+		vi.mocked(adapters.hydrateConversationDetail).mockImplementation(() => {
+			hydrationSnapshots.push(runtime.snapshot());
+		});
+
+		runtime.send({
+			message: "Make a report",
+			attachmentIds: [],
+			attachments: [],
+			pendingAttachments: [],
+		});
+
+		streamInvocations[0].callbacks.onToken("Done");
+		streamInvocations[0].callbacks.onFinishPart?.({
+			type: "finish",
+			finishReason: "stop",
+		});
+		streamInvocations[0].callbacks.onEnd("Done", {
+			assistantMessageId: "assistant-1",
+			userMessageId: "user-1",
+			responseTokenCount: 8,
+		});
+
+		expect(runtime.snapshot()).toMatchObject({
+			active: false,
+			isSending: false,
+			phase: "idle",
+		});
+		expect(adapters.hydrateConversationDetail).toHaveBeenCalledTimes(1);
+		expect(hydrationSnapshots[0]).toMatchObject({
+			active: false,
+			isSending: false,
+			phase: "idle",
+		});
+		expect(adapters.pollMessageEvidence).toHaveBeenCalledWith("assistant-1");
+		expect(adapters.refreshMessageCost).toHaveBeenCalledWith("assistant-1");
+		expect(
+			adapters.attachFileProductionJobsToAssistantMessage,
+		).toHaveBeenCalledWith("assistant-1");
 	});
 
 	it("sends Atlas turns through the send route adapter and starts polling detail", async () => {
@@ -696,6 +771,7 @@ describe("Normal Chat Client Turn Runtime", () => {
 		expect(runtime.snapshot()).toMatchObject({
 			active: false,
 			isSending: false,
+			phase: "idle",
 			queuedTurn: null,
 		});
 	});
@@ -798,6 +874,7 @@ describe("Normal Chat Client Turn Runtime", () => {
 		expect(runtime.snapshot()).toMatchObject({
 			active: false,
 			isSending: false,
+			phase: "idle",
 			queuedContextCompression: false,
 			canRetry: true,
 		});
@@ -940,13 +1017,22 @@ describe("Normal Chat Client Turn Runtime", () => {
 		});
 
 		streamInvocations[0].callbacks.onWaiting?.();
+		streamInvocations[0].callbacks.onFinishPart?.({
+			type: "finish",
+			finishReason: "stop",
+		});
+		streamInvocations[0].callbacks.onEnd("Persisted elsewhere", {
+			assistantMessageId: "assistant-1",
+		});
 
 		expect(streamInvocations[0].handle.detach).toHaveBeenCalledTimes(1);
 		expect(adapters.pollForCompletion).toHaveBeenCalledWith("id-1", "id-2");
+		expect(adapters.finalizeStreamingMessage).not.toHaveBeenCalled();
 		expect(runtime.snapshot()).toMatchObject({
 			active: false,
 			isSending: true,
 			isPollingForCompletion: true,
+			phase: "polling",
 		});
 	});
 

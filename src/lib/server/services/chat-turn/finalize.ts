@@ -177,6 +177,7 @@ export type FinalizeChatTurnParams = {
 	buildCompletionContextSources?: typeof buildChatTurnCompletionContextSources;
 	persistUserAttachmentsBeforeAssistantMessage?: boolean;
 	waitForEvidenceBeforePostTurnTasks?: boolean;
+	deferPostTurnProjection?: boolean;
 	generatedOutputReconciliation?: GeneratedOutputReconciliationParams;
 	skipAssistantProseMemoryIntake?: boolean;
 	skipHonchoEnrichment?: boolean;
@@ -220,6 +221,16 @@ export type BuildChatTurnCompletionContextSourcesParams = {
 	contextTraceSections?: LegacyContextTraceSectionInput[];
 	toolCalls?: ToolCallEntry[];
 };
+
+function buildEmptyCompletionContextSources(params: {
+	userId: string;
+	conversationId: string;
+}): ContextSourcesState {
+	return buildContextSourcesState({
+		userId: params.userId,
+		conversationId: params.conversationId,
+	});
+}
 
 export async function buildChatTurnCompletionContextSources(
 	params: BuildChatTurnCompletionContextSourcesParams,
@@ -446,6 +457,7 @@ export async function finalizeChatTurn(
 		params.persistUserAttachmentsBeforeAssistantMessage ?? true;
 	const waitForEvidenceBeforePostTurnTasks =
 		params.waitForEvidenceBeforePostTurnTasks ?? true;
+	const shouldPersistTurnState = params.persistTurnState ?? true;
 	let attachedArtifacts: WorkingSetItem[] | undefined;
 	let attachmentTask: Promise<WorkingSetItem[] | undefined> =
 		Promise.resolve(undefined);
@@ -544,8 +556,189 @@ export async function finalizeChatTurn(
 		attachmentTask = Promise.resolve(undefined);
 	}
 
+	if (params.deferPostTurnProjection) {
+		const createPostTurnTask = () =>
+			(async () => {
+				if (!assistantMessage) {
+					await attachmentTask.catch(() => undefined);
+					return;
+				}
+
+				let turnState: PersistAssistantTurnStateResult | null = null;
+				if (shouldPersistTurnState) {
+					if (params.skillControlOperations.length > 0) {
+						await commitSkillNoteOperationsAfterAssistantMessage({
+							userId: params.userId,
+							conversationId: params.conversationId,
+							sessionId: params.skillControlSessionId,
+							assistantMessageId: assistantMessage.id,
+							operations: params.skillControlOperations,
+						}).catch((error) => {
+							console.warn(
+								`${params.logPrefix} Failed to apply Skill Note Operations`,
+								{
+									...buildSkillControlLogContext({
+										conversationId: params.conversationId,
+										assistantMessageId: assistantMessage.id,
+										streamId: params.streamId,
+									}),
+									error,
+								},
+							);
+						});
+						await applySkillControlOperations({
+							userId: params.userId,
+							conversationId: params.conversationId,
+							assistantMessageId: assistantMessage.id,
+							operations: params.skillControlOperations,
+						}).catch((error) => {
+							console.warn(
+								`${params.logPrefix} Failed to apply Skill Control Envelope`,
+								{
+									...buildSkillControlLogContext({
+										conversationId: params.conversationId,
+										assistantMessageId: assistantMessage.id,
+										streamId: params.streamId,
+									}),
+									error,
+								},
+							);
+						});
+					}
+
+					turnState = await persistAssistantTurnStateImpl({
+						userId: params.userId,
+						conversationId: params.conversationId,
+						normalizedMessage: params.normalizedMessage,
+						assistantResponse: params.assistantResponse,
+						attachmentIds: params.attachmentIds,
+						activeDocumentArtifactId:
+							params.activeDocumentArtifactId ?? undefined,
+						contextStatus: params.contextStatus,
+						initialTaskState: params.initialTaskState,
+						initialContextDebug: params.initialContextDebug,
+						userMessageId: userMessage?.id ?? null,
+						assistantMessageId: assistantMessage.id,
+						analytics: params.analytics,
+						continuitySource: params.continuitySource,
+						honchoContext: params.honchoContext,
+						honchoSnapshot: params.honchoSnapshot,
+						skipHonchoEnrichment: params.skipHonchoEnrichment,
+					});
+				}
+
+				const evidenceTask =
+					turnState && shouldPersistTurnState
+						? persistAssistantEvidenceImpl({
+								logPrefix: params.logPrefix,
+								userId: params.userId,
+								conversationId: params.conversationId,
+								assistantMessageId: assistantMessage.id,
+								normalizedMessage: params.normalizedMessage,
+								assistantResponse: params.assistantResponse,
+								attachmentIds: params.attachmentIds,
+								taskState: turnState.taskState,
+								contextStatus: params.contextStatus ?? null,
+								contextDebug: turnState.contextDebug,
+								initialTaskState: params.initialTaskState,
+								initialContextDebug: params.initialContextDebug,
+								contextTraceSections: params.contextTraceSections,
+								toolCalls: params.toolCalls,
+								webCitationAudit: params.webCitationAudit,
+							})
+						: Promise.resolve();
+
+				const resolvedAttachedArtifacts =
+					attachedArtifacts ?? (await attachmentTask);
+				await buildCompletionContextSourcesImpl({
+					userId: params.userId,
+					conversationId: params.conversationId,
+					contextStatus: params.contextStatus ?? null,
+					contextDebug:
+						turnState?.contextDebug ?? params.initialContextDebug ?? null,
+					attachedArtifacts: resolvedAttachedArtifacts,
+					linkedSources: params.linkedSources ?? [],
+					activeWorkingSet: turnState?.activeWorkingSet,
+					contextTraceSections: params.contextTraceSections,
+					toolCalls: params.toolCalls,
+				}).catch((error) => {
+					console.error(
+						`${params.logPrefix} Deferred context-source projection failed`,
+						{
+							conversationId: params.conversationId,
+							assistantMessageId: assistantMessage.id,
+							error,
+						},
+					);
+				});
+
+				if (params.generatedOutputReconciliation) {
+					await reconcileGeneratedOutputsForAssistantMessage({
+						logPrefix: params.logPrefix,
+						userId: params.userId,
+						conversationId: params.conversationId,
+						assistantMessageId: assistantMessage.id,
+						assistantResponse: params.assistantResponse,
+						reconciliation: params.generatedOutputReconciliation,
+					});
+				}
+
+				if (turnState && shouldPersistTurnState) {
+					const runTask = () =>
+						runPostTurnTasksImpl({
+							logPrefix: params.logPrefix,
+							userId: params.userId,
+							conversationId: params.conversationId,
+							upstreamMessage: params.upstreamMessage,
+							userMessage: params.normalizedMessage,
+							userMessageId: userMessage?.id ?? null,
+							assistantResponse: params.assistantResponse,
+							assistantMirrorContent: params.assistantMirrorContent,
+							assistantMessageId: assistantMessage.id,
+							workCapsule: turnState.workCapsule,
+							maintenanceReason: params.maintenanceReason,
+							startedResetGeneration: params.startedResetGeneration,
+							skipAssistantProseMemoryIntake:
+								params.skipAssistantProseMemoryIntake,
+							skipHonchoEnrichment: params.skipHonchoEnrichment,
+						});
+
+					if (waitForEvidenceBeforePostTurnTasks) {
+						await evidenceTask;
+						await runTask();
+					} else {
+						void evidenceTask;
+						await runTask();
+					}
+				}
+			})().catch((error) => {
+				console.error(
+					`${params.logPrefix} Deferred post-turn projection failed`,
+					{
+						conversationId: params.conversationId,
+						assistantMessageId: assistantMessage?.id ?? null,
+						error,
+					},
+				);
+			});
+
+		return {
+			userMessage,
+			assistantMessage,
+			turnState: null,
+			contextSources: buildEmptyCompletionContextSources({
+				userId: params.userId,
+				conversationId: params.conversationId,
+			}),
+			evidenceTask: Promise.resolve(),
+			createPostTurnTask,
+			attachmentTask,
+			attachedArtifacts,
+			generatedFiles: [],
+		};
+	}
+
 	let turnState: PersistAssistantTurnStateResult | null = null;
-	const shouldPersistTurnState = params.persistTurnState ?? true;
 	if (assistantMessage && shouldPersistTurnState) {
 		if (params.skillControlOperations.length > 0) {
 			await commitSkillNoteOperationsAfterAssistantMessage({

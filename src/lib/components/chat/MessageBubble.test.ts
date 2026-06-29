@@ -6,6 +6,7 @@ import {
 	within,
 } from "@testing-library/svelte";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import chatDict from "$lib/i18n/chat";
 import { RESPONSE_ACTIVITY_IDS } from "$lib/services/stream-timeline";
 import type {
 	AtlasJobCard,
@@ -174,6 +175,49 @@ describe("MessageBubble", () => {
 		expect(screen.queryByText("Preparing response...")).not.toBeInTheDocument();
 		expect(container).not.toHaveTextContent("Internal drafting phase");
 		expect(container).not.toHaveTextContent("first_token_wait_ms=250");
+	});
+
+	it("shows a localized finalizing label for a finalizing assistant response", () => {
+		const message: ChatMessage = {
+			id: "assistant-finalizing",
+			renderKey: "assistant-finalizing",
+			role: "assistant",
+			content: "Final answer.",
+			timestamp: Date.now(),
+			isStreaming: true,
+			isThinkingStreaming: false,
+			runtimePhase: "finalizing",
+		};
+
+		render(MessageBubble, { message });
+
+		expect(screen.getByText("Finalizing response...")).toBeInTheDocument();
+		expect(screen.queryByText("Preparing response...")).not.toBeInTheDocument();
+		expect(screen.queryByText("Drafting response...")).not.toBeInTheDocument();
+	});
+
+	it("keeps completed assistant messages without a runtime phase compatible", () => {
+		const message: ChatMessage = {
+			id: "assistant-complete",
+			role: "assistant",
+			content: "Done.",
+			timestamp: Date.now(),
+			isStreaming: false,
+			isThinkingStreaming: false,
+		};
+
+		render(MessageBubble, { message });
+
+		expect(
+			screen.queryByText("Finalizing response..."),
+		).not.toBeInTheDocument();
+		expect(screen.queryByText("Preparing response...")).not.toBeInTheDocument();
+	});
+
+	it("includes the Hungarian finalizing status translation", () => {
+		expect(chatDict.hu["chat.responseActivity.finalizing"]).toBe(
+			"Válasz véglegesítése...",
+		);
 	});
 
 	it("defers the pending Evidence loading row until the assistant response is complete", async () => {

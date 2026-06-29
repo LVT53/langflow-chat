@@ -768,7 +768,7 @@ describe("stream-orchestrator SSE contract", () => {
 				honchoSnapshot: prepared.honchoSnapshot,
 			}),
 		);
-		expect(endPayload.contextStatus).toEqual(prepared.contextStatus);
+		expect(endPayload).not.toHaveProperty("contextStatus");
 	});
 
 	it("maps AI SDK tool call and result events to recorder-backed tool_call SSE metadata", async () => {

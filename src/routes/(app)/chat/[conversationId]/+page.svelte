@@ -475,6 +475,14 @@ const normalChatRuntime = createBrowserNormalChatClientTurnRuntime({
 			applyResponseActivityEntryToMessageList(list, placeholderId, entry),
 		);
 	},
+	setAssistantRuntimePhase: (placeholderId, phase) => {
+		messages.update((list) =>
+			updateMessageById(list, placeholderId, (message) => ({
+				...message,
+				runtimePhase: phase,
+			})),
+		);
+	},
 	applyToolCallUpdate: (placeholderId, name, input, status, details) => {
 		messages.update((list) =>
 			applyToolCallUpdateToMessageList(list, {

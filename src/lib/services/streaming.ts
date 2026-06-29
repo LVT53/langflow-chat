@@ -3,6 +3,7 @@ import {
 	type AiSdkUiStreamFrame,
 	consumeAiSdkUiStreamFrames,
 	extractAiSdkUiStreamMetadataData,
+	type UiMessageStreamPart,
 } from "./ai-sdk-ui-stream-contract";
 import {
 	createInlineThinkingState,
@@ -60,11 +61,14 @@ export interface StreamTimingSnapshot {
 	phases: BrowserStreamTimingRecord;
 }
 
+export type StreamFinishPart = Extract<UiMessageStreamPart, { type: "finish" }>;
+
 export interface StreamCallbacks {
 	onToken: (chunk: string) => void;
 	onThinking: (chunk: string) => void;
 	onEnd: (fullText: string, metadata?: StreamMetadata) => void;
 	onError: (error: Error) => void;
+	onFinishPart?: (part: StreamFinishPart) => void;
 	onTiming?: (timing: StreamTimingSnapshot) => void;
 	onWaiting?: () => void;
 	onToolCall?: (
@@ -378,6 +382,7 @@ export function streamChat(
 	let fullText = "";
 	let latestMetadata: StreamMetadata | undefined;
 	let terminalPartSeen = false;
+	let finishPartReported = false;
 	let completed = false;
 	const inlineThinkingState = createInlineThinkingState();
 	let isReplaying = false;
@@ -705,6 +710,10 @@ export function streamChat(
 						return false;
 
 					case "finish":
+						if (!finishPartReported) {
+							finishPartReported = true;
+							callbacks.onFinishPart?.(part as StreamFinishPart);
+						}
 						terminalPartSeen = true;
 						return false;
 

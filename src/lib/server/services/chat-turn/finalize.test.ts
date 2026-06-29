@@ -195,6 +195,22 @@ function makeChatFile(params: {
 	};
 }
 
+function createDeferred<T>() {
+	let resolve!: (value: T) => void;
+	let reject!: (reason?: unknown) => void;
+	const promise = new Promise<T>((res, rej) => {
+		resolve = res;
+		reject = rej;
+	});
+	return { promise, resolve, reject };
+}
+
+async function flushMicrotasks(): Promise<void> {
+	await Promise.resolve();
+	await Promise.resolve();
+	await new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 describe("runPostTurnTasks", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -430,6 +446,140 @@ describe("runPostTurnTasks", () => {
 describe("finalizeChatTurn", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+	});
+
+	it("can return a stream receipt before deferred turn projection resolves", async () => {
+		const createMessage = vi.fn(
+			async (
+				_conversationId: string,
+				role: "user" | "assistant",
+			): Promise<ChatMessage> =>
+				makeChatMessage(
+					`${role}-message`,
+					role,
+					role === "user" ? "user message" : "assistant response",
+				),
+		);
+		const deferredTurnState = createDeferred<{
+			activeWorkingSet: [];
+			taskState: null;
+			contextDebug: null;
+			workCapsule: undefined;
+		}>();
+		const persistAssistantTurnState = vi.fn(
+			async () => deferredTurnState.promise,
+		);
+		const runPostTurnTasks = vi.fn(async () => undefined);
+		const buildCompletionContextSources = vi.fn(async () => ({
+			conversationId: "conv-1",
+			userId: "user-1",
+			activeCount: 0,
+			inferredCount: 0,
+			selectedCount: 0,
+			pinnedCount: 0,
+			excludedCount: 0,
+			reduced: false,
+			compacted: false,
+			groups: [],
+			updatedAt: 1_777_140_000_000,
+		}));
+		const { finalizeChatTurn } = await import("./finalize");
+
+		let receipt: Awaited<ReturnType<typeof finalizeChatTurn>> | undefined;
+		const receiptPromise = finalizeChatTurn({
+			logPrefix: "[STREAM]",
+			userId: "user-1",
+			conversationId: "conv-1",
+			userMessageContent: "user message",
+			persistUserMessage: true,
+			normalizedMessage: "user message",
+			upstreamMessage: "upstream message",
+			assistantResponse: "assistant response",
+			assistantMetadata: { evidenceStatus: "pending" },
+			skillControlOperations: [],
+			skillControlSessionId: null,
+			attachmentIds: [],
+			activeDocumentArtifactId: null,
+			contextStatus: null,
+			initialTaskState: null,
+			initialContextDebug: null,
+			analytics: null,
+			continuitySource: "stream",
+			honchoContext: null,
+			honchoSnapshot: null,
+			assistantMirrorContent: "assistant response",
+			maintenanceReason: "chat_stream",
+			persistenceMode: "best_effort",
+			persistUserAttachmentsBeforeAssistantMessage: false,
+			deferPostTurnProjection: true,
+			createMessage,
+			persistAssistantTurnState,
+			runPostTurnTasks,
+			buildCompletionContextSources,
+		}).then((value) => {
+			receipt = value;
+			return value;
+		});
+
+		await flushMicrotasks();
+
+		try {
+			expect(receipt?.userMessage?.id).toBe("user-message");
+			expect(receipt?.assistantMessage?.id).toBe("assistant-message");
+			expect(receipt?.turnState).toBeNull();
+			expect(receipt?.contextSources.groups).toEqual([]);
+			expect(persistAssistantTurnState).not.toHaveBeenCalled();
+			if (!receipt) {
+				throw new Error("Expected deferred finalize receipt");
+			}
+
+			const postTurnTask = receipt.createPostTurnTask();
+			await flushMicrotasks();
+			expect(persistAssistantTurnState).toHaveBeenCalledWith(
+				expect.objectContaining({
+					userMessageId: "user-message",
+					assistantMessageId: "assistant-message",
+				}),
+			);
+			expect(buildCompletionContextSources).not.toHaveBeenCalled();
+
+			let postTurnSettled = false;
+			void postTurnTask.then(() => {
+				postTurnSettled = true;
+			});
+			await flushMicrotasks();
+			expect(postTurnSettled).toBe(false);
+
+			deferredTurnState.resolve({
+				activeWorkingSet: [],
+				taskState: null,
+				contextDebug: null,
+				workCapsule: undefined,
+			});
+			await postTurnTask;
+
+			expect(buildCompletionContextSources).toHaveBeenCalledWith(
+				expect.objectContaining({
+					userId: "user-1",
+					conversationId: "conv-1",
+				}),
+			);
+			expect(runPostTurnTasks).toHaveBeenCalledWith(
+				expect.objectContaining({
+					userId: "user-1",
+					conversationId: "conv-1",
+					assistantMessageId: "assistant-message",
+				}),
+			);
+		} finally {
+			deferredTurnState.resolve({
+				activeWorkingSet: [],
+				taskState: null,
+				contextDebug: null,
+				workCapsule: undefined,
+			});
+			await receiptPromise.catch(() => undefined);
+		}
 	});
 
 	it("reconciles new generated outputs during turn completion", async () => {

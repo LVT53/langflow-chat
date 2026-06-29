@@ -179,11 +179,13 @@ let atlasJobCostUsdMicros = $derived(
 let isUser = $derived(message.role === "user");
 let hasAttachments = $derived((message.attachments?.length ?? 0) > 0);
 let hasThinking = $derived(Boolean(message.thinking?.trim()));
+let isFinalizing = $derived(message.runtimePhase === "finalizing");
 const isStreaming = $derived(
 	Boolean(message.isStreaming || message.isThinkingStreaming),
 );
+let markdownIsStreaming = $derived(isStreaming && !isFinalizing);
 let liveResponseActivityEntries = $derived(
-	!isUser && isStreaming ? (message.responseActivity ?? []) : [],
+	!isUser && markdownIsStreaming ? (message.responseActivity ?? []) : [],
 );
 let thinkingSegmentsForDisplay = $derived(message.thinkingSegments ?? []);
 type DeliberationThinkingStatus = Extract<ThinkingSegment, { type: "status" }>;
@@ -213,7 +215,7 @@ function isDeliberationActivityEntry(
 }
 
 let visibleThinkingSegmentsForDisplay = $derived(
-	isStreaming
+	markdownIsStreaming
 		? (() => {
 				const latestDeliberationStatus = [...thinkingSegmentsForDisplay]
 					.reverse()
@@ -267,7 +269,9 @@ let userMessageSegments = $derived(
 // multi-burst thinking phases (isThinkingStreaming briefly false, but no content yet).
 let isDone = $derived(!message.isStreaming && !message.isThinkingStreaming);
 let isGenerating = $derived(
-	Boolean(message.isStreaming || message.isThinkingStreaming),
+	Boolean(
+		(message.isStreaming || message.isThinkingStreaming) && !isFinalizing,
+	),
 );
 let hasVisibleContent = $derived(message.content.trim().length > 0);
 let hasAtlasCards = $derived(atlasJobs.length > 0);
@@ -278,7 +282,7 @@ let showEvidencePending = $derived(
 	Boolean(message.evidencePending) && isDone && !hasAtlasCards,
 );
 let liveDeliberationStatus = $derived(
-	isStreaming
+	markdownIsStreaming
 		? ([...liveResponseActivityEntries]
 				.reverse()
 				.find(isDeliberationActivityEntry) ?? deliberationThinkingStatus)
@@ -397,6 +401,9 @@ let showPreparingStatus = $derived(
 		!hasFileProductionCards &&
 		!hasAtlasCards,
 );
+let showFinalizingStatus = $derived(
+	!isUser && isFinalizing && !hasFileProductionCards && !hasAtlasCards,
+);
 let hasServerPersistedIdentity = $derived(
 	message.renderKey === undefined || message.renderKey !== message.id,
 );
@@ -412,10 +419,11 @@ let canFork = $derived(
 		message.content.trim().length > 0,
 );
 let showLogoBelow = $derived(
-	!isUser && isLast && (hasThinking || isGenerating),
+	!isUser && isLast && (hasThinking || isGenerating || isFinalizing),
 );
 let thinkingIsDone = $derived(
-	!message.isThinkingStreaming && (message.content.trim().length > 0 || isDone),
+	!message.isThinkingStreaming &&
+		(message.content.trim().length > 0 || isDone || isFinalizing),
 );
 let reasoningDepthIndicatorProfile = $derived(
 	getVisibleReasoningDepthProfile(
@@ -699,7 +707,7 @@ function toggleForkDetails() {
 			content={message.thinking ?? ''}
 			thinkingIsDone={thinkingIsDone}
 			segments={visibleThinkingSegmentsForDisplay}
-			streaming={isStreaming}
+			streaming={markdownIsStreaming}
 			thinkingDurationSeconds={message.generationDurationMs ? Math.round(message.generationDurationMs / 1000) : 0}
 		/>
 		{/if}
@@ -773,13 +781,16 @@ function toggleForkDetails() {
 			<MarkdownRenderer
 				content={message.content}
 				isDark={$isDark}
-				isStreaming={Boolean(message.isStreaming)}
+				isStreaming={markdownIsStreaming}
 				compactExternalLinks
 			/>
 			{/if}
 			</div>
 			{#if showPreparingStatus}
 				<div class="preparing-status" aria-live="polite">{preparingStatusLabel}</div>
+			{/if}
+			{#if showFinalizingStatus}
+				<div class="preparing-status" aria-live="polite">{$t('chat.responseActivity.finalizing')}</div>
 			{/if}
 			{#if skillDrafts.length > 0}
 				<div class="skill-draft-list">

@@ -249,6 +249,7 @@ export function createAssistantPlaceholder(
 		content: "",
 		timestamp,
 		isStreaming: true,
+		runtimePhase: "preparing",
 	};
 }
 
@@ -594,6 +595,7 @@ export function finalizeStreamingMessageList(
 					? message.content || "Stopped"
 					: message.content,
 				isStreaming: false,
+				runtimePhase: undefined,
 				thinking: params.metadata?.thinking ?? message.thinking,
 				isThinkingStreaming: false,
 				modelId: params.metadata?.modelId ?? message.modelId,

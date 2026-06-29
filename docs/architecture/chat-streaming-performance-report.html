@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AlfyAI Chat Streaming Performance Deepening Report</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    window.addEventListener("DOMContentLoaded", () => {
+      mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+    });
+  </script>
+</head>
+<body class="bg-neutral-950 text-neutral-100 antialiased">
+  <main class="mx-auto flex max-w-7xl flex-col gap-8 px-6 py-8 lg:px-8">
+    <header class="rounded-lg border border-neutral-800 bg-neutral-900 p-6">
+      <p class="text-sm font-semibold uppercase tracking-wide text-cyan-300">Architecture scan</p>
+      <h1 class="mt-2 text-3xl font-semibold tracking-tight text-white">Chat Streaming Performance Deepening Report</h1>
+      <p class="mt-4 max-w-4xl text-sm leading-6 text-neutral-300">
+        Focus: the two user-visible outliers in Normal Chat streaming: the pre-stream
+        "Preparing response" wait and the post-stream interval where the answer has stopped
+        changing but the UI still shows generation in progress.
+      </p>
+      <div class="mt-5 grid gap-3 text-sm md:grid-cols-3">
+        <div class="rounded-md border border-neutral-800 bg-neutral-950 p-4">
+          <div class="text-neutral-400">Most important module</div>
+          <div class="mt-1 font-medium text-white">stream-completion.ts</div>
+        </div>
+        <div class="rounded-md border border-neutral-800 bg-neutral-950 p-4">
+          <div class="text-neutral-400">Highest-leverage seam</div>
+          <div class="mt-1 font-medium text-white">terminal frame emission</div>
+        </div>
+        <div class="rounded-md border border-neutral-800 bg-neutral-950 p-4">
+          <div class="text-neutral-400">Recommended first candidate</div>
+          <div class="mt-1 font-medium text-white">#1 Fast terminal receipt</div>
+        </div>
+      </div>
+    </header>
+
+    <section class="grid gap-4 lg:grid-cols-2">
+      <div class="rounded-lg border border-neutral-800 bg-neutral-900 p-5">
+        <h2 class="text-lg font-semibold text-white">Docs Check</h2>
+        <ul class="mt-3 space-y-2 text-sm leading-6 text-neutral-300">
+          <li><span class="font-medium text-neutral-100">SvelteKit 2</span>: route adapters may return a <code class="rounded bg-neutral-800 px-1">ReadableStream</code>; cancellation is request-signal driven and headers must describe the stream.</li>
+          <li><span class="font-medium text-neutral-100">Svelte 5</span>: UI side effects should sit in <code class="rounded bg-neutral-800 px-1">$effect</code> cleanup paths; touched files should keep modern event attributes.</li>
+          <li><span class="font-medium text-neutral-100">AI SDK 6</span>: <code class="rounded bg-neutral-800 px-1">fullStream</code> exposes text, reasoning, tool, usage, and finish events; finish metadata does not need to block visible token delivery.</li>
+        </ul>
+      </div>
+      <div class="rounded-lg border border-neutral-800 bg-neutral-900 p-5">
+        <h2 class="text-lg font-semibold text-white">ADR Constraints</h2>
+        <ul class="mt-3 space-y-2 text-sm leading-6 text-neutral-300">
+          <li><span class="font-medium text-neutral-100">ADR-0015</span>: durable Normal Chat turn completion stays in chat-turn; route adapters must stay thin.</li>
+          <li><span class="font-medium text-neutral-100">ADR-0019</span>: browser turn transitions stay in <code class="rounded bg-neutral-800 px-1">normal-chat-client-turn-runtime.ts</code>, above stream transport.</li>
+          <li><span class="font-medium text-neutral-100">ADR-0025/0026</span>: AI SDK UI stream framing and Vercel AI SDK model run are current implementation facts; do not revive the retired custom SSE grammar.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section class="rounded-lg border border-cyan-900/60 bg-cyan-950/20 p-5">
+      <h2 class="text-lg font-semibold text-white">Observed Shape</h2>
+      <div class="mt-4 overflow-hidden rounded-md border border-neutral-800 bg-neutral-950 p-4">
+        <pre class="mermaid">
+flowchart LR
+  User["user sends message"] --> Route["stream route adapter"]
+  Route --> Preflight["parse, capacity, preflight"]
+  Preflight --> Prelude["SSE prelude"]
+  Prelude --> Prepare["context and model preparation"]
+  Prepare --> Stream["upstream stream events"]
+  Stream --> Completion["durable completion"]
+  Completion --> Metadata["metadata, finish, DONE"]
+  Metadata --> ClientDone["browser clears generation"]
+
+  Preflight:::hot
+  Prepare:::hot
+  Completion:::hot
+  classDef hot fill:#7f1d1d,stroke:#f87171,color:#fff
+        </pre>
+      </div>
+      <p class="mt-4 text-sm leading-6 text-neutral-300">
+        The current implementation has useful modules, but two interfaces are shallow for latency:
+        the route adapter returns the stream only after preflight, and terminal stream frames are
+        emitted only after broad durable completion plus projection work.
+      </p>
+    </section>
+
+    <section class="grid gap-6">
+      <article class="rounded-lg border border-emerald-700/60 bg-neutral-900 p-5">
+        <div class="flex flex-wrap items-center gap-2">
+          <h2 class="text-xl font-semibold text-white">1. Fast Terminal Receipt Module</h2>
+          <span class="rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-semibold text-emerald-200">highest leverage</span>
+          <span class="rounded-full bg-neutral-800 px-2.5 py-1 text-xs text-neutral-300">post-stream lag</span>
+        </div>
+        <div class="mt-4 grid gap-5 lg:grid-cols-2">
+          <div>
+            <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-400">Files involved</h3>
+            <ul class="mt-2 space-y-1 text-sm text-neutral-300">
+              <li><code>src/lib/server/services/chat-turn/stream-completion.ts:332</code></li>
+              <li><code>src/lib/server/services/chat-turn/finalize.ts:430</code></li>
+              <li><code>src/lib/client/normal-chat-client-turn-runtime.ts:448</code></li>
+              <li><code>src/lib/services/streaming.ts:615</code></li>
+            </ul>
+            <h3 class="mt-5 text-sm font-semibold uppercase tracking-wide text-neutral-400">What leaks</h3>
+            <p class="mt-2 text-sm leading-6 text-neutral-300">
+              The browser-facing terminal interface leaks the full completion implementation. The
+              UI cannot receive <code>data-stream-metadata</code>, <code>finish</code>, or
+              <code>[DONE]</code> until message writes, turn state, context sources, compression
+              snapshots, cost totals, and generated-output reconciliation are done.
+            </p>
+            <h3 class="mt-5 text-sm font-semibold uppercase tracking-wide text-neutral-400">Dependency category</h3>
+            <p class="mt-2 text-sm leading-6 text-neutral-300">
+              Hidden coupling between durable completion, read projection, generated file reconciliation,
+              and browser generation state.
+            </p>
+          </div>
+          <div class="overflow-hidden rounded-md border border-neutral-800 bg-neutral-950 p-4">
+            <pre class="mermaid">
+flowchart TB
+  subgraph Before
+    A["upstream finish"] --> B["finalizeChatTurn"]
+    B --> C["context sources"]
+    C --> D["cost and snapshots"]
+    D --> E["file reconciliation"]
+    E --> F["terminal frames"]
+  end
+  subgraph After
+    G["upstream finish"] --> H["persist receipt"]
+    H --> I["terminal frames"]
+    H --> J["background projections"]
+    J --> K["conversation detail refresh"]
+  end
+            </pre>
+          </div>
+        </div>
+        <div class="mt-5 grid gap-4 lg:grid-cols-2">
+          <div>
+            <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-400">Problem</h3>
+            <p class="mt-2 text-sm leading-6 text-neutral-300">
+              <code>sendEndAndClose</code> is defined inside <code>completeStreamTurn</code> and
+              emits terminal frames after optional fallback context-source construction, compression
+              snapshot listing, and cost lookup. Its callers first await <code>finalizeChatTurn</code>,
+              whose implementation creates messages, persists turn state, starts evidence, builds
+              completion context sources, and may reconcile generated outputs.
+            </p>
+          </div>
+          <div>
+            <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-400">Solution</h3>
+            <p class="mt-2 text-sm leading-6 text-neutral-300">
+              Deepen <code>stream-completion.ts</code> around a small terminal receipt interface:
+              persist the minimal user and assistant identities, token counts, model/depth metadata,
+              stopped/incomplete flags, and generation duration, then emit terminal frames immediately.
+              Move broad projections behind an asynchronous follow-up that updates the existing
+              Conversation Detail Read Model and evidence/file polling paths.
+            </p>
+          </div>
+        </div>
+        <div class="mt-5 rounded-md border border-neutral-800 bg-neutral-950 p-4">
+          <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-400">Wins</h3>
+          <ul class="mt-2 grid gap-2 text-sm leading-6 text-neutral-300 md:grid-cols-2">
+            <li>Clears generation state as soon as the answer is durably identifiable.</li>
+            <li>Keeps ADR-0015 intact because completion still belongs to chat-turn.</li>
+            <li>Improves locality: terminal emission has one implementation and one focused test surface.</li>
+            <li>Preserves existing sidecar paths: evidence polling, file job refresh, and conversation hydration.</li>
+          </ul>
+          <p class="mt-4 text-sm text-neutral-400">
+            ADR callout: compatible with ADR-0015 and ADR-0022 if read projection remains in Conversation Detail and route adapters stay thin.
+          </p>
+        </div>
+      </article>
+
+      <article class="rounded-lg border border-sky-700/60 bg-neutral-900 p-5">
+        <div class="flex flex-wrap items-center gap-2">
+          <h2 class="text-xl font-semibold text-white">2. Stream Admission Before Heavy Turn Preparation</h2>
+          <span class="rounded-full bg-sky-500/15 px-2.5 py-1 text-xs font-semibold text-sky-200">high leverage</span>
+          <span class="rounded-full bg-neutral-800 px-2.5 py-1 text-xs text-neutral-300">pre-stream wait</span>
+        </div>
+        <div class="mt-4 grid gap-5 lg:grid-cols-2">
+          <div>
+            <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-400">Files involved</h3>
+            <ul class="mt-2 space-y-1 text-sm text-neutral-300">
+              <li><code>src/routes/api/chat/stream/+server.ts:32</code></li>
+              <li><code>src/lib/server/services/chat-turn/preflight.ts:28</code></li>
+              <li><code>src/lib/server/services/chat-turn/stream-orchestrator.ts:659</code></li>
+              <li><code>src/lib/server/services/chat-turn/stream-orchestrator.ts:1111</code></li>
+            </ul>
+            <h3 class="mt-5 text-sm font-semibold uppercase tracking-wide text-neutral-400">What leaks</h3>
+            <p class="mt-2 text-sm leading-6 text-neutral-300">
+              The route adapter interface makes the client wait for work that could be reported as
+              stream activity. Because the stream is not returned until after preflight, the prelude
+              and "context preparing" activity cannot cover conversation lookup, attachment readiness,
+              linked-source writes, skill resolution, and depth metadata.
+            </p>
+            <h3 class="mt-5 text-sm font-semibold uppercase tracking-wide text-neutral-400">Dependency category</h3>
+            <p class="mt-2 text-sm leading-6 text-neutral-300">
+              Leaky adapter sequencing: transport setup is coupled to turn preparation instead of
+              cheap admission.
+            </p>
+          </div>
+          <div class="overflow-hidden rounded-md border border-neutral-800 bg-neutral-950 p-4">
+            <pre class="mermaid">
+flowchart TB
+  subgraph Before
+    A["POST"] --> B["parse"]
+    B --> C["capacity"]
+    C --> D["preflight"]
+    D --> E["return stream"]
+    E --> F["prelude and activity"]
+  end
+  subgraph After
+    G["POST"] --> H["parse and admission"]
+    H --> I["return stream"]
+    I --> J["prelude"]
+    J --> K["preflight activity"]
+    K --> L["model prep and stream"]
+  end
+            </pre>
+          </div>
+        </div>
+        <div class="mt-5 grid gap-4 lg:grid-cols-2">
+          <div>
+            <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-400">Problem</h3>
+            <p class="mt-2 text-sm leading-6 text-neutral-300">
+              The route records route parse, capacity, and preflight timings, but those marks are
+              only exposed through headers/terminal metadata. When preflight is slow, users still see
+              the generic placeholder with no live server-side activity.
+            </p>
+          </div>
+          <div>
+            <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-400">Solution</h3>
+            <p class="mt-2 text-sm leading-6 text-neutral-300">
+              Split <code>preflightChatTurn</code> into a cheap admission module and a stream-time
+              preparation module. Admission keeps HTTP status errors for malformed input and capacity.
+              Later preparation errors are emitted as AI SDK UI stream error frames. The orchestrator
+              can then send the prelude and visible response activity before heavy work starts.
+            </p>
+          </div>
+        </div>
+        <div class="mt-5 rounded-md border border-neutral-800 bg-neutral-950 p-4">
+          <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-400">Wins</h3>
+          <ul class="mt-2 grid gap-2 text-sm leading-6 text-neutral-300 md:grid-cols-2">
+            <li>Reduces time to response headers and first byte.</li>
+            <li>Makes "Preparing context" visible during real preparation work.</li>
+            <li>Keeps route adapters thin by moving preparation into chat-turn.</li>
+            <li>Creates a precise seam for timing and failure tests around admission vs preparation.</li>
+          </ul>
+          <p class="mt-4 text-sm text-neutral-400">
+            ADR callout: compatible with ADR-0019 and ADR-0025 if the emitted errors remain AI SDK UI stream parts consumed by <code>streaming.ts</code>.
+          </p>
+        </div>
+      </article>
+
+      <article class="rounded-lg border border-violet-700/60 bg-neutral-900 p-5">
+        <div class="flex flex-wrap items-center gap-2">
+          <h2 class="text-xl font-semibold text-white">3. Context Preparation Stage Module With Timing Leverage</h2>
+          <span class="rounded-full bg-violet-500/15 px-2.5 py-1 text-xs font-semibold text-violet-200">diagnostic leverage</span>
+          <span class="rounded-full bg-neutral-800 px-2.5 py-1 text-xs text-neutral-300">pre-stream wait</span>
+        </div>
+        <div class="mt-4 grid gap-5 lg:grid-cols-2">
+          <div>
+            <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-400">Files involved</h3>
+            <ul class="mt-2 space-y-1 text-sm text-neutral-300">
+              <li><code>src/lib/server/services/normal-chat-context-preparation.ts:4</code></li>
+              <li><code>src/lib/server/services/chat-turn/streaming-normal-chat-model-run.ts:159</code></li>
+              <li><code>src/lib/components/chat/MessageBubble.svelte:384</code></li>
+              <li><code>src/lib/services/stream-timeline.ts:1</code></li>
+            </ul>
+            <h3 class="mt-5 text-sm font-semibold uppercase tracking-wide text-neutral-400">What leaks</h3>
+            <p class="mt-2 text-sm leading-6 text-neutral-300">
+              The implementation has a real stage plan, but the public activity interface collapses
+              all stage detail into one "context preparing" row. That hides which stage dominates
+              latency and prevents targeted reductions such as budgeting forced web prefetch or
+              automatic compression separately.
+            </p>
+            <h3 class="mt-5 text-sm font-semibold uppercase tracking-wide text-neutral-400">Dependency category</h3>
+            <p class="mt-2 text-sm leading-6 text-neutral-300">
+              Shallow telemetry interface over a deeper staged implementation.
+            </p>
+          </div>
+          <div class="overflow-hidden rounded-md border border-neutral-800 bg-neutral-950 p-4">
+            <pre class="mermaid">
+flowchart TB
+  subgraph Before
+    A["plan"] --> B["context"]
+    B --> C["compression"]
+    C --> D["web prefetch"]
+    D --> E["prompt budget"]
+    A -. "one generic activity" .-> F["Preparing context"]
+  end
+  subgraph After
+    G["stage runner"] --> H["sanitized activity"]
+    G --> I["stage timings"]
+    I --> J["slow-stage budgets"]
+  end
+            </pre>
+          </div>
+        </div>
+        <div class="mt-5 grid gap-4 lg:grid-cols-2">
+          <div>
+            <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-400">Problem</h3>
+            <p class="mt-2 text-sm leading-6 text-neutral-300">
+              The stage runner has depth internally, but callers do not get enough leverage from its
+              interface. The browser sees only a generic label, and logs get terminal timings too late
+              to explain an active slow turn.
+            </p>
+          </div>
+          <div>
+            <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-400">Solution</h3>
+            <p class="mt-2 text-sm leading-6 text-neutral-300">
+              Deepen the stage module so it returns sanitized stage timings and emits localized,
+              non-diagnostic activity classes. Keep raw stage ids out of visible copy, but make them
+              available to stream timing and focused tests. Then add per-stage budgets where the
+              outliers prove stable.
+            </p>
+          </div>
+        </div>
+        <div class="mt-5 rounded-md border border-neutral-800 bg-neutral-950 p-4">
+          <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-400">Wins</h3>
+          <ul class="mt-2 grid gap-2 text-sm leading-6 text-neutral-300 md:grid-cols-2">
+            <li>Separates visibility from implementation detail.</li>
+            <li>Improves locality for context-preparation performance work.</li>
+            <li>Turns future latency fixes into stage-local changes.</li>
+            <li>Supports focused regression tests without adding route-local logging.</li>
+          </ul>
+          <p class="mt-4 text-sm text-neutral-400">
+            ADR callout: compatible with the context-selection seam if ranking and prompt assembly remain in their existing modules.
+          </p>
+        </div>
+      </article>
+
+      <article class="rounded-lg border border-amber-700/60 bg-neutral-900 p-5">
+        <div class="flex flex-wrap items-center gap-2">
+          <h2 class="text-xl font-semibold text-white">4. Runtime Phase Model: Generating vs Finalizing</h2>
+          <span class="rounded-full bg-amber-500/15 px-2.5 py-1 text-xs font-semibold text-amber-200">UI leverage</span>
+          <span class="rounded-full bg-neutral-800 px-2.5 py-1 text-xs text-neutral-300">post-stream clarity</span>
+        </div>
+        <div class="mt-4 grid gap-5 lg:grid-cols-2">
+          <div>
+            <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-400">Files involved</h3>
+            <ul class="mt-2 space-y-1 text-sm text-neutral-300">
+              <li><code>src/lib/client/normal-chat-client-turn-runtime.ts:259</code></li>
+              <li><code>src/lib/client/normal-chat-client-turn-runtime.ts:448</code></li>
+              <li><code>src/lib/components/chat/MessageBubble.svelte:389</code></li>
+              <li><code>src/lib/components/chat/MessageInput.svelte:1833</code></li>
+            </ul>
+            <h3 class="mt-5 text-sm font-semibold uppercase tracking-wide text-neutral-400">What leaks</h3>
+            <p class="mt-2 text-sm leading-6 text-neutral-300">
+              The runtime exposes a binary sending state. The visual modules must infer "generation"
+              from <code>isStreaming</code> and <code>isThinkingStreaming</code>, so post-token
+              persistence appears as continued generation.
+            </p>
+            <h3 class="mt-5 text-sm font-semibold uppercase tracking-wide text-neutral-400">Dependency category</h3>
+            <p class="mt-2 text-sm leading-6 text-neutral-300">
+              Duplicated phase meaning between stream transport, runtime state, composer controls,
+              and message rendering.
+            </p>
+          </div>
+          <div class="overflow-hidden rounded-md border border-neutral-800 bg-neutral-950 p-4">
+            <pre class="mermaid">
+flowchart TB
+  subgraph Before
+    A["active stream"] --> B["isSending true"]
+    B --> C["composer shows stop"]
+    B --> D["message shows generating"]
+  end
+  subgraph After
+    E["active stream"] --> F["preparing"]
+    F --> G["streaming"]
+    G --> H["finalizing"]
+    H --> I["done"]
+  end
+            </pre>
+          </div>
+        </div>
+        <div class="mt-5 grid gap-4 lg:grid-cols-2">
+          <div>
+            <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-400">Problem</h3>
+            <p class="mt-2 text-sm leading-6 text-neutral-300">
+              Even after terminal emission is made faster, the runtime would benefit from a phase
+              interface instead of several booleans. The current booleans are enough to operate, but
+              shallow for user perception and queue behavior.
+            </p>
+          </div>
+          <div>
+            <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-400">Solution</h3>
+            <p class="mt-2 text-sm leading-6 text-neutral-300">
+              Add a small phase enum to the runtime snapshot and adapt visual modules to use that
+              phase for label and control decisions. The phase should be driven by decoded stream
+              callbacks, not by route-local state.
+            </p>
+          </div>
+        </div>
+        <div class="mt-5 rounded-md border border-neutral-800 bg-neutral-950 p-4">
+          <h3 class="text-sm font-semibold uppercase tracking-wide text-neutral-400">Wins</h3>
+          <ul class="mt-2 grid gap-2 text-sm leading-6 text-neutral-300 md:grid-cols-2">
+            <li>Stops presenting persistence wait as model generation.</li>
+            <li>Gives the composer a cleaner interface for stop, queue, and disabled states.</li>
+            <li>Improves locality: one runtime owns phase semantics.</li>
+            <li>Pairs well with candidate #1 but can be tested independently.</li>
+          </ul>
+          <p class="mt-4 text-sm text-neutral-400">
+            ADR callout: compatible with ADR-0019 because browser-side turn transitions remain in the runtime module.
+          </p>
+        </div>
+      </article>
+    </section>
+
+    <section class="rounded-lg border border-neutral-800 bg-neutral-900 p-5">
+      <h2 class="text-lg font-semibold text-white">Recommended Order</h2>
+      <ol class="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6 text-neutral-300">
+        <li>Candidate #1 first: it attacks the largest post-stream wait without changing model behavior.</li>
+        <li>Candidate #2 second: it shortens or at least makes visible the pre-stream wait, but changes error timing semantics.</li>
+        <li>Candidate #3 third: use it to measure and budget the remaining pre-stream work.</li>
+        <li>Candidate #4 alongside #1 or after it: it turns latency wins into clearer user perception.</li>
+      </ol>
+    </section>
+  </main>
+</body>
+</html>

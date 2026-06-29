@@ -1,22 +1,12 @@
 import type { FinishReason } from "ai";
 import { getConfig } from "$lib/server/config-store";
 import type { ProviderUsageSnapshot } from "$lib/server/services/analytics";
-import { getConversationCostSummary } from "$lib/server/services/analytics";
 import type { getChatFilesForAssistantMessage } from "$lib/server/services/chat-files";
-import {
-	buildChatTurnCompletionContextSources,
-	finalizeChatTurn,
-} from "$lib/server/services/chat-turn/finalize";
-import {
-	listContextCompressionSnapshots,
-	serializeContextCompressionSnapshot,
-} from "$lib/server/services/context-compression";
+import { finalizeChatTurn } from "$lib/server/services/chat-turn/finalize";
 import { applyWebCitationQualityGate } from "$lib/server/services/web-citation-audit";
 import type { StreamTimelineTerminalPayload } from "$lib/services/stream-timeline";
 import type {
-	ChatGeneratedFile,
 	ContextDebugState,
-	ContextSourcesState,
 	ConversationContextStatus,
 	DepthMetadata,
 	FileProductionJob,
@@ -49,17 +39,8 @@ import type {
 	PersistAssistantTurnStateParams,
 	PersistAssistantTurnStateResult,
 	RunPostTurnTasksParams,
-	WorkCapsuleSummary,
 	WorkingSetItem,
 } from "./types";
-
-type PersistedStreamTurnState = {
-	activeWorkingSet: WorkingSetItem[] | undefined;
-	taskState: TaskState | null | undefined;
-	contextDebug: ContextDebugState | null | undefined;
-	workCapsule: WorkCapsuleSummary;
-	attachedArtifacts?: WorkingSetItem[];
-};
 
 export type StreamCompletionFact<T> = T | Promise<T>;
 
@@ -205,9 +186,6 @@ export async function completeStreamTurn(
 		requestStartTime,
 		fileProductionJobIdsAtStart: fileProductionJobIdsAtStartFact,
 		latestContextStatus,
-		latestActiveWorkingSet,
-		latestTaskState,
-		latestContextDebug,
 		latestHonchoContext,
 		latestHonchoSnapshot,
 		latestContextTraceSections,
@@ -300,10 +278,32 @@ export async function completeStreamTurn(
 	const hadFileProductionToolCall = toolCallSummary.some((record) =>
 		isFileProductionToolName(record.name),
 	);
-	let persistedTurnState: PersistedStreamTurnState | null = null;
-	let persistedContextSources: ContextSourcesState | null = null;
-	let persistedGeneratedFiles: ChatGeneratedFile[] = [];
-	let persistedFileProductionJobs: FileProductionJob[] = [];
+	let deferredStartedResetGeneration: number | undefined;
+	const deferredFileProductionJobIdsAtStart = new Set<string>();
+	let fileProductionReconciliationReady = !hadFileProductionToolCall;
+	let fileProductionReconciliationSkipped = false;
+	const getDeferredFileProductionJobs = async (
+		requestUserId: string,
+		requestConversationId: string,
+	): Promise<FileProductionJob[]> => {
+		if (
+			!fileProductionReconciliationReady ||
+			fileProductionReconciliationSkipped
+		) {
+			throw new Error(
+				"File-production start snapshot was unavailable for deferred stream reconciliation",
+			);
+		}
+		return getFileProductionJobs(requestUserId, requestConversationId);
+	};
+	const runPostTurnTasksWithDeferredFacts = (
+		postTurnParams: RunPostTurnTasksParams,
+	): Promise<void> =>
+		runPostTurnTasks({
+			...postTurnParams,
+			startedResetGeneration:
+				deferredStartedResetGeneration ?? postTurnParams.startedResetGeneration,
+		});
 
 	if (getConfig().contextDiagnosticsDebug) {
 		console.info("[CHAT_STREAM] Tool-call summary", {
@@ -329,40 +329,7 @@ export async function completeStreamTurn(
 			userMessageToPersist = buffer.userMessage;
 		}
 	}
-	const sendEndAndClose = async (
-		userMsgId?: string,
-		assistantMsgId?: string,
-	) => {
-		const contextSources =
-			persistedContextSources ??
-			(await buildChatTurnCompletionContextSources({
-				userId,
-				conversationId,
-				contextStatus: latestContextStatus as ConversationContextStatus | null,
-				contextDebug: latestContextDebug as ContextDebugState | null,
-				linkedSources,
-				activeWorkingSet: latestActiveWorkingSet,
-				contextTraceSections:
-					latestContextTraceSections ?? initialContextTraceSections ?? [],
-				toolCalls: toolCallRecords,
-			}));
-		const contextCompressionSnapshots = await listContextCompressionSnapshots(
-			conversationId,
-		)
-			.then((snapshots) => snapshots.map(serializeContextCompressionSnapshot))
-			.catch(() => []);
-		const costSummary = await getConversationCostSummary(conversationId).catch(
-			() => null,
-		);
-		const activeWorkingSet = persistedTurnState
-			? persistedTurnState.activeWorkingSet
-			: latestActiveWorkingSet;
-		const taskState = persistedTurnState
-			? persistedTurnState.taskState
-			: latestTaskState;
-		const contextDebug = persistedTurnState
-			? persistedTurnState.contextDebug
-			: latestContextDebug;
+	const sendEndAndClose = (userMsgId?: string, assistantMsgId?: string) => {
 		const streamDepthMetadata = assistantMsgId
 			? withDepthMetadataModelInfo(
 					depthMetadata ??
@@ -391,12 +358,6 @@ export async function completeStreamTurn(
 				thinkingTokenCount,
 				responseTokenCount,
 				totalTokenCount,
-				...(costSummary
-					? {
-							totalCostUsdMicros: costSummary.totalCostUsdMicros,
-							totalTokens: costSummary.totalTokens,
-						}
-					: {}),
 				thinking: thinkingContent || undefined,
 				wasStopped,
 				...(completionWarning
@@ -415,14 +376,6 @@ export async function completeStreamTurn(
 				providerDisplayName,
 				providerIconUrl,
 				depthMetadata: streamDepthMetadata,
-				contextStatus: latestContextStatus,
-				contextSources,
-				activeWorkingSet,
-				taskState,
-				contextDebug,
-				generatedFiles: persistedGeneratedFiles,
-				fileProductionJobs: persistedFileProductionJobs,
-				contextCompressionSnapshots,
 				generationDurationMs: genTimeMs,
 			}),
 		);
@@ -438,27 +391,6 @@ export async function completeStreamTurn(
 	};
 
 	try {
-		const startedResetGeneration = await resolveStartedResetGenerationFact({
-			conversationId,
-			streamId,
-			fact: startedResetGenerationFact,
-		});
-		const fileProductionStartSnapshot = hadFileProductionToolCall
-			? await resolveFileProductionJobIdsAtStart({
-					conversationId,
-					streamId,
-					fact: fileProductionJobIdsAtStartFact,
-				})
-			: null;
-		const fileProductionJobIdsAtStart = fileProductionStartSnapshot
-			? await buildEffectiveFileProductionJobIdsAtStart({
-					userId,
-					conversationId,
-					snapshot: fileProductionStartSnapshot,
-					toolCallRecords,
-					getFileProductionJobs,
-				})
-			: null;
 		const persistedAssistantResponse =
 			wasStopped && finalResponse.trim().length === 0
 				? "Stopped"
@@ -514,7 +446,6 @@ export async function completeStreamTurn(
 			honchoSnapshot: latestHonchoSnapshot,
 			assistantMirrorContent: wasStopped ? "" : finalResponse,
 			maintenanceReason: "chat_stream",
-			startedResetGeneration,
 			toolCalls: toolCallRecords,
 			contextTraceSections:
 				latestContextTraceSections ?? initialContextTraceSections,
@@ -527,49 +458,83 @@ export async function completeStreamTurn(
 			persistUserTurnAttachments,
 			persistAssistantTurnState,
 			persistAssistantEvidence,
-			runPostTurnTasks,
+			runPostTurnTasks: runPostTurnTasksWithDeferredFacts,
+			deferPostTurnProjection: true,
 			persistUserAttachmentsBeforeAssistantMessage: false,
-			generatedOutputReconciliation:
-				hadFileProductionToolCall && fileProductionJobIdsAtStart
-					? {
-							fileProductionJobIdsAtStart,
-							getFileProductionJobs,
-							assignFileProductionJobsToAssistantMessage,
-							syncGeneratedFilesToMemory,
-							getChatFilesForAssistantMessage,
-						}
-					: undefined,
+			generatedOutputReconciliation: hadFileProductionToolCall
+				? {
+						fileProductionJobIdsAtStart: deferredFileProductionJobIdsAtStart,
+						getFileProductionJobs: getDeferredFileProductionJobs,
+						assignFileProductionJobsToAssistantMessage,
+						syncGeneratedFilesToMemory,
+						getChatFilesForAssistantMessage,
+					}
+				: undefined,
 		});
-		persistedGeneratedFiles = completion.generatedFiles;
-		persistedFileProductionJobs =
-			hadFileProductionToolCall &&
-			completion.assistantMessage &&
-			fileProductionJobIdsAtStart
-				? (
-						await getFileProductionJobs(userId, conversationId).catch(
-							() => [] as FileProductionJob[],
-						)
-					).filter((job) => !fileProductionJobIdsAtStart.has(job.id))
-				: [];
-		persistedTurnState = completion.turnState
-			? {
-					activeWorkingSet: completion.turnState.activeWorkingSet,
-					taskState: completion.turnState.taskState,
-					contextDebug: completion.turnState.contextDebug,
-					workCapsule: completion.turnState.workCapsule,
-					attachedArtifacts: completion.attachedArtifacts,
-				}
-			: null;
-		persistedContextSources = completion.turnState
-			? completion.contextSources
-			: null;
-		return sendEndAndClose(
+		sendEndAndClose(
 			completion.userMessage?.id,
 			completion.assistantMessage?.id,
-		).then(() => completion.createPostTurnTask());
+		);
+		const deferredProjectionTask = (async () => {
+			deferredStartedResetGeneration = await resolveStartedResetGenerationFact({
+				conversationId,
+				streamId,
+				fact: startedResetGenerationFact,
+			});
+
+			if (hadFileProductionToolCall) {
+				const fileProductionStartSnapshot =
+					await resolveFileProductionJobIdsAtStart({
+						conversationId,
+						streamId,
+						fact: fileProductionJobIdsAtStartFact,
+					});
+				const fileProductionJobIdsAtStart = fileProductionStartSnapshot
+					? await buildEffectiveFileProductionJobIdsAtStart({
+							userId,
+							conversationId,
+							snapshot: fileProductionStartSnapshot,
+							toolCallRecords,
+							getFileProductionJobs,
+						})
+					: null;
+
+				deferredFileProductionJobIdsAtStart.clear();
+				if (fileProductionJobIdsAtStart) {
+					for (const jobId of fileProductionJobIdsAtStart) {
+						deferredFileProductionJobIdsAtStart.add(jobId);
+					}
+					fileProductionReconciliationSkipped = false;
+				} else {
+					fileProductionReconciliationSkipped = true;
+				}
+				fileProductionReconciliationReady = true;
+			}
+
+			await completion.createPostTurnTask();
+		})().catch((error) => {
+			console.error("[CHAT_STREAM] Deferred post-turn projection failed", {
+				conversationId,
+				streamId,
+				assistantMessageId: completion.assistantMessage?.id ?? null,
+				error,
+			});
+		});
+		await Promise.race([
+			deferredProjectionTask,
+			waitForDeferredProjectionStart(),
+		]);
+		return;
 	} catch {
-		return sendEndAndClose();
+		sendEndAndClose();
+		return;
 	}
+}
+
+function waitForDeferredProjectionStart(): Promise<void> {
+	return new Promise((resolve) => {
+		setTimeout(resolve, 0);
+	});
 }
 
 function resolveCompletionFact<T>(fact: StreamCompletionFact<T>): Promise<T> {
