@@ -16,6 +16,7 @@ export type NormalChatModelRunCompatibilityProvider = {
 	displayName: string;
 	baseUrl: string;
 	modelName: string;
+	modelAliases?: string[];
 	reasoningEffort?: NonNullable<ModelConfig["reasoningEffort"]>;
 	thinkingType?: NormalChatThinkingType;
 };
@@ -27,6 +28,11 @@ export type OpenAICompatibleProviderFamily =
 	| "kimi"
 	| "glm"
 	| "qwen"
+	| "mistral"
+	| "nvidia_nemotron"
+	| "minimax"
+	| "gemma"
+	| "gpt_oss"
 	| "generic";
 
 export type OpenAICompatibleProviderErrorClassification =
@@ -55,17 +61,32 @@ type AdapterBehavior = {
 	family: OpenAICompatibleProviderFamily;
 	usesMaxCompletionTokens?: boolean;
 	replaysReasoningContentForToolCalls?: boolean;
-	thinkingOptions?: "kimi" | "qwen";
-	suppressesToolChoice?: "when-thinking" | "kimi-unsupported-when-thinking";
+	thinkingOptions?: "kimi" | "qwen" | "none" | "minimax";
+	toolChoicePolicy?:
+		| "auto-only"
+		| "deepseek-legacy-reasoner-when-thinking"
+		| "kimi-unsupported-when-thinking";
+	addsGlmToolStream?: boolean;
+	addsReasoningSplit?: boolean;
+	usesChatTemplateThinking?: boolean;
 };
 
 type ProviderAdapterProfileDefinition =
 	OpenAICompatibleProviderAdapterProfile & {
-		matches: (
-			provider: NormalChatModelRunCompatibilityProvider,
-			haystack: string,
-		) => boolean;
+		matchesStrong: (signals: ProviderCompatibilitySignals) => boolean;
+		matchesWeak: (signals: ProviderCompatibilitySignals) => boolean;
 	};
+
+type ProviderFamilyRegistryEntry = {
+	behavior: AdapterBehavior;
+	modelPatterns?: RegExp[];
+	weakPatterns?: RegExp[];
+};
+
+type ProviderCompatibilitySignals = {
+	modelIds: string[];
+	weakHaystack: string;
+};
 
 const RETRYABLE_OPENAI_COMPATIBLE_ERROR_TERMS = new Set([
 	"internal_server_error",
@@ -97,77 +118,169 @@ const NON_RETRYABLE_OPENAI_COMPATIBLE_ERROR_TERMS = new Set([
 	"schema_validation_error",
 ]);
 
-const ADAPTER_PROFILE_DEFINITIONS: ProviderAdapterProfileDefinition[] = [
-	createProviderAdapterProfile(
-		{
+const RETRYABLE_OPENAI_COMPATIBLE_ERROR_MESSAGE_TERMS = [
+	"429",
+	"rate limit",
+	"rate_limit",
+	"too many requests",
+	"temporarily unavailable",
+	"service unavailable",
+	"overloaded",
+	"overload",
+	"timed out",
+	"timeout",
+	"read timeout",
+	"internal server error",
+	"server error",
+];
+
+const NON_RETRYABLE_OPENAI_COMPATIBLE_ERROR_MESSAGE_TERMS = [
+	"invalid api key",
+	"authentication",
+	"unauthorized",
+	"forbidden",
+	"prompt",
+	"schema",
+	"response_format",
+	"refusal",
+	"abort",
+	"content policy",
+	"context length",
+];
+
+const PROVIDER_FAMILY_REGISTRY: ProviderFamilyRegistryEntry[] = [
+	{
+		behavior: {
 			family: "openai",
 			usesMaxCompletionTokens: true,
 		},
-		(provider) =>
-			provider.baseUrl.toLowerCase().includes("api.openai.com") ||
-			provider.name.toLowerCase() === "openai" ||
-			provider.displayName.toLowerCase() === "openai",
-	),
-	createProviderAdapterProfile(
-		{
+		weakPatterns: [/(?:^|\s)openai(?:\s|$)/, /api\.openai\.com/],
+	},
+	{
+		behavior: {
 			family: "deepseek",
-			suppressesToolChoice: "when-thinking",
+			toolChoicePolicy: "deepseek-legacy-reasoner-when-thinking",
 		},
-		(_provider, haystack) =>
-			matchesProviderFamilyToken(haystack, "deepseek") ||
-			/api\.deepseek\./.test(haystack),
-	),
-	createProviderAdapterProfile(
-		{
+		modelPatterns: [
+			/^deepseek-v4-(?:flash|pro)$/,
+			/^deepseek[-_]/,
+			/\bdeepseek\b/,
+		],
+		weakPatterns: [/\bdeepseek\b/, /api\.deepseek\./],
+	},
+	{
+		behavior: {
 			family: "mimo",
 			usesMaxCompletionTokens: true,
 			replaysReasoningContentForToolCalls: true,
+			toolChoicePolicy: "auto-only",
 		},
-		(_provider, haystack) =>
-			/\bmimo\b|mimo-|xiaomimimo|api\.xiaomimimo\./.test(haystack),
-	),
-	createProviderAdapterProfile(
-		{
+		modelPatterns: [/^mimo-v2(?:\.5)?(?:-[a-z0-9]+)*$/],
+		weakPatterns: [/\bmimo\b/, /xiaomimimo/, /api\.xiaomimimo\./],
+	},
+	{
+		behavior: {
 			family: "kimi",
+			usesMaxCompletionTokens: true,
 			thinkingOptions: "kimi",
-			suppressesToolChoice: "kimi-unsupported-when-thinking",
+			toolChoicePolicy: "kimi-unsupported-when-thinking",
 		},
-		(_provider, haystack) =>
-			matchesProviderFamilyToken(haystack, "kimi") || /moonshot/.test(haystack),
-	),
-	createProviderAdapterProfile(
-		{
+		modelPatterns: [/^kimi(?:\/|[-_])/, /\bkimi-k2/],
+		weakPatterns: [/\bkimi\b/, /moonshot/],
+	},
+	{
+		behavior: {
 			family: "glm",
+			addsGlmToolStream: true,
+			toolChoicePolicy: "auto-only",
 		},
-		(_provider, haystack) =>
-			matchesProviderFamilyToken(haystack, "glm") ||
-			/bigmodel|zhipu|open\.bigmodel\.cn|z\.ai/.test(haystack),
-	),
-	createProviderAdapterProfile(
-		{
+		modelPatterns: [/^glm[-_]?5(?:\.2(?:\[1m\])?|\.1|-turbo)?(?:[-_].*)?$/],
+		weakPatterns: [
+			/\bglm\b/,
+			/bigmodel/,
+			/zhipu/,
+			/open\.bigmodel\.cn/,
+			/z\.ai/,
+		],
+	},
+	{
+		behavior: {
 			family: "qwen",
 			thinkingOptions: "qwen",
 		},
-		(_provider, haystack) =>
-			matchesProviderFamilyToken(haystack, "qwen") ||
-			/dashscope|qwencloud|aliyun|alibaba/.test(haystack),
+		modelPatterns: [
+			/^qwen(?:3(?:\.[67])?|[-_])/,
+			/^qwen-(?:plus|max|turbo|flash)$/,
+		],
+		weakPatterns: [/\bqwen\b/, /dashscope/, /qwencloud/, /aliyun/, /alibaba/],
+	},
+	{
+		behavior: {
+			family: "mistral",
+			thinkingOptions: "none",
+		},
+		modelPatterns: [/^mistral-/, /^ministral-/],
+		weakPatterns: [/\bmistral\b/, /api\.mistral\.ai/],
+	},
+	{
+		behavior: {
+			family: "nvidia_nemotron",
+			usesChatTemplateThinking: true,
+		},
+		modelPatterns: [/^nvidia\/nemotron-3-/],
+		weakPatterns: [/\bnemotron\b/],
+	},
+	{
+		behavior: {
+			family: "minimax",
+			usesMaxCompletionTokens: true,
+			replaysReasoningContentForToolCalls: true,
+			thinkingOptions: "minimax",
+			addsReasoningSplit: true,
+		},
+		modelPatterns: [/^minimax-m(?:2(?:\.\d)?|3)(?:[-_][a-z0-9]+)*$/],
+		weakPatterns: [/\bminimax\b/, /api\.minimax\.io/],
+	},
+	{
+		behavior: {
+			family: "gemma",
+			usesChatTemplateThinking: true,
+		},
+		modelPatterns: [/^(?:google\/)?gemma-4-/],
+		weakPatterns: [/\bgemma\b/],
+	},
+	{
+		behavior: {
+			family: "gpt_oss",
+		},
+		modelPatterns: [/^(?:openai\/)?gpt-oss[-:](?:20b|120b)$/],
+		weakPatterns: [/\bgpt-oss\b/],
+	},
+];
+
+const ADAPTER_PROFILE_DEFINITIONS: ProviderAdapterProfileDefinition[] = [
+	...PROVIDER_FAMILY_REGISTRY.map((entry) =>
+		createProviderAdapterProfile(entry),
 	),
-	createProviderAdapterProfile(
-		{
+	createProviderAdapterProfile({
+		behavior: {
 			family: "generic",
 		},
-		() => true,
-	),
+	}),
 ];
 
 export function resolveOpenAICompatibleProviderAdapterProfile(
 	provider: NormalChatModelRunCompatibilityProvider,
 ): OpenAICompatibleProviderAdapterProfile {
-	const haystack = providerCompatibilityHaystack(provider);
+	const signals = providerCompatibilitySignals(provider);
 	return (
 		ADAPTER_PROFILE_DEFINITIONS.find((profile) =>
-			profile.matches(provider, haystack),
-		) ?? ADAPTER_PROFILE_DEFINITIONS[ADAPTER_PROFILE_DEFINITIONS.length - 1]
+			profile.matchesStrong(signals),
+		) ??
+		ADAPTER_PROFILE_DEFINITIONS.find((profile) =>
+			profile.matchesWeak(signals),
+		) ??
+		ADAPTER_PROFILE_DEFINITIONS[ADAPTER_PROFILE_DEFINITIONS.length - 1]
 	);
 }
 
@@ -198,9 +311,9 @@ export function isMiMoProvider(
 }
 
 function createProviderAdapterProfile(
-	behavior: AdapterBehavior,
-	matches: ProviderAdapterProfileDefinition["matches"],
+	entry: ProviderFamilyRegistryEntry,
 ): ProviderAdapterProfileDefinition {
+	const behavior = entry.behavior;
 	return {
 		family: behavior.family,
 		usesMaxCompletionTokens: behavior.usesMaxCompletionTokens === true,
@@ -211,20 +324,12 @@ function createProviderAdapterProfile(
 			buildProviderOptionsForProfile(provider, thinkingMode, behavior),
 		transformRequestBody: (body, provider) =>
 			transformRequestBodyForProfile(body, provider, behavior),
-		matches,
+		matchesStrong: (signals) =>
+			matchesAnyPattern(signals.modelIds, entry.modelPatterns),
+		matchesWeak: (signals) =>
+			behavior.family === "generic" ||
+			matchesAnyPattern([signals.weakHaystack], entry.weakPatterns),
 	};
-}
-
-function matchesProviderFamilyToken(
-	haystack: string,
-	family: Exclude<
-		OpenAICompatibleProviderFamily,
-		"generic" | "openai" | "mimo"
-	>,
-): boolean {
-	return new RegExp(`(?:^|[^a-z0-9])${family}(?=$|[^a-z0-9]|[0-9])`).test(
-		haystack,
-	);
 }
 
 function buildProviderOptionsForProfile(
@@ -233,29 +338,55 @@ function buildProviderOptionsForProfile(
 	behavior: AdapterBehavior,
 ): NormalChatProviderOptions {
 	const options: NormalChatProviderOptions = {};
-	const thinkingType = resolveThinkingType(provider, thinkingMode, behavior);
-
-	if (
-		thinkingMode !== "off" &&
-		provider.reasoningEffort &&
-		behavior.thinkingOptions !== "qwen"
-	) {
-		options.reasoningEffort = provider.reasoningEffort;
+	const reasoningEffort = resolveForwardedReasoningEffort(
+		provider,
+		thinkingMode,
+		behavior,
+	);
+	if (reasoningEffort) {
+		options.reasoningEffort = reasoningEffort;
 	}
 
-	if (thinkingType && behavior.thinkingOptions === "qwen") {
-		options.enable_thinking = thinkingType === "enabled";
-		if (thinkingType === "enabled") {
-			options.preserve_thinking = true;
-		}
-	} else if (thinkingType) {
-		options.thinking =
-			behavior.thinkingOptions === "kimi" && thinkingType === "enabled"
-				? { type: thinkingType, keep: "all" }
-				: { type: thinkingType };
-	}
+	return {
+		...options,
+		...buildThinkingProviderOptions(
+			resolveThinkingType(provider, thinkingMode, behavior),
+			behavior,
+		),
+	};
+}
 
-	return options;
+function resolveForwardedReasoningEffort(
+	provider: NormalChatModelRunCompatibilityProvider,
+	thinkingMode: ThinkingMode | undefined,
+	behavior: AdapterBehavior,
+): NormalChatModelRunCompatibilityProvider["reasoningEffort"] {
+	if (thinkingMode === "off") return undefined;
+	if (behavior.thinkingOptions === "qwen") return undefined;
+	return provider.reasoningEffort;
+}
+
+function buildThinkingProviderOptions(
+	thinkingType: NormalChatThinkingType | undefined,
+	behavior: AdapterBehavior,
+): NormalChatProviderOptions {
+	if (!thinkingType || behavior.thinkingOptions === "none") return {};
+	if (behavior.thinkingOptions === "qwen") {
+		return thinkingType === "enabled"
+			? { enable_thinking: true, preserve_thinking: true }
+			: { enable_thinking: false };
+	}
+	if (behavior.thinkingOptions === "minimax") {
+		return {
+			thinking: {
+				type: thinkingType === "enabled" ? "adaptive" : "disabled",
+			},
+		};
+	}
+	if (behavior.thinkingOptions === "kimi" && thinkingType === "enabled") {
+		return { thinking: { type: thinkingType, keep: "all" } };
+	}
+	return { thinking: { type: thinkingType } };
 }
 
 function transformRequestBodyForProfile(
@@ -267,33 +398,76 @@ function transformRequestBodyForProfile(
 		...body,
 		messages: normalizeAssistantToolCallContent(body.messages),
 	};
-
-	if (shouldSuppressToolChoice(transformed, behavior)) {
-		delete transformed.tool_choice;
-	}
-	if (shouldDisableQwenThinkingForToolChoice(transformed, behavior)) {
-		transformed.enable_thinking = false;
-		delete transformed.preserve_thinking;
-	}
-
-	if (
-		behavior.usesMaxCompletionTokens === true &&
-		transformed.max_tokens !== undefined
-	) {
-		transformed.max_completion_tokens = transformed.max_tokens;
-		delete transformed.max_tokens;
-	}
-
-	if (
-		isGpt5ReasoningModel(provider.modelName) &&
-		transformed.reasoning_effort !== undefined &&
-		Array.isArray(transformed.tools) &&
-		transformed.tools.length > 0
-	) {
-		delete transformed.reasoning_effort;
-	}
-
+	normalizeKimiK27CodeThinking(transformed, provider, behavior);
+	normalizeToolChoiceForProfile(transformed, behavior);
+	applyToolChoiceCompatibility(transformed, provider, behavior);
+	applyStreamingToolCompatibility(transformed, behavior);
+	applyTokenFieldCompatibility(transformed, behavior);
+	applyFamilyRequestAdditions(transformed, behavior);
+	removeUnsupportedGpt5ToolReasoning(transformed, provider);
 	return transformed;
+}
+
+function applyToolChoiceCompatibility(
+	body: Record<string, unknown>,
+	provider: NormalChatModelRunCompatibilityProvider,
+	behavior: AdapterBehavior,
+): void {
+	if (shouldSuppressToolChoice(body, provider, behavior)) {
+		delete body.tool_choice;
+	}
+	if (shouldDisableQwenThinkingForToolChoice(body, behavior)) {
+		body.enable_thinking = false;
+		delete body.preserve_thinking;
+	}
+}
+
+function applyStreamingToolCompatibility(
+	body: Record<string, unknown>,
+	behavior: AdapterBehavior,
+): void {
+	if (behavior.addsGlmToolStream === true && shouldEnableGlmToolStream(body)) {
+		body.tool_stream = true;
+	}
+}
+
+function applyTokenFieldCompatibility(
+	body: Record<string, unknown>,
+	behavior: AdapterBehavior,
+): void {
+	if (
+		behavior.usesMaxCompletionTokens !== true ||
+		body.max_tokens === undefined
+	) {
+		return;
+	}
+	body.max_completion_tokens = body.max_tokens;
+	delete body.max_tokens;
+}
+
+function applyFamilyRequestAdditions(
+	body: Record<string, unknown>,
+	behavior: AdapterBehavior,
+): void {
+	if (behavior.addsReasoningSplit === true) {
+		body.reasoning_split = true;
+	}
+	if (behavior.usesChatTemplateThinking === true) {
+		translateThinkingToChatTemplateKwargs(body);
+	}
+	if (behavior.family === "deepseek") {
+		normalizeDeepSeekReasoningEffort(body);
+	}
+}
+
+function removeUnsupportedGpt5ToolReasoning(
+	body: Record<string, unknown>,
+	provider: NormalChatModelRunCompatibilityProvider,
+): void {
+	if (!isGpt5ReasoningModel(provider.modelName)) return;
+	if (body.reasoning_effort === undefined) return;
+	if (!Array.isArray(body.tools) || body.tools.length === 0) return;
+	delete body.reasoning_effort;
 }
 
 function classifyOpenAICompatibleProviderError(
@@ -345,20 +519,9 @@ function isRetryableOpenAICompatibleErrorMessage(
 	message: string | null,
 ): boolean {
 	if (!message) return false;
-	return (
-		message.includes("429") ||
-		message.includes("rate limit") ||
-		message.includes("rate_limit") ||
-		message.includes("too many requests") ||
-		message.includes("temporarily unavailable") ||
-		message.includes("service unavailable") ||
-		message.includes("overloaded") ||
-		message.includes("overload") ||
-		message.includes("timed out") ||
-		message.includes("timeout") ||
-		message.includes("read timeout") ||
-		message.includes("internal server error") ||
-		message.includes("server error")
+	return messageIncludesAny(
+		message,
+		RETRYABLE_OPENAI_COMPATIBLE_ERROR_MESSAGE_TERMS,
 	);
 }
 
@@ -366,32 +529,38 @@ function isNonRetryableOpenAICompatibleErrorMessage(
 	message: string | null,
 ): boolean {
 	if (!message) return false;
-	return (
-		message.includes("invalid api key") ||
-		message.includes("authentication") ||
-		message.includes("unauthorized") ||
-		message.includes("forbidden") ||
-		message.includes("prompt") ||
-		message.includes("schema") ||
-		message.includes("response_format") ||
-		message.includes("refusal") ||
-		message.includes("abort") ||
-		message.includes("content policy") ||
-		message.includes("context length")
+	return messageIncludesAny(
+		message,
+		NON_RETRYABLE_OPENAI_COMPATIBLE_ERROR_MESSAGE_TERMS,
 	);
 }
 
-function providerCompatibilityHaystack(
+function messageIncludesAny(message: string, terms: string[]): boolean {
+	return terms.some((term) => message.includes(term));
+}
+
+function providerCompatibilitySignals(
 	provider: NormalChatModelRunCompatibilityProvider,
-): string {
-	return [
-		provider.name,
-		provider.displayName,
-		provider.baseUrl,
-		provider.modelName,
-	]
-		.join(" ")
-		.toLowerCase();
+): ProviderCompatibilitySignals {
+	return {
+		modelIds: [provider.modelName, ...(provider.modelAliases ?? [])]
+			.map(normalizeProviderSignal)
+			.filter(Boolean),
+		weakHaystack: [provider.name, provider.displayName, provider.baseUrl]
+			.map(normalizeProviderSignal)
+			.filter(Boolean)
+			.join(" "),
+	};
+}
+
+function matchesAnyPattern(values: string[], patterns: RegExp[] = []): boolean {
+	return values.some((value) =>
+		patterns.some((pattern) => pattern.test(value)),
+	);
+}
+
+function normalizeProviderSignal(value: string): string {
+	return value.normalize("NFKC").trim().toLowerCase();
 }
 
 function resolveThinkingType(
@@ -399,17 +568,47 @@ function resolveThinkingType(
 	thinkingMode: ThinkingMode | undefined,
 	behavior: AdapterBehavior,
 ): NormalChatThinkingType | undefined {
+	if (shouldForceKimiK27CodeThinking(provider, behavior)) {
+		return "enabled";
+	}
+	if (shouldOmitMiniMaxOffThinking(provider, thinkingMode, behavior)) {
+		return undefined;
+	}
 	if (thinkingMode === "off") {
-		return provider.thinkingType === "enabled" || behavior.family !== "generic"
-			? "disabled"
-			: provider.thinkingType;
+		return resolveOffThinkingType(provider, behavior);
 	}
 
 	if (provider.thinkingType) return provider.thinkingType;
-	if (thinkingMode === "on" && behavior.thinkingOptions === "qwen") {
-		return "enabled";
-	}
-	return undefined;
+	return shouldEnableQwenThinking(thinkingMode, behavior)
+		? "enabled"
+		: undefined;
+}
+
+function shouldOmitMiniMaxOffThinking(
+	provider: NormalChatModelRunCompatibilityProvider,
+	thinkingMode: ThinkingMode | undefined,
+	behavior: AdapterBehavior,
+): boolean {
+	return (
+		behavior.family === "minimax" &&
+		thinkingMode === "off" &&
+		!isMiniMaxM3Model(provider)
+	);
+}
+
+function resolveOffThinkingType(
+	provider: NormalChatModelRunCompatibilityProvider,
+	behavior: AdapterBehavior,
+): NormalChatThinkingType | undefined {
+	if (provider.thinkingType === "enabled") return "disabled";
+	return behavior.family === "generic" ? provider.thinkingType : "disabled";
+}
+
+function shouldEnableQwenThinking(
+	thinkingMode: ThinkingMode | undefined,
+	behavior: AdapterBehavior,
+): boolean {
+	return thinkingMode === "on" && behavior.thinkingOptions === "qwen";
 }
 
 function normalizeAssistantToolCallContent(value: unknown): unknown {
@@ -432,15 +631,41 @@ function normalizeAssistantToolCallContent(value: unknown): unknown {
 	});
 }
 
+function normalizeKimiK27CodeThinking(
+	body: Record<string, unknown>,
+	provider: NormalChatModelRunCompatibilityProvider,
+	behavior: AdapterBehavior,
+): void {
+	if (!shouldForceKimiK27CodeThinking(provider, behavior)) return;
+	const thinking = body.thinking;
+	if (!isRecord(thinking)) return;
+	if (thinking.type !== "disabled" && thinking.type !== "enabled") return;
+	body.thinking = { type: "enabled", keep: "all" };
+}
+
+function normalizeToolChoiceForProfile(
+	body: Record<string, unknown>,
+	behavior: AdapterBehavior,
+): void {
+	if (behavior.toolChoicePolicy !== "auto-only") return;
+	if (body.tool_choice === undefined || body.tool_choice === "auto") return;
+	if (body.tool_choice === "none" && behavior.family === "mimo") return;
+
+	body.tool_choice = "auto";
+}
+
 function shouldSuppressToolChoice(
 	body: Record<string, unknown>,
+	provider: NormalChatModelRunCompatibilityProvider,
 	behavior: AdapterBehavior,
 ): boolean {
 	if (!isThinkingEnabled(body)) return false;
-	if (behavior.suppressesToolChoice === "when-thinking") {
-		return body.tool_choice !== undefined;
+	if (behavior.toolChoicePolicy === "deepseek-legacy-reasoner-when-thinking") {
+		return (
+			body.tool_choice !== undefined && isLegacyDeepSeekReasonerModel(provider)
+		);
 	}
-	if (behavior.suppressesToolChoice !== "kimi-unsupported-when-thinking") {
+	if (behavior.toolChoicePolicy !== "kimi-unsupported-when-thinking") {
 		return false;
 	}
 
@@ -472,6 +697,77 @@ function isKimiAllowedToolChoice(value: unknown): boolean {
 
 function isNamedToolChoice(value: unknown): boolean {
 	return isRecord(value) && value.type === "function";
+}
+
+function shouldEnableGlmToolStream(body: Record<string, unknown>): boolean {
+	return (
+		body.stream === true && Array.isArray(body.tools) && body.tools.length > 0
+	);
+}
+
+function translateThinkingToChatTemplateKwargs(
+	body: Record<string, unknown>,
+): void {
+	const thinking = body.thinking;
+	if (!isRecord(thinking)) return;
+	if (thinking.type !== "enabled" && thinking.type !== "disabled") return;
+
+	const current = isRecord(body.chat_template_kwargs)
+		? body.chat_template_kwargs
+		: {};
+	body.chat_template_kwargs = {
+		...current,
+		enable_thinking: thinking.type === "enabled",
+	};
+	delete body.thinking;
+}
+
+function normalizeDeepSeekReasoningEffort(body: Record<string, unknown>): void {
+	if (typeof body.reasoning_effort !== "string") return;
+	if (body.reasoning_effort === "high" || body.reasoning_effort === "max") {
+		return;
+	}
+	body.reasoning_effort = body.reasoning_effort === "xhigh" ? "max" : "high";
+}
+
+function shouldForceKimiK27CodeThinking(
+	provider: NormalChatModelRunCompatibilityProvider,
+	behavior: AdapterBehavior,
+): boolean {
+	return behavior.family === "kimi" && isKimiK27CodeModel(provider);
+}
+
+function isKimiK27CodeModel(
+	provider: NormalChatModelRunCompatibilityProvider,
+): boolean {
+	return providerModelIdentifiers(provider).some((modelId) =>
+		/^kimi-k2\.7-code(?:-|$)/.test(modelId),
+	);
+}
+
+function isMiniMaxM3Model(
+	provider: NormalChatModelRunCompatibilityProvider,
+): boolean {
+	return providerModelIdentifiers(provider).some(
+		(modelId) => modelId === "minimax-m3",
+	);
+}
+
+function isLegacyDeepSeekReasonerModel(
+	provider: NormalChatModelRunCompatibilityProvider,
+): boolean {
+	return providerModelIdentifiers(provider).some(
+		(modelId) =>
+			modelId === "deepseek-reasoner" || modelId.includes("reasoner"),
+	);
+}
+
+function providerModelIdentifiers(
+	provider: NormalChatModelRunCompatibilityProvider,
+): string[] {
+	return [provider.modelName, ...(provider.modelAliases ?? [])]
+		.map(normalizeProviderSignal)
+		.filter(Boolean);
 }
 
 function isGpt5ReasoningModel(modelName: string): boolean {

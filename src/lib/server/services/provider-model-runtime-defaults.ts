@@ -14,7 +14,14 @@ export type ProviderModelRuntimeDefaults = {
 	maxModelContext?: number;
 	compactionUiThreshold?: number;
 	targetConstructedContext?: number;
-	reasoningEffort?: "low" | "medium" | "high" | "max" | "xhigh";
+	reasoningEffort?:
+		| "none"
+		| "minimal"
+		| "low"
+		| "medium"
+		| "high"
+		| "max"
+		| "xhigh";
 	thinkingType?: "enabled" | "disabled";
 };
 
@@ -43,6 +50,8 @@ function normalizeReasoningEffort(
 	value: string | null | undefined,
 ): ProviderModelRuntimeDefaults["reasoningEffort"] {
 	return value === "low" ||
+		value === "none" ||
+		value === "minimal" ||
 		value === "medium" ||
 		value === "high" ||
 		value === "max" ||

@@ -18,7 +18,15 @@ export interface ModelConfig {
 	displayName: string;
 	systemPrompt: string;
 	maxTokens: number | null;
-	reasoningEffort: "low" | "medium" | "high" | "max" | "xhigh" | null;
+	reasoningEffort:
+		| "none"
+		| "minimal"
+		| "low"
+		| "medium"
+		| "high"
+		| "max"
+		| "xhigh"
+		| null;
 	thinkingType: "enabled" | "disabled" | null;
 }
 
@@ -165,6 +173,8 @@ function normalizeModelReasoningEffort(
 	value: string | undefined,
 ): ModelConfig["reasoningEffort"] {
 	return value === "low" ||
+		value === "none" ||
+		value === "minimal" ||
 		value === "medium" ||
 		value === "high" ||
 		value === "max" ||

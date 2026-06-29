@@ -110,12 +110,14 @@ function createProviderModelRow(params: {
 	displayName: string;
 	fallbackProviderModelId?: string | null;
 	capabilitiesJson?: string;
+	aliases?: string[];
 }) {
 	return {
 		id: params.id,
 		providerId: params.providerId ?? "provider-1",
 		name: params.name,
 		displayName: params.displayName,
+		aliases: params.aliases ?? [],
 		iconAssetId: null,
 		fallbackProviderModelId: params.fallbackProviderModelId ?? null,
 		maxModelContext: null,
@@ -489,6 +491,34 @@ describe("Normal Chat Model Run provider resolution", () => {
 		});
 		expect(mocks.getProviderByName).not.toHaveBeenCalled();
 		expect(mocks.decryptApiKey).toHaveBeenCalledWith("legacy-local-token", "");
+	});
+
+	it("projects provider model aliases into the runtime provider without changing the outbound model name", async () => {
+		mocks.listEnabledProviderModels.mockResolvedValue([
+			createProviderModelRow({
+				id: "model-b",
+				name: "kimi-k2.6",
+				displayName: "Kimi K2.6",
+				aliases: ["accounts/fireworks/models/kimi-k2p6", "kimi/kimi-k2.6"],
+			}),
+		]);
+		mocks.decryptApiKey.mockReturnValue("plain-secret");
+		mocks.getProviderWithSecrets.mockResolvedValue({
+			id: "provider-1",
+			name: "fireworks",
+			displayName: "Fireworks",
+			baseUrl: "https://api.fireworks.ai/inference/v1",
+			apiKeyEncrypted: "encrypted-secret",
+			apiKeyIv: "secret-iv",
+			enabled: true,
+		});
+
+		await expect(
+			resolveNormalChatModelRunProvider("provider:provider-1:model-b"),
+		).resolves.toMatchObject({
+			modelName: "kimi-k2.6",
+			modelAliases: ["accounts/fireworks/models/kimi-k2p6", "kimi/kimi-k2.6"],
+		});
 	});
 
 	it("does not fall back to runtime config when a DB-backed built-in provider secret is invalid", async () => {
@@ -2126,7 +2156,10 @@ describe("Plain Normal Chat Model Run", () => {
 		const firstBody = parseRequestBody(fetch);
 		expect(firstBody.thinking).toEqual({ type: "enabled" });
 		expect(firstBody.reasoning_effort).toBe("high");
-		expect(firstBody).not.toHaveProperty("tool_choice");
+		expect(firstBody.tool_choice).toEqual({
+			type: "function",
+			function: { name: "produce_file" },
+		});
 
 		const secondBody = parseRequestBody(fetch, 1);
 		expect(secondBody.messages).toEqual(
@@ -2353,7 +2386,8 @@ describe("Plain Normal Chat Model Run", () => {
 		});
 
 		const body = parseRequestBody(fetch);
-		expect(body.max_tokens).toBe(777);
+		expect(body.max_completion_tokens).toBe(777);
+		expect(body).not.toHaveProperty("max_tokens");
 	});
 
 	it("executes provided tools and continues the plain chat run across model steps", async () => {

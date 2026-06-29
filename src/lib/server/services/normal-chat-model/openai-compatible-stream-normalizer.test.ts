@@ -14,6 +14,7 @@ import {
 	parseFixtureEventStreamData,
 	parseFixtureEventStreamJson,
 	parseFixtureEventStreamData as parseServerSentEventData,
+	providerStreamFixtureCatalog,
 	providerStreamFixtures,
 } from "../../../../../tests/fixtures/ai/openai-compatible-stream-fixtures";
 import {
@@ -109,6 +110,28 @@ describe("OpenAI-compatible stream normalizer", () => {
 		expect(
 			providerStreamFixtures.qwen3ReasoningUsage.expected.usageFrames[0]?.usage,
 		).not.toHaveProperty("prompt_cache_hit_tokens");
+	});
+
+	it("catalogs current official provider stream topologies without guessing undocumented shapes", () => {
+		const catalogIds = new Set(
+			providerStreamFixtureCatalog.map((fixture) => fixture.id),
+		);
+		const normalizerCatalogIds = new Set(
+			normalizerProviderStreamFixtureCatalog.map((fixture) => fixture.id),
+		);
+		const documentedNormalizerFixtureIds = [
+			"deepseek-v4-reasoning-tool-calls",
+			"kimi-k2-7-code-reasoning-tool-calls",
+			"glm-5-2-reasoning-tool-calls",
+			"qwen-3-dashscope-content-usage",
+			"xiaomi-mimo-v2-5-reasoning-tool-calls",
+			"minimax-m3-content-usage",
+		];
+
+		for (const fixtureId of documentedNormalizerFixtureIds) {
+			expect(catalogIds).toContain(fixtureId);
+			expect(normalizerCatalogIds).toContain(fixtureId);
+		}
 	});
 
 	it("leaves non-streaming responses untouched", async () => {

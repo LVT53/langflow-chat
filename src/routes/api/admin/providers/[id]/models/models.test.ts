@@ -60,6 +60,7 @@ describe("admin provider models collection route", () => {
 			providerId: "provider-1",
 			name: "test-model",
 			displayName: "Test Model",
+			aliases: [],
 			maxModelContext: 262144,
 			compactionUiThreshold: 209715,
 			targetConstructedContext: 157286,
@@ -83,6 +84,7 @@ describe("admin provider models collection route", () => {
 			providerId: "provider-1",
 			name: "test-model",
 			displayName: "Test Model",
+			aliases: [],
 			maxModelContext: 262144,
 			compactionUiThreshold: 209715,
 			targetConstructedContext: 157286,
@@ -112,6 +114,7 @@ describe("admin provider models collection route", () => {
 					providerId: "provider-1",
 					name: "gpt-4",
 					displayName: "GPT-4",
+					aliases: ["accounts/fireworks/models/gpt-4"],
 					maxModelContext: 128000,
 					compactionUiThreshold: null,
 					targetConstructedContext: null,
@@ -242,12 +245,55 @@ describe("admin provider models collection route", () => {
 			);
 		});
 
+		it("creates a model with aliases", async () => {
+			mockCreateProviderModelFromPayload.mockResolvedValue({
+				id: "model-alias",
+				providerId: "provider-1",
+				name: "kimi-k2.6",
+				displayName: "Kimi K2.6",
+				aliases: ["accounts/fireworks/models/kimi-k2p6"],
+				maxModelContext: null,
+				compactionUiThreshold: null,
+				targetConstructedContext: null,
+				maxMessageLength: null,
+				maxTokens: null,
+				reasoningEffort: null,
+				thinkingType: null,
+				capabilitiesJson: "{}",
+				inputUsdMicrosPer1m: 0,
+				cachedInputUsdMicrosPer1m: 0,
+				cacheHitUsdMicrosPer1m: 0,
+				cacheMissUsdMicrosPer1m: 0,
+				outputUsdMicrosPer1m: 0,
+				enabled: true,
+				sortOrder: 0,
+				createdAt: new Date("2026-06-01T12:00:00.000Z"),
+				updatedAt: new Date("2026-06-01T12:00:00.000Z"),
+			});
+			const payload = {
+				name: "kimi-k2.6",
+				aliases: ["accounts/fireworks/models/kimi-k2p6"],
+			};
+			const response = await POST(makeEvent(payload));
+			const data = await response.json();
+
+			expect(response.status).toBe(201);
+			expect(data.model.aliases).toEqual([
+				"accounts/fireworks/models/kimi-k2p6",
+			]);
+			expect(mockCreateProviderModelFromPayload).toHaveBeenCalledWith(
+				"provider-1",
+				payload,
+			);
+		});
+
 		it("creates a disabled model", async () => {
 			mockCreateProviderModelFromPayload.mockResolvedValue({
 				id: "model-2",
 				providerId: "provider-1",
 				name: "disabled-model",
 				displayName: "Disabled Model",
+				aliases: [],
 				maxModelContext: null,
 				compactionUiThreshold: null,
 				targetConstructedContext: null,

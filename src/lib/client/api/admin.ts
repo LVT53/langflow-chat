@@ -398,6 +398,7 @@ export interface ProviderModel {
 	providerId: string;
 	name: string;
 	displayName: string;
+	aliases: string[];
 	iconAssetId: string | null;
 	guideNoteEn: string | null;
 	guideNoteHu: string | null;
@@ -427,6 +428,7 @@ export interface ProviderModel {
 export type ProviderModelInput = {
 	name: string;
 	displayName?: string;
+	aliases?: string[];
 	iconAssetId?: string | null;
 	guideNoteEn?: string | null;
 	guideNoteHu?: string | null;

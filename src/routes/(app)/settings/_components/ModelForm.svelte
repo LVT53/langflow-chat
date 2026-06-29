@@ -14,6 +14,12 @@ import {
 
 const tVal = get(t);
 
+type ProviderModelWithAliases = ProviderModel & { aliases?: unknown };
+type ProviderModelUpdateWithAliases = ProviderModelUpdate & {
+	name?: string;
+	aliases: string[];
+};
+
 function handleKeydown(e: KeyboardEvent) {
 	if (e.key === "Escape") {
 		onClose?.();
@@ -65,6 +71,10 @@ $effect(() => {
 let formGuideNoCost = $state(untrack(() => model?.guideNoCost ?? false));
 $effect(() => {
 	formGuideNoCost = model?.guideNoCost ?? false;
+});
+let formAliases = $state<string[]>(untrack(() => readModelAliases(model)));
+$effect(() => {
+	formAliases = readModelAliases(model);
 });
 let formEstimatedTokensPerSecond = $state(
 	untrack(() => numToString(model?.estimatedTokensPerSecond)),
@@ -133,6 +143,123 @@ function dollarsToMicros(dollars: string | number | null | undefined): number {
 	return Math.round(num * 1_000_000);
 }
 
+function readModelAliases(
+	providerModel: ProviderModel | null | undefined,
+): string[] {
+	const aliases = (providerModel as ProviderModelWithAliases | null | undefined)
+		?.aliases;
+	if (!Array.isArray(aliases)) return [];
+	return aliases.filter((alias): alias is string => typeof alias === "string");
+}
+
+function addAliasRow() {
+	formAliases = [...formAliases, ""];
+}
+
+function removeAliasRow(index: number) {
+	formAliases = formAliases.filter((_, aliasIndex) => aliasIndex !== index);
+}
+
+function normalizedAliases(): string[] {
+	const aliases: string[] = [];
+	const seen = new Set<string>();
+
+	for (const alias of formAliases) {
+		const trimmed = alias.trim();
+		if (!trimmed) continue;
+
+		const key = trimmed.toLocaleLowerCase();
+		if (seen.has(key)) continue;
+
+		seen.add(key);
+		aliases.push(trimmed);
+	}
+
+	return aliases;
+}
+
+function canonicalModelName(): string {
+	return (isCreate ? formName : (model?.name ?? formName)).trim();
+}
+
+function validateRequiredModelFields(): boolean {
+	if (isCreate && !formName.trim()) {
+		localError = $t("admin.fillRequiredFields");
+		return false;
+	}
+
+	if (!formDisplayName.trim()) {
+		localError = $t("admin.fillRequiredBuiltIn");
+		return false;
+	}
+
+	return true;
+}
+
+function validateAliases(aliases: string[]): boolean {
+	const canonicalName = canonicalModelName().toLocaleLowerCase();
+	if (
+		canonicalName &&
+		aliases.some((alias) => alias.toLocaleLowerCase() === canonicalName)
+	) {
+		localError = $t("admin.modelAliasCanonicalCollision");
+		return false;
+	}
+
+	return true;
+}
+
+function trimmedOrNull(value: string): string | null {
+	const trimmed = value.trim();
+	return trimmed ? trimmed : null;
+}
+
+function valueOrNull(value: string | null): string | null {
+	return value ? value : null;
+}
+
+function guideBadgeValue(): "intelligent" | "simple" | null {
+	if (formGuideBadge === "intelligent") return "intelligent";
+	if (formGuideBadge === "simple") return "simple";
+	return null;
+}
+
+function fallbackProviderModelIdValue(): string | null | undefined {
+	if (isCreate || !model) return undefined;
+	return formFallbackProviderModelId ? formFallbackProviderModelId : null;
+}
+
+function buildModelUpdateData(
+	maxContext: number | null,
+	aliases: string[],
+): ProviderModelUpdateWithAliases {
+	return {
+		displayName: formDisplayName.trim(),
+		iconAssetId: valueOrNull(formIconAssetId),
+		guideNoteEn: trimmedOrNull(formGuideNoteEn),
+		guideNoteHu: trimmedOrNull(formGuideNoteHu),
+		guideBadge: guideBadgeValue(),
+		guideNoCost: formGuideNoCost,
+		estimatedTokensPerSecond: stringToNum(formEstimatedTokensPerSecond),
+		maxModelContext: maxContext,
+		compactionUiThreshold: null,
+		targetConstructedContext: null,
+		maxMessageLength: stringToNum(formMaxMessageLength),
+		maxTokens: stringToNum(formMaxTokens),
+		reasoningEffort: valueOrNull(formReasoningEffort),
+		thinkingType: valueOrNull(formThinkingType),
+		aliases,
+		fallbackProviderModelId: fallbackProviderModelIdValue(),
+		capabilitiesJson: valueOrNull(formCapabilitiesJson),
+		inputUsdMicrosPer1m: dollarsToMicros(formInputUsdPer1m),
+		cachedInputUsdMicrosPer1m: dollarsToMicros(formCachedInputUsdPer1m),
+		cacheHitUsdMicrosPer1m: dollarsToMicros(formCachedInputUsdPer1m),
+		cacheMissUsdMicrosPer1m: dollarsToMicros(formCacheMissUsdPer1m),
+		outputUsdMicrosPer1m: dollarsToMicros(formOutputUsdPer1m),
+		enabled: formEnabled,
+	};
+}
+
 function fallbackReasonLabel(reason: FallbackCompatibilityReason): string {
 	if (reason.kind === "disabled-target") {
 		return $t("admin.modelFallbackReasonDisabledTarget");
@@ -180,46 +307,12 @@ function hasCompatibleFallbackOption(): boolean {
 function handleSave() {
 	localError = "";
 
-	if (isCreate && !formName.trim()) {
-		localError = $t("admin.fillRequiredFields");
-		return;
-	}
-
-	if (!formDisplayName.trim()) {
-		localError = $t("admin.fillRequiredBuiltIn");
-		return;
-	}
-
+	if (!validateRequiredModelFields()) return;
 	const maxContext = stringToNum(formMaxModelContext);
+	const aliases = normalizedAliases();
+	if (!validateAliases(aliases)) return;
 
-	const data: ProviderModelUpdate & { name?: string } = {
-		displayName: formDisplayName.trim(),
-		iconAssetId: formIconAssetId || null,
-		guideNoteEn: formGuideNoteEn.trim() || null,
-		guideNoteHu: formGuideNoteHu.trim() || null,
-		guideBadge:
-			formGuideBadge === "intelligent" || formGuideBadge === "simple"
-				? formGuideBadge
-				: null,
-		guideNoCost: formGuideNoCost,
-		estimatedTokensPerSecond: stringToNum(formEstimatedTokensPerSecond),
-		maxModelContext: maxContext,
-		compactionUiThreshold: null,
-		targetConstructedContext: null,
-		maxMessageLength: stringToNum(formMaxMessageLength),
-		maxTokens: stringToNum(formMaxTokens),
-		reasoningEffort: formReasoningEffort || null,
-		thinkingType: formThinkingType || null,
-		fallbackProviderModelId:
-			isCreate || !model ? undefined : formFallbackProviderModelId || null,
-		capabilitiesJson: formCapabilitiesJson || null,
-		inputUsdMicrosPer1m: dollarsToMicros(formInputUsdPer1m),
-		cachedInputUsdMicrosPer1m: dollarsToMicros(formCachedInputUsdPer1m),
-		cacheHitUsdMicrosPer1m: dollarsToMicros(formCachedInputUsdPer1m),
-		cacheMissUsdMicrosPer1m: dollarsToMicros(formCacheMissUsdPer1m),
-		outputUsdMicrosPer1m: dollarsToMicros(formOutputUsdPer1m),
-		enabled: formEnabled,
-	};
+	const data = buildModelUpdateData(maxContext, aliases);
 
 	if (isCreate) {
 		data.name = formName.trim();
@@ -251,6 +344,50 @@ function handleSave() {
 					/>
 					{#if isCreate}
 						<p class="mt-1 text-xs text-text-muted">{$t('admin.nameIdDescription')}</p>
+					{/if}
+				</div>
+
+				<div class="mt-2 border-t border-border pt-3">
+					<div class="flex items-start justify-between gap-3">
+						<div class="min-w-0">
+							<h3 class="text-sm font-medium text-text-primary">{$t('admin.modelAliases')}</h3>
+							<p class="text-xs text-text-muted">{$t('admin.modelAliasesDescription')}</p>
+						</div>
+						<button
+							type="button"
+							class="btn-secondary shrink-0 text-xs"
+							onclick={addAliasRow}
+						>
+							{$t('admin.addModelAlias')}
+						</button>
+					</div>
+					{#if formAliases.length > 0}
+						<div class="mt-3 space-y-2">
+							{#each formAliases as _alias, index (index)}
+								<div class="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+									<div>
+										<label class="sr-only" for={`model-form-alias-${index}`}>
+											{$t('admin.modelAliasInputA11y', { number: index + 1 })}
+										</label>
+										<input
+											id={`model-form-alias-${index}`}
+											type="text"
+											class="settings-input"
+											bind:value={formAliases[index]}
+											placeholder={$t('admin.modelAliasPlaceholder')}
+										/>
+									</div>
+									<button
+										type="button"
+										class="btn-secondary h-10 w-10 px-0"
+										aria-label={$t('admin.removeModelAliasA11y', { number: index + 1 })}
+										onclick={() => removeAliasRow(index)}
+									>
+										&times;
+									</button>
+								</div>
+							{/each}
+						</div>
 					{/if}
 				</div>
 
@@ -419,7 +556,9 @@ function handleSave() {
 								class="settings-input"
 								bind:value={formReasoningEffort}
 							>
-								<option value="">{$t('admin.none')}</option>
+								<option value="">{$t('admin.providerDefault')}</option>
+								<option value="none">{$t('admin.none')}</option>
+								<option value="minimal">{$t('admin.minimal')}</option>
 								<option value="low">{$t('admin.low')}</option>
 								<option value="medium">{$t('admin.medium')}</option>
 								<option value="high">{$t('admin.high')}</option>

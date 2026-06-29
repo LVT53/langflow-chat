@@ -62,6 +62,7 @@ describe("admin provider model detail route", () => {
 			providerId: "provider-1",
 			name: "test-model",
 			displayName: "Test Model",
+			aliases: [],
 			maxModelContext: 262144,
 			compactionUiThreshold: 209715,
 			targetConstructedContext: 157286,
@@ -85,6 +86,7 @@ describe("admin provider model detail route", () => {
 			providerId: "provider-1",
 			name: "test-model",
 			displayName: "Test Model",
+			aliases: [],
 			maxModelContext: 262144,
 			compactionUiThreshold: 209715,
 			targetConstructedContext: 157286,
@@ -127,6 +129,7 @@ describe("admin provider model detail route", () => {
 				providerId: "provider-1",
 				name: "test-model",
 				displayName: "Test Model",
+				aliases: [],
 				maxModelContext: null,
 				compactionUiThreshold: null,
 				targetConstructedContext: null,
@@ -218,6 +221,45 @@ describe("admin provider model detail route", () => {
 			const response = await PUT(makeEvent("PUT", payload));
 
 			expect(response.status).toBe(200);
+			expect(mockUpdateProviderModelFromPayload).toHaveBeenCalledWith(
+				"model-1",
+				payload,
+			);
+		});
+
+		it("updates aliases", async () => {
+			mockUpdateProviderModelFromPayload.mockResolvedValue({
+				id: "model-1",
+				providerId: "provider-1",
+				name: "kimi-k2.6",
+				displayName: "Kimi K2.6",
+				aliases: ["accounts/fireworks/models/kimi-k2p6"],
+				maxModelContext: null,
+				compactionUiThreshold: null,
+				targetConstructedContext: null,
+				maxMessageLength: null,
+				maxTokens: null,
+				reasoningEffort: null,
+				thinkingType: null,
+				capabilitiesJson: "{}",
+				inputUsdMicrosPer1m: 0,
+				cachedInputUsdMicrosPer1m: 0,
+				cacheHitUsdMicrosPer1m: 0,
+				cacheMissUsdMicrosPer1m: 0,
+				outputUsdMicrosPer1m: 0,
+				enabled: true,
+				sortOrder: 0,
+				createdAt: new Date(),
+				updatedAt: new Date(),
+			});
+			const payload = { aliases: ["accounts/fireworks/models/kimi-k2p6"] };
+			const response = await PUT(makeEvent("PUT", payload));
+			const data = await response.json();
+
+			expect(response.status).toBe(200);
+			expect(data.model.aliases).toEqual([
+				"accounts/fireworks/models/kimi-k2p6",
+			]);
 			expect(mockUpdateProviderModelFromPayload).toHaveBeenCalledWith(
 				"model-1",
 				payload,

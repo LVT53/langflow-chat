@@ -324,6 +324,22 @@ describe("Knowledge Store Config", () => {
 			expect(config.modelTimeoutFailoverTargetModel).toBe("model2");
 		});
 
+		it("getConfig() should accept official none and minimal reasoning effort overrides", async () => {
+			adminConfigRows = [
+				{ key: "MODEL_1_REASONING_EFFORT", value: "none" },
+				{ key: "MODEL_2_REASONING_EFFORT", value: "minimal" },
+			];
+
+			await refreshConfig();
+
+			expect(getConfig().model1.reasoningEffort).toBe("none");
+			expect(getConfig().model2.reasoningEffort).toBe("minimal");
+			expect(getResolvedAdminConfigValues()).toMatchObject({
+				MODEL_1_REASONING_EFFORT: "none",
+				MODEL_2_REASONING_EFFORT: "minimal",
+			});
+		});
+
 		it("getConfig() should expose and override web research extraction settings", async () => {
 			expect(getConfig()).toMatchObject({
 				webResearchExtractorMode: "readability",

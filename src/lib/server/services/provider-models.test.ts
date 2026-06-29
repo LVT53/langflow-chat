@@ -48,6 +48,7 @@ function createTestTables() {
 			max_tokens INTEGER,
 			reasoning_effort TEXT,
 			thinking_type TEXT,
+			aliases_json TEXT NOT NULL DEFAULT '[]',
 			capabilities_json TEXT NOT NULL DEFAULT '{}',
 			input_usd_micros_per_1m INTEGER NOT NULL DEFAULT 0,
 			cached_input_usd_micros_per_1m INTEGER NOT NULL DEFAULT 0,
@@ -106,6 +107,7 @@ describe("ProviderModel payload parsing", () => {
 				maxTokens: 8192,
 				reasoningEffort: "",
 				thinkingType: "enabled",
+				aliases: ["  parser-alias  ", "", "Parser-Alias", "parser-alt"],
 				capabilitiesJson: "",
 				inputUsdMicrosPer1m: 10,
 				cachedInputUsdMicrosPer1m: 5,
@@ -132,6 +134,7 @@ describe("ProviderModel payload parsing", () => {
 			maxTokens: 8192,
 			reasoningEffort: null,
 			thinkingType: "enabled",
+			aliases: ["parser-alias", "parser-alt"],
 			capabilitiesJson: null,
 			inputUsdMicrosPer1m: 10,
 			cachedInputUsdMicrosPer1m: 5,
@@ -165,6 +168,7 @@ describe("ProviderModel payload parsing", () => {
 				maxTokens: null,
 				reasoningEffort: "",
 				thinkingType: "disabled",
+				aliases: ["  update-alias  ", "", "UPDATE-ALIAS"],
 				capabilitiesJson: "",
 				inputUsdMicrosPer1m: 9,
 				cachedInputUsdMicrosPer1m: 4,
@@ -190,6 +194,7 @@ describe("ProviderModel payload parsing", () => {
 			maxTokens: null,
 			reasoningEffort: null,
 			thinkingType: "disabled",
+			aliases: ["update-alias"],
 			capabilitiesJson: "{}",
 			inputUsdMicrosPer1m: 9,
 			cachedInputUsdMicrosPer1m: 4,
@@ -289,7 +294,31 @@ describe("ProviderModel CRUD", () => {
 			expect(model.maxTokens).toBe(4096);
 			expect(model.reasoningEffort).toBe("high");
 			expect(model.thinkingType).toBe("enabled");
+			expect(model.aliases).toEqual([]);
 			expect(model.inputUsdMicrosPer1m).toBe(15);
+		});
+
+		it("creates a model with normalized aliases", async () => {
+			const { createProviderModelFromPayload } = await import(
+				"./provider-models"
+			);
+			const provider = await seedProvider();
+
+			const model = await createProviderModelFromPayload(provider.id, {
+				name: "alias-create",
+				displayName: "Alias Create",
+				aliases: [
+					"  alias-a  ",
+					"",
+					"ALIAS-A",
+					"accounts/fireworks/models/alias-create",
+				],
+			});
+
+			expect(model.aliases).toEqual([
+				"alias-a",
+				"accounts/fireworks/models/alias-create",
+			]);
 		});
 
 		it("creates a model from the client form payload when blank optional fields are null", async () => {
@@ -327,6 +356,7 @@ describe("ProviderModel CRUD", () => {
 			expect(model.reasoningEffort).toBeNull();
 			expect(model.thinkingType).toBeNull();
 			expect(model.capabilitiesJson).toBe("{}");
+			expect(model.aliases).toEqual([]);
 		});
 
 		it("creates a model with default values", async () => {
@@ -354,6 +384,7 @@ describe("ProviderModel CRUD", () => {
 			expect(model.maxModelContext).toBeNull();
 			expect(model.maxTokens).toBeNull();
 			expect(model.reasoningEffort).toBeNull();
+			expect(model.aliases).toEqual([]);
 			expect(model.createdAt).toBeInstanceOf(Date);
 			expect(model.updatedAt).toBeInstanceOf(Date);
 		});
@@ -387,6 +418,7 @@ describe("ProviderModel CRUD", () => {
 			expect(model.reasoningEffort).toBe("high");
 			expect(model.thinkingType).toBe("enabled");
 			expect(model.capabilitiesJson).toBe('{"tools":true,"vision":true}');
+			expect(model.aliases).toEqual([]);
 			expect(model.inputUsdMicrosPer1m).toBe(1500);
 			expect(model.cachedInputUsdMicrosPer1m).toBe(375);
 			expect(model.cacheHitUsdMicrosPer1m).toBe(200);
@@ -574,6 +606,61 @@ describe("ProviderModel CRUD", () => {
 			expect(model1.id).not.toBe(model2.id);
 		});
 
+		it("allows the same alias under different providers", async () => {
+			const { createProviderModel } = await import("./provider-models");
+			const provider1 = await seedProvider("provider-a", "Provider A");
+			const provider2 = await seedProvider("provider-b", "Provider B");
+
+			const model1 = await createProviderModel({
+				providerId: provider1.id,
+				name: "provider-a-model",
+				aliases: ["shared-gateway-name"],
+			});
+			const model2 = await createProviderModel({
+				providerId: provider2.id,
+				name: "provider-b-model",
+				aliases: ["SHARED-GATEWAY-NAME"],
+			});
+
+			expect(model1.aliases).toEqual(["shared-gateway-name"]);
+			expect(model2.aliases).toEqual(["SHARED-GATEWAY-NAME"]);
+		});
+
+		it("rejects aliases that collide with canonical names or sibling aliases", async () => {
+			const { createProviderModel } = await import("./provider-models");
+			const provider = await seedProvider();
+
+			await createProviderModel({
+				providerId: provider.id,
+				name: "canonical-model",
+				aliases: ["gateway-alias"],
+			});
+
+			await expect(
+				createProviderModel({
+					providerId: provider.id,
+					name: "new-model",
+					aliases: ["Canonical-Model"],
+				}),
+			).rejects.toThrow("aliases");
+
+			await expect(
+				createProviderModel({
+					providerId: provider.id,
+					name: "another-model",
+					aliases: ["GATEWAY-ALIAS"],
+				}),
+			).rejects.toThrow("aliases");
+
+			await expect(
+				createProviderModel({
+					providerId: provider.id,
+					name: "own-model",
+					aliases: ["OWN-MODEL"],
+				}),
+			).rejects.toThrow("aliases");
+		});
+
 		it("defaults displayName to name when not provided", async () => {
 			const { createProviderModel } = await import("./provider-models");
 			const provider = await seedProvider();
@@ -606,6 +693,7 @@ describe("ProviderModel CRUD", () => {
 			);
 			expect(fetched.name).toBe("gpt-3.5-turbo");
 			expect(fetched.providerId).toBe(provider.id);
+			expect(fetched.aliases).toEqual([]);
 		});
 
 		it("returns null for unknown id", async () => {
@@ -632,6 +720,30 @@ describe("ProviderModel CRUD", () => {
 				"model by name",
 			);
 			expect(found.displayName).toBe("Mixtral");
+		});
+
+		it("finds a model by provider-scoped alias case-insensitively", async () => {
+			const { createProviderModel, getProviderModelByName } = await import(
+				"./provider-models"
+			);
+			const provider = await seedProvider();
+
+			await createProviderModel({
+				providerId: provider.id,
+				name: "kimi-k2.6",
+				displayName: "Kimi K2.6",
+				aliases: ["accounts/fireworks/models/kimi-k2p6"],
+			});
+
+			const found = assertDefined(
+				await getProviderModelByName(
+					provider.id,
+					"ACCOUNTS/FIREWORKS/MODELS/KIMI-K2P6",
+				),
+				"model by alias",
+			);
+			expect(found.name).toBe("kimi-k2.6");
+			expect(found.aliases).toEqual(["accounts/fireworks/models/kimi-k2p6"]);
 		});
 
 		it("returns null when provider has no such model", async () => {
@@ -892,6 +1004,67 @@ describe("ProviderModel CRUD", () => {
 			);
 			expect(fetched.reasoningEffort).toBe("medium");
 			expect(fetched.thinkingType).toBe("enabled");
+		});
+
+		it("updates aliases by replacing the previous alias set", async () => {
+			const { createProviderModel, updateProviderModel, getProviderModel } =
+				await import("./provider-models");
+			const provider = await seedProvider();
+
+			const created = await createProviderModel({
+				providerId: provider.id,
+				name: "alias-update",
+				displayName: "Alias Update",
+				aliases: ["old-alias"],
+			});
+
+			const updated = assertDefined(
+				await updateProviderModel(created.id, {
+					aliases: ["  new-alias  ", "NEW-ALIAS", "new-alt"],
+				}),
+				"updated aliases",
+			);
+			expect(updated.aliases).toEqual(["new-alias", "new-alt"]);
+
+			const fetched = assertDefined(
+				await getProviderModel(created.id),
+				"model after alias update",
+			);
+			expect(fetched.aliases).toEqual(["new-alias", "new-alt"]);
+		});
+
+		it("rejects alias updates that collide with sibling names, sibling aliases, or own canonical name", async () => {
+			const { createProviderModel, updateProviderModel } = await import(
+				"./provider-models"
+			);
+			const provider = await seedProvider();
+
+			const sibling = await createProviderModel({
+				providerId: provider.id,
+				name: "sibling-model",
+				aliases: ["sibling-alias"],
+			});
+			const target = await createProviderModel({
+				providerId: provider.id,
+				name: "target-model",
+				aliases: ["target-old-alias"],
+			});
+
+			await expect(
+				updateProviderModel(target.id, { aliases: ["SIBLING-MODEL"] }),
+			).rejects.toThrow("aliases");
+
+			await expect(
+				updateProviderModel(target.id, { aliases: ["SIBLING-ALIAS"] }),
+			).rejects.toThrow("aliases");
+
+			await expect(
+				updateProviderModel(target.id, { aliases: ["target-model"] }),
+			).rejects.toThrow("aliases");
+
+			await expect(
+				updateProviderModel(sibling.id, { aliases: ["target-old-alias"] }),
+			).rejects.toThrow("aliases");
 		});
 
 		it("clears reasoning, thinking, and capabilities from a nullable admin payload", async () => {

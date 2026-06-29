@@ -73,4 +73,18 @@ describe("Provider Model Runtime Defaults", () => {
 			thinkingType: "disabled",
 		});
 	});
+
+	it("accepts official none and minimal reasoning effort values", () => {
+		expect(
+			resolveProviderModelRuntimeDefaults({
+				reasoningEffort: "none",
+			}),
+		).toEqual({ reasoningEffort: "none" });
+
+		expect(
+			resolveProviderModelPersistenceDefaults({
+				reasoningEffort: "minimal",
+			}),
+		).toMatchObject({ reasoningEffort: "minimal" });
+	});
 });

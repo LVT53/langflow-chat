@@ -9,7 +9,8 @@ export type ProviderStreamFamily =
 	| "xiaomi-mimo"
 	| "kimi-k2"
 	| "glm-5"
-	| "qwen-3";
+	| "qwen-3"
+	| "minimax-m3";
 
 export type OpenAICompatibleToolCallDelta = {
 	index?: number | string;
@@ -286,6 +287,124 @@ export const providerStreamFixtures = {
 			finishReason: "stop",
 		},
 	}),
+	deepseekV4ReasoningToolCalls: defineFixture({
+		id: "deepseek-v4-reasoning-tool-calls",
+		providerFamily: "deepseek-v4",
+		providerName: "deepseek",
+		providerDisplayName: "DeepSeek",
+		baseUrl: "https://api.deepseek.com/v1",
+		model: "deepseek-v4-pro",
+		description:
+			"DeepSeek V4-style reasoning, text, streamed tool call deltas, final usage chunk, and DONE sentinel.",
+		frames: [
+			dataFrame(
+				chunk({
+					id: "deepseek-v4-tool-chunk-1",
+					model: "deepseek-v4-pro",
+					delta: { reasoning_content: "Choose the file tool. " },
+					system_fingerprint: "fp_deepseek_v4",
+				}),
+			),
+			dataFrame(
+				chunk({
+					id: "deepseek-v4-tool-chunk-2",
+					model: "deepseek-v4-pro",
+					delta: { content: "I will prepare it. " },
+					system_fingerprint: "fp_deepseek_v4",
+				}),
+			),
+			dataFrame(
+				chunk({
+					id: "deepseek-v4-tool-chunk-3",
+					model: "deepseek-v4-pro",
+					delta: {
+						tool_calls: [
+							{
+								index: 0,
+								id: "call-deepseek-v4-1",
+								type: "function",
+								function: {
+									name: "produce_file",
+									arguments: '{"title"',
+								},
+							},
+						],
+					},
+					system_fingerprint: "fp_deepseek_v4",
+				}),
+			),
+			dataFrame(
+				chunk({
+					id: "deepseek-v4-tool-chunk-4",
+					model: "deepseek-v4-pro",
+					delta: {
+						tool_calls: [
+							{
+								index: 0,
+								id: "call-deepseek-v4-1",
+								type: "function",
+								function: { arguments: ':"DeepSeek V4 report"}' },
+							},
+						],
+					},
+					system_fingerprint: "fp_deepseek_v4",
+				}),
+			),
+			dataFrame(
+				chunk({
+					id: "deepseek-v4-tool-chunk-5",
+					model: "deepseek-v4-pro",
+					finishReason: "tool_calls",
+					usage: null,
+					system_fingerprint: "fp_deepseek_v4",
+				}),
+			),
+			dataFrame(
+				usageChunk({
+					id: "deepseek-v4-tool-usage",
+					model: "deepseek-v4-pro",
+					usage: {
+						prompt_tokens: 31,
+						completion_tokens: 12,
+						total_tokens: 43,
+						completion_tokens_details: { reasoning_tokens: 7 },
+					},
+					system_fingerprint: "fp_deepseek_v4",
+				}),
+			),
+			dataFrame("[DONE]"),
+		],
+		expected: {
+			textDeltas: ["I will prepare it. "],
+			reasoningDeltas: ["Choose the file tool. "],
+			toolCalls: [
+				{
+					id: "call-deepseek-v4-1",
+					name: "produce_file",
+					argumentsText: '{"title":"DeepSeek V4 report"}',
+					input: { title: "DeepSeek V4 report" },
+				},
+			],
+			usage: {
+				prompt_tokens: 31,
+				completion_tokens: 12,
+				total_tokens: 43,
+				completion_tokens_details: { reasoning_tokens: 7 },
+			},
+			usageFrames: [
+				{
+					location: "top-level-empty-choices",
+					usage: {
+						prompt_tokens: 31,
+						completion_tokens: 12,
+						total_tokens: 43,
+						completion_tokens_details: { reasoning_tokens: 7 },
+					},
+				},
+			],
+			finishReason: "tool_calls",
+		},
+	}),
 	xiaomiMiMoArgumentsBeforeName: defineFixture({
 		id: "xiaomi-mimo-arguments-before-name",
 		providerFamily: "xiaomi-mimo",
@@ -370,6 +489,87 @@ export const providerStreamFixtures = {
 						prompt_tokens: 21,
 						completion_tokens: 9,
 						total_tokens: 30,
+					},
+				},
+			],
+			finishReason: "tool_calls",
+		},
+	}),
+	xiaomiMiMoV25ReasoningToolCalls: defineFixture({
+		id: "xiaomi-mimo-v2-5-reasoning-tool-calls",
+		providerFamily: "xiaomi-mimo",
+		providerName: "mimo",
+		providerDisplayName: "Xiaomi MiMo",
+		baseUrl: "https://api.xiaomimimo.com/v1",
+		model: "mimo-v2.5-pro",
+		description:
+			"MiMo V2.5-style reasoning, streamed tool call deltas, and usage fields.",
+		frames: [
+			dataFrame(
+				chunk({
+					id: "mimo-v25-chunk-1",
+					model: "mimo-v2.5-pro",
+					delta: { reasoning_content: "Use the document tool. " },
+					mimo_trace_id: "mimo-v25-trace-1",
+				}),
+			),
+			dataFrame(
+				chunk({
+					id: "mimo-v25-chunk-2",
+					model: "mimo-v2.5-pro",
+					delta: {
+						tool_calls: [
+							{
+								index: 0,
+								id: "mimo-tool-1",
+								type: "function",
+								function: {
+									name: "produce_file",
+									arguments: '{"title":"MiMo V2.5 report"}',
+								},
+							},
+						],
+					},
+					mimo_trace_id: "mimo-v25-trace-1",
+				}),
+			),
+			dataFrame(
+				chunk({
+					id: "mimo-v25-chunk-3",
+					model: "mimo-v2.5-pro",
+					finishReason: "tool_calls",
+					usage: {
+						prompt_tokens: 28,
+						completion_tokens: 11,
+						total_tokens: 39,
+					},
+					mimo_trace_id: "mimo-v25-trace-1",
+				}),
+			),
+			dataFrame("[DONE]"),
+		],
+		expected: {
+			reasoningDeltas: ["Use the document tool. "],
+			toolCalls: [
+				{
+					id: "mimo-tool-1",
+					name: "produce_file",
+					argumentsText: '{"title":"MiMo V2.5 report"}',
+					input: { title: "MiMo V2.5 report" },
+				},
+			],
+			usage: {
+				prompt_tokens: 28,
+				completion_tokens: 11,
+				total_tokens: 39,
+			},
+			usageFrames: [
+				{
+					location: "top-level-finish-chunk",
+					usage: {
+						prompt_tokens: 28,
+						completion_tokens: 11,
+						total_tokens: 39,
 					},
 				},
 			],
@@ -525,6 +725,121 @@ export const providerStreamFixtures = {
 			finishReason: "tool_calls",
 		},
 	}),
+	kimiK27CodeReasoningToolCalls: defineFixture({
+		id: "kimi-k2-7-code-reasoning-tool-calls",
+		providerFamily: "kimi-k2",
+		providerName: "moonshot",
+		providerDisplayName: "Kimi",
+		baseUrl: "https://api.moonshot.ai/v1",
+		model: "kimi-k2.7-code",
+		description:
+			"Kimi K2.7 Code-style split reasoning, text, split tool arguments, usage chunk, and DONE sentinel.",
+		frames: [
+			dataFrame(
+				chunk({
+					id: "kimi-k27-chunk-1",
+					model: "kimi-k2.7-code",
+					delta: { reasoning_content: "Plan the code artifact. " },
+					service_tier: "standard",
+				}),
+			),
+			dataFrame(
+				chunk({
+					id: "kimi-k27-chunk-2",
+					model: "kimi-k2.7-code",
+					delta: { content: "I can create that. " },
+					service_tier: "standard",
+				}),
+			),
+			dataFrame(
+				chunk({
+					id: "kimi-k27-chunk-3",
+					model: "kimi-k2.7-code",
+					delta: {
+						tool_calls: [
+							{
+								index: 0,
+								id: "call-kimi-k27-1",
+								type: "function",
+								function: {
+									name: "produce_file",
+									arguments: '{"title":',
+								},
+							},
+						],
+					},
+					service_tier: "standard",
+				}),
+			),
+			dataFrame(
+				chunk({
+					id: "kimi-k27-chunk-4",
+					model: "kimi-k2.7-code",
+					delta: {
+						tool_calls: [
+							{
+								index: 0,
+								id: "call-kimi-k27-1",
+								type: "function",
+								function: { arguments: '"Kimi K2.7 code report"}' },
+							},
+						],
+					},
+					service_tier: "standard",
+				}),
+			),
+			dataFrame(
+				chunk({
+					id: "kimi-k27-chunk-5",
+					model: "kimi-k2.7-code",
+					finishReason: "tool_calls",
+					usage: null,
+					service_tier: "standard",
+				}),
+			),
+			dataFrame(
+				usageChunk({
+					id: "kimi-k27-usage",
+					model: "kimi-k2.7-code",
+					usage: {
+						prompt_tokens: 33,
+						completion_tokens: 13,
+						total_tokens: 46,
+					},
+					service_tier: "standard",
+				}),
+			),
+			dataFrame("[DONE]"),
+		],
+		expected: {
+			textDeltas: ["I can create that. "],
+			reasoningDeltas: ["Plan the code artifact. "],
+			toolCalls: [
+				{
+					id: "call-kimi-k27-1",
+					name: "produce_file",
+					argumentsText: '{"title":"Kimi K2.7 code report"}',
+					input: { title: "Kimi K2.7 code report" },
+				},
+			],
+			usage: {
+				prompt_tokens: 33,
+				completion_tokens: 13,
+				total_tokens: 46,
+			},
+			usageFrames: [
+				{
+					location: "top-level-empty-choices",
+					usage: {
+						prompt_tokens: 33,
+						completion_tokens: 13,
+						total_tokens: 46,
+					},
+				},
+			],
+			finishReason: "tool_calls",
+		},
+	}),
 	glm5ParameterlessTool: defineFixture({
 		id: "glm-5-parameterless-tool",
 		providerFamily: "glm-5",
@@ -591,6 +906,87 @@ export const providerStreamFixtures = {
 						prompt_tokens: 18,
 						completion_tokens: 4,
 						total_tokens: 22,
+					},
+				},
+			],
+			finishReason: "tool_calls",
+		},
+	}),
+	glm52ReasoningToolCalls: defineFixture({
+		id: "glm-5-2-reasoning-tool-calls",
+		providerFamily: "glm-5",
+		providerName: "zai",
+		providerDisplayName: "Z.ai GLM",
+		baseUrl: "https://api.z.ai/api/paas/v4",
+		model: "glm-5.2",
+		description:
+			"GLM 5.2-style reasoning, streamed tool calls, finish usage, and DONE sentinel.",
+		frames: [
+			dataFrame(
+				chunk({
+					id: "glm-52-chunk-1",
+					model: "glm-5.2",
+					delta: { reasoning_content: "Resolve the action. " },
+					request_id: "glm-52-request-1",
+				}),
+			),
+			dataFrame(
+				chunk({
+					id: "glm-52-chunk-2",
+					model: "glm-5.2",
+					delta: {
+						tool_calls: [
+							{
+								index: 0,
+								id: "glm-tool-1",
+								type: "function",
+								function: {
+									name: "memory_context",
+									arguments: "",
+								},
+							},
+						],
+					},
+					request_id: "glm-52-request-1",
+				}),
+			),
+			dataFrame(
+				chunk({
+					id: "glm-52-chunk-3",
+					model: "glm-5.2",
+					finishReason: "tool_calls",
+					usage: {
+						prompt_tokens: 25,
+						completion_tokens: 7,
+						total_tokens: 32,
+					},
+					request_id: "glm-52-request-1",
+				}),
+			),
+			dataFrame("[DONE]"),
+		],
+		expected: {
+			reasoningDeltas: ["Resolve the action. "],
+			toolCalls: [
+				{
+					id: "glm-tool-1",
+					name: "memory_context",
+					argumentsText: "{}",
+					input: {},
+				},
+			],
+			usage: {
+				prompt_tokens: 25,
+				completion_tokens: 7,
+				total_tokens: 32,
+			},
+			usageFrames: [
+				{
+					location: "top-level-finish-chunk",
+					usage: {
+						prompt_tokens: 25,
+						completion_tokens: 7,
+						total_tokens: 32,
 					},
 				},
 			],
@@ -669,6 +1065,136 @@ export const providerStreamFixtures = {
 			finishReason: "stop",
 		},
 	}),
+	qwen3DashScopeContentUsage: defineFixture({
+		id: "qwen-3-dashscope-content-usage",
+		providerFamily: "qwen-3",
+		providerName: "dashscope",
+		providerDisplayName: "Qwen Cloud",
+		baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+		model: "qwen3.7-plus",
+		description:
+			"DashScope OpenAI-compatible content stream with include-usage empty choices chunk.",
+		frames: [
+			dataFrame(
+				chunk({
+					id: "qwen-37-chunk-1",
+					model: "qwen3.7-plus",
+					delta: { content: "Checking Qwen context. " },
+					request_id: "qwen-37-request-1",
+				}),
+			),
+			dataFrame(
+				chunk({
+					id: "qwen-37-chunk-2",
+					model: "qwen3.7-plus",
+					delta: { content: "with usage metadata." },
+					request_id: "qwen-37-request-1",
+				}),
+			),
+			dataFrame(
+				chunk({
+					id: "qwen-37-chunk-3",
+					model: "qwen3.7-plus",
+					finishReason: "stop",
+					usage: null,
+					request_id: "qwen-37-request-1",
+				}),
+			),
+			dataFrame(
+				usageChunk({
+					id: "qwen-37-usage",
+					model: "qwen3.7-plus",
+					usage: {
+						prompt_tokens: 29,
+						completion_tokens: 10,
+						total_tokens: 39,
+						prompt_tokens_details: { cached_tokens: 4 },
+					},
+					request_id: "qwen-37-request-1",
+				}),
+			),
+			dataFrame("[DONE]"),
+		],
+		expected: {
+			textDeltas: ["Checking Qwen context. ", "with usage metadata."],
+			usage: {
+				prompt_tokens: 29,
+				completion_tokens: 10,
+				total_tokens: 39,
+				prompt_tokens_details: { cached_tokens: 4 },
+			},
+			usageFrames: [
+				{
+					location: "top-level-empty-choices",
+					usage: {
+						prompt_tokens: 29,
+						completion_tokens: 10,
+						total_tokens: 39,
+						prompt_tokens_details: { cached_tokens: 4 },
+					},
+				},
+			],
+			finishReason: "stop",
+		},
+	}),
+	minimaxM3ContentUsage: defineFixture({
+		id: "minimax-m3-content-usage",
+		providerFamily: "minimax-m3",
+		providerName: "minimax",
+		providerDisplayName: "MiniMax",
+		baseUrl: "https://api.minimax.io/v1",
+		model: "MiniMax-M3",
+		description:
+			"MiniMax M3 OpenAI-compatible content stream with documented usage fields and no invented reasoning/tool delta shape.",
+		frames: [
+			dataFrame(
+				chunk({
+					id: "minimax-m3-chunk-1",
+					model: "MiniMax-M3",
+					delta: { content: "MiniMax answer " },
+				}),
+			),
+			dataFrame(
+				chunk({
+					id: "minimax-m3-chunk-2",
+					model: "MiniMax-M3",
+					delta: { content: "with usage." },
+				}),
+			),
+			dataFrame(
+				chunk({
+					id: "minimax-m3-chunk-3",
+					model: "MiniMax-M3",
+					finishReason: "stop",
+					usage: {
+						prompt_tokens: 16,
+						completion_tokens: 4,
+						total_tokens: 20,
+					},
+				}),
+			),
+			dataFrame("[DONE]"),
+		],
+		expected: {
+			textDeltas: ["MiniMax answer ", "with usage."],
+			usage: {
+				prompt_tokens: 16,
+				completion_tokens: 4,
+				total_tokens: 20,
+			},
+			usageFrames: [
+				{
+					location: "top-level-finish-chunk",
+					usage: {
+						prompt_tokens: 16,
+						completion_tokens: 4,
+						total_tokens: 20,
+					},
+				},
+			],
+			finishReason: "stop",
+		},
+	}),
 } as const satisfies Record<string, ProviderStreamFixture>;
 
 export const providerStreamFixtureCatalog = Object.values(
@@ -677,10 +1203,16 @@ export const providerStreamFixtureCatalog = Object.values(
 
 export const normalizerProviderStreamFixtureCatalog = [
 	providerStreamFixtures.deepseekV4ReasoningText,
+	providerStreamFixtures.deepseekV4ReasoningToolCalls,
 	providerStreamFixtures.xiaomiMiMoArgumentsBeforeName,
+	providerStreamFixtures.xiaomiMiMoV25ReasoningToolCalls,
 	providerStreamFixtures.kimiK2SplitArguments,
+	providerStreamFixtures.kimiK27CodeReasoningToolCalls,
 	providerStreamFixtures.glm5ParameterlessTool,
+	providerStreamFixtures.glm52ReasoningToolCalls,
 	providerStreamFixtures.qwen3ReasoningUsage,
+	providerStreamFixtures.qwen3DashScopeContentUsage,
+	providerStreamFixtures.minimaxM3ContentUsage,
 ] as const satisfies readonly ProviderStreamFixture[];
 
 export function createFixtureEventStreamResponse(

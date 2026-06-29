@@ -285,6 +285,8 @@ function normalizeReasoningEffortOverride(
 	value: string,
 ): ModelConfig["reasoningEffort"] {
 	return value === "low" ||
+		value === "none" ||
+		value === "minimal" ||
 		value === "medium" ||
 		value === "high" ||
 		value === "max" ||

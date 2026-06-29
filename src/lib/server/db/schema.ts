@@ -1273,9 +1273,10 @@ export const providerModels = sqliteTable(
 		maxMessageLength: integer("max_message_length"),
 		maxTokens: integer("max_tokens"),
 		reasoningEffort: text("reasoning_effort", {
-			enum: ["low", "medium", "high", "max", "xhigh"],
+			enum: ["none", "minimal", "low", "medium", "high", "max", "xhigh"],
 		}),
 		thinkingType: text("thinking_type", { enum: ["enabled", "disabled"] }),
+		aliasesJson: text("aliases_json").notNull().default("[]"),
 		capabilitiesJson: text("capabilities_json").notNull().default("{}"),
 		inputUsdMicrosPer1m: integer("input_usd_micros_per_1m")
 			.notNull()

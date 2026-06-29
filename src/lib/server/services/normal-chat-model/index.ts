@@ -179,6 +179,7 @@ export type NormalChatModelRunProvider = {
 	displayName: string;
 	baseUrl: string;
 	modelName: string;
+	modelAliases?: string[];
 	apiKey: string;
 	requestTimeoutMs?: number;
 	maxOutputTokens?: number;
@@ -416,6 +417,10 @@ function buildProviderModelRunConfig(
 	modelId?: ModelId,
 ): NormalChatModelRunProvider {
 	const runtimeDefaults = resolveProviderModelRuntimeDefaults(model);
+	const aliases =
+		Array.isArray(model.aliases) && model.aliases.length > 0
+			? model.aliases
+			: null;
 
 	return {
 		id: providerWithSecrets.id,
@@ -429,6 +434,7 @@ function buildProviderModelRunConfig(
 			: null,
 		baseUrl: normalizeOpenAICompatibleBaseUrl(providerWithSecrets.baseUrl),
 		modelName: model.name,
+		...(aliases ? { modelAliases: aliases } : {}),
 		apiKey: decryptApiKey(
 			providerWithSecrets.apiKeyEncrypted,
 			providerWithSecrets.apiKeyIv,

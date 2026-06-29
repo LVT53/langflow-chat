@@ -10,6 +10,7 @@ function modelFixture(overrides: Record<string, unknown> = {}) {
 		displayName: "GPT Example",
 		iconAssetId: null,
 		fallbackProviderModelId: null,
+		aliases: [],
 		maxModelContext: 128_000,
 		compactionUiThreshold: null,
 		targetConstructedContext: null,
@@ -151,6 +152,146 @@ describe("ModelForm pricing fields", () => {
 				guideNoCost: true,
 				estimatedTokensPerSecond: 150,
 			}),
+		);
+	});
+});
+
+describe("ModelForm aliases", () => {
+	it("renders aliases for an existing model", () => {
+		const { getByLabelText } = render(ModelForm, {
+			providerId: "provider-1",
+			model: modelFixture({
+				aliases: [
+					"accounts/fireworks/models/qwen3p7-max",
+					"provider/qwen3.7-max",
+				],
+			}),
+			onSave: vi.fn(),
+			onClose: vi.fn(),
+		});
+
+		expect(getByLabelText("Alias 1")).toHaveValue(
+			"accounts/fireworks/models/qwen3p7-max",
+		);
+		expect(getByLabelText("Alias 2")).toHaveValue("provider/qwen3.7-max");
+	});
+
+	it("adds and removes alias rows", async () => {
+		const { getByRole, getByLabelText, queryByDisplayValue } = render(
+			ModelForm,
+			{
+				providerId: "provider-1",
+				model: modelFixture({
+					aliases: ["accounts/fireworks/models/qwen3p7-max"],
+				}),
+				onSave: vi.fn(),
+				onClose: vi.fn(),
+			},
+		);
+
+		await fireEvent.click(getByRole("button", { name: "Add alias" }));
+		await fireEvent.input(getByLabelText("Alias 2"), {
+			target: { value: "provider/qwen3.7-max" },
+		});
+
+		expect(getByLabelText("Alias 2")).toHaveValue("provider/qwen3.7-max");
+
+		await fireEvent.click(getByRole("button", { name: "Remove alias 1" }));
+
+		expect(
+			queryByDisplayValue("accounts/fireworks/models/qwen3p7-max"),
+		).toBeNull();
+		expect(getByLabelText("Alias 1")).toHaveValue("provider/qwen3.7-max");
+	});
+
+	it("dedupes and trims aliases before saving", async () => {
+		const onSave = vi.fn();
+		const { getByRole, getByLabelText } = render(ModelForm, {
+			providerId: "provider-1",
+			model: modelFixture(),
+			onSave,
+			onClose: vi.fn(),
+		});
+
+		await fireEvent.click(getByRole("button", { name: "Add alias" }));
+		await fireEvent.input(getByLabelText("Alias 1"), {
+			target: { value: " accounts/fireworks/models/qwen3p7-max " },
+		});
+		await fireEvent.click(getByRole("button", { name: "Add alias" }));
+		await fireEvent.input(getByLabelText("Alias 2"), {
+			target: { value: "ACCOUNTS/fireworks/models/qwen3p7-max" },
+		});
+		await fireEvent.click(getByRole("button", { name: "Add alias" }));
+		await fireEvent.input(getByLabelText("Alias 3"), {
+			target: { value: " provider/qwen3.7-max " },
+		});
+
+		await fireEvent.click(getByRole("button", { name: "Save Changes" }));
+
+		expect(onSave).toHaveBeenCalledWith(
+			expect.objectContaining({
+				aliases: [
+					"accounts/fireworks/models/qwen3p7-max",
+					"provider/qwen3.7-max",
+				],
+			}),
+		);
+	});
+
+	it("blocks aliases that equal the canonical model name", async () => {
+		const onSave = vi.fn();
+		const { getByRole, getByLabelText, getByText } = render(ModelForm, {
+			providerId: "provider-1",
+			model: modelFixture({ name: "qwen3.7-max" }),
+			onSave,
+			onClose: vi.fn(),
+		});
+
+		await fireEvent.click(getByRole("button", { name: "Add alias" }));
+		await fireEvent.input(getByLabelText("Alias 1"), {
+			target: { value: " QWEN3.7-MAX " },
+		});
+		await fireEvent.click(getByRole("button", { name: "Save Changes" }));
+
+		expect(
+			getByText("Alias cannot match the canonical model name."),
+		).toBeInTheDocument();
+		expect(onSave).not.toHaveBeenCalled();
+	});
+});
+
+describe("ModelForm reasoning effort", () => {
+	it("saves official none and minimal reasoning effort values", async () => {
+		const onSave = vi.fn();
+		const { getByLabelText, getByRole } = render(ModelForm, {
+			providerId: "provider-1",
+			model: modelFixture(),
+			onSave,
+			onClose: vi.fn(),
+		});
+
+		const reasoningSelect = getByLabelText(
+			"Reasoning Effort",
+		) as HTMLSelectElement;
+		expect(reasoningSelect.options[0].textContent).toBe("Provider default");
+
+		await fireEvent.change(reasoningSelect, {
+			target: { value: "none" },
+		});
+		await fireEvent.click(getByRole("button", { name: "Save Changes" }));
+
+		await fireEvent.change(reasoningSelect, {
+			target: { value: "minimal" },
+		});
+		await fireEvent.click(getByRole("button", { name: "Save Changes" }));
+
+		expect(onSave).toHaveBeenNthCalledWith(
+			1,
+			expect.objectContaining({ reasoningEffort: "none" }),
+		);
+		expect(onSave).toHaveBeenNthCalledWith(
+			2,
+			expect.objectContaining({ reasoningEffort: "minimal" }),
 		);
 	});
 });

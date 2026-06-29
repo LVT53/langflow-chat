@@ -4,6 +4,7 @@ const settingsDict = {
 	en: {
 		"admin.activeSessions": "Active sessions",
 		"admin.addModel": "Add Model",
+		"admin.addModelAlias": "Add alias",
 		"admin.addProvider": "Add Provider",
 		"admin.admin": "Admin",
 		"admin.admins": "Admins",
@@ -282,6 +283,7 @@ const settingsDict = {
 		"admin.maxTokensDescription": `Passed to the selected model as \`max_tokens\`. Leave empty to use the provider default.`,
 		"admin.maxTokensPlaceholder": "Use provider default",
 		"admin.medium": "Medium",
+		"admin.minimal": "Minimal",
 		"admin.messages": "Messages",
 		"admin.mineruApiDescription": `MinerU API server endpoint. Run \`docker run -d --name mineru -p 8001:8001 opendatalab/mineru:latest\` to start the service.`,
 		"admin.mineruApiUrl": "MinerU API URL",
@@ -316,6 +318,13 @@ const settingsDict = {
 		"admin.model2VisibilityDescription":
 			"Hide model 2 from the app and force fallbacks to model 1",
 		"admin.modelCapabilities": "Capabilities",
+		"admin.modelAliasCanonicalCollision":
+			"Alias cannot match the canonical model name.",
+		"admin.modelAliasInputA11y": "Alias {number}",
+		"admin.modelAliasPlaceholder": "e.g. accounts/fireworks/models/qwen3p7-max",
+		"admin.modelAliases": "Model aliases",
+		"admin.modelAliasesDescription":
+			"Alternative provider model IDs for gateways such as Fireworks AI.",
 		"admin.modelIcon": "Model Icon",
 		"admin.modelIconCropTitle": "Crop model icon",
 		"admin.modelIconProviderMissing":
@@ -427,6 +436,7 @@ const settingsDict = {
 		"admin.reasoningEffort": "Reasoning Effort",
 		"admin.reasoningTokens": "Reasoning tokens",
 		"admin.refresh": "Refresh",
+		"admin.removeModelAliasA11y": "Remove alias {number}",
 		"admin.requestTimeoutDescription": `HTTP request and stream timeout in milliseconds (default 300000 = 5 minutes). Increase for multi-round search workloads.`,
 		"admin.requestTimeoutMs": "Request Timeout (ms)",
 		"admin.reasoningDepthClassifier": "Reasoning Depth classifier",
@@ -694,6 +704,7 @@ const settingsDict = {
 	hu: {
 		"admin.activeSessions": "Aktív munkamenetek",
 		"admin.addModel": "Modell hozzáadása",
+		"admin.addModelAlias": "Alias hozzáadása",
 		"admin.addProvider": "Szolgáltató hozzáadása",
 		"admin.admin": "Adminisztrátor",
 		"admin.admins": "Adminisztrátorok",
@@ -978,6 +989,7 @@ const settingsDict = {
 		"admin.maxTokensDescription": `A kiválasztott modellnek átadott \`max_tokens\` érték. Hagyd üresen a szolgáltatói alapértelmezés használatához.`,
 		"admin.maxTokensPlaceholder": "Szolgáltatói alapértelmezés használata",
 		"admin.medium": "Közepes",
+		"admin.minimal": "Minimális",
 		"admin.messages": "Üzenetek",
 		"admin.mineruApiDescription": `MinerU API-szerver végpontja. A szolgáltatás indításához futtasd: \`docker run -d --name mineru -p 8001:8001 opendatalab/mineru:latest\``,
 		"admin.mineruApiUrl": "MinerU API URL",
@@ -1012,6 +1024,13 @@ const settingsDict = {
 		"admin.model2VisibilityDescription":
 			"A 2. modell elrejtése az alkalmazásból, visszaváltással az 1. modellre",
 		"admin.modelCapabilities": "Képességek",
+		"admin.modelAliasCanonicalCollision":
+			"Az alias nem egyezhet meg a kanonikus modellnévvel.",
+		"admin.modelAliasInputA11y": "{number}. alias",
+		"admin.modelAliasPlaceholder": "pl. accounts/fireworks/models/qwen3p7-max",
+		"admin.modelAliases": "Modellaliasok",
+		"admin.modelAliasesDescription":
+			"Alternatív szolgáltatói modellazonosítók átjárókhoz, például Fireworks AI-hoz.",
 		"admin.modelIcon": "Modellikon",
 		"admin.modelIconCropTitle": "Modellikon kivágása",
 		"admin.modelIconProviderMissing":
@@ -1127,6 +1146,7 @@ const settingsDict = {
 		"admin.reasoningEffort": "Gondolkodási erőfeszítés",
 		"admin.reasoningTokens": "Gondolkodási tokenek",
 		"admin.refresh": "Frissítés",
+		"admin.removeModelAliasA11y": "{number}. alias eltávolítása",
 		"admin.requestTimeoutDescription": `HTTP-kérés és stream időkorlátja milliszekundumban (alapértelmezett 300000 = 5 perc). Növeld meg többkörös keresési munkákhoz.`,
 		"admin.requestTimeoutMs": "Kérés időkorlát (ms)",
 		"admin.reasoningDepthClassifier": "Gondolkodási mélység osztályozó",

@@ -7,12 +7,21 @@ import { resolveProviderModelPersistenceDefaults } from "./provider-model-runtim
 
 type ProviderModelRow = typeof providerModels.$inferSelect;
 type ModelGuideBadge = "intelligent" | "simple";
+type ProviderModelReasoningEffort =
+	| "none"
+	| "minimal"
+	| "low"
+	| "medium"
+	| "high"
+	| "max"
+	| "xhigh";
 
 export interface ProviderModel {
 	id: string;
 	providerId: string;
 	name: string;
 	displayName: string;
+	aliases: string[];
 	iconAssetId: string | null;
 	guideNoteEn: string | null;
 	guideNoteHu: string | null;
@@ -25,7 +34,7 @@ export interface ProviderModel {
 	targetConstructedContext: number | null;
 	maxMessageLength: number | null;
 	maxTokens: number | null;
-	reasoningEffort: "low" | "medium" | "high" | "max" | "xhigh" | null;
+	reasoningEffort: ProviderModelReasoningEffort | null;
 	thinkingType: "enabled" | "disabled" | null;
 	capabilitiesJson: string;
 	inputUsdMicrosPer1m: number;
@@ -43,6 +52,7 @@ export interface CreateProviderModelInput {
 	providerId: string;
 	name: string;
 	displayName?: string;
+	aliases?: string[];
 	iconAssetId?: string | null;
 	guideNoteEn?: string | null;
 	guideNoteHu?: string | null;
@@ -55,7 +65,7 @@ export interface CreateProviderModelInput {
 	targetConstructedContext?: number | null;
 	maxMessageLength?: number | null;
 	maxTokens?: number | null;
-	reasoningEffort?: "low" | "medium" | "high" | "max" | "xhigh" | null;
+	reasoningEffort?: ProviderModelReasoningEffort | null;
 	thinkingType?: "enabled" | "disabled" | null;
 	capabilitiesJson?: string | null;
 	inputUsdMicrosPer1m?: number;
@@ -69,6 +79,7 @@ export interface CreateProviderModelInput {
 
 export interface UpdateProviderModelInput {
 	displayName?: string;
+	aliases?: string[];
 	iconAssetId?: string | null;
 	guideNoteEn?: string | null;
 	guideNoteHu?: string | null;
@@ -81,7 +92,7 @@ export interface UpdateProviderModelInput {
 	targetConstructedContext?: number | null;
 	maxMessageLength?: number | null;
 	maxTokens?: number | null;
-	reasoningEffort?: "low" | "medium" | "high" | "max" | "xhigh" | null;
+	reasoningEffort?: ProviderModelReasoningEffort | null;
 	thinkingType?: "enabled" | "disabled" | null;
 	capabilitiesJson?: string;
 	inputUsdMicrosPer1m?: number;
@@ -119,6 +130,7 @@ type ProviderModelPayloadFields = Partial<{
 	maxTokens: number | null;
 	reasoningEffort: ReasoningEffort | null;
 	thinkingType: ThinkingType | null;
+	aliases: string[];
 	capabilitiesJson: string | null;
 	inputUsdMicrosPer1m: number;
 	cachedInputUsdMicrosPer1m: number;
@@ -218,6 +230,54 @@ function readOptionalNumber(
 	return value;
 }
 
+function normalizeAliasValue(alias: string): string {
+	return alias.trim();
+}
+
+function aliasCollisionKey(alias: string): string {
+	return alias.toLowerCase();
+}
+
+function readOptionalAliases(body: ProviderModelBody): string[] | undefined {
+	const value = body.aliases;
+	if (value === undefined) return undefined;
+	if (!Array.isArray(value)) {
+		throw new ProviderModelValidationError("aliases must be an array");
+	}
+
+	const aliases: string[] = [];
+	const seen = new Set<string>();
+	for (const [index, entry] of value.entries()) {
+		if (typeof entry !== "string") {
+			throw new ProviderModelValidationError(
+				`aliases[${index}] must be a string`,
+			);
+		}
+		const alias = normalizeAliasValue(entry);
+		if (!alias) continue;
+		const key = aliasCollisionKey(alias);
+		if (seen.has(key)) continue;
+		seen.add(key);
+		aliases.push(alias);
+	}
+	return aliases;
+}
+
+function normalizeAliasList(aliases: readonly string[] | undefined): string[] {
+	if (!aliases) return [];
+	const normalized: string[] = [];
+	const seen = new Set<string>();
+	for (const rawAlias of aliases) {
+		const alias = normalizeAliasValue(rawAlias);
+		if (!alias) continue;
+		const key = aliasCollisionKey(alias);
+		if (seen.has(key)) continue;
+		seen.add(key);
+		normalized.push(alias);
+	}
+	return normalized;
+}
+
 function readNullableNonNegativeNumber(
 	body: ProviderModelBody,
 	key: string,
@@ -287,6 +347,32 @@ function normalizeGuideBadge(
 	return null;
 }
 
+function parseAliasesJson(value: string | null | undefined): string[] {
+	if (!value) return [];
+	try {
+		const parsed: unknown = JSON.parse(value);
+		if (!Array.isArray(parsed)) return [];
+		const aliases: string[] = [];
+		const seen = new Set<string>();
+		for (const entry of parsed) {
+			if (typeof entry !== "string") continue;
+			const alias = normalizeAliasValue(entry);
+			if (!alias) continue;
+			const key = aliasCollisionKey(alias);
+			if (seen.has(key)) continue;
+			seen.add(key);
+			aliases.push(alias);
+		}
+		return aliases;
+	} catch {
+		return [];
+	}
+}
+
+function serializeAliasesJson(aliases: string[]): string {
+	return JSON.stringify(aliases);
+}
+
 function assignParsedValue<K extends keyof ProviderModelPayloadFields>(
 	input: ProviderModelPayloadFields,
 	key: K,
@@ -322,6 +408,7 @@ function applyProviderModelPayloadFields(
 		"displayName",
 		readOptionalString(body, "displayName"),
 	);
+	assignParsedValue(input, "aliases", readOptionalAliases(body));
 	if (allowIconAssetId) {
 		assignParsedValue(
 			input,
@@ -419,6 +506,7 @@ function mapRowToModel(row: ProviderModelRow): ProviderModel {
 		providerId: row.providerId,
 		name: row.name,
 		displayName: row.displayName,
+		aliases: parseAliasesJson(row.aliasesJson),
 		iconAssetId: row.iconAssetId ?? null,
 		guideNoteEn: row.guideNoteEn ?? null,
 		guideNoteHu: row.guideNoteHu ?? null,
@@ -537,6 +625,65 @@ async function providerExists(providerId: string): Promise<boolean> {
 	return existing !== undefined;
 }
 
+async function assertProviderModelAliasAvailability(params: {
+	providerId: string;
+	modelName: string;
+	aliases: string[];
+	modelId?: string;
+}): Promise<void> {
+	const modelNameKey = aliasCollisionKey(params.modelName);
+	for (const alias of params.aliases) {
+		if (aliasCollisionKey(alias) === modelNameKey) {
+			throw new ProviderModelValidationError(
+				"aliases cannot collide with the model's canonical name",
+			);
+		}
+	}
+
+	const siblingRows = await db
+		.select()
+		.from(providerModels)
+		.where(eq(providerModels.providerId, params.providerId));
+
+	for (const row of siblingRows) {
+		if (params.modelId && row.id === params.modelId) continue;
+
+		const siblingNameKey = aliasCollisionKey(row.name);
+		if (siblingNameKey === modelNameKey) {
+			throw new ProviderModelValidationError(
+				"model name cannot collide with another model name in the provider",
+			);
+		}
+
+		for (const siblingAlias of parseAliasesJson(row.aliasesJson)) {
+			const siblingAliasKey = aliasCollisionKey(siblingAlias);
+			if (siblingAliasKey === modelNameKey) {
+				throw new ProviderModelValidationError(
+					"model name cannot collide with provider model aliases",
+				);
+			}
+		}
+
+		for (const alias of params.aliases) {
+			const aliasKey = aliasCollisionKey(alias);
+			if (aliasKey === siblingNameKey) {
+				throw new ProviderModelValidationError(
+					"aliases cannot collide with provider model names",
+				);
+			}
+			if (
+				parseAliasesJson(row.aliasesJson).some(
+					(siblingAlias) => aliasCollisionKey(siblingAlias) === aliasKey,
+				)
+			) {
+				throw new ProviderModelValidationError(
+					"aliases cannot collide with provider model aliases",
+				);
+			}
+		}
+	}
+}
+
 export async function createProviderModel(
 	input: CreateProviderModelInput,
 ): Promise<ProviderModel> {
@@ -546,7 +693,13 @@ export async function createProviderModel(
 
 	const now = new Date();
 	const displayName = input.displayName ?? input.name;
+	const aliases = normalizeAliasList(input.aliases);
 	const persistenceDefaults = resolveProviderModelPersistenceDefaults(input);
+	await assertProviderModelAliasAvailability({
+		providerId: input.providerId,
+		modelName: input.name,
+		aliases,
+	});
 	await validateModelFallbackConfiguration({
 		source: {
 			capabilitiesJson: input.capabilitiesJson ?? "{}",
@@ -564,6 +717,7 @@ export async function createProviderModel(
 			providerId: input.providerId,
 			name: input.name,
 			displayName,
+			aliasesJson: serializeAliasesJson(aliases),
 			iconAssetId: input.iconAssetId ?? null,
 			guideNoteEn: input.guideNoteEn ?? null,
 			guideNoteHu: input.guideNoteHu ?? null,
@@ -618,15 +772,20 @@ export async function getProviderModelByName(
 	providerId: string,
 	name: string,
 ): Promise<ProviderModel | null> {
-	const [row] = await db
+	const lookupKey = aliasCollisionKey(name.trim());
+	if (!lookupKey) return null;
+
+	const rows = await db
 		.select()
 		.from(providerModels)
-		.where(
-			and(
-				eq(providerModels.providerId, providerId),
-				eq(providerModels.name, name),
-			),
+		.where(eq(providerModels.providerId, providerId));
+
+	const row = rows.find((candidate) => {
+		if (aliasCollisionKey(candidate.name) === lookupKey) return true;
+		return parseAliasesJson(candidate.aliasesJson).some(
+			(alias) => aliasCollisionKey(alias) === lookupKey,
 		);
+	});
 
 	return row ? mapRowToModel(row) : null;
 }
@@ -670,6 +829,16 @@ export async function updateProviderModel(
 		.where(eq(providerModels.id, id));
 
 	if (!existing) return null;
+	const aliases =
+		input.aliases !== undefined ? normalizeAliasList(input.aliases) : undefined;
+	if (aliases !== undefined) {
+		await assertProviderModelAliasAvailability({
+			providerId: existing.providerId,
+			modelName: existing.name,
+			aliases,
+			modelId: id,
+		});
+	}
 	const nextEnabled =
 		input.enabled !== undefined ? input.enabled : existing.enabled === 1;
 	const fallbackProviderModelId =
@@ -742,6 +911,8 @@ export async function updateProviderModel(
 	};
 
 	if (input.displayName !== undefined) updates.displayName = input.displayName;
+	if (aliases !== undefined)
+		updates.aliasesJson = serializeAliasesJson(aliases);
 	if (input.iconAssetId !== undefined) updates.iconAssetId = input.iconAssetId;
 	if (input.guideNoteEn !== undefined) updates.guideNoteEn = input.guideNoteEn;
 	if (input.guideNoteHu !== undefined) updates.guideNoteHu = input.guideNoteHu;
