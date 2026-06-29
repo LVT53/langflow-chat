@@ -1,11 +1,12 @@
 <script lang="ts">
 import { isDark } from "$lib/stores/theme";
-import { t } from "$lib/i18n";
+import { t, type I18nKey } from "$lib/i18n";
 import {
 	isVisibleThinkingSegment,
 	isVisibleThinkingToolCall,
 } from "$lib/utils/tool-calls";
 import { tokenizeTextLinks } from "$lib/services/linkify";
+import { RESPONSE_ACTIVITY_IDS } from "$lib/services/stream-timeline";
 import type {
 	ArtifactSummary,
 	AtlasAction,
@@ -372,8 +373,18 @@ let liveDepthProfile = $derived.by(() => {
 let resolvedDepthProfile = $derived(
 	liveDepthProfile ?? message.depthMetadata?.appliedProfile,
 );
-let isDeliberativeDepthProfile = $derived(
-	resolvedDepthProfile === "extended" || resolvedDepthProfile === "maximum",
+let liveEarlyResponseActivityLabelKey = $derived.by((): I18nKey | null => {
+	if (liveDeliberationStatusLabel) return null;
+	for (const entry of [...liveResponseActivityEntries].reverse()) {
+		const labelKey = getKnownEarlyResponseActivityLabelKey(entry);
+		if (labelKey) return labelKey;
+	}
+	return null;
+});
+let preparingStatusLabel = $derived(
+	liveEarlyResponseActivityLabelKey
+		? $t(liveEarlyResponseActivityLabelKey)
+		: $t("chat.preparingResponse"),
 );
 let showPreparingStatus = $derived(
 	!isUser &&
@@ -381,7 +392,6 @@ let showPreparingStatus = $derived(
 		!hasVisibleContent &&
 		!hasThinking &&
 		!hasVisibleThinkingSegments &&
-		!isDeliberativeDepthProfile &&
 		!liveDeliberationStatusLabel &&
 		skillDrafts.length === 0 &&
 		!hasFileProductionCards &&
@@ -425,6 +435,26 @@ function getClipboardText(content: string) {
 		.replace(/<thinking>[\s\S]*?<\/thinking>/gi, "")
 		.replace(/<\/?thinking>/gi, "")
 		.trim();
+}
+
+function getKnownEarlyResponseActivityLabelKey(
+	entry: ResponseActivityEntry,
+): I18nKey | null {
+	if (
+		entry.id === RESPONSE_ACTIVITY_IDS.CONTEXT_PREPARING &&
+		entry.kind === "context" &&
+		entry.status === "running"
+	) {
+		return "chat.responseActivity.contextPreparing";
+	}
+	if (
+		entry.id === RESPONSE_ACTIVITY_IDS.DRAFTING_ANSWER &&
+		entry.kind === "drafting" &&
+		entry.status === "running"
+	) {
+		return "chat.responseActivity.drafting";
+	}
+	return null;
 }
 
 async function copyToClipboard() {
@@ -749,7 +779,7 @@ function toggleForkDetails() {
 			{/if}
 			</div>
 			{#if showPreparingStatus}
-				<div class="preparing-status" aria-live="polite">{$t('chat.preparingResponse')}</div>
+				<div class="preparing-status" aria-live="polite">{preparingStatusLabel}</div>
 			{/if}
 			{#if skillDrafts.length > 0}
 				<div class="skill-draft-list">

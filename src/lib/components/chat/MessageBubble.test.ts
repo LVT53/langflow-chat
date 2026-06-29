@@ -6,6 +6,7 @@ import {
 	within,
 } from "@testing-library/svelte";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { RESPONSE_ACTIVITY_IDS } from "$lib/services/stream-timeline";
 import type {
 	AtlasJobCard,
 	ChatMessage,
@@ -95,6 +96,84 @@ describe("MessageBubble", () => {
 		render(MessageBubble, { message });
 
 		expect(screen.getByText("Preparing response...")).toBeInTheDocument();
+	});
+
+	it("shows a localized context preparation label without exposing activity diagnostics", () => {
+		const message: ChatMessage = {
+			id: "assistant-context-preparing",
+			renderKey: "assistant-context-preparing",
+			role: "assistant",
+			content: "",
+			timestamp: Date.now(),
+			isStreaming: true,
+			isThinkingStreaming: false,
+			responseActivity: [
+				{
+					id: RESPONSE_ACTIVITY_IDS.DEPTH_SELECTED,
+					kind: "depth",
+					status: "done",
+					detail: "maximum",
+				},
+				{
+					id: RESPONSE_ACTIVITY_IDS.CONTEXT_PREPARING,
+					kind: "context",
+					status: "running",
+					label: "Internal context builder",
+					detail: "server_phase=context_prepare; provider=fallback",
+					occurredAt: 123,
+				},
+			],
+		};
+
+		const { container } = render(MessageBubble, { message });
+
+		expect(screen.getByText("Preparing context...")).toBeInTheDocument();
+		expect(screen.queryByText("Preparing response...")).not.toBeInTheDocument();
+		expect(
+			screen.queryByText("Internal context builder"),
+		).not.toBeInTheDocument();
+		expect(container).not.toHaveTextContent(
+			RESPONSE_ACTIVITY_IDS.CONTEXT_PREPARING,
+		);
+		expect(container).not.toHaveTextContent("server_phase=context_prepare");
+		expect(container).not.toHaveTextContent("provider=fallback");
+		expect(container).not.toHaveTextContent("123");
+	});
+
+	it("shows a localized drafting label for the latest known early activity", () => {
+		const message: ChatMessage = {
+			id: "assistant-drafting",
+			renderKey: "assistant-drafting",
+			role: "assistant",
+			content: "",
+			timestamp: Date.now(),
+			isStreaming: true,
+			isThinkingStreaming: false,
+			responseActivity: [
+				{
+					id: RESPONSE_ACTIVITY_IDS.CONTEXT_PREPARING,
+					kind: "context",
+					status: "done",
+					label: "Context ready",
+					detail: "context_ready_ms=42",
+				},
+				{
+					id: RESPONSE_ACTIVITY_IDS.DRAFTING_ANSWER,
+					kind: "drafting",
+					status: "running",
+					label: "Internal drafting phase",
+					detail: "first_token_wait_ms=250",
+				},
+			],
+		};
+
+		const { container } = render(MessageBubble, { message });
+
+		expect(screen.getByText("Drafting response...")).toBeInTheDocument();
+		expect(screen.queryByText("Preparing context...")).not.toBeInTheDocument();
+		expect(screen.queryByText("Preparing response...")).not.toBeInTheDocument();
+		expect(container).not.toHaveTextContent("Internal drafting phase");
+		expect(container).not.toHaveTextContent("first_token_wait_ms=250");
 	});
 
 	it("defers the pending Evidence loading row until the assistant response is complete", async () => {

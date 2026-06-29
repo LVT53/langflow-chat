@@ -21,6 +21,10 @@ import {
 	stripLeadingResponseMarker,
 	stripLeakedToolDiagnostics,
 } from "$lib/services/stream-protocol";
+import {
+	formatServerTimingHeader,
+	type StreamTimelineTimingRecord,
+} from "$lib/services/stream-timeline";
 import type {
 	EvidenceSourceType,
 	ResponseActivityEntry,
@@ -62,7 +66,7 @@ const SSE_PRELUDE_PADDING_BYTES = 8192;
 const SSE_HEARTBEAT_COMMENT = ": keep-alive\n\n";
 const UI_STREAM_TEXT_PART_ID = "answer";
 const UI_STREAM_REASONING_PART_ID = "reasoning";
-export type StreamPhaseTimings = Record<string, number>;
+export type StreamPhaseTimings = StreamTimelineTimingRecord;
 
 export type ServerStreamSegment =
 	| { type: "text"; content: string }
@@ -123,20 +127,13 @@ export function createStreamJsonErrorResponse(
 	});
 }
 
-function formatServerTiming(timings: StreamPhaseTimings): string {
-	return Object.entries(timings)
-		.filter(([, durationMs]) => Number.isFinite(durationMs) && durationMs >= 0)
-		.map(([name, durationMs]) => `${name};dur=${durationMs.toFixed(1)}`)
-		.join(", ");
-}
-
 export function createEventStreamResponse(
 	stream: ReadableStream,
 	options?: { serverTiming?: StreamPhaseTimings },
 ): Response {
 	const headers: Record<string, string> = { ...SSE_HEADERS };
 	const serverTiming = options?.serverTiming
-		? formatServerTiming(options.serverTiming)
+		? formatServerTimingHeader(options.serverTiming)
 		: "";
 	if (serverTiming) {
 		headers["Server-Timing"] = serverTiming;

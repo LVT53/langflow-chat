@@ -6,6 +6,7 @@ import {
 	type StreamChatOptions,
 	type StreamHandle,
 	type StreamMetadata,
+	type StreamTimingSnapshot,
 	streamChat,
 } from "$lib/services/streaming";
 import type {
@@ -84,6 +85,7 @@ export type NormalChatClientTurnRuntimeAdapters = {
 		delayMs: number,
 	) => ReturnType<typeof setTimeout>;
 	onStateChange?: (snapshot: NormalChatRuntimeSnapshot) => void;
+	onStreamTiming?: (timing: StreamTimingSnapshot) => void;
 	setConversationModelSelection: (modelId: ModelId) => void;
 	setInitialStreamPending?: (pending: boolean) => void;
 	setSuppressHydration?: (suppress: boolean) => void;
@@ -430,6 +432,9 @@ export function createNormalChatClientTurnRuntime(
 			},
 			onResponseActivity(entry) {
 				adapters.applyResponseActivityUpdate?.(params.placeholderId, entry);
+			},
+			onTiming(timing) {
+				adapters.onStreamTiming?.(timing);
 			},
 			onWaiting() {
 				activeStream?.detach();

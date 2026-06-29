@@ -9,6 +9,7 @@ import type {
 	StreamChatOptions,
 	StreamHandle,
 	StreamMetadata,
+	StreamTimingSnapshot,
 } from "$lib/services/streaming";
 import type {
 	AtlasJobCard,
@@ -392,6 +393,43 @@ describe("Normal Chat Client Turn Runtime", () => {
 		streamInvocations[0].callbacks.onResponseActivity?.(entry);
 
 		expect(applyResponseActivityUpdate).toHaveBeenCalledWith("id-2", entry);
+	});
+
+	it("forwards stream timing snapshots to the optional diagnostics adapter hook", () => {
+		const onStreamTiming = vi.fn();
+		const { adapters, streamInvocations, messages } = makeAdapters({
+			onStreamTiming,
+		} as Partial<NormalChatClientTurnRuntimeAdapters>);
+		const runtime = createNormalChatClientTurnRuntime(adapters);
+
+		runtime.send({
+			message: "Hello",
+			attachmentIds: [],
+			attachments: [],
+			pendingAttachments: [],
+		});
+
+		const timing: StreamTimingSnapshot = {
+			streamId: "stream-1",
+			url: "/api/chat/stream",
+			serverTiming: "route_parse;dur=1",
+			parsedServerTiming: { route_parse: 1 },
+			serverTimeline: { version: 1, server: { prelude: 2 } },
+			outcome: "success",
+			phases: {
+				fetchStartMs: 0,
+				firstActivityMs: 4,
+				endMs: 10,
+			},
+		};
+		streamInvocations[0].callbacks.onTiming?.(timing);
+
+		expect(onStreamTiming).toHaveBeenCalledWith(timing);
+		expect(messages[1]).toMatchObject({
+			role: "assistant",
+			content: "",
+			isStreaming: true,
+		});
 	});
 
 	it("passes turn-scoped model, personality, search, Reasoning depth, and document options to the stream", async () => {

@@ -12,6 +12,7 @@ import {
 	serializeContextCompressionSnapshot,
 } from "$lib/server/services/context-compression";
 import { applyWebCitationQualityGate } from "$lib/server/services/web-citation-audit";
+import type { StreamTimelineTerminalPayload } from "$lib/services/stream-timeline";
 import type {
 	ChatGeneratedFile,
 	ContextDebugState,
@@ -116,6 +117,7 @@ export interface CompleteStreamTurnParams extends StreamCompletionFacts {
 	upstreamFinishReason?: FinishReason | null;
 	upstreamRawFinishReason?: string | null;
 	streamClosedWithoutFinish?: boolean;
+	serverTimeline?: StreamTimelineTerminalPayload;
 	initialContextStatus: ConversationContextStatus | undefined;
 	initialTaskState: TaskState | null | undefined;
 	initialContextDebug: ContextDebugState | null | undefined;
@@ -213,6 +215,7 @@ export async function completeStreamTurn(
 		upstreamFinishReason = "stop",
 		upstreamRawFinishReason = null,
 		streamClosedWithoutFinish = false,
+		serverTimeline,
 		initialTaskState,
 		initialContextDebug,
 		initialContextTraceSections,
@@ -404,6 +407,7 @@ export async function completeStreamTurn(
 						}
 					: {}),
 				...(streamClosedWithoutFinish ? { streamClosedWithoutFinish } : {}),
+				...(serverTimeline ? { serverTimeline } : {}),
 				userMessageId: userMsgId,
 				assistantMessageId: assistantMsgId,
 				modelId,

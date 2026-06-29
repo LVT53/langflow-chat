@@ -619,6 +619,81 @@ describe("streamChat", () => {
 		consoleInfo.mockRestore();
 	});
 
+	it("correlates browser timing with Server-Timing and terminal server timeline metadata", async () => {
+		const serverTimingHeader =
+			'route_parse;dur=1.0, capacity;dur=-2, preflight;desc="ok";dur=3.5';
+		const serverTimeline = {
+			version: 1,
+			server: {
+				route_parse: 1,
+				prelude: 6,
+				first_visible_token: 24,
+				end: 40,
+			},
+		};
+		const metadata = {
+			generationDurationMs: 40,
+			serverTimeline,
+		} as Partial<StreamMetadata>;
+		const { callbacks: cb, done } = runStreamWithMockedResponse({
+			response: new Response(
+				[
+					uiFrame({
+						type: "data-response-activity",
+						data: {
+							id: "context-preparing",
+							kind: "context",
+							status: "running",
+							occurredAt: 1777140000000,
+						},
+						transient: true,
+					}),
+					tokenEvent("Hello"),
+					endEvent(metadata),
+				].join(""),
+				{
+					status: 200,
+					headers: {
+						"Content-Type": "text/event-stream",
+						"Server-Timing": serverTimingHeader,
+					},
+				},
+			),
+			callbacks: {
+				...makeCallbacks(),
+				onTiming: vi.fn(),
+			},
+		});
+		await done;
+
+		expect(cb.onEnd).toHaveBeenCalledWith(
+			"Hello",
+			expect.objectContaining({
+				generationDurationMs: 40,
+				serverTimeline,
+			}),
+		);
+		expect(cb.onTiming).toHaveBeenCalledOnce();
+		expect(cb.onTiming).toHaveBeenCalledWith(
+			expect.objectContaining({
+				outcome: "success",
+				serverTiming: serverTimingHeader,
+				parsedServerTiming: {
+					route_parse: 1,
+					preflight: 3.5,
+				},
+				serverTimeline,
+				phases: expect.objectContaining({
+					responseHeadersMs: expect.any(Number),
+					firstByteMs: expect.any(Number),
+					firstActivityMs: expect.any(Number),
+					firstTokenMs: expect.any(Number),
+					endMs: expect.any(Number),
+				}),
+			}),
+		);
+	});
+
 	it("threads the active workspace document id into the streaming request body", async () => {
 		const { mockFetch, done } = runStreamWithMockedResponse({
 			responseChunks: [endEvent()],
@@ -851,11 +926,19 @@ describe("streamChat", () => {
 	});
 
 	it("calls onError when response is not ok", async () => {
+		const serverTimingHeader = "route_parse;dur=2.0, preflight;dur=4.5";
 		const { callbacks: cb, done } = runStreamWithMockedResponse({
 			response: new Response(JSON.stringify({ error: "Unauthorized" }), {
 				status: 401,
-				headers: { "Content-Type": "application/json" },
+				headers: {
+					"Content-Type": "application/json",
+					"Server-Timing": serverTimingHeader,
+				},
 			}),
+			callbacks: {
+				...makeCallbacks(),
+				onTiming: vi.fn(),
+			},
 		});
 		await done;
 
@@ -863,11 +946,55 @@ describe("streamChat", () => {
 		expect(cb.onError).toHaveBeenCalledWith(
 			expect.objectContaining({ message: "Unauthorized" }),
 		);
+		expect(cb.onTiming).toHaveBeenCalledOnce();
+		expect(cb.onTiming).toHaveBeenCalledWith(
+			expect.objectContaining({
+				outcome: "error",
+				serverTiming: serverTimingHeader,
+				parsedServerTiming: {
+					route_parse: 2,
+					preflight: 4.5,
+				},
+				phases: expect.objectContaining({
+					responseHeadersMs: expect.any(Number),
+					errorMs: expect.any(Number),
+				}),
+			}),
+		);
+	});
+
+	it("reports error timing when an ok response has no body", async () => {
+		const { callbacks: cb, done } = runStreamWithMockedResponse({
+			response: new Response(null, { status: 200 }),
+			callbacks: {
+				...makeCallbacks(),
+				onTiming: vi.fn(),
+			},
+		});
+		await done;
+
+		expect(cb.onError).toHaveBeenCalledWith(
+			expect.objectContaining({ message: "Response has no body" }),
+		);
+		expect(cb.onTiming).toHaveBeenCalledOnce();
+		expect(cb.onTiming).toHaveBeenCalledWith(
+			expect.objectContaining({
+				outcome: "error",
+				phases: expect.objectContaining({
+					responseHeadersMs: expect.any(Number),
+					errorMs: expect.any(Number),
+				}),
+			}),
+		);
 	});
 
 	it("calls onError when stream emits error event", async () => {
 		const { callbacks: cb, done } = runStreamWithMockedResponse({
 			responseChunks: [errorEvent({ message: "Something went wrong" })],
+			callbacks: {
+				...makeCallbacks(),
+				onTiming: vi.fn(),
+			},
 		});
 		await done;
 
@@ -876,6 +1003,16 @@ describe("streamChat", () => {
 			expect.objectContaining({ message: "Something went wrong" }),
 		);
 		expect(cb.onEnd).not.toHaveBeenCalled();
+		expect(cb.onTiming).toHaveBeenCalledOnce();
+		expect(cb.onTiming).toHaveBeenCalledWith(
+			expect.objectContaining({
+				outcome: "error",
+				phases: expect.objectContaining({
+					firstByteMs: expect.any(Number),
+					errorMs: expect.any(Number),
+				}),
+			}),
+		);
 	});
 
 	it("uses stream error fallback fields and preserves the error code", async () => {
@@ -917,7 +1054,10 @@ describe("streamChat", () => {
 		const events: string[] = [];
 		const { callbacks: cb, done } = runStreamWithMockedResponse({
 			response: controlled.response,
-			callbacks: makeEventLogCallbacks(events),
+			callbacks: {
+				...makeEventLogCallbacks(events),
+				onTiming: vi.fn(),
+			},
 		});
 
 		await flushMicrotasks();
@@ -945,12 +1085,25 @@ describe("streamChat", () => {
 			"waiting",
 			"end:Buffered",
 		]);
+		expect(cb.onTiming).toHaveBeenCalledOnce();
+		expect(cb.onTiming).toHaveBeenCalledWith(
+			expect.objectContaining({
+				outcome: "success",
+				phases: expect.not.objectContaining({
+					stopMs: expect.any(Number),
+				}),
+			}),
+		);
 		consoleInfo.mockRestore();
 	});
 
 	it("calls onError when the stream closes without a terminal event", async () => {
 		const { callbacks: cb, done } = runStreamWithMockedResponse({
 			responseChunks: [tokenEvent("partial")],
+			callbacks: {
+				...makeCallbacks(),
+				onTiming: vi.fn(),
+			},
 		});
 		await done;
 
@@ -959,6 +1112,16 @@ describe("streamChat", () => {
 		expect(cb.onError.mock.calls[0]?.[0]).toMatchObject({
 			message: "Stream closed before a terminal completion event",
 		});
+		expect(cb.onTiming).toHaveBeenCalledOnce();
+		expect(cb.onTiming).toHaveBeenCalledWith(
+			expect.objectContaining({
+				outcome: "closed",
+				phases: expect.objectContaining({
+					firstByteMs: expect.any(Number),
+					endMs: expect.any(Number),
+				}),
+			}),
+		);
 	});
 
 	it("stop() requests a server stop and does not call onError", async () => {
@@ -982,7 +1145,10 @@ describe("streamChat", () => {
 			return streamFetchPromise;
 		});
 
-		const cb = makeCallbacks();
+		const cb = {
+			...makeCallbacks(),
+			onTiming: vi.fn(),
+		};
 		const handle = streamChat(
 			"test message",
 			"conv-1",
@@ -997,6 +1163,16 @@ describe("streamChat", () => {
 		await flushMicrotasks();
 
 		expect(cb.onError).not.toHaveBeenCalled();
+		expect(cb.onTiming).toHaveBeenCalledOnce();
+		expect(cb.onTiming).toHaveBeenCalledWith(
+			expect.objectContaining({
+				outcome: "stopped",
+				phases: expect.objectContaining({
+					stopMs: expect.any(Number),
+					endMs: expect.any(Number),
+				}),
+			}),
+		);
 		expect(mockFetch).toHaveBeenCalledTimes(2);
 		expect(mockFetch).toHaveBeenNthCalledWith(
 			2,
@@ -1029,7 +1205,10 @@ describe("streamChat", () => {
 			return streamFetchPromise;
 		});
 
-		const cb = makeCallbacks();
+		const cb = {
+			...makeCallbacks(),
+			onTiming: vi.fn(),
+		};
 		const handle = streamChat(
 			"test message",
 			"conv-1",
@@ -1046,5 +1225,6 @@ describe("streamChat", () => {
 		expect(mockFetch).toHaveBeenCalledTimes(1);
 		expect(cb.onEnd).not.toHaveBeenCalled();
 		expect(cb.onError).not.toHaveBeenCalled();
+		expect(cb.onTiming).not.toHaveBeenCalled();
 	});
 });

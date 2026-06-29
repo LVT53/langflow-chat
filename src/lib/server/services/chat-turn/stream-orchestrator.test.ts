@@ -7,6 +7,10 @@ import {
 } from "$lib/server/services/chat-turn/active-streams";
 import { getCurrentMemoryResetGeneration } from "$lib/server/services/memory-profile";
 import {
+	SERVER_STREAM_TIMELINE_MARKS,
+	STREAM_TIMELINE_PAYLOAD_VERSION,
+} from "$lib/services/stream-timeline";
+import {
 	runChatStreamOrchestrator,
 	startStartedResetGenerationFact,
 } from "./stream-orchestrator";
@@ -634,6 +638,10 @@ describe("stream-orchestrator SSE contract", () => {
 			runStreamingNormalChatSendModel as ReturnType<typeof vi.fn>
 		).mockResolvedValue(
 			createNeutralStreamingResult([
+				{
+					type: "reasoning_delta",
+					text: "Thinking through the answer before drafting.",
+				},
 				{ type: "text_delta", text: "Hi" },
 				finishEvent,
 			]),
@@ -657,6 +665,10 @@ describe("stream-orchestrator SSE contract", () => {
 		const partTypes = parseUiStreamParts(chunks)
 			.filter((part): part is Record<string, unknown> => part !== "[DONE]")
 			.map((part) => part.type);
+		const metadataPayload = uiDataParts<Record<string, unknown>>(
+			parseUiStreamParts(chunks),
+			"data-stream-metadata",
+		)[0];
 		const phaseTimingLog = infoSpy.mock.calls.find(
 			([message]) => message === "[CHAT_STREAM] phase_timing",
 		);
@@ -669,9 +681,26 @@ describe("stream-orchestrator SSE contract", () => {
 				"text-end",
 				"data-response-activity",
 				"data-stream-metadata",
+				"reasoning-start",
+				"reasoning-delta",
+				"reasoning-end",
 				"finish",
 			]),
 		);
+		expect(metadataPayload.serverTimeline).toEqual({
+			version: STREAM_TIMELINE_PAYLOAD_VERSION,
+			server: expect.objectContaining({
+				[SERVER_STREAM_TIMELINE_MARKS.ROUTE_PARSE]: 1,
+				[SERVER_STREAM_TIMELINE_MARKS.CAPACITY]: 2,
+				[SERVER_STREAM_TIMELINE_MARKS.PREFLIGHT]: 3,
+				[SERVER_STREAM_TIMELINE_MARKS.PRELUDE]: expect.any(Number),
+				[SERVER_STREAM_TIMELINE_MARKS.MODEL_STREAM_REQUEST]: expect.any(Number),
+				[SERVER_STREAM_TIMELINE_MARKS.FIRST_UPSTREAM_EVENT]: expect.any(Number),
+				[SERVER_STREAM_TIMELINE_MARKS.FIRST_THINKING]: expect.any(Number),
+				[SERVER_STREAM_TIMELINE_MARKS.FIRST_VISIBLE_TOKEN]: expect.any(Number),
+				[SERVER_STREAM_TIMELINE_MARKS.END]: expect.any(Number),
+			}),
+		});
 		expect(phaseTimingLog?.[1]).toEqual(
 			expect.objectContaining({
 				conversationId: "test-conv",
@@ -680,6 +709,7 @@ describe("stream-orchestrator SSE contract", () => {
 				prelude_ms: expect.any(Number),
 				model_stream_request_ms: expect.any(Number),
 				first_upstream_event_ms: expect.any(Number),
+				first_thinking_ms: expect.any(Number),
 				first_visible_token_ms: expect.any(Number),
 				end_ms: expect.any(Number),
 			}),
@@ -1067,6 +1097,57 @@ describe("stream-orchestrator SSE contract", () => {
 		expect(upstreamSignal?.aborted).toBe(true);
 		expect(remainingBody).toContain('"type":"data-stream-metadata"');
 		expect(remainingBody).toContain('"wasStopped":true');
+		expect(
+			uiDataParts<Record<string, unknown>>(
+				parseUiStreamParts([remainingBody]),
+				"data-stream-metadata",
+			)[0].serverTimeline,
+		).toEqual({
+			version: STREAM_TIMELINE_PAYLOAD_VERSION,
+			server: expect.objectContaining({
+				[SERVER_STREAM_TIMELINE_MARKS.PRELUDE]: expect.any(Number),
+				[SERVER_STREAM_TIMELINE_MARKS.MODEL_STREAM_REQUEST]: expect.any(Number),
+				[SERVER_STREAM_TIMELINE_MARKS.END]: expect.any(Number),
+			}),
+		});
+	});
+
+	it("completes stream-closed-without-finish responses with terminal server timeline metadata", async () => {
+		const { runStreamingNormalChatSendModel } = await import(
+			"$lib/server/services/chat-turn/streaming-normal-chat-model-run"
+		);
+		(
+			runStreamingNormalChatSendModel as ReturnType<typeof vi.fn>
+		).mockResolvedValue(
+			createNeutralStreamingResult([{ type: "text_delta", text: "Partial" }]),
+		);
+
+		const response = runStream({
+			conversationId: "closed-without-finish-conv",
+			streamId: "closed-without-finish-stream",
+		});
+		const chunks = await readSseResponse(response);
+		const metadataPayload = uiDataParts<Record<string, unknown>>(
+			parseUiStreamParts(chunks),
+			"data-stream-metadata",
+		)[0];
+
+		expect(metadataPayload).toMatchObject({
+			streamClosedWithoutFinish: true,
+			serverTimeline: {
+				version: STREAM_TIMELINE_PAYLOAD_VERSION,
+				server: expect.objectContaining({
+					[SERVER_STREAM_TIMELINE_MARKS.PRELUDE]: expect.any(Number),
+					[SERVER_STREAM_TIMELINE_MARKS.MODEL_STREAM_REQUEST]:
+						expect.any(Number),
+					[SERVER_STREAM_TIMELINE_MARKS.FIRST_UPSTREAM_EVENT]:
+						expect.any(Number),
+					[SERVER_STREAM_TIMELINE_MARKS.FIRST_VISIBLE_TOKEN]:
+						expect.any(Number),
+					[SERVER_STREAM_TIMELINE_MARKS.END]: expect.any(Number),
+				}),
+			},
+		});
 	});
 
 	it("keeps explicit stop semantics when upstream closes cleanly after abort", async () => {

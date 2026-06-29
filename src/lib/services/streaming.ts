@@ -9,6 +9,14 @@ import {
 	flushInlineThinkingState,
 	processInlineThinkingChunk,
 } from "./stream-protocol";
+import {
+	BROWSER_STREAM_TIMING_MARKS,
+	type BrowserStreamTimingRecord,
+	parseServerTimingHeader,
+	recordDurationStreamTimelineMark,
+	type StreamTimelineTerminalPayload,
+	type StreamTimelineTimingRecord,
+} from "./stream-timeline";
 
 export interface StreamMetadata {
 	thinkingTokenCount?: number;
@@ -39,23 +47,17 @@ export interface StreamMetadata {
 	fileProductionJobs?: import("$lib/types").FileProductionJob[];
 	contextCompressionSnapshots?: import("$lib/types").ContextCompressionMarker[];
 	generationDurationMs?: number;
+	serverTimeline?: StreamTimelineTerminalPayload;
 }
 
 export interface StreamTimingSnapshot {
 	streamId: string;
 	url: string;
 	serverTiming?: string | null;
+	parsedServerTiming?: StreamTimelineTimingRecord;
+	serverTimeline?: StreamTimelineTerminalPayload;
 	outcome: "success" | "error" | "stopped" | "closed";
-	phases: {
-		fetchStartMs: number;
-		responseHeadersMs?: number;
-		firstByteMs?: number;
-		firstTokenMs?: number;
-		firstThinkingMs?: number;
-		firstToolCallMs?: number;
-		endMs?: number;
-		errorMs?: number;
-	};
+	phases: BrowserStreamTimingRecord;
 }
 
 export interface StreamCallbacks {
@@ -177,6 +179,9 @@ function buildStreamMetadata(data: unknown): StreamMetadata | undefined {
 			| undefined,
 		generationDurationMs: parsed.generationDurationMs as
 			| StreamMetadata["generationDurationMs"]
+			| undefined,
+		serverTimeline: parsed.serverTimeline as
+			| StreamMetadata["serverTimeline"]
 			| undefined,
 	};
 	return Object.values(nextMetadata).some((value) => value !== undefined)
@@ -361,8 +366,11 @@ export function streamChat(
 		typeof performance !== "undefined" && typeof performance.now === "function"
 			? performance.now()
 			: Date.now();
-	const timingPhases: StreamTimingSnapshot["phases"] = { fetchStartMs: 0 };
+	const timingPhases: StreamTimingSnapshot["phases"] = {
+		[BROWSER_STREAM_TIMING_MARKS.FETCH_START]: 0,
+	};
 	let serverTiming: string | null = null;
+	let parsedServerTiming: StreamTimelineTimingRecord | undefined;
 	let streamUrl = "/api/chat/stream";
 	let timingReported = false;
 	let stopRequested = false;
@@ -409,9 +417,8 @@ export function streamChat(
 		return Math.max(0, now - timingStart);
 	}
 
-	function markTimingPhase(name: keyof StreamTimingSnapshot["phases"]) {
-		if (timingPhases[name] !== undefined) return;
-		timingPhases[name] = elapsedMs();
+	function markTimingPhase(name: keyof BrowserStreamTimingRecord) {
+		recordDurationStreamTimelineMark(timingPhases, name, elapsedMs());
 	}
 
 	function reportTiming(outcome: StreamTimingSnapshot["outcome"]) {
@@ -421,6 +428,12 @@ export function streamChat(
 			streamId,
 			url: streamUrl,
 			serverTiming,
+			...(parsedServerTiming
+				? { parsedServerTiming: { ...parsedServerTiming } }
+				: {}),
+			...(latestMetadata?.serverTimeline
+				? { serverTimeline: latestMetadata.serverTimeline }
+				: {}),
 			outcome,
 			phases: { ...timingPhases },
 		});
@@ -431,7 +444,7 @@ export function streamChat(
 			return true;
 		}
 		completed = true;
-		markTimingPhase("endMs");
+		markTimingPhase(BROWSER_STREAM_TIMING_MARKS.END);
 		flushInlineBufferAtEnd();
 		reportTiming("success");
 		callbacks.onEnd(fullText, metadata);
@@ -443,7 +456,7 @@ export function streamChat(
 		if (!thinkingChunk) {
 			return;
 		}
-		markTimingPhase("firstThinkingMs");
+		markTimingPhase(BROWSER_STREAM_TIMING_MARKS.FIRST_THINKING);
 		if (isReplaying) {
 			replayThinkingBuffer.push(thinkingChunk);
 		} else {
@@ -454,7 +467,7 @@ export function streamChat(
 	function emitToolCall(data: unknown) {
 		const parsed =
 			data && typeof data === "object" ? (data as Record<string, unknown>) : {};
-		markTimingPhase("firstToolCallMs");
+		markTimingPhase(BROWSER_STREAM_TIMING_MARKS.FIRST_TOOL_CALL);
 		callbacks.onToolCall?.(
 			parsed.name as string,
 			(parsed.input as Record<string, unknown> | undefined) ?? {},
@@ -477,6 +490,7 @@ export function streamChat(
 	}
 
 	function emitResponseActivity(data: unknown) {
+		markTimingPhase(BROWSER_STREAM_TIMING_MARKS.FIRST_RESPONSE_ACTIVITY);
 		const entry = buildResponseActivityEntry(data);
 		if (!entry) return;
 		callbacks.onResponseActivity?.(entry);
@@ -564,8 +578,11 @@ export function streamChat(
 				body,
 				signal: controller.signal,
 			});
-			markTimingPhase("responseHeadersMs");
+			markTimingPhase(BROWSER_STREAM_TIMING_MARKS.RESPONSE_HEADERS);
 			serverTiming = res.headers.get("Server-Timing");
+			parsedServerTiming = serverTiming
+				? parseServerTimingHeader(serverTiming)
+				: undefined;
 
 			if (!res.ok) {
 				let errorMessage = `HTTP ${res.status}`;
@@ -577,14 +594,14 @@ export function streamChat(
 				} catch {
 					/* noop */
 				}
-				markTimingPhase("errorMs");
+				markTimingPhase(BROWSER_STREAM_TIMING_MARKS.ERROR);
 				reportTiming("error");
 				callbacks.onError(toStreamError(errorMessage, errorCode));
 				return;
 			}
 
 			if (!res.body) {
-				markTimingPhase("errorMs");
+				markTimingPhase(BROWSER_STREAM_TIMING_MARKS.ERROR);
 				reportTiming("error");
 				callbacks.onError(toStreamError("Response has no body"));
 				return;
@@ -609,7 +626,7 @@ export function streamChat(
 									? part.text
 									: "";
 						if (chunk) {
-							markTimingPhase("firstTokenMs");
+							markTimingPhase(BROWSER_STREAM_TIMING_MARKS.FIRST_TOKEN);
 							if (isReplaying) {
 								replayTokenBuffer.push(chunk);
 							} else {
@@ -658,7 +675,7 @@ export function streamChat(
 							"Stream error";
 						const errorCode =
 							typeof parsed.code === "string" ? parsed.code : undefined;
-						markTimingPhase("errorMs");
+						markTimingPhase(BROWSER_STREAM_TIMING_MARKS.ERROR);
 						reportTiming("error");
 						callbacks.onError(toStreamError(errorMessage, errorCode));
 						return true;
@@ -669,7 +686,7 @@ export function streamChat(
 							(typeof part.errorText === "string" && part.errorText) ||
 							(typeof part.error === "string" && part.error) ||
 							"Stream error";
-						markTimingPhase("errorMs");
+						markTimingPhase(BROWSER_STREAM_TIMING_MARKS.ERROR);
 						reportTiming("error");
 						callbacks.onError(toStreamError(errorMessage));
 						return true;
@@ -725,15 +742,15 @@ export function streamChat(
 							finishSuccessfully(latestMetadata);
 							break;
 						}
-						markTimingPhase("endMs");
-						reportTiming("error");
+						markTimingPhase(BROWSER_STREAM_TIMING_MARKS.END);
+						reportTiming("closed");
 						callbacks.onError(
 							toStreamError("Stream closed before a terminal completion event"),
 						);
 						break;
 					}
 
-					markTimingPhase("firstByteMs");
+					markTimingPhase(BROWSER_STREAM_TIMING_MARKS.FIRST_BYTE);
 					buffer += decoder.decode(value, { stream: true });
 					if (drainBuffer()) {
 						return;
@@ -747,15 +764,16 @@ export function streamChat(
 				return;
 			}
 			if (stopRequested) {
-				markTimingPhase("endMs");
+				markTimingPhase(BROWSER_STREAM_TIMING_MARKS.STOP);
+				markTimingPhase(BROWSER_STREAM_TIMING_MARKS.END);
 				reportTiming("stopped");
 				callbacks.onEnd(fullText, { wasStopped: true });
 			} else if (err instanceof Error) {
-				markTimingPhase("errorMs");
+				markTimingPhase(BROWSER_STREAM_TIMING_MARKS.ERROR);
 				reportTiming("error");
 				callbacks.onError(err);
 			} else {
-				markTimingPhase("errorMs");
+				markTimingPhase(BROWSER_STREAM_TIMING_MARKS.ERROR);
 				reportTiming("error");
 				callbacks.onError(toStreamError(String(err)));
 			}
@@ -768,6 +786,7 @@ export function streamChat(
 				return;
 			}
 			stopRequested = true;
+			markTimingPhase(BROWSER_STREAM_TIMING_MARKS.STOP);
 			void requestServerSideStreamStop(streamId);
 			controller.abort();
 		},

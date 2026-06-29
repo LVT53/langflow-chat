@@ -83,6 +83,7 @@ import {
 	createBrowserNormalChatClientTurnRuntime,
 	type NormalChatRuntimeSnapshot,
 } from "$lib/client/normal-chat-client-turn-runtime";
+import type { StreamTimingSnapshot } from "$lib/services/streaming";
 import {
 	buildChatSourceMessageHref,
 	clearChatFocusMessageParam,
@@ -353,6 +354,12 @@ let suppressHydration = $state(false);
 let initialStreamPending = $state(untrack(() => data.bootstrap ?? false));
 const evidencePollMaxAttempts = 48;
 const evidencePollControllers = new Map<string, AbortController>();
+const streamTimingDiagnostics = {
+	latest: null as StreamTimingSnapshot | null,
+	record(timing: StreamTimingSnapshot) {
+		this.latest = timing;
+	},
+};
 
 function markDetailMetadataFreshnessBoundary() {
 	detailMetadataEpoch += 1;
@@ -382,6 +389,9 @@ const normalChatRuntime = createBrowserNormalChatClientTurnRuntime({
 	randomId: () => crypto.randomUUID(),
 	schedule: (callback, delayMs) => setTimeout(callback, delayMs),
 	onStateChange: applyNormalChatRuntimeSnapshot,
+	onStreamTiming: (timing) => {
+		streamTimingDiagnostics.record(timing);
+	},
 	setConversationModelSelection: (modelId) =>
 		setConversationModelSelection(data.conversation.id, modelId),
 	setInitialStreamPending: (pending) => {

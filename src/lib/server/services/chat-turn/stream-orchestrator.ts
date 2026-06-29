@@ -64,6 +64,15 @@ import {
 	getConversationTaskState,
 } from "$lib/server/services/task-state";
 import type { StreamErrorCode } from "$lib/services/stream-protocol";
+import {
+	createFallbackResponseActivityId,
+	createTerminalStreamTimelinePayload,
+	RESPONSE_ACTIVITY_IDS,
+	recordDurationStreamTimelineMark,
+	recordElapsedStreamTimelineMark,
+	SERVER_STREAM_TIMELINE_MARKS,
+	type ServerStreamTimelineMark,
+} from "$lib/services/stream-timeline";
 import type {
 	ContextDebugState,
 	ConversationContextStatus,
@@ -270,16 +279,24 @@ export function runChatStreamOrchestrator(
 	let cancelStream = () => {};
 	const streamStartTime = Date.now();
 	const phaseTimingMs: StreamPhaseTimings = { ...(routePhaseTimings ?? {}) };
-	const recordElapsedPhase = (name: string) => {
-		if (phaseTimingMs[name] !== undefined) return;
-		phaseTimingMs[name] = Date.now() - requestStartTime;
-	};
-	const recordDurationPhase = (name: string, startedAt: number) => {
-		if (phaseTimingMs[name] !== undefined) return;
-		phaseTimingMs[name] = Date.now() - startedAt;
-	};
+	const recordElapsedPhase = (name: ServerStreamTimelineMark) =>
+		recordElapsedStreamTimelineMark(
+			phaseTimingMs,
+			name,
+			requestStartTime,
+			Date.now(),
+		);
+	const recordDurationPhase = (
+		name: ServerStreamTimelineMark,
+		startedAt: number,
+	) =>
+		recordDurationStreamTimelineMark(
+			phaseTimingMs,
+			name,
+			Date.now() - startedAt,
+		);
 	const logPhaseTiming = (outcome: "success" | "error" | "stopped") => {
-		recordElapsedPhase("end");
+		recordElapsedPhase(SERVER_STREAM_TIMELINE_MARKS.END);
 		const payload: Record<string, string | number | boolean | null> = {
 			conversationId,
 			streamId: streamId ?? null,
@@ -287,6 +304,7 @@ export function runChatStreamOrchestrator(
 			outcome,
 		};
 		for (const [name, durationMs] of Object.entries(phaseTimingMs)) {
+			if (durationMs === undefined) continue;
 			payload[`${name}_ms`] = durationMs;
 		}
 		if (getConfig().contextDiagnosticsDebug) {
@@ -549,7 +567,7 @@ export function runChatStreamOrchestrator(
 			};
 			const emitThinking = (reasoning: string) => {
 				if (reasoning) {
-					recordElapsedPhase("first_thinking");
+					recordElapsedPhase(SERVER_STREAM_TIMELINE_MARKS.FIRST_THINKING);
 				}
 				const emitted = chunkRuntime.emitThinking(reasoning);
 				return emitted;
@@ -626,7 +644,7 @@ export function runChatStreamOrchestrator(
 					chunkRuntime.fullResponse.length > previousVisibleAnswerLength &&
 					chunkRuntime.fullResponse.trim()
 				) {
-					recordElapsedPhase("first_visible_token");
+					recordElapsedPhase(SERVER_STREAM_TIMELINE_MARKS.FIRST_VISIBLE_TOKEN);
 				}
 				return emitted;
 			};
@@ -639,9 +657,12 @@ export function runChatStreamOrchestrator(
 			unrefTimer(heartbeatIntervalId);
 
 			enqueueChunk(createSsePreludeComment());
-			recordDurationPhase("prelude", streamStartTime);
+			recordDurationPhase(
+				SERVER_STREAM_TIMELINE_MARKS.PRELUDE,
+				streamStartTime,
+			);
 			emitResponseActivity({
-				id: "depth-selected",
+				id: RESPONSE_ACTIVITY_IDS.DEPTH_SELECTED,
 				kind: "depth",
 				status: "done",
 				detail: turn.depthMetadata?.appliedProfile ?? "standard",
@@ -830,6 +851,7 @@ export function runChatStreamOrchestrator(
 					upstreamFinishReason: latestUpstreamFinishReason,
 					upstreamRawFinishReason: latestUpstreamRawFinishReason,
 					streamClosedWithoutFinish: options.streamClosedWithoutFinish === true,
+					serverTimeline: createTerminalStreamTimelinePayload(phaseTimingMs),
 					initialContextStatus,
 					initialTaskState,
 					initialContextDebug,
@@ -944,7 +966,10 @@ export function runChatStreamOrchestrator(
 				error: unknown,
 			): Promise<null> => {
 				attemptedNonStreamFallback = true;
-				const fallbackActivityId = `fallback:${reason}:${attempt}`;
+				const fallbackActivityId = createFallbackResponseActivityId(
+					reason,
+					attempt,
+				);
 				emitResponseActivity({
 					id: fallbackActivityId,
 					kind: "fallback",
@@ -1084,7 +1109,7 @@ export function runChatStreamOrchestrator(
 				> | null = null;
 				try {
 					emitResponseActivity({
-						id: "context-preparing",
+						id: RESPONSE_ACTIVITY_IDS.CONTEXT_PREPARING,
 						kind: "context",
 						status: "running",
 					});
@@ -1106,7 +1131,7 @@ export function runChatStreamOrchestrator(
 					);
 				}
 				recordDurationPhase(
-					"model_stream_request",
+					SERVER_STREAM_TIMELINE_MARKS.MODEL_STREAM_REQUEST,
 					modelStreamRequestStartedAt,
 				);
 				if (!modelRun) {
@@ -1119,7 +1144,7 @@ export function runChatStreamOrchestrator(
 				const prepared: StreamingNormalChatPreparedContext =
 					modelRun.prepared ?? {};
 				emitResponseActivity({
-					id: "context-ready",
+					id: RESPONSE_ACTIVITY_IDS.CONTEXT_READY,
 					kind: "context",
 					status: "done",
 				});
@@ -1147,7 +1172,7 @@ export function runChatStreamOrchestrator(
 				latestContextTraceSections = prepared.contextTraceSections;
 				initialContextTraceSections = latestContextTraceSections;
 				emitResponseActivity({
-					id: "drafting-answer",
+					id: RESPONSE_ACTIVITY_IDS.DRAFTING_ANSWER,
 					kind: "drafting",
 					status: "running",
 				});
@@ -1158,7 +1183,9 @@ export function runChatStreamOrchestrator(
 				let fileProductionPostCaptureChars = 0;
 				try {
 					for await (const upstreamEvent of modelRun.stream) {
-						recordElapsedPhase("first_upstream_event");
+						recordElapsedPhase(
+							SERVER_STREAM_TIMELINE_MARKS.FIRST_UPSTREAM_EVENT,
+						);
 						markUpstreamActivity(attempt);
 						switch (upstreamEvent.type) {
 							case "text_delta":

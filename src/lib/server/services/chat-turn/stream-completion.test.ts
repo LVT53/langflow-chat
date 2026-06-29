@@ -4,6 +4,11 @@ import { commitSkillNoteOperationsAfterAssistantMessage } from "$lib/server/serv
 import { applySkillControlOperations } from "$lib/server/services/skills/sessions";
 import { getProjectReferenceContext } from "$lib/server/services/task-state";
 import type { UiMessageStreamPart } from "$lib/services/ai-sdk-ui-stream-contract";
+import {
+	SERVER_STREAM_TIMELINE_MARKS,
+	STREAM_TIMELINE_PAYLOAD_VERSION,
+	type StreamTimelineTerminalPayload,
+} from "$lib/services/stream-timeline";
 import type {
 	ArtifactSummary,
 	ChatMessage,
@@ -113,6 +118,18 @@ describe("completeStreamTurn", () => {
 
 	const defaultUserMsg = { id: "user-msg-1" };
 	const defaultAssistantMsg = { id: "asst-msg-1" };
+	const defaultServerTimeline: StreamTimelineTerminalPayload = {
+		version: STREAM_TIMELINE_PAYLOAD_VERSION,
+		server: {
+			[SERVER_STREAM_TIMELINE_MARKS.ROUTE_PARSE]: 1,
+			[SERVER_STREAM_TIMELINE_MARKS.PRELUDE]: 8,
+			[SERVER_STREAM_TIMELINE_MARKS.MODEL_STREAM_REQUEST]: 35,
+			[SERVER_STREAM_TIMELINE_MARKS.FIRST_UPSTREAM_EVENT]: 42,
+			[SERVER_STREAM_TIMELINE_MARKS.FIRST_THINKING]: 44,
+			[SERVER_STREAM_TIMELINE_MARKS.FIRST_VISIBLE_TOKEN]: 55,
+			[SERVER_STREAM_TIMELINE_MARKS.END]: 89,
+		},
+	};
 	const defaultTurnState = {
 		activeWorkingSet: [],
 		taskState: null,
@@ -174,6 +191,7 @@ describe("completeStreamTurn", () => {
 		latestHonchoSnapshot: null,
 		latestContextTraceSections: defaultLatestContextTraceSections,
 		latestProviderUsage: null,
+		serverTimeline: defaultServerTimeline,
 		initialContextStatus: undefined,
 		initialTaskState: null,
 		initialContextDebug: null,
@@ -446,6 +464,7 @@ describe("completeStreamTurn", () => {
 		expect(getLatestEndPayload()).toMatchObject({
 			completionWarning: warning,
 			streamClosedWithoutFinish: true,
+			serverTimeline: defaultServerTimeline,
 		});
 		expect(getLatestFinishPayload()).toMatchObject({
 			type: "finish",
@@ -827,6 +846,7 @@ describe("completeStreamTurn", () => {
 				modelId: "model-1",
 				modelDisplayName: "Model One",
 				generatedFiles: [],
+				serverTimeline: defaultServerTimeline,
 			}),
 		);
 		const partTypes = mockEnqueueChunk.mock.calls
@@ -841,6 +861,20 @@ describe("completeStreamTurn", () => {
 				"[DONE]",
 			]),
 		);
+	});
+
+	it("sends terminal server timeline metadata for stopped streams", async () => {
+		await completeStreamTurn({
+			...defaultParams,
+			wasStopped: true,
+			fullResponse: "partial answer",
+			thinkingContent: "",
+		});
+
+		expect(getLatestEndPayload()).toMatchObject({
+			wasStopped: true,
+			serverTimeline: defaultServerTimeline,
+		});
 	});
 
 	it("sends persisted conversation cost totals in UI stream metadata", async () => {
