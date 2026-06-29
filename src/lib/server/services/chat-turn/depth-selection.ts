@@ -809,8 +809,6 @@ function runSafeStandardAutoFastPath(request: DepthSelectionTurnInput): {
 		Boolean(request.linkedSources?.length),
 		request.forceWebSearch === true,
 		Boolean(request.pendingSkill),
-		Boolean(request.activeDocumentArtifactId),
-		Boolean(request.personalityProfileId),
 	].some(Boolean);
 	if (hasBlockingTurnState) return null;
 	const blockerMessage =

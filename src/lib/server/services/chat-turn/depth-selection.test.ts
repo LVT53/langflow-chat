@@ -163,6 +163,91 @@ describe("Reasoning Depth Auto selection", () => {
 		expect(mocks.sendJsonControlMessage).not.toHaveBeenCalled();
 	});
 
+	it("fast-paths simple direct turns with passive document carryover", async () => {
+		const listRecentMessages = vi.fn(async () => []);
+		const { resolveReasoningDepthSelection } = await import(
+			"./depth-selection"
+		);
+
+		const result = await resolveReasoningDepthSelection({
+			userId: "user-1",
+			conversationId: "conv-1",
+			request: {
+				normalizedMessage: "Ping!",
+				reasoningDepth: "auto",
+				modelId: "model1",
+				modelDisplayName: "Model One",
+				providerDisplayName: "Provider One",
+				attachmentIds: [],
+				linkedSources: [],
+				pendingSkill: null,
+				activeDocumentArtifactId: "active-doc-1",
+				personalityProfileId: "profile-1",
+				forceWebSearch: false,
+			},
+			listRecentMessages,
+		});
+
+		expect(result.metadata).toMatchObject({
+			requested: "auto",
+			appliedProfile: "standard",
+			fallback: false,
+			classifierSource: "deterministic_fast_path",
+			constraintNote: "simple_auto_standard_fast_path",
+		});
+		expect(listRecentMessages).not.toHaveBeenCalled();
+		expect(mocks.sendJsonControlMessage).not.toHaveBeenCalled();
+	});
+
+	it("keeps the control classifier for explicit active-document requests", async () => {
+		const listRecentMessages = vi.fn(async () => []);
+		mocks.sendJsonControlMessage.mockResolvedValueOnce({
+			text: JSON.stringify({
+				appliedProfile: "extended",
+				reason: "The request asks for work over the active document.",
+				groundingNeed: "useful",
+				contextBreadth: "broad",
+				outputRoom: "normal",
+				toolUse: "normal",
+			}),
+			rawResponse: {
+				choices: [{ finish_reason: "stop" }],
+			},
+			modelId: "model1",
+			modelDisplayName: "Model One",
+		});
+		const { resolveReasoningDepthSelection } = await import(
+			"./depth-selection"
+		);
+
+		const result = await resolveReasoningDepthSelection({
+			userId: "user-1",
+			conversationId: "conv-1",
+			request: {
+				normalizedMessage: "Summarize this document.",
+				reasoningDepth: "auto",
+				modelId: "model1",
+				modelDisplayName: "Model One",
+				providerDisplayName: "Provider One",
+				attachmentIds: [],
+				linkedSources: [],
+				pendingSkill: null,
+				activeDocumentArtifactId: "active-doc-1",
+				forceWebSearch: false,
+			},
+			listRecentMessages,
+		});
+
+		expect(result.metadata).toMatchObject({
+			requested: "auto",
+			appliedProfile: "extended",
+			fallback: false,
+			classifierSource: "control_model",
+		});
+		expect(listRecentMessages).toHaveBeenCalledTimes(1);
+		expect(mocks.sendJsonControlMessage).toHaveBeenCalledTimes(1);
+	});
+
 	it("keeps the control classifier for positive web and source requests", async () => {
 		const listRecentMessages = vi.fn(async () => []);
 		mocks.sendJsonControlMessage.mockResolvedValueOnce({
