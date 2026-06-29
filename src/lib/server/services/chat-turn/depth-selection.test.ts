@@ -41,12 +41,279 @@ vi.mock("$lib/server/db", () => ({
 describe("Reasoning Depth Auto selection", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mocks.getConfig.mockReset();
+		mocks.getProviderWithSecrets.mockReset();
+		mocks.listEnabledProviderModels.mockReset();
+		mocks.sendJsonControlMessage.mockReset();
 		mocks.getConfig.mockReturnValue({
 			reasoningDepthClassifierModel: null,
 		});
 		mocks.getProviderWithSecrets.mockResolvedValue(null);
 		mocks.listEnabledProviderModels.mockResolvedValue([]);
 		mocks.dbSelectResult = [];
+	});
+
+	it("resolves simple Auto turns through the proactive standard fast path", async () => {
+		const listRecentMessages = vi.fn(async () => []);
+		const { resolveReasoningDepthSelection } = await import(
+			"./depth-selection"
+		);
+
+		const result = await resolveReasoningDepthSelection({
+			userId: "user-1",
+			conversationId: "conv-1",
+			request: {
+				normalizedMessage: "What is 2 + 2?",
+				reasoningDepth: "auto",
+				modelId: "model1",
+				modelDisplayName: "Model One",
+				providerDisplayName: "Provider One",
+				attachmentIds: [],
+				linkedSources: [],
+				pendingSkill: null,
+				forceWebSearch: false,
+			},
+			listRecentMessages,
+		});
+
+		expect(result.metadata).toMatchObject({
+			requested: "auto",
+			appliedProfile: "standard",
+			fallback: false,
+			classifierSource: "deterministic_fast_path",
+			constraintNote: "simple_auto_standard_fast_path",
+			signals: {
+				groundingNeed: "none",
+				contextBreadth: "normal",
+				outputRoom: "normal",
+				toolUse: "normal",
+			},
+		});
+		expect(listRecentMessages).not.toHaveBeenCalled();
+		expect(mocks.sendJsonControlMessage).not.toHaveBeenCalled();
+	});
+
+	it("fast-paths benchmark prompts that explicitly forbid external resources", async () => {
+		const listRecentMessages = vi.fn(async () => []);
+		const { resolveReasoningDepthSelection } = await import(
+			"./depth-selection"
+		);
+
+		const result = await resolveReasoningDepthSelection({
+			userId: "user-1",
+			conversationId: "conv-1",
+			request: {
+				normalizedMessage:
+					"Reply in one short sentence that this live stream benchmark is harmless. Do not use external tools, web search, or files.",
+				reasoningDepth: "auto",
+				modelId: "model1",
+				modelDisplayName: "Model One",
+				providerDisplayName: "Provider One",
+				attachmentIds: [],
+				linkedSources: [],
+				pendingSkill: null,
+				forceWebSearch: false,
+			},
+			listRecentMessages,
+		});
+
+		expect(result.metadata).toMatchObject({
+			requested: "auto",
+			appliedProfile: "standard",
+			fallback: false,
+			classifierSource: "deterministic_fast_path",
+			constraintNote: "simple_auto_standard_fast_path",
+		});
+		expect(listRecentMessages).not.toHaveBeenCalled();
+		expect(mocks.sendJsonControlMessage).not.toHaveBeenCalled();
+	});
+
+	it("keeps the control classifier for positive web and source requests", async () => {
+		const listRecentMessages = vi.fn(async () => []);
+		mocks.sendJsonControlMessage.mockResolvedValueOnce({
+			text: JSON.stringify({
+				appliedProfile: "extended",
+				reason: "The request asks for web-grounded source use.",
+				groundingNeed: "useful",
+				contextBreadth: "normal",
+				outputRoom: "normal",
+				toolUse: "source_heavy",
+			}),
+			rawResponse: {
+				choices: [{ finish_reason: "stop" }],
+			},
+			modelId: "model1",
+			modelDisplayName: "Model One",
+		});
+		const { resolveReasoningDepthSelection } = await import(
+			"./depth-selection"
+		);
+
+		const result = await resolveReasoningDepthSelection({
+			userId: "user-1",
+			conversationId: "conv-1",
+			request: {
+				normalizedMessage: "Use web search and cite sources in one sentence.",
+				reasoningDepth: "auto",
+				modelId: "model1",
+				modelDisplayName: "Model One",
+				providerDisplayName: "Provider One",
+				attachmentIds: [],
+				linkedSources: [],
+				pendingSkill: null,
+				forceWebSearch: false,
+			},
+			listRecentMessages,
+		});
+
+		expect(result.metadata).toMatchObject({
+			requested: "auto",
+			appliedProfile: "extended",
+			fallback: false,
+			classifierSource: "control_model",
+		});
+		expect(listRecentMessages).toHaveBeenCalledTimes(1);
+		expect(mocks.sendJsonControlMessage).toHaveBeenCalledTimes(1);
+	});
+
+	it("keeps the control classifier for short online lookup requests", async () => {
+		const listRecentMessages = vi.fn(async () => []);
+		mocks.sendJsonControlMessage.mockResolvedValueOnce({
+			text: JSON.stringify({
+				appliedProfile: "extended",
+				reason: "The request asks for online information.",
+				groundingNeed: "useful",
+				contextBreadth: "normal",
+				outputRoom: "normal",
+				toolUse: "normal",
+			}),
+			rawResponse: {
+				choices: [{ finish_reason: "stop" }],
+			},
+			modelId: "model1",
+			modelDisplayName: "Model One",
+		});
+		const { resolveReasoningDepthSelection } = await import(
+			"./depth-selection"
+		);
+
+		const result = await resolveReasoningDepthSelection({
+			userId: "user-1",
+			conversationId: "conv-1",
+			request: {
+				normalizedMessage: "Find online information about Acme CRM.",
+				reasoningDepth: "auto",
+				modelId: "model1",
+				modelDisplayName: "Model One",
+				providerDisplayName: "Provider One",
+				attachmentIds: [],
+				linkedSources: [],
+				pendingSkill: null,
+				forceWebSearch: false,
+			},
+			listRecentMessages,
+		});
+
+		expect(result.metadata).toMatchObject({
+			requested: "auto",
+			appliedProfile: "extended",
+			fallback: false,
+			classifierSource: "control_model",
+		});
+		expect(listRecentMessages).toHaveBeenCalledTimes(1);
+		expect(mocks.sendJsonControlMessage).toHaveBeenCalledTimes(1);
+	});
+
+	it("keeps the control classifier for short ambiguous follow-ups", async () => {
+		const listRecentMessages = vi.fn(async () => [
+			{
+				role: "assistant" as const,
+				content: "The rollout has two high-risk migration options.",
+			},
+		]);
+		mocks.sendJsonControlMessage.mockResolvedValueOnce({
+			text: JSON.stringify({
+				appliedProfile: "extended",
+				reason: "The request depends on previous context.",
+			}),
+			rawResponse: {
+				choices: [{ finish_reason: "stop" }],
+			},
+			modelId: "model1",
+			modelDisplayName: "Model One",
+		});
+		const { resolveReasoningDepthSelection } = await import(
+			"./depth-selection"
+		);
+
+		const result = await resolveReasoningDepthSelection({
+			userId: "user-1",
+			conversationId: "conv-1",
+			request: {
+				normalizedMessage: "Why?",
+				reasoningDepth: "auto",
+				modelId: "model1",
+				modelDisplayName: "Model One",
+				providerDisplayName: "Provider One",
+				attachmentIds: [],
+				linkedSources: [],
+				pendingSkill: null,
+				forceWebSearch: false,
+			},
+			listRecentMessages,
+		});
+
+		expect(result.metadata).toMatchObject({
+			requested: "auto",
+			appliedProfile: "extended",
+			fallback: false,
+			classifierSource: "control_model",
+		});
+		expect(listRecentMessages).toHaveBeenCalledTimes(1);
+		expect(mocks.sendJsonControlMessage).toHaveBeenCalledTimes(1);
+	});
+
+	it("keeps the control classifier for complex Auto turns", async () => {
+		mocks.sendJsonControlMessage.mockResolvedValueOnce({
+			text: JSON.stringify({
+				appliedProfile: "extended",
+				reason: "The request asks for comparison and planning.",
+			}),
+			rawResponse: {
+				choices: [{ finish_reason: "stop" }],
+			},
+			modelId: "model1",
+			modelDisplayName: "Model One",
+		});
+		const { resolveReasoningDepthSelection } = await import(
+			"./depth-selection"
+		);
+
+		const result = await resolveReasoningDepthSelection({
+			userId: "user-1",
+			conversationId: "conv-1",
+			request: {
+				normalizedMessage:
+					"Compare the rollout options and recommend a migration plan.",
+				reasoningDepth: "auto",
+				modelId: "model1",
+				modelDisplayName: "Model One",
+				providerDisplayName: "Provider One",
+				attachmentIds: [],
+				linkedSources: [],
+				pendingSkill: null,
+				forceWebSearch: false,
+			},
+			listRecentMessages: async () => [],
+		});
+
+		expect(result.metadata).toMatchObject({
+			requested: "auto",
+			appliedProfile: "extended",
+			fallback: false,
+			classifierSource: "control_model",
+		});
+		expect(mocks.sendJsonControlMessage).toHaveBeenCalledTimes(1);
 	});
 
 	it("resolves Auto to the classifier-selected profile with schema-in-prompt and skipStructuredOutputs", async () => {
@@ -573,6 +840,72 @@ describe("Reasoning Depth Auto selection", () => {
 		});
 	});
 
+	it("uses specific compact fallback metadata for classifier no-object failures", async () => {
+		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+		mocks.sendJsonControlMessage.mockRejectedValueOnce({
+			name: "AI_NoObjectGeneratedError",
+			message: "No object generated",
+			text: "raw model output should not be exposed",
+			response: {
+				body: {
+					choices: [
+						{
+							message: {
+								content: "raw response body should not be exposed",
+							},
+						},
+					],
+				},
+			},
+			usage: {
+				completion_tokens_details: {
+					reasoning_tokens: 0,
+				},
+			},
+			finishReason: "stop",
+		});
+		const { resolveReasoningDepthSelection } = await import(
+			"./depth-selection"
+		);
+
+		try {
+			const result = await resolveReasoningDepthSelection({
+				userId: "user-1",
+				conversationId: "conv-1",
+				request: {
+					normalizedMessage: "Compare plans.",
+					reasoningDepth: "auto",
+					modelId: "model1",
+					modelDisplayName: "Model One",
+					attachmentIds: [],
+					linkedSources: [],
+					pendingSkill: null,
+					forceWebSearch: false,
+				},
+				listRecentMessages: async () => [],
+			});
+
+			expect(result.metadata).toMatchObject({
+				requested: "auto",
+				appliedProfile: "standard",
+				fallback: true,
+				fallbackReason: "control_model_no_object_generated",
+				classifierSource: "deterministic_fallback",
+			});
+			expect(JSON.stringify(result.metadata)).not.toContain("raw model output");
+			expect(JSON.stringify(result.metadata)).not.toContain(
+				"raw response body",
+			);
+			expect(logSpy).toHaveBeenCalledWith(
+				expect.stringContaining(
+					"fallback_reason=control_model_no_object_generated",
+				),
+			);
+		} finally {
+			logSpy.mockRestore();
+		}
+	});
+
 	it("retries with larger token budget on finish_reason length", async () => {
 		mocks.sendJsonControlMessage
 			.mockResolvedValueOnce({
@@ -871,7 +1204,7 @@ describe("Reasoning Depth Auto selection", () => {
 			userId: "user-1",
 			conversationId: "conv-1",
 			request: {
-				normalizedMessage: "Hello, how are you?",
+				normalizedMessage: "Can you explain that again?",
 				reasoningDepth: "auto",
 				modelId: "model1",
 				modelDisplayName: "Model One",

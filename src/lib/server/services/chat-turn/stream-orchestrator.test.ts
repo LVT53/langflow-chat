@@ -1363,7 +1363,7 @@ describe("stream-orchestrator SSE contract", () => {
 		);
 	});
 
-	it("recovers with non-stream fallback when provider errors after a completed non-file tool", async () => {
+	it("recovers with non-stream fallback when a socket terminates after a completed non-file tool", async () => {
 		const { runStreamingNormalChatSendModel } = await import(
 			"$lib/server/services/chat-turn/streaming-normal-chat-model-run"
 		);
@@ -1505,6 +1505,100 @@ describe("stream-orchestrator SSE contract", () => {
 				]),
 			}),
 		);
+	});
+
+	it("emits provider error events after completed non-file tools without non-stream fallback", async () => {
+		const { runStreamingNormalChatSendModel } = await import(
+			"$lib/server/services/chat-turn/streaming-normal-chat-model-run"
+		);
+		const { runPlainNormalChatSendModel } = await import(
+			"$lib/server/services/chat-turn/plain-normal-chat-model-run"
+		);
+		const recorderEntry = {
+			callId: "call-research-provider-error",
+			name: "research_web",
+			input: { query: "provider error after tool" },
+			status: "done",
+			outputSummary: "Web research returned 1 source.",
+			sourceType: "web",
+			candidates: [
+				{
+					id: "source-provider-error",
+					title: "Fetched page",
+					url: "https://example.com/provider-error",
+					sourceType: "web",
+					material: true,
+				},
+			],
+			metadata: {
+				ok: true,
+				evidenceReady: true,
+				sourceCount: 1,
+				evidenceCount: 1,
+			},
+		};
+		(
+			runStreamingNormalChatSendModel as ReturnType<typeof vi.fn>
+		).mockResolvedValue(
+			createNeutralStreamingResult(
+				[
+					{
+						type: "tool_call",
+						callId: "call-research-provider-error",
+						toolName: "research_web",
+						input: { query: "provider error after tool" },
+					},
+					{
+						type: "tool_result",
+						callId: "call-research-provider-error",
+						toolName: "research_web",
+						output: { success: true },
+					},
+					{
+						type: "error",
+						error: "Provider rejected the model response after tool use.",
+					},
+				],
+				{ normalChatToolCalls: [recorderEntry] },
+			),
+		);
+		(runPlainNormalChatSendModel as ReturnType<typeof vi.fn>).mockResolvedValue(
+			{
+				text: "Unexpected fallback answer.",
+				contextStatus: null,
+				taskState: null,
+				contextDebug: null,
+				honchoContext: null,
+				honchoSnapshot: null,
+				providerUsage: null,
+				normalChatToolCalls: [],
+				modelId: "model1",
+				modelDisplayName: "Model One",
+			},
+		);
+
+		const response = runStream({
+			conversationId: "provider-error-after-tool-conv",
+			streamId: "provider-error-after-tool-stream",
+		});
+		const chunks = await readSseResponse(response);
+		const parts = parseUiStreamParts(chunks);
+
+		expect(runPlainNormalChatSendModel).not.toHaveBeenCalled();
+		expect(parts).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					type: "data-stream-error",
+					transient: true,
+					data: expect.objectContaining({
+						code: "backend_failure",
+					}),
+				}),
+				{ type: "finish", finishReason: "error" },
+				"[DONE]",
+			]),
+		);
+		expect(chunks.join("\n\n")).not.toContain("Unexpected fallback answer.");
 	});
 
 	it("maps provider usage events into persisted analytics", async () => {

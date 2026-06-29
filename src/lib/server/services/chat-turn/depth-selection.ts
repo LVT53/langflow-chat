@@ -1,3 +1,4 @@
+import { NoObjectGeneratedError } from "ai";
 import { eq } from "drizzle-orm";
 import { getConfig, isModelEnabled } from "$lib/server/config-store";
 import { db } from "$lib/server/db";
@@ -24,6 +25,51 @@ const MAX_LINKED_SOURCES = 8;
 const MAX_SOURCE_NAME_CHARS = 120;
 const MAX_ATTACHMENT_IDS = 8;
 const MAX_CONTEXT_CHARS = 6_000;
+const SIMPLE_AUTO_FAST_PATH_MAX_CHARS = 180;
+const SIMPLE_AUTO_FAST_PATH_MAX_WORDS = 24;
+const SIMPLE_AUTO_FAST_PATH_CONSTRAINT_NOTE = "simple_auto_standard_fast_path";
+
+const AUTO_FAST_PATH_AMBIGUITY_PATTERN =
+	/\b(above|previous|earlier|last|same|again|continue|attached|attachment|file|document|source|sources|conversation|thread|draft|message|answer|response)\b/i;
+const AUTO_FAST_PATH_REFERENTIAL_PATTERN =
+	/\b(?:summari[sz]e|rewrite|explain|fix|update|use|check|look at)\s+(?:this|that|it|them|these|those)\b/i;
+const AUTO_FAST_PATH_SHORT_FOLLOWUP_PATTERN =
+	/^(?:why\??|how so\??|tell me more\.?|go on\.?|continue\.?|what about (?:this|that|it|them|these|those)\??)$/i;
+const AUTO_FAST_PATH_COMPLEXITY_PATTERN =
+	/\b(compare|analy[sz]e|analysis|multi[- ]?step|planning|plan|debug|evaluate|trade[- ]?off|review|assess|refactor|optimi[sz]e|migrate|design|architecture|strategy|recommend|comprehensive|exhaustive|edge cases?|failure modes?|critical|production|regulatory|compliance|security|audit|prove|verify|validate|guarantee|think hard|hard|deep|maximum|effort)\b/i;
+const AUTO_FAST_PATH_GROUNDING_PATTERN =
+	/\b(current|latest|recent|today|tomorrow|yesterday|news|weather|price|citation|citations|cite|web|internet|online|google|search|browse|look up|lookup|source-backed)\b/i;
+const AUTO_FAST_PATH_BLOCKING_PATTERNS = [
+	AUTO_FAST_PATH_AMBIGUITY_PATTERN,
+	AUTO_FAST_PATH_REFERENTIAL_PATTERN,
+	AUTO_FAST_PATH_SHORT_FOLLOWUP_PATTERN,
+	AUTO_FAST_PATH_COMPLEXITY_PATTERN,
+	AUTO_FAST_PATH_GROUNDING_PATTERN,
+];
+const FAST_PATH_EXTERNAL_RESOURCE_TERM =
+	"(?:(?:external\\s+)?tools?|web\\s+search|web|internet|online\\s+sources?|sources?|files?|documents?)";
+const FAST_PATH_EXTERNAL_RESOURCE_LIST = `(?:the\\s+)?${FAST_PATH_EXTERNAL_RESOURCE_TERM}(?:(?:,?\\s*(?:or|and)\\s+|,\\s*|/\\s*)(?:the\\s+)?${FAST_PATH_EXTERNAL_RESOURCE_TERM})*`;
+const NEGATED_EXTERNAL_RESOURCE_DIRECTIVE_PATTERNS = [
+	new RegExp(
+		`\\b(?:do not|don't|dont|never)\\s+(?:use|consult|access)\\s+${FAST_PATH_EXTERNAL_RESOURCE_LIST}\\b`,
+		"gi",
+	),
+	/\b(?:do not|don't|dont|never)\s+(?:browse|search|browse\/search|search\/browse)(?:\s+(?:the\s+)?(?:web|internet))?\b/gi,
+	new RegExp(
+		`\\bwithout\\s+(?:using\\s+)?${FAST_PATH_EXTERNAL_RESOURCE_LIST}\\b`,
+		"gi",
+	),
+	new RegExp(
+		`\\bno\\s+${FAST_PATH_EXTERNAL_RESOURCE_LIST}(?:\\s+(?:needed|required|necessary))?\\b`,
+		"gi",
+	),
+];
+const AI_NO_OBJECT_ERROR_NAMES = new Set([
+	"AI_NoObjectGeneratedError",
+	"NoObjectGeneratedError",
+	"AI_NoOutputGeneratedError",
+	"NoOutputGeneratedError",
+]);
 
 const DEPTH_CLASSIFICATION_SCHEMA = {
 	type: "object",
@@ -227,6 +273,23 @@ export async function resolveReasoningDepthSelection(
 			}),
 		};
 	}
+	const fastPathResult = runSafeStandardAutoFastPath(request);
+	if (fastPathResult) {
+		logClassifierResult({
+			source: "deterministic_fast_path",
+			appliedProfile: fastPathResult.appliedProfile,
+			attemptCount: 0,
+		});
+		return {
+			metadata: buildDepthMetadata({
+				request,
+				appliedProfile: fastPathResult.appliedProfile,
+				signals: fastPathResult.signals,
+				classifierSource: "deterministic_fast_path",
+				constraintNote: SIMPLE_AUTO_FAST_PATH_CONSTRAINT_NOTE,
+			}),
+		};
+	}
 	const listRecentMessages =
 		params.listRecentMessages ?? listRecentDepthConversationMessages;
 	const recentMessages = await listRecentMessages({
@@ -241,7 +304,11 @@ export async function resolveReasoningDepthSelection(
 
 	const prompt = formatDepthClassificationPrompt(context);
 	let lastError: unknown;
-	let lastErrorKind: "network" | "invalid_response" | undefined;
+	let fallbackReason:
+		| "control_model_error"
+		| "control_model_no_object_generated"
+		| "invalid_classifier_response"
+		| undefined;
 	let attemptCount = 0;
 	let finishReason: string | undefined;
 	let hadReasoningTokens = false;
@@ -313,11 +380,15 @@ export async function resolveReasoningDepthSelection(
 			}
 
 			lastError = new Error("invalid_classifier_response");
-			lastErrorKind = "invalid_response";
+			fallbackReason = "invalid_classifier_response";
 			break;
 		} catch (error) {
 			lastError = error;
-			lastErrorKind = "network";
+			const errorSummary = summarizeClassifierError(error);
+			fallbackReason = errorSummary.fallbackReason;
+			finishReason = errorSummary.finishReason ?? finishReason;
+			hadReasoningTokens =
+				errorSummary.hadReasoningTokens ?? hadReasoningTokens;
 			break;
 		}
 	}
@@ -326,17 +397,15 @@ export async function resolveReasoningDepthSelection(
 		const keywordResult = runDeterministicKeywordClassifier(
 			request.normalizedMessage,
 		);
-		const fallbackReason =
-			lastErrorKind === "invalid_response"
-				? "invalid_classifier_response"
-				: "control_model_error";
+		const resolvedFallbackReason = fallbackReason ?? "control_model_error";
 		logClassifierResult({
 			source: "deterministic_fallback",
 			appliedProfile: keywordResult.appliedProfile,
 			attemptCount,
 			finishReason,
 			hadReasoningTokens,
-			error: String(lastError),
+			fallbackReason: resolvedFallbackReason,
+			error: formatClassifierErrorForLog(lastError, resolvedFallbackReason),
 		});
 		return {
 			metadata: buildDepthMetadata({
@@ -345,7 +414,7 @@ export async function resolveReasoningDepthSelection(
 				signals: keywordResult.signals,
 				classifierSource: "deterministic_fallback",
 				fallback: true,
-				fallbackReason,
+				fallbackReason: resolvedFallbackReason,
 				classifierModel,
 			}),
 		};
@@ -692,11 +761,16 @@ function isTruncatedJson(text: string): boolean {
 }
 
 type ClassifierLogEntry = {
-	source: "control_model" | "deterministic_fallback" | "control_model_error";
+	source:
+		| "control_model"
+		| "deterministic_fast_path"
+		| "deterministic_fallback"
+		| "control_model_error";
 	appliedProfile: DepthAppliedProfile;
 	attemptCount: number;
 	finishReason?: string;
 	hadReasoningTokens?: boolean;
+	fallbackReason?: string;
 	error?: string;
 };
 
@@ -712,10 +786,150 @@ function logClassifierResult(entry: ClassifierLogEntry): void {
 	if (entry.hadReasoningTokens !== undefined) {
 		parts.push(`reasoning_tokens=${entry.hadReasoningTokens}`);
 	}
+	if (entry.fallbackReason) {
+		parts.push(`fallback_reason=${entry.fallbackReason}`);
+	}
 	if (entry.error) {
 		parts.push(`error=${entry.error}`);
 	}
 	console.log(`[DEPTH_CLASSIFIER] ${parts.join(" ")}`);
+}
+
+function runSafeStandardAutoFastPath(request: DepthSelectionTurnInput): {
+	appliedProfile: "standard";
+	signals: DepthSelectionSignals;
+} | null {
+	const normalizedMessage = request.normalizedMessage.trim();
+	const wordCount = normalizedMessage.split(/\s+/).filter(Boolean).length;
+	const hasBlockingTurnState = [
+		!normalizedMessage,
+		normalizedMessage.length > SIMPLE_AUTO_FAST_PATH_MAX_CHARS,
+		wordCount > SIMPLE_AUTO_FAST_PATH_MAX_WORDS,
+		Boolean(request.attachmentIds?.length),
+		Boolean(request.linkedSources?.length),
+		request.forceWebSearch === true,
+		Boolean(request.pendingSkill),
+		Boolean(request.activeDocumentArtifactId),
+		Boolean(request.personalityProfileId),
+	].some(Boolean);
+	if (hasBlockingTurnState) return null;
+	const blockerMessage =
+		removeNegatedExternalResourceDirectives(normalizedMessage);
+	if (
+		AUTO_FAST_PATH_BLOCKING_PATTERNS.some((pattern) =>
+			pattern.test(blockerMessage),
+		)
+	) {
+		return null;
+	}
+
+	const keywordResult = runDeterministicKeywordClassifier(normalizedMessage);
+	if (keywordResult.appliedProfile !== "standard") return null;
+	return {
+		appliedProfile: "standard",
+		signals: keywordResult.signals,
+	};
+}
+
+function removeNegatedExternalResourceDirectives(message: string): string {
+	return NEGATED_EXTERNAL_RESOURCE_DIRECTIVE_PATTERNS.reduce(
+		(next, pattern) => next.replace(pattern, " "),
+		message,
+	);
+}
+
+function summarizeClassifierError(error: unknown): {
+	fallbackReason: "control_model_error" | "control_model_no_object_generated";
+	finishReason?: string;
+	hadReasoningTokens?: boolean;
+} {
+	if (!isNoObjectGeneratedClassifierError(error)) {
+		return { fallbackReason: "control_model_error" };
+	}
+
+	return {
+		fallbackReason: "control_model_no_object_generated",
+		finishReason: extractClassifierErrorFinishReason(error),
+		hadReasoningTokens: readHadReasoningTokensFromUsage(
+			readRecordProperty(error, "usage"),
+		),
+	};
+}
+
+function isNoObjectGeneratedClassifierError(error: unknown): boolean {
+	try {
+		if (NoObjectGeneratedError.isInstance(error)) return true;
+	} catch {
+		// Fall through to the structural check below. Tests use lightweight shapes.
+	}
+
+	const name = readStringRecordProperty(error, "name");
+	const code = readStringRecordProperty(error, "code");
+	return [name, code].some(
+		(value) => value !== undefined && AI_NO_OBJECT_ERROR_NAMES.has(value),
+	);
+}
+
+function extractClassifierErrorFinishReason(
+	error: unknown,
+): string | undefined {
+	return readStringRecordProperty(error, "finishReason");
+}
+
+function readHadReasoningTokensFromUsage(usage: unknown): boolean | undefined {
+	const details =
+		readRecordProperty(usage, "completion_tokens_details") ??
+		readRecordProperty(usage, "completionTokensDetails");
+	const reasoningTokens =
+		readNumberRecordProperty(details, "reasoning_tokens") ??
+		readNumberRecordProperty(details, "reasoningTokens");
+	return reasoningTokens === undefined ? undefined : reasoningTokens > 0;
+}
+
+function formatClassifierErrorForLog(
+	error: unknown,
+	fallbackReason: string,
+): string {
+	if (fallbackReason !== "control_model_no_object_generated") {
+		return String(error);
+	}
+
+	return (
+		readStringRecordProperty(error, "name") ??
+		readStringRecordProperty(error, "code") ??
+		"AI_NoObjectGeneratedError"
+	);
+}
+
+function readRecordProperty(
+	value: unknown,
+	property: string,
+): Record<string, unknown> | undefined {
+	if (!value || typeof value !== "object") return undefined;
+	const propertyValue = (value as Record<string, unknown>)[property];
+	return propertyValue && typeof propertyValue === "object"
+		? (propertyValue as Record<string, unknown>)
+		: undefined;
+}
+
+function readStringRecordProperty(
+	value: unknown,
+	property: string,
+): string | undefined {
+	if (!value || typeof value !== "object") return undefined;
+	const propertyValue = (value as Record<string, unknown>)[property];
+	return typeof propertyValue === "string" && propertyValue.trim()
+		? propertyValue
+		: undefined;
+}
+
+function readNumberRecordProperty(
+	value: unknown,
+	property: string,
+): number | undefined {
+	if (!value || typeof value !== "object") return undefined;
+	const propertyValue = (value as Record<string, unknown>)[property];
+	return typeof propertyValue === "number" ? propertyValue : undefined;
 }
 
 function runDeterministicKeywordClassifier(normalizedMessage: string): {

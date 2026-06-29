@@ -1400,27 +1400,13 @@ export function runChatStreamOrchestrator(
 								});
 								const upstreamError = new Error(errorMessage);
 								const errorCode = classifyStreamError(errorMessage);
-								if (
+								const canRecoverWithNonStreamFallback =
 									!attemptedNonStreamFallback &&
 									!wasStopRequested() &&
 									!hasVisibleAssistantAnswerOutput() &&
 									shouldFallbackToNonStreaming(upstreamError) &&
-									!hasVisibleStreamOutput()
-								) {
-									await fallbackToNonStreaming(
-										"stream_read_failure",
-										attempt,
-										upstreamError,
-									);
-									return;
-								}
-								if (
-									!hasVisibleAssistantAnswerOutput() &&
-									hasCompletedNonFileToolCall() &&
-									!attemptedNonStreamFallback &&
-									!wasStopRequested() &&
-									fallbackToNonStreaming
-								) {
+									(!hasVisibleStreamOutput() || hasCompletedNonFileToolCall());
+								if (canRecoverWithNonStreamFallback && fallbackToNonStreaming) {
 									await fallbackToNonStreaming(
 										"stream_read_failure",
 										attempt,
@@ -1430,7 +1416,8 @@ export function runChatStreamOrchestrator(
 								}
 								if (
 									flushBufferedStreamOutput() &&
-									hasPersistableStreamOutput()
+									(hasVisibleAssistantAnswerOutput() ||
+										hasCompletedFileProductionToolCall())
 								) {
 									await completeSuccess();
 									return;
