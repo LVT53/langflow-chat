@@ -72,6 +72,7 @@ import type {
 	ConversationContextStatus,
 	DocumentWorkspaceItem,
 	FileProductionJob,
+	NormalChatRuntimePhase,
 	SkillSession,
 	ModelId,
 	TaskState,
@@ -274,6 +275,12 @@ let sendError = $state<string | null>(null);
 let isSending = $state(false);
 let isEditResendPending = $state(false);
 let normalChatRuntimeActive = $state(false);
+let normalChatRuntimePhase = $state<NormalChatRuntimePhase>("idle");
+let normalChatRuntimeCanStop = $derived(
+	normalChatRuntimeActive &&
+		(normalChatRuntimePhase === "preparing" ||
+			normalChatRuntimePhase === "generating"),
+);
 let queuedTurn = $state<SendPayload | null>(null);
 let titleGenerationTriggered = false;
 let prevConversationId: string | null = null;
@@ -367,6 +374,7 @@ function markDetailMetadataFreshnessBoundary() {
 
 function applyNormalChatRuntimeSnapshot(snapshot: NormalChatRuntimeSnapshot) {
 	normalChatRuntimeActive = snapshot.active;
+	normalChatRuntimePhase = snapshot.phase;
 	isSending = snapshot.isSending;
 	queuedTurn = snapshot.queuedTurn;
 	queuedContextCompression = snapshot.queuedContextCompression;
@@ -2220,6 +2228,7 @@ function handleDrop(event: DragEvent) {
 				onManageEvidence={openEvidenceManager}
 				disabled={isConversationReadOnlyForChat || isEditResendPending}
 				isGenerating={!isConversationReadOnlyForChat && (isSending || isEditResendPending)}
+				canStopStreaming={!isConversationReadOnlyForChat && normalChatRuntimeCanStop}
 				hasQueuedMessage={Boolean(queuedTurn)}
 				queuedMessagePreview={queuedTurn?.message ?? ''}
 				maxLength={data.maxMessageLength}

@@ -11,6 +11,7 @@ let {
 	maxLength = 10000,
 	disabled = false,
 	isGenerating = false,
+	canStopStreaming = undefined,
 	hasQueuedMessage = false,
 	queuedMessagePreview = "",
 	conversationId = null,
@@ -30,6 +31,7 @@ let {
 	maxLength?: number;
 	disabled?: boolean;
 	isGenerating?: boolean;
+	canStopStreaming?: boolean | undefined;
 	hasQueuedMessage?: boolean;
 	queuedMessagePreview?: string;
 	conversationId?: string | null;
@@ -74,6 +76,7 @@ function handleDraftChange(payload: {
 	{maxLength}
 	{disabled}
 	{isGenerating}
+	{canStopStreaming}
 	{hasQueuedMessage}
 	{queuedMessagePreview}
 	{conversationId}

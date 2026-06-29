@@ -329,6 +329,13 @@ export function createNormalChatClientTurnRuntime(
 		}
 	}
 
+	function canStopActiveStream() {
+		return (
+			Boolean(activeStream) &&
+			(phase === "preparing" || phase === "generating")
+		);
+	}
+
 	function createAssistantPlaceholder(
 		id: string,
 		generationDurationMs?: number,
@@ -907,9 +914,11 @@ export function createNormalChatClientTurnRuntime(
 	}
 
 	function stop() {
+		if (!canStopActiveStream()) return false;
 		activeTokenBuffer?.flush();
 		activeThinkingBuffer?.flush();
 		activeStream?.stop();
+		return true;
 	}
 
 	function detach() {

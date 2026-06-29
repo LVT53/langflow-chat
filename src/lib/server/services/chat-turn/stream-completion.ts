@@ -28,6 +28,7 @@ import { parseSkillControlEnvelopePayloads } from "./skill-control-envelope";
 import {
 	createUiMessageStreamDoneFrame,
 	streamDataPartEvent,
+	streamErrorEvent,
 	streamFinishEvent,
 	streamReasoningEndEvent,
 	streamTextDeltaEvent,
@@ -329,23 +330,24 @@ export async function completeStreamTurn(
 			userMessageToPersist = buffer.userMessage;
 		}
 	}
-	const sendEndAndClose = (userMsgId?: string, assistantMsgId?: string) => {
-		const streamDepthMetadata = assistantMsgId
-			? withDepthMetadataModelInfo(
-					depthMetadata ??
-						buildBaselineDepthMetadata({
-							reasoningDepth,
-							modelId,
-							modelDisplayName,
-							providerDisplayName,
-						}),
-					{
-						modelId,
-						modelDisplayName,
-						providerDisplayName,
-					},
-				)
-			: undefined;
+	const sendEndAndClose = (
+		userMsgId: string | undefined,
+		assistantMsgId: string,
+	) => {
+		const streamDepthMetadata = withDepthMetadataModelInfo(
+			depthMetadata ??
+				buildBaselineDepthMetadata({
+					reasoningDepth,
+					modelId,
+					modelDisplayName,
+					providerDisplayName,
+				}),
+			{
+				modelId,
+				modelDisplayName,
+				providerDisplayName,
+			},
+		);
 
 		if (thinkingContent) {
 			enqueueChunk(streamReasoningEndEvent());
@@ -386,6 +388,12 @@ export async function completeStreamTurn(
 		);
 		enqueueChunk(createUiMessageStreamDoneFrame());
 		touchConversation(userId, conversationId).catch(() => undefined);
+		if (streamId) clearStreamBuffer(streamId);
+		closeDownstream();
+	};
+
+	const sendErrorAndClose = () => {
+		enqueueChunk(streamErrorEvent("backend_failure"));
 		if (streamId) clearStreamBuffer(streamId);
 		closeDownstream();
 	};
@@ -471,10 +479,15 @@ export async function completeStreamTurn(
 					}
 				: undefined,
 		});
-		sendEndAndClose(
-			completion.userMessage?.id,
-			completion.assistantMessage?.id,
-		);
+		if (
+			!completion.assistantMessage?.id ||
+			(persistUserMessage && !completion.userMessage?.id)
+		) {
+			throw new Error(
+				"Stream finalization completed without required message identities",
+			);
+		}
+		sendEndAndClose(completion.userMessage?.id, completion.assistantMessage.id);
 		const deferredProjectionTask = (async () => {
 			deferredStartedResetGeneration = await resolveStartedResetGenerationFact({
 				conversationId,
@@ -525,8 +538,16 @@ export async function completeStreamTurn(
 			waitForDeferredProjectionStart(),
 		]);
 		return;
-	} catch {
-		sendEndAndClose();
+	} catch (error) {
+		console.error(
+			"[CHAT_STREAM] Stream finalization failed before terminal receipt",
+			{
+				conversationId,
+				streamId,
+				error,
+			},
+		);
+		sendErrorAndClose();
 		return;
 	}
 }

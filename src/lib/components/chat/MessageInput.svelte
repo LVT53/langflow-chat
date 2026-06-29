@@ -78,6 +78,7 @@ let {
 	disabled = false,
 	maxLength = 10000,
 	isGenerating = false,
+	canStopStreaming = undefined,
 	conversationId = null,
 	attachmentsEnabled = false,
 	ensureConversation = null,
@@ -119,6 +120,7 @@ let {
 	disabled?: boolean;
 	maxLength?: number;
 	isGenerating?: boolean;
+	canStopStreaming?: boolean | undefined;
 	conversationId?: string | null;
 	attachmentsEnabled?: boolean;
 	ensureConversation?: (() => Promise<string>) | null;
@@ -248,6 +250,7 @@ let attachmentReadinessErrors = $derived(
 
 let canSend = $derived(canSubmitMessageText(message));
 let canQueue = $derived(canSend && isGenerating && !hasQueuedMessage);
+let canStop = $derived(isGenerating && (canStopStreaming ?? true));
 let canAttach = $derived(
 	attachmentsEnabled &&
 		Boolean(resolvedConversationId || ensureConversation) &&
@@ -704,6 +707,7 @@ function queue(nextMessage: string = message) {
 
 function stop() {
 	if (isComposerDisabled) return;
+	if (!canStop) return;
 	onStop?.();
 	showToolsMenu = false;
 	sourceManagerOpen = false;
@@ -1843,16 +1847,18 @@ async function emitDraftChange(force = false) {
 							{$t('chat.queueMessage')}
 						</button>
 					{/if}
-					<button
-						data-testid="stop-button"
-						type="button"
-						onclick={stop}
-						disabled={isComposerDisabled}
-						aria-label={$t('chat.stop')}
-						class="composer-stop-accent flex h-[40px] w-[40px] items-center justify-center rounded-[10px] shadow-sm animate-in"
-					>
-					<Square size={18} fill="currentColor" aria-hidden="true" />
-					</button>
+					{#if canStop}
+						<button
+							data-testid="stop-button"
+							type="button"
+							onclick={stop}
+							disabled={isComposerDisabled}
+							aria-label={$t('chat.stop')}
+							class="composer-stop-accent flex h-[40px] w-[40px] items-center justify-center rounded-[10px] shadow-sm animate-in"
+						>
+							<Square size={18} fill="currentColor" aria-hidden="true" />
+						</button>
+					{/if}
 				{:else}
 					<button
 						data-testid="send-button"

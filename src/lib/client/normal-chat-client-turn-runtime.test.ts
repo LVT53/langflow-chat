@@ -777,6 +777,73 @@ describe("Normal Chat Client Turn Runtime", () => {
 		});
 	});
 
+	it("ignores stop attempts after the finish part so queued follow-ups drain normally", async () => {
+		const { adapters, streamInvocations } = makeAdapters();
+		const runtime = createNormalChatClientTurnRuntime(adapters);
+
+		await runtime.send({
+			message: "First",
+			attachmentIds: [],
+			attachments: [],
+			pendingAttachments: [],
+		});
+		runtime.queue({
+			message: "Second",
+			attachmentIds: [],
+			attachments: [],
+			pendingAttachments: [],
+		});
+
+		streamInvocations[0].callbacks.onToken("Done");
+		streamInvocations[0].callbacks.onFinishPart?.({
+			type: "finish",
+			finishReason: "stop",
+		});
+		runtime.stop();
+
+		expect(streamInvocations[0].handle.stop).not.toHaveBeenCalled();
+		expect(runtime.snapshot()).toMatchObject({
+			active: true,
+			isSending: true,
+			phase: "finalizing",
+			queuedTurn: expect.objectContaining({ message: "Second" }),
+		});
+
+		streamInvocations[0].callbacks.onEnd("Done", {
+			assistantMessageId: "assistant-1",
+		});
+		await Promise.resolve();
+		await Promise.resolve();
+
+		expect(adapters.restorePayloadToDraft).not.toHaveBeenCalled();
+		expect(streamInvocations).toHaveLength(2);
+		expect(streamInvocations[1].message).toBe("Second");
+	});
+
+	it("ignores stop attempts while polling for completion after stream close", async () => {
+		const { adapters, streamInvocations } = makeAdapters();
+		const runtime = createNormalChatClientTurnRuntime(adapters);
+
+		await runtime.send({
+			message: "First",
+			attachmentIds: [],
+			attachments: [],
+			pendingAttachments: [],
+		});
+
+		streamInvocations[0].callbacks.onWaiting?.();
+		runtime.stop();
+
+		expect(streamInvocations[0].handle.stop).not.toHaveBeenCalled();
+		expect(adapters.pollForCompletion).toHaveBeenCalledWith("id-2", "id-1");
+		expect(runtime.snapshot()).toMatchObject({
+			active: false,
+			isSending: true,
+			isPollingForCompletion: true,
+			phase: "polling",
+		});
+	});
+
 	it("restores stale pending-skill payloads when the stream reports the skill is unavailable", async () => {
 		const { adapters, streamInvocations } = makeAdapters();
 		const runtime = createNormalChatClientTurnRuntime(adapters);

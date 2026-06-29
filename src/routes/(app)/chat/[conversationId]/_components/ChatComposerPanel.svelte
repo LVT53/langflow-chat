@@ -33,6 +33,7 @@ let {
 	onManageEvidence,
 	disabled,
 	isGenerating,
+	canStopStreaming,
 	hasQueuedMessage,
 	queuedMessagePreview,
 	maxLength,
@@ -76,6 +77,7 @@ let {
 	onManageEvidence?: (() => void) | undefined;
 	disabled: boolean;
 	isGenerating: boolean;
+	canStopStreaming?: boolean | undefined;
 	hasQueuedMessage: boolean;
 	queuedMessagePreview: string;
 	maxLength: number;
@@ -198,6 +200,7 @@ onDestroy(() => {
 			{onManageEvidence}
 			{disabled}
 			{isGenerating}
+			{canStopStreaming}
 			{hasQueuedMessage}
 			{queuedMessagePreview}
 			{maxLength}

@@ -7,7 +7,7 @@ import {
 } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppShellData } from "$lib/server/services/app-shell";
-import type { StreamMetadata } from "$lib/services/streaming";
+import type { StreamCallbacks, StreamMetadata } from "$lib/services/streaming";
 import type {
 	AtlasJobCard,
 	ContextDebugEvidenceItem,
@@ -21,12 +21,7 @@ import type {
 const runtimeHarness = vi.hoisted(() => ({
 	streamInvocations: [] as Array<{
 		message: string;
-		callbacks: {
-			onToken: (chunk: string) => void;
-			onWaiting?: () => void;
-			onEnd: (fullText: string, metadata?: StreamMetadata) => void;
-			onError: (error: Error) => void;
-		};
+		callbacks: StreamCallbacks;
 	}>,
 	atlasSubmissions: [] as Array<{
 		message: string;
@@ -484,6 +479,84 @@ describe("chat page runtime integration", () => {
 		expect(screen.getByTestId("queued-message-banner")).toHaveTextContent(
 			"Follow up after the summary",
 		);
+	});
+
+	it("hides Stop after the finish part while keeping finalizing and queued follow-up behavior", async () => {
+		renderPage();
+
+		await fireEvent.input(screen.getByTestId("message-input"), {
+			target: { value: "Summarize the report" },
+		});
+		await fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+		expect(runtimeHarness.streamInvocations).toHaveLength(1);
+		runtimeHarness.streamInvocations[0].callbacks.onToken("Draft answer");
+		runtimeHarness.streamInvocations[0].callbacks.onFinishPart?.({
+			type: "finish",
+			finishReason: "stop",
+		});
+
+		await waitFor(() => {
+			expect(screen.getByText("Finalizing response...")).toBeInTheDocument();
+		});
+		expect(
+			screen.queryByRole("button", { name: "Stop" }),
+		).not.toBeInTheDocument();
+
+		await fireEvent.input(screen.getByTestId("message-input"), {
+			target: { value: "Follow up while finalizing" },
+		});
+		await fireEvent.click(screen.getByTestId("queue-button"));
+
+		expect(screen.getByTestId("queued-message-banner")).toHaveTextContent(
+			"Follow up while finalizing",
+		);
+
+		runtimeHarness.streamInvocations[0].callbacks.onEnd("Draft answer", {
+			assistantMessageId: "assistant-1",
+		});
+
+		await waitFor(() => {
+			expect(runtimeHarness.streamInvocations).toHaveLength(2);
+		});
+		expect(runtimeHarness.streamInvocations[1].message).toBe(
+			"Follow up while finalizing",
+		);
+	});
+
+	it("hides Stop while polling after the stream closes for recovery", async () => {
+		let resolveDetail: (
+			value:
+				| Awaited<ReturnType<typeof fetchConversationDetail>>
+				| PromiseLike<Awaited<ReturnType<typeof fetchConversationDetail>>>,
+		) => void = () => {};
+		vi.mocked(fetchConversationDetail).mockReturnValueOnce(
+			new Promise((resolve) => {
+				resolveDetail = resolve;
+			}),
+		);
+		renderPage();
+
+		await fireEvent.input(screen.getByTestId("message-input"), {
+			target: { value: "Start polling turn" },
+		});
+		await fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+		expect(runtimeHarness.streamInvocations).toHaveLength(1);
+		runtimeHarness.streamInvocations[0].callbacks.onWaiting?.();
+
+		await waitFor(() => {
+			expect(
+				screen.queryByRole("button", { name: "Stop" }),
+			).not.toBeInTheDocument();
+		});
+
+		await fireEvent.input(screen.getByTestId("message-input"), {
+			target: { value: "Queue during recovery" },
+		});
+
+		expect(screen.getByTestId("queue-button")).toBeInTheDocument();
+		resolveDetail(conversationDetailFixture());
 	});
 
 	it("polls conversation detail while Atlas jobs are queued or running", async () => {

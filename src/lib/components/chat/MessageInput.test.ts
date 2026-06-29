@@ -1660,6 +1660,33 @@ describe("MessageInput", () => {
 		expect(queryByTestId("queue-button")).toBeNull();
 	});
 
+	it("keeps queue available but hides Stop when the active turn cannot be stopped", async () => {
+		const queueSpy = vi.fn();
+		const stopSpy = vi.fn();
+		const { getByPlaceholderText, getByTestId, queryByRole } = render(
+			MessageInput,
+			{
+				isGenerating: true,
+				canStopStreaming: false,
+				onQueue: queueSpy,
+				onStop: stopSpy,
+			},
+		);
+
+		expect(queryByRole("button", { name: "Stop" })).not.toBeInTheDocument();
+
+		const input = getByPlaceholderText(
+			"Type a message...",
+		) as HTMLTextAreaElement;
+		await fireEvent.input(input, { target: { value: "Queue this next" } });
+		await fireEvent.click(getByTestId("queue-button"));
+
+		expect(queueSpy).toHaveBeenCalledWith(
+			expect.objectContaining({ message: "Queue this next" }),
+		);
+		expect(stopSpy).not.toHaveBeenCalled();
+	});
+
 	it("does not clear the draft when the queue slot is already occupied", async () => {
 		const queueSpy = vi.fn();
 		const { getByPlaceholderText } = render(MessageInputWrapper, {

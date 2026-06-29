@@ -116,6 +116,33 @@ describe("completeStreamTurn", () => {
 		return finishEvent as Record<string, unknown>;
 	}
 
+	function getStreamParts(): Array<UiMessageStreamPart | "[DONE]"> {
+		return mockEnqueueChunk.mock.calls.flatMap((call: string[]) =>
+			decodeUiMessageStreamParts(call[0] ?? ""),
+		);
+	}
+
+	function expectModelSafeTerminalError() {
+		const parts = getStreamParts();
+		const errorIndex = parts.findIndex(
+			(part) => part !== "[DONE]" && part.type === "data-stream-error",
+		);
+		expect(errorIndex).toBeGreaterThanOrEqual(0);
+		expect(parts.some(isDataStreamMetadataEvent)).toBe(false);
+		expect(parts.slice(errorIndex)).toEqual([
+			expect.objectContaining({
+				type: "data-stream-error",
+				transient: true,
+				data: expect.objectContaining({
+					code: "backend_failure",
+					message: expect.any(String),
+				}),
+			}),
+			{ type: "finish", finishReason: "error" },
+			"[DONE]",
+		]);
+	}
+
 	function isDataStreamMetadataEvent(
 		event: UiMessageStreamPart | "[DONE]",
 	): event is UiMessageStreamPart & {
@@ -407,7 +434,7 @@ describe("completeStreamTurn", () => {
 		});
 	});
 
-	it("omits Depth Metadata from stream metadata when no assistant message is saved", async () => {
+	it("emits a model-safe stream error when assistant persistence fails before a stable assistant id", async () => {
 		const createMessage = vi
 			.fn()
 			.mockResolvedValueOnce({ id: "user-msg-1" })
@@ -419,9 +446,21 @@ describe("completeStreamTurn", () => {
 			reasoningDepth: "max",
 		});
 
-		const payload = getLatestEndPayload();
-		expect(payload.assistantMessageId).toBeUndefined();
-		expect(payload).not.toHaveProperty("depthMetadata");
+		expectModelSafeTerminalError();
+	});
+
+	it("emits a model-safe stream error when required user persistence fails before a stable user id", async () => {
+		const createMessage = vi
+			.fn()
+			.mockRejectedValueOnce(new Error("user persistence offline"))
+			.mockResolvedValueOnce({ id: "asst-msg-1" });
+
+		await completeStreamTurn({
+			...defaultParams,
+			createMessage,
+		});
+
+		expectModelSafeTerminalError();
 	});
 
 	it("warns and preserves upstream length finish reasons", async () => {
