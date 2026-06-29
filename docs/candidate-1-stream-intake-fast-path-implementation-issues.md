@@ -105,7 +105,7 @@ Run this Candidate 1 batch with bounded parallelism:
 
 ## C1-01: Introduce lazy stream completion facts
 
-**Type:** AFK  
+**Type:** AFK
 **Blocked by:** None - can start immediately
 
 ### What to build
@@ -155,7 +155,7 @@ completion seam, without moving the route or orchestrator reads yet.
 
 ## C1-02: Remove Memory Reset Generation from route response-start path
 
-**Type:** AFK  
+**Type:** AFK
 **Blocked by:** C1-01
 
 ### What to build
@@ -200,7 +200,7 @@ reject invalid/Atlas/capacity/preflight failures before returning a stream.
 
 ## C1-03: Move file-production start snapshot to lazy completion facts
 
-**Type:** AFK  
+**Type:** AFK
 **Blocked by:** C1-01
 
 ### What to build
@@ -247,7 +247,7 @@ new.
 
 ## C1-04: Prove first-byte path and timing semantics
 
-**Type:** AFK  
+**Type:** AFK
 **Blocked by:** C1-02, C1-03
 
 ### What to build
@@ -283,7 +283,7 @@ prove Candidate 1.
 
 ## C1-05: Full review, gates, and main push
 
-**Type:** HITL  
+**Type:** HITL
 **Blocked by:** C1-01, C1-02, C1-03, C1-04
 
 ### What to build

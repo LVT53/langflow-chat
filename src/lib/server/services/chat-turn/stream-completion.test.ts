@@ -1407,6 +1407,60 @@ describe("completeStreamTurn", () => {
 		);
 	});
 
+	it("degrades rejected reset generation facts and still finalizes the stream", async () => {
+		const resetGenerationError = new Error("reset generation unavailable");
+		const startedResetGeneration = Promise.reject(resetGenerationError);
+		startedResetGeneration.catch(() => undefined);
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+		try {
+			await completeStreamTurn({
+				...defaultParams,
+				startedResetGeneration,
+			});
+
+			expect(mockCreateMessage).toHaveBeenCalledTimes(2);
+			expect(mockCreateMessage).toHaveBeenCalledWith(
+				"conv-1",
+				"assistant",
+				"response text",
+				"<thinking>reason</thinking>",
+				undefined,
+				expect.objectContaining({ evidenceStatus: "pending" }),
+			);
+			expect(mockPersistAssistantTurnState).toHaveBeenCalledWith(
+				expect.objectContaining({
+					assistantMessageId: "asst-msg-1",
+				}),
+			);
+			expect(
+				(
+					mockRunPostTurnTasks.mock.calls.at(-1)?.[0] as
+						| { startedResetGeneration?: number }
+						| undefined
+				)?.startedResetGeneration,
+			).toBeUndefined();
+			expect(getLatestEndPayload()).toMatchObject({
+				userMessageId: "user-msg-1",
+				assistantMessageId: "asst-msg-1",
+			});
+			expect(getLatestFinishPayload()).toMatchObject({
+				type: "finish",
+				finishReason: "stop",
+			});
+			expect(warn).toHaveBeenCalledWith(
+				"[CHAT_STREAM] Failed to resolve stream reset generation fact",
+				expect.objectContaining({
+					conversationId: "conv-1",
+					streamId: "stream-1",
+					error: resetGenerationError,
+				}),
+			);
+		} finally {
+			warn.mockRestore();
+		}
+	});
+
 	it("attaches a same-turn file-production job when a late start snapshot includes it", async () => {
 		mockGetFileProductionJobs.mockResolvedValue([
 			{ id: "job-existing", createdAt: 999 },

@@ -438,9 +438,11 @@ export async function completeStreamTurn(
 	};
 
 	try {
-		const startedResetGeneration = await resolveOptionalCompletionFact(
-			startedResetGenerationFact,
-		);
+		const startedResetGeneration = await resolveStartedResetGenerationFact({
+			conversationId,
+			streamId,
+			fact: startedResetGenerationFact,
+		});
 		const fileProductionStartSnapshot = hadFileProductionToolCall
 			? await resolveFileProductionJobIdsAtStart({
 					conversationId,
@@ -574,12 +576,26 @@ function resolveCompletionFact<T>(fact: StreamCompletionFact<T>): Promise<T> {
 	return Promise.resolve(fact);
 }
 
-function resolveOptionalCompletionFact<T>(
-	fact: StreamCompletionFact<T> | undefined,
-): Promise<T | undefined> {
-	return fact === undefined
-		? Promise.resolve(undefined)
-		: resolveCompletionFact(fact);
+async function resolveStartedResetGenerationFact(params: {
+	conversationId: string;
+	streamId: string | null;
+	fact: StreamCompletionFact<number> | undefined;
+}): Promise<number | undefined> {
+	if (params.fact === undefined) return undefined;
+
+	try {
+		return await resolveCompletionFact(params.fact);
+	} catch (error) {
+		console.warn(
+			"[CHAT_STREAM] Failed to resolve stream reset generation fact",
+			{
+				conversationId: params.conversationId,
+				streamId: params.streamId,
+				error,
+			},
+		);
+		return undefined;
+	}
 }
 
 async function resolveFileProductionJobIdsAtStart(params: {

@@ -187,6 +187,25 @@ describe("OpenAI-compatible provider adapter profiles", () => {
 		).toBe(testCase.family);
 	});
 
+	it.each([
+		{ family: "deepseek", modelName: "deepseek_v4_chat" },
+		{ family: "kimi", modelName: "kimi_k2.1" },
+		{ family: "glm", modelName: "glm5-plus" },
+		{ family: "qwen", modelName: "qwen3-max" },
+	] satisfies Array<{
+		family: OpenAICompatibleProviderFamily;
+		modelName: string;
+	}>)("resolves compact generic-gateway model id $modelName as $family", (testCase) => {
+		expect(
+			resolveOpenAICompatibleProviderAdapterProfile({
+				name: "gateway-primary",
+				displayName: "Primary Gateway",
+				baseUrl: "https://gateway.example.test/openai/v1",
+				modelName: testCase.modelName,
+			}).family,
+		).toBe(testCase.family);
+	});
+
 	it.each(
 		providers,
 	)("exposes an error classifier through the resolved $family profile", (testCase) => {

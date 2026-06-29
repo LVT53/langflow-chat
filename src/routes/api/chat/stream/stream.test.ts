@@ -50,6 +50,7 @@ import { preflightChatTurn } from "$lib/server/services/chat-turn/preflight";
 import { parseChatTurnRequest } from "$lib/server/services/chat-turn/request";
 import { runChatStreamOrchestrator } from "$lib/server/services/chat-turn/stream-orchestrator";
 import { buildSkillSystemPromptAppendix } from "$lib/server/services/skills/prompt-context";
+import { SERVER_STREAM_TIMELINE_MARKS } from "$lib/services/stream-timeline";
 import { POST } from "./+server";
 
 type StreamPostEvent = Parameters<typeof POST>[0];
@@ -223,9 +224,9 @@ describe("POST /api/chat/stream route adapter", () => {
 				startedResetGeneration: expect.any(Promise),
 				systemPromptAppendix: undefined,
 				routePhaseTimings: expect.objectContaining({
-					route_parse: expect.any(Number),
-					capacity: expect.any(Number),
-					preflight: expect.any(Number),
+					[SERVER_STREAM_TIMELINE_MARKS.ROUTE_PARSE]: expect.any(Number),
+					[SERVER_STREAM_TIMELINE_MARKS.CAPACITY]: expect.any(Number),
+					[SERVER_STREAM_TIMELINE_MARKS.PREFLIGHT]: expect.any(Number),
 				}),
 			}),
 		);
@@ -416,9 +417,9 @@ describe("POST /api/chat/stream route adapter", () => {
 				upstreamMessage: "",
 				isReconnect: true,
 				routePhaseTimings: expect.objectContaining({
-					route_parse: expect.any(Number),
-					capacity: expect.any(Number),
-					preflight: expect.any(Number),
+					[SERVER_STREAM_TIMELINE_MARKS.ROUTE_PARSE]: expect.any(Number),
+					[SERVER_STREAM_TIMELINE_MARKS.CAPACITY]: expect.any(Number),
+					[SERVER_STREAM_TIMELINE_MARKS.PREFLIGHT]: expect.any(Number),
 				}),
 			}),
 		);

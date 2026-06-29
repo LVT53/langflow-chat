@@ -160,7 +160,7 @@ at a time.
 
 ## C4-01: Introduce context preparation stage plan and runner
 
-**Type:** AFK  
+**Type:** AFK
 **Blocked by:** None - can start immediately
 
 ### What to build
@@ -215,7 +215,7 @@ and testability, not performance yet.
 
 ## C4-02: Parallelize base prompt setup with constructed context
 
-**Type:** AFK  
+**Type:** AFK
 **Blocked by:** C4-01
 
 ### What to build
@@ -264,7 +264,7 @@ compression or forced web prefetch changes the input.
 
 ## C4-03: Isolate automatic compression as a staged decision
 
-**Type:** AFK  
+**Type:** AFK
 **Blocked by:** C4-01
 
 ### What to build
@@ -319,7 +319,7 @@ input.
 
 ## C4-04: Isolate forced web prefetch and final budget stages
 
-**Type:** AFK  
+**Type:** AFK
 **Blocked by:** C4-01, C4-03
 
 ### What to build
@@ -367,7 +367,7 @@ prepared context.
 
 ## C4-05: Surface typed preparation activity through model-run seams
 
-**Type:** AFK  
+**Type:** AFK
 **Blocked by:** C4-01, C4-02, C4-03, C4-04
 
 ### What to build
@@ -427,7 +427,7 @@ the chat UI does not show internal implementation labels.
 
 ## C4-06: Full review, gates, commit, and main push
 
-**Type:** HITL  
+**Type:** HITL
 **Blocked by:** C4-01 through C4-05
 
 ### What to verify

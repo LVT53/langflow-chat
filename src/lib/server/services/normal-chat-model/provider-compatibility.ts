@@ -114,7 +114,8 @@ const ADAPTER_PROFILE_DEFINITIONS: ProviderAdapterProfileDefinition[] = [
 			suppressesToolChoice: "when-thinking",
 		},
 		(_provider, haystack) =>
-			/\bdeepseek\b|deepseek-|api\.deepseek\./.test(haystack),
+			matchesProviderFamilyToken(haystack, "deepseek") ||
+			/api\.deepseek\./.test(haystack),
 	),
 	createProviderAdapterProfile(
 		{
@@ -131,14 +132,16 @@ const ADAPTER_PROFILE_DEFINITIONS: ProviderAdapterProfileDefinition[] = [
 			thinkingOptions: "kimi",
 			suppressesToolChoice: "kimi-unsupported-when-thinking",
 		},
-		(_provider, haystack) => /\bkimi\b|kimi-|moonshot/.test(haystack),
+		(_provider, haystack) =>
+			matchesProviderFamilyToken(haystack, "kimi") || /moonshot/.test(haystack),
 	),
 	createProviderAdapterProfile(
 		{
 			family: "glm",
 		},
 		(_provider, haystack) =>
-			/\bglm\b|glm-|bigmodel|zhipu|open\.bigmodel\.cn|z\.ai/.test(haystack),
+			matchesProviderFamilyToken(haystack, "glm") ||
+			/bigmodel|zhipu|open\.bigmodel\.cn|z\.ai/.test(haystack),
 	),
 	createProviderAdapterProfile(
 		{
@@ -146,7 +149,8 @@ const ADAPTER_PROFILE_DEFINITIONS: ProviderAdapterProfileDefinition[] = [
 			thinkingOptions: "qwen",
 		},
 		(_provider, haystack) =>
-			/\bqwen\b|qwen-|dashscope|qwencloud|aliyun|alibaba/.test(haystack),
+			matchesProviderFamilyToken(haystack, "qwen") ||
+			/dashscope|qwencloud|aliyun|alibaba/.test(haystack),
 	),
 	createProviderAdapterProfile(
 		{
@@ -209,6 +213,18 @@ function createProviderAdapterProfile(
 			transformRequestBodyForProfile(body, provider, behavior),
 		matches,
 	};
+}
+
+function matchesProviderFamilyToken(
+	haystack: string,
+	family: Exclude<
+		OpenAICompatibleProviderFamily,
+		"generic" | "openai" | "mimo"
+	>,
+): boolean {
+	return new RegExp(`(?:^|[^a-z0-9])${family}(?=$|[^a-z0-9]|[0-9])`).test(
+		haystack,
+	);
 }
 
 function buildProviderOptionsForProfile(

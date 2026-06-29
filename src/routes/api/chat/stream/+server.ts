@@ -10,6 +10,7 @@ import {
 	startStartedResetGenerationFact,
 } from "$lib/server/services/chat-turn/stream-orchestrator";
 import { buildSkillSystemPromptAppendix } from "$lib/server/services/skills/prompt-context";
+import { SERVER_STREAM_TIMELINE_MARKS } from "$lib/services/stream-timeline";
 
 export const POST: RequestHandler = async (event) => {
 	requireAuth(event);
@@ -37,7 +38,7 @@ export const POST: RequestHandler = async (event) => {
 	if (!parsedRequest.ok) {
 		return createStreamJsonErrorResponse(parsedRequest.error);
 	}
-	recordPhase("route_parse");
+	recordPhase(SERVER_STREAM_TIMELINE_MARKS.ROUTE_PARSE);
 
 	if (parsedRequest.value.atlasMode) {
 		return createStreamJsonErrorResponse({
@@ -55,7 +56,7 @@ export const POST: RequestHandler = async (event) => {
 	// when we register the new stream (registerActiveChatStream handles this)
 	if (!isReconnect) {
 		const capacity = checkStreamCapacity(user.id);
-		recordPhase("capacity");
+		recordPhase(SERVER_STREAM_TIMELINE_MARKS.CAPACITY);
 		if (!capacity.allowed) {
 			console.warn("[CHAT_STREAM] Rejected due to capacity", {
 				userId: user.id,
@@ -83,7 +84,7 @@ export const POST: RequestHandler = async (event) => {
 			);
 		}
 	} else {
-		recordPhase("capacity");
+		recordPhase(SERVER_STREAM_TIMELINE_MARKS.CAPACITY);
 	}
 
 	const preflight = await preflightChatTurn({
@@ -93,7 +94,7 @@ export const POST: RequestHandler = async (event) => {
 	if (!preflight.ok) {
 		return createStreamJsonErrorResponse(preflight.error);
 	}
-	recordPhase("preflight");
+	recordPhase(SERVER_STREAM_TIMELINE_MARKS.PREFLIGHT);
 
 	const turn = preflight.value;
 
