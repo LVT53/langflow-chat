@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
 	APICallError,
 	type FinishReason,
@@ -263,6 +264,9 @@ export type NormalChatModelRunUsage = {
 	inputTokens: number | undefined;
 	outputTokens: number | undefined;
 	totalTokens: number | undefined;
+	cachedInputTokens?: number;
+	cacheHitTokens?: number;
+	cacheMissTokens?: number;
 };
 
 export type NormalChatModelRunModelMetadata = {
@@ -577,11 +581,296 @@ function createNormalChatOpenAICompatibleProvider(params: {
 	});
 }
 
-function mapUsage(usage: LanguageModelUsage): NormalChatModelRunUsage {
+type NormalChatModelRunPromptCacheContext = {
+	provider: NormalChatModelRunProvider;
+	modelId?: string;
+	messages: ModelMessage[];
+	system?: string;
+	tools?: ToolSet;
+	toolChoice?: ToolChoice<ToolSet>;
+};
+
+type NormalChatModelRunProviderOptionAttemptContext = {
+	modelId?: string;
+	messages?: ModelMessage[];
+	system?: string;
+	tools?: ToolSet;
+	toolChoice?: ToolChoice<ToolSet>;
+};
+
+type NormalChatModelRunProviderAttemptParams = NormalChatModelRunBaseParams & {
+	tools?: ToolSet;
+	toolChoice?: ToolChoice<ToolSet>;
+};
+
+function asNumber(value: unknown): number | undefined {
+	if (typeof value !== "number") return undefined;
+	if (!Number.isFinite(value)) return undefined;
+	return Math.max(0, value);
+}
+
+function stableProviderOptionsObject(value: unknown): Record<string, unknown> {
+	return value && typeof value === "object" && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: {};
+}
+
+function normalizePromptShape(content: unknown): string {
+	if (typeof content === "string") return "string";
+	if (typeof content === "undefined") return "none";
+	if (Array.isArray(content)) {
+		const partKinds = content
+			.map((part) =>
+				part &&
+				typeof part === "object" &&
+				"type" in (part as Record<string, unknown>)
+					? String((part as Record<string, unknown>).type ?? "other")
+					: "other",
+			)
+			.join("|");
+		return `array(${partKinds})`;
+	}
+	if (content && typeof content === "object") return "object";
+	return "unknown";
+}
+
+function summarizeModelMessage(message: unknown): Record<string, unknown> {
+	if (!message || typeof message !== "object" || Array.isArray(message)) {
+		return { kind: "non-object" };
+	}
+	const record = message as Record<string, unknown>;
+	const hasName = (value: unknown): value is { name: unknown } =>
+		typeof value === "object" && value !== null && "name" in value;
+	const role = typeof record.role === "string" ? record.role : "unknown";
+	const toolCalls = Array.isArray(record.tool_calls)
+		? record.tool_calls.map((toolCall) =>
+				toolCall && typeof toolCall === "object"
+					? (toolCall as Record<string, unknown>).function &&
+						hasName((toolCall as Record<string, unknown>).function)
+						? String(
+								(
+									(toolCall as Record<string, unknown>).function as Record<
+										string,
+										unknown
+									>
+								).name ?? "unknown",
+							)
+						: "tool-call"
+					: "tool-call",
+			)
+		: [];
+
+	return {
+		role,
+		content: normalizePromptShape(record.content),
+		toolCallCount: toolCalls.length,
+		toolChoiceCount: toolCalls.length,
+		toolNames:
+			toolCalls.length > 0 ? [...new Set(toolCalls)].sort().slice(0, 8) : [],
+		isToolMessage: role === "tool",
+	};
+}
+
+function summarizeSystemPrompt(system: unknown): string {
+	if (system === undefined) return "absent";
+	if (typeof system === "string") return "string";
+	if (typeof system === "object" && Array.isArray(system))
+		return `array:${normalizePromptShape(system)}`;
+	if (typeof system === "object") return "object";
+	return "unknown";
+}
+
+function buildPromptCacheKey(
+	context: NormalChatModelRunPromptCacheContext,
+): string {
+	const adapterProfile = resolveOpenAICompatibleProviderAdapterProfile(
+		context.provider,
+	);
+	if (adapterProfile.family !== "openai") {
+		return "";
+	}
+
+	const modelId =
+		context.modelId ??
+		context.provider.modelId ??
+		context.provider.id ??
+		"provider-unknown";
+	const roleCounts: Record<string, number> = {};
+	for (const message of context.messages) {
+		if (!message || typeof message !== "object" || Array.isArray(message)) {
+			continue;
+		}
+		const role =
+			typeof (message as Record<string, unknown>).role === "string"
+				? String((message as Record<string, unknown>).role)
+				: "unknown";
+		roleCounts[role] = (roleCounts[role] ?? 0) + 1;
+	}
+	const sortedRoleCounts = Object.keys(roleCounts)
+		.sort()
+		.map((key) => `${key}:${roleCounts[key]}`)
+		.join(",");
+	const toolChoice = (() => {
+		if (!context.toolChoice) return "unset";
+		if (typeof context.toolChoice === "string") {
+			return context.toolChoice;
+		}
+		if (typeof context.toolChoice === "object") {
+			if (
+				typeof (context.toolChoice as { toolName?: unknown }).toolName ===
+				"string"
+			) {
+				return `tool:${String((context.toolChoice as { toolName: string }).toolName)}`;
+			}
+			return String((context.toolChoice as { type?: unknown }).type ?? "unset");
+		}
+		return "unset";
+	})();
+	const toolKeys = context.tools ? Object.keys(context.tools).sort() : [];
+	const seed = {
+		providerId: context.provider.id,
+		providerName: context.provider.name,
+		providerModelId: modelId,
+		modelName: context.provider.modelName,
+		system: summarizeSystemPrompt(context.system),
+		roleCounts: sortedRoleCounts,
+		messageCount: context.messages.length,
+		messageShapes: context.messages.map((message) =>
+			summarizeModelMessage(message),
+		),
+		toolKeys,
+		toolChoice,
+	};
+	return createHash("sha256")
+		.update(JSON.stringify(seed))
+		.digest("hex")
+		.slice(0, 32);
+}
+
+function withPromptCacheOption(
+	context: NormalChatModelRunPromptCacheContext,
+	options?: NormalChatModelRunProviderOptions,
+): NormalChatModelRunProviderOptions | undefined {
+	if (
+		resolveOpenAICompatibleProviderAdapterProfile(context.provider).family !==
+		"openai"
+	) {
+		return options;
+	}
+
+	const promptCacheKey = buildPromptCacheKey(context);
+	if (!promptCacheKey) return options;
+
+	const normalizedOptions = stableProviderOptionsObject(options);
+	const openaiOptions = stableProviderOptionsObject(normalizedOptions.openai);
+	const existingPromptCacheKey = openaiOptions.promptCacheKey;
+	if (
+		typeof existingPromptCacheKey === "string" &&
+		existingPromptCacheKey.length > 0
+	) {
+		return options;
+	}
+
+	return {
+		...normalizedOptions,
+		openai: {
+			...openaiOptions,
+			promptCacheKey,
+		},
+	};
+}
+
+function mapInputTokenDetails(usage: LanguageModelUsage): {
+	cacheReadTokens?: number;
+	cacheWriteTokens?: number;
+	cacheMissTokens?: number;
+} {
+	const details = usage.inputTokenDetails as
+		| {
+				cacheReadTokens?: number;
+				cacheWriteTokens?: number;
+				noCacheTokens?: number;
+		  }
+		| undefined;
+	return {
+		cacheReadTokens: asNumber(details?.cacheReadTokens),
+		cacheWriteTokens: asNumber(details?.cacheWriteTokens),
+		cacheMissTokens: asNumber(details?.noCacheTokens),
+	};
+}
+
+function mapCachedPromptTokensFromProviderMetadata(providerMetadata: unknown): {
+	cachedInputTokens?: number;
+	cacheHitTokens?: number;
+	cacheMissTokens?: number;
+} {
+	const metadata = stableProviderOptionsObject(providerMetadata);
+	const openaiMetadata = stableProviderOptionsObject(metadata.openai);
+	const sharedOpenAiMetadata = stableProviderOptionsObject(
+		openaiMetadata.openai,
+	);
+	const cachedPromptTokens = asNumber(
+		openaiMetadata.cachedPromptTokens ??
+			openaiMetadata.cached_prompt_tokens ??
+			sharedOpenAiMetadata.cached_prompt_tokens ??
+			openaiMetadata.cachedTokens ??
+			sharedOpenAiMetadata.cachedTokens,
+	);
+	if (cachedPromptTokens === undefined) return {};
+
+	return {
+		cachedInputTokens: cachedPromptTokens,
+		cacheHitTokens: cachedPromptTokens,
+	};
+}
+
+export function mapUsage(
+	usage: LanguageModelUsage,
+	providerMetadata?: unknown,
+): NormalChatModelRunUsage {
+	const inputTokenDetails = mapInputTokenDetails(usage);
+	const providerMetadataCachedPromptTokens =
+		mapCachedPromptTokensFromProviderMetadata(providerMetadata);
+	const cacheReadTokens = asNumber(inputTokenDetails.cacheReadTokens);
+	const cacheWriteTokens = asNumber(inputTokenDetails.cacheWriteTokens);
+	const cacheMissTokens = asNumber(inputTokenDetails.cacheMissTokens);
+	const cacheHitTokens =
+		cacheReadTokens !== undefined && cacheReadTokens > 0
+			? cacheReadTokens
+			: providerMetadataCachedPromptTokens.cacheHitTokens;
+	const cachedInputTokens = (cacheReadTokens ?? 0) + (cacheWriteTokens ?? 0);
+	const hasCacheContext =
+		cachedInputTokens > 0 ||
+		providerMetadataCachedPromptTokens.cacheMissTokens !== undefined ||
+		providerMetadataCachedPromptTokens.cacheHitTokens !== undefined ||
+		providerMetadataCachedPromptTokens.cachedInputTokens !== undefined;
+
+	const resolvedCachedInputTokens =
+		cachedInputTokens > 0
+			? cachedInputTokens
+			: providerMetadataCachedPromptTokens.cachedInputTokens;
+	const resolvedCacheMissTokens =
+		hasCacheContext && cacheMissTokens !== undefined
+			? cacheMissTokens
+			: providerMetadataCachedPromptTokens.cacheMissTokens;
+	const resolvedCacheHitTokens =
+		cacheHitTokens !== undefined && cacheHitTokens > 0
+			? cacheHitTokens
+			: providerMetadataCachedPromptTokens.cacheHitTokens;
+
 	return {
 		inputTokens: usage.inputTokens,
 		outputTokens: usage.outputTokens,
 		totalTokens: usage.totalTokens,
+		...(resolvedCachedInputTokens !== undefined
+			? { cachedInputTokens: resolvedCachedInputTokens }
+			: {}),
+		...(resolvedCacheHitTokens !== undefined
+			? { cacheHitTokens: resolvedCacheHitTokens }
+			: {}),
+		...(resolvedCacheMissTokens !== undefined
+			? { cacheMissTokens: resolvedCacheMissTokens }
+			: {}),
 	};
 }
 
@@ -591,13 +880,19 @@ export function mapNormalChatModelRunUsageToProviderSnapshot(
 	const hasUsage =
 		typeof usage.inputTokens === "number" ||
 		typeof usage.outputTokens === "number" ||
-		typeof usage.totalTokens === "number";
+		typeof usage.totalTokens === "number" ||
+		typeof usage.cachedInputTokens === "number" ||
+		typeof usage.cacheHitTokens === "number" ||
+		typeof usage.cacheMissTokens === "number";
 	if (!hasUsage) return null;
 
 	return {
 		promptTokens: usage.inputTokens,
 		completionTokens: usage.outputTokens,
 		totalTokens: usage.totalTokens,
+		cachedInputTokens: usage.cachedInputTokens,
+		cacheHitTokens: usage.cacheHitTokens,
+		cacheMissTokens: usage.cacheMissTokens,
 		source: "provider",
 	};
 }
@@ -794,6 +1089,13 @@ export async function runPlainNormalChatModelRun(
 			providerOptions: resolveProviderOptionsForAttempt(
 				params,
 				currentProvider,
+				{
+					modelId: currentModelId,
+					messages: params.messages,
+					system: params.system,
+					tools: params.tools,
+					toolChoice: params.toolChoice,
+				},
 			),
 		};
 
@@ -831,16 +1133,27 @@ export async function runPlainNormalChatModelRun(
 	}
 }
 
-function resolveProviderOptionsForAttempt(
-	params: Pick<
-		NormalChatModelRunBaseParams,
-		"provider" | "providerOptions" | "resolveProviderOptions"
-	>,
+export function resolveProviderOptionsForAttempt(
+	params: NormalChatModelRunProviderAttemptParams,
 	provider: NormalChatModelRunProvider,
+	context?: NormalChatModelRunProviderOptionAttemptContext,
 ): NormalChatModelRunProviderOptions | undefined {
 	const resolved = params.resolveProviderOptions?.(provider);
-	if (resolved !== undefined) return resolved;
-	return provider === params.provider ? params.providerOptions : undefined;
+	const baseOptions =
+		resolved !== undefined
+			? resolved
+			: provider === params.provider
+				? params.providerOptions
+				: undefined;
+	const resolvedContext = {
+		provider,
+		modelId: context?.modelId,
+		messages: context?.messages ?? params.messages ?? [],
+		system: context?.system ?? params.system,
+		tools: context?.tools ?? params.tools,
+		toolChoice: context?.toolChoice ?? params.toolChoice,
+	};
+	return withPromptCacheOption(resolvedContext, baseOptions);
 }
 
 async function runPlainNormalChatModelRunAttempt(
@@ -914,7 +1227,7 @@ async function runPlainNormalChatModelRunAttempt(
 	return {
 		text: result.text || extractDoneToolSummary(result) || "",
 		finishReason: result.finishReason,
-		usage: mapUsage(result.usage),
+		usage: mapUsage(result.usage, result.providerMetadata),
 		model: modelMetadata(
 			params.provider,
 			result.response.modelId,
@@ -992,6 +1305,13 @@ async function* streamStreamingNormalChatModelRunWithFailover(
 			providerOptions: resolveProviderOptionsForAttempt(
 				params,
 				currentProvider,
+				{
+					modelId: currentModelId,
+					messages: params.messages,
+					system: params.system,
+					tools: params.tools,
+					toolChoice: params.toolChoice,
+				},
 			),
 		};
 		let hasEmittedRetryBoundary = false;
@@ -1258,7 +1578,12 @@ async function* streamStreamingNormalChatModelRunAttempt(
 				case "finish":
 					yield {
 						type: "usage",
-						usage: mapUsage(part.totalUsage),
+						usage: mapUsage(
+							part.totalUsage,
+							"providerMetadata" in part
+								? (part as { providerMetadata?: unknown }).providerMetadata
+								: undefined,
+						),
 					};
 					yield {
 						type: "finish",

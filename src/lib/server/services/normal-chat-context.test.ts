@@ -47,6 +47,7 @@ vi.mock("./web-research", () => ({
 
 import {
 	buildOutboundSystemPrompt,
+	planNormalChatGuidancePacks,
 	prepareOutboundChatContext,
 } from "./normal-chat-context";
 import {
@@ -473,18 +474,177 @@ describe("prepareOutboundChatContext", () => {
 		});
 
 		expect(prompt).toContain(
-			"Prefer the simple form: `requestTitle`, `outputType` or `filename`, and `markdown`, `content`, or `text`.",
+			"Prefer `requestTitle`, `outputType`/`filename`, and `markdown`, `content`, or `text` in tool calls.",
 		);
-		expect(prompt).toContain(
-			'"requestTitle": "News summary", "filename": "hungarian-parliament-news.md", "markdown": "# Hungarian Parliament News\\n\\n## Latest Session\\n\\nThe parliament passed..."',
-		);
-		expect(prompt).toContain(
-			"It handles searching, page fetching, evidence extraction, and answer-brief assembly in one call — there is no separate search or fetch step.",
-		);
+		expect(prompt).toContain("requestTitle");
+		expect(prompt).toContain("filename");
+		expect(prompt).toContain("markdown");
+		expect(prompt).toContain("produce_file");
 		expect(prompt).not.toMatch(/Langflow/i);
 		expect(prompt).not.toContain("JSON string containing an array");
 		expect(prompt).not.toContain("JSON-encoded array string");
 		expect(prompt).not.toContain("current legacy external search flows");
+	});
+
+	describe("planNormalChatGuidancePacks", () => {
+		it("keeps simple direct prompts compact and estimates savings versus full guidance", () => {
+			const compactPlan = planNormalChatGuidancePacks({
+				message: "Ping!",
+				responseLanguage: "en",
+			});
+
+			expect(compactPlan.mode).toBe("compact");
+			expect(compactPlan.selectedPackIds).toEqual([
+				"runtime-core",
+				"json-formatting",
+				"tool-termination",
+			]);
+			expect(compactPlan.selectedPackTokenEstimate).toBeLessThan(
+				compactPlan.fullPackTokenEstimate,
+			);
+			expect(compactPlan.estimatedTokenSavings).toBeGreaterThan(0);
+		});
+
+		it("keeps standalone Q&A prompts compact", () => {
+			const twoPlusTwoPlan = planNormalChatGuidancePacks({
+				message: "What is 2+2?",
+				responseLanguage: "en",
+			});
+			expect(twoPlusTwoPlan.mode).toBe("compact");
+			expect(twoPlusTwoPlan.selectedPackIds).toEqual([
+				"runtime-core",
+				"json-formatting",
+				"tool-termination",
+			]);
+			expect(twoPlusTwoPlan.selectedPackIds).not.toContain("web-core");
+
+			const whoAreYouPlan = planNormalChatGuidancePacks({
+				message: "Who are you?",
+				responseLanguage: "en",
+			});
+			expect(whoAreYouPlan.mode).toBe("compact");
+			expect(whoAreYouPlan.selectedPackIds).toEqual([
+				"runtime-core",
+				"json-formatting",
+				"tool-termination",
+			]);
+		});
+
+		it("keeps benchmark test prompts with explicit non-tool constraints compact", () => {
+			const plan = planNormalChatGuidancePacks({
+				message:
+					"Reply in one short sentence about safe benchmark prompts. Do not use external tools, web search, or files.",
+				responseLanguage: "en",
+			});
+
+			expect(plan.mode).toBe("compact");
+			expect(plan.selectedPackIds).toEqual([
+				"runtime-core",
+				"json-formatting",
+				"tool-termination",
+			]);
+		});
+
+		it("selects file guidance when a new-file request is detected", () => {
+			const plan = planNormalChatGuidancePacks({
+				message: "Can you turn this into a PDF for me?",
+				responseLanguage: "en",
+			});
+
+			expect(plan.mode).toBe("compact");
+			expect(plan.selectedPackIds).toEqual(
+				expect.arrayContaining(["file-core"]),
+			);
+			expect(plan.selectedPackIds).not.toContain("file-detailed");
+		});
+
+		it("selects revision guidance for generated-file edits", () => {
+			const plan = planNormalChatGuidancePacks({
+				message: "Can you shorten the report we made?",
+				responseLanguage: "en",
+			});
+
+			expect(plan.selectedPackIds).toEqual(
+				expect.arrayContaining(["file-core", "file-detailed"]),
+			);
+		});
+
+		it("selects web packs for source-backed current prompts", () => {
+			const plan = planNormalChatGuidancePacks({
+				message:
+					"Is this still true today? Back it with a source and verify official policy.",
+				responseLanguage: "en",
+			});
+
+			expect(plan.selectedPackIds).toEqual(
+				expect.arrayContaining(["web-core", "web-detailed"]),
+			);
+		});
+
+		it("selects web packs for release/freshness prompts", () => {
+			const plan = planNormalChatGuidancePacks({
+				message: "What is the latest SvelteKit release?",
+				responseLanguage: "en",
+			});
+
+			expect(plan.selectedPackIds).toEqual(
+				expect.arrayContaining(["web-core", "web-detailed"]),
+			);
+			expect(plan.mode).toBe("compact");
+		});
+
+		it("selects image guidance for venue image prompts", () => {
+			const plan = planNormalChatGuidancePacks({
+				message: "Show me what this venue looks like.",
+				responseLanguage: "en",
+			});
+
+			expect(plan.selectedPackIds).toEqual(
+				expect.arrayContaining(["image-search"]),
+			);
+			expect(plan.mode).toBe("compact");
+		});
+
+		it("selects memory guidance for project-folder continuity prompts", () => {
+			const plan = planNormalChatGuidancePacks({
+				message: "Use my previous notes from the project folder.",
+				responseLanguage: "en",
+			});
+
+			expect(plan.selectedPackIds).toEqual(
+				expect.arrayContaining(["memory-core"]),
+			);
+			expect(plan.mode).toBe("compact");
+		});
+
+		it("selects memory guidance for remember prompts", () => {
+			const plan = planNormalChatGuidancePacks({
+				message: "What do you remember about my bike setup?",
+				responseLanguage: "en",
+			});
+
+			expect(plan.selectedPackIds).toEqual(
+				expect.arrayContaining(["memory-core"]),
+			);
+		});
+
+		it("falls back to conservative full guidance for ambiguous and high-stakes prompts", () => {
+			const attachmentPlan = planNormalChatGuidancePacks({
+				message:
+					"Please review the attached legal contract and summarize the financial, policy, and compliance implications.",
+				attachmentIds: ["att-1"],
+				activeDocumentArtifactId: "doc-1",
+				responseLanguage: "en",
+			});
+
+			expect(attachmentPlan.mode).toBe("full");
+			expect(attachmentPlan.fallbackReason).toBe(
+				"full_fallback_attachment_or_activity",
+			);
+			expect(attachmentPlan.selectedPackIds).toEqual(
+				expect.arrayContaining(["runtime-core", "web-core", "memory-core"]),
+			);
+		});
 	});
 
 	it("adds depth grounding guidance without forcing web search", () => {
@@ -1155,9 +1315,43 @@ describe("prepareOutboundChatContext", () => {
 		expect(prepared.inputValue).toBe(compressedInput);
 		expect(prepared.contextStatus).toBe(compressedStatus);
 		expect(prepared.contextDebug).toBe(compressedDebug);
+		expect(prepared.systemPrompt).toContain("Tool Termination:");
 		expect(prepared.systemPrompt).toContain(
-			"Tool argument safety for URL-processing tools",
+			"Tool JSON formatting rules — all tool arguments MUST be valid JSON:",
 		);
+	});
+
+	it("returns guidance-pack diagnostics without exposing prompt body", async () => {
+		const prepared = await prepareOutboundChatContext({
+			message: "Ping!",
+			sessionId: "conv-1",
+			modelConfig,
+			skipHonchoContext: true,
+			modelId: "model1",
+			contextLimits: {
+				maxModelContext: 262_144,
+				compactionUiThreshold: 209_715,
+				targetConstructedContext: 157_286,
+			},
+			logLabel: "provider request",
+		});
+
+		expect(prepared.promptPackPlan).toEqual(
+			expect.objectContaining({
+				mode: "compact",
+				selectedPackIds: [
+					"runtime-core",
+					"json-formatting",
+					"tool-termination",
+				],
+				fullPackIds: expect.any(Array),
+				selectedPackTokenEstimate: expect.any(Number),
+				fullPackTokenEstimate: expect.any(Number),
+				estimatedTokenSavings: expect.any(Number),
+				fallbackReason: expect.any(String),
+			}),
+		);
+		expect(prepared.promptPackPlan?.estimatedTokenSavings).toBeGreaterThan(0);
 	});
 
 	it("prefetches forced web search before the current user message through the neutral Normal Chat context boundary", async () => {
@@ -1193,8 +1387,9 @@ describe("prepareOutboundChatContext", () => {
 		expect(prepared.inputValue).toContain(
 			"## Current User Message\nWhat changed today?",
 		);
+		expect(prepared.systemPrompt).toContain("Web research workflow:");
 		expect(prepared.systemPrompt).toContain(
-			"Tool argument safety for URL-processing tools",
+			"Current-turn forced web retrieval:",
 		);
 		expect(prepared.prefetchedToolCalls).toEqual([
 			expect.objectContaining({
@@ -1313,8 +1508,9 @@ describe("prepareOutboundChatContext", () => {
 			logLabel: "provider request",
 		});
 
+		expect(prepared.systemPrompt).toContain("Web research workflow:");
 		expect(prepared.systemPrompt).toContain(
-			"Tool argument safety for URL-processing tools",
+			"Current-turn forced web retrieval:",
 		);
 	});
 

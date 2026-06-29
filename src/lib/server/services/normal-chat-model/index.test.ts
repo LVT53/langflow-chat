@@ -2,6 +2,7 @@ import { generateText, streamText, tool } from "ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { createModelCapabilitySet } from "$lib/model-capabilities";
+import type { ModelId } from "$lib/types";
 import {
 	createFixtureEventStreamResponse,
 	type ProviderStreamFixture,
@@ -31,6 +32,7 @@ import {
 	buildNormalChatModelRunProviderOptions,
 	createOpenAICompatibleProviderForNormalChatModelRun,
 	mapNormalChatModelRunUsageToProviderSnapshot,
+	mapUsage,
 	resolveNormalChatModelRunProvider,
 	runPlainNormalChatModelRun,
 	runStreamingNormalChatModelRun,
@@ -156,6 +158,28 @@ function parseRequestBody(fetchMock: FetchMock, callIndex = 0) {
 	return JSON.parse(String(fetchMock.mock.calls[callIndex]?.[1]?.body));
 }
 
+function extractPromptCacheKeyFromRequestBody(
+	body: unknown,
+): string | undefined {
+	if (!body || typeof body !== "object") return undefined;
+	const record = body as Record<string, unknown>;
+	if (typeof record.promptCacheKey === "string") return record.promptCacheKey;
+	if (typeof record.prompt_cache_key === "string")
+		return record.prompt_cache_key;
+	const providerOptions = record.providerOptions;
+	if (!providerOptions || typeof providerOptions !== "object") return undefined;
+	const providerOptionsRecord = providerOptions as Record<string, unknown>;
+	const openai =
+		providerOptionsRecord.openai &&
+		typeof providerOptionsRecord.openai === "object"
+			? (providerOptionsRecord.openai as Record<string, unknown>)
+			: undefined;
+	if (openai && typeof openai.promptCacheKey === "string") {
+		return openai.promptCacheKey;
+	}
+	return undefined;
+}
+
 function createStreamChunk(input: {
 	id?: string;
 	model?: string;
@@ -255,6 +279,24 @@ function createProviderFromFixture(
 		baseUrl: fixture.baseUrl,
 		modelName: options.requestedModelName ?? fixture.model,
 		apiKey: "plain-secret",
+	};
+}
+
+function createModelProvider(overrides: {
+	id: string;
+	name: string;
+	displayName: string;
+	baseUrl: string;
+	modelName: string;
+	apiKey?: string;
+}) {
+	return {
+		id: overrides.id,
+		name: overrides.name,
+		displayName: overrides.displayName,
+		baseUrl: overrides.baseUrl,
+		modelName: overrides.modelName,
+		apiKey: overrides.apiKey ?? "plain-secret",
 	};
 }
 
@@ -716,6 +758,126 @@ describe("Normal Chat Model Run provider options", () => {
 		});
 	});
 
+	it("adds a stable OpenAI prompt-cache key for plain attempts based on prompt shape", async () => {
+		const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+			createMockChatCompletionResponse({
+				message: {
+					role: "assistant",
+					content: "Plain answer",
+				},
+				usage: {
+					prompt_tokens: 11,
+					completion_tokens: 7,
+					total_tokens: 18,
+				},
+			}),
+		);
+		const provider = createModelProvider({
+			id: "openai-provider",
+			name: "openai",
+			displayName: "OpenAI",
+			baseUrl: "https://api.openai.com/v1",
+			modelName: "gpt-4.1",
+		});
+		const commonParams = {
+			modelId: "provider-openai" as ModelId,
+			messages: [userTextMessage("Tell me the latest headline.")],
+			system: "Use short, direct answers.",
+			fetch,
+		};
+
+		await runPlainNormalChatModelRun({
+			...commonParams,
+			provider,
+		});
+
+		const firstBody = parseRequestBody(fetch);
+		const firstKey = extractPromptCacheKeyFromRequestBody(firstBody);
+		expect(typeof firstKey).toBe("string");
+		expect(firstKey).toHaveLength(32);
+		expect(firstKey).not.toContain("latest headline");
+		expect(firstKey).not.toContain("Use short, direct answers.");
+
+		fetch.mockClear();
+		await runPlainNormalChatModelRun({
+			...commonParams,
+			provider,
+			messages: [userTextMessage("What is the weather tomorrow?")],
+			system: "Use short, direct answers.",
+		});
+
+		const secondBody = parseRequestBody(fetch);
+		expect(extractPromptCacheKeyFromRequestBody(secondBody)).toBe(firstKey);
+	});
+
+	it("preserves a caller-supplied openai.promptCacheKey for plain attempts", async () => {
+		const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+			createMockChatCompletionResponse({
+				message: {
+					role: "assistant",
+					content: "Plain answer",
+				},
+				usage: {
+					prompt_tokens: 11,
+					completion_tokens: 7,
+					total_tokens: 18,
+				},
+			}),
+		);
+		const provider = createModelProvider({
+			id: "provider-openai",
+			name: "openai",
+			displayName: "OpenAI",
+			baseUrl: "https://api.openai.com/v1",
+			modelName: "gpt-4.1",
+		});
+
+		await runPlainNormalChatModelRun({
+			provider,
+			messages: [{ role: "user", content: [{ type: "text", text: "Hi" }] }],
+			providerOptions: {
+				openai: {
+					promptCacheKey: "caller-key-123",
+				},
+			},
+			fetch,
+		});
+
+		const body = parseRequestBody(fetch);
+		expect(extractPromptCacheKeyFromRequestBody(body)).toBe("caller-key-123");
+	});
+
+	it("does not add openai.promptCacheKey for non-OpenAI-compatible family providers", async () => {
+		const fetch = vi.fn<typeof globalThis.fetch>(async () =>
+			createMockChatCompletionResponse({
+				message: {
+					role: "assistant",
+					content: "Plain answer",
+				},
+				usage: {
+					prompt_tokens: 11,
+					completion_tokens: 7,
+					total_tokens: 18,
+				},
+			}),
+		);
+
+		await runPlainNormalChatModelRun({
+			provider: createModelProvider({
+				id: "fireworks-provider",
+				name: "fireworks",
+				displayName: "Fireworks",
+				baseUrl: "https://api.fireworks.ai/inference/v1",
+				modelName: "accounts/fireworks/models/kimi-k2p6",
+			}),
+			messages: [{ role: "user", content: [{ type: "text", text: "Hi" }] }],
+			fetch,
+		});
+
+		const body = parseRequestBody(fetch);
+		expect(extractPromptCacheKeyFromRequestBody(body)).toBeUndefined();
+	});
+
 	it("suppresses reasoning options when capability evidence says reasoning controls are unsupported", () => {
 		const provider = {
 			id: "provider-1",
@@ -910,6 +1072,64 @@ describe("Normal Chat Model Run usage mapping", () => {
 			}),
 		).toBeNull();
 	});
+
+	it("maps cached prompt tokens from usage input token details", () => {
+		expect(
+			mapUsage({
+				inputTokens: 100,
+				outputTokens: 20,
+				totalTokens: 120,
+				outputTokenDetails: {
+					textTokens: 20,
+					reasoningTokens: 0,
+				},
+				inputTokenDetails: {
+					cacheReadTokens: 11,
+					cacheWriteTokens: 3,
+					noCacheTokens: 86,
+				},
+			}),
+		).toEqual({
+			inputTokens: 100,
+			outputTokens: 20,
+			totalTokens: 120,
+			cachedInputTokens: 14,
+			cacheHitTokens: 11,
+			cacheMissTokens: 86,
+		});
+	});
+
+	it("falls back to provider metadata cached prompt tokens when details are absent", () => {
+		expect(
+			mapUsage(
+				{
+					inputTokens: 50,
+					outputTokens: 10,
+					totalTokens: 60,
+					inputTokenDetails: {
+						noCacheTokens: undefined,
+						cacheReadTokens: undefined,
+						cacheWriteTokens: undefined,
+					},
+					outputTokenDetails: {
+						textTokens: 10,
+						reasoningTokens: 0,
+					},
+				},
+				{
+					openai: {
+						cachedPromptTokens: 75,
+					},
+				},
+			),
+		).toEqual({
+			inputTokens: 50,
+			outputTokens: 10,
+			totalTokens: 60,
+			cachedInputTokens: 75,
+			cacheHitTokens: 75,
+		});
+	});
 });
 
 describe("Plain Normal Chat Model Run", () => {
@@ -976,7 +1196,7 @@ describe("Plain Normal Chat Model Run", () => {
 			fetch,
 		});
 
-		expect(result).toEqual({
+		expect(result).toMatchObject({
 			text: "Plain answer",
 			finishReason: "stop",
 			usage: {
@@ -2659,7 +2879,7 @@ describe("Streaming Normal Chat Model Run", () => {
 			fetch,
 		});
 
-		expect(events).toEqual([
+		const expected = [
 			{ type: "text_delta", text: "Plain " },
 			{ type: "text_delta", text: "stream" },
 			{
@@ -2683,7 +2903,9 @@ describe("Streaming Normal Chat Model Run", () => {
 					responseModelName: "stream-model",
 				},
 			},
-		]);
+		];
+		expect(events).toHaveLength(expected.length);
+		expect(events).toMatchObject(expected);
 		expect(fetch).toHaveBeenCalledWith(
 			"https://api.fireworks.ai/inference/v1/chat/completions",
 			expect.objectContaining({
@@ -2751,7 +2973,7 @@ describe("Streaming Normal Chat Model Run", () => {
 			fetch,
 		});
 
-		expect(events).toEqual([
+		const expected = [
 			{
 				type: "reasoning_delta",
 				text: "Use preserved thinking. ",
@@ -2778,7 +3000,10 @@ describe("Streaming Normal Chat Model Run", () => {
 					responseModelName: "qwen3.6-plus",
 				},
 			},
-		]);
+		];
+
+		expect(events).toHaveLength(expected.length);
+		expect(events).toMatchObject(expected);
 	});
 
 	it.each([
@@ -2927,7 +3152,8 @@ describe("Streaming Normal Chat Model Run", () => {
 			expectedFixtureFinishEvent(fixture, requestedModelName),
 		];
 
-		expect(events).toEqual(expected);
+		expect(events).toHaveLength(expected.length);
+		expect(events).toMatchObject(expected);
 		expect(events.map((event) => event.type)).toEqual(
 			expected.map((event) => event.type),
 		);
@@ -2956,7 +3182,7 @@ describe("Streaming Normal Chat Model Run", () => {
 			maxRetries: 0,
 		});
 
-		expect(events).toEqual([
+		expect(events).toMatchObject([
 			{
 				type: "tool_call",
 				callId: "call_compat_0",

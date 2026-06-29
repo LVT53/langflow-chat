@@ -34,6 +34,7 @@ import {
 	type NormalChatContextPreparationStageTiming,
 	runNormalChatContextPreparationStages,
 } from "./normal-chat-context-preparation";
+import { isProduceFileRequest } from "./normal-chat-tools/produce-file";
 
 const UNKNOWN_PROVIDER_MAX_MODEL_CONTEXT_FALLBACK = 150_000;
 const CURRENT_USER_MESSAGE_MARKER = "## Current User Message\n";
@@ -77,6 +78,7 @@ export type PreparedOutboundChatContext = {
 	prefetchedToolCalls?: ToolCallEntry[];
 	outputTokenBudget?: OutputTokenBudget;
 	contextLimits: PromptContextLimits;
+	promptPackPlan?: NormalChatGuidancePackSelection;
 	contextPreparationTimings?: NormalChatContextPreparationStageTiming[];
 };
 
@@ -86,6 +88,469 @@ export type OutputTokenBudget = {
 	outputReserve: number;
 	outputReserveClamped: boolean;
 };
+
+export type NormalChatGuidancePackInput = {
+	message: string;
+	responseLanguage?: SupportedLanguage;
+	forceWebSearch?: boolean;
+	attachmentIds?: string[];
+	activeDocumentArtifactId?: string | null;
+	reasoningDepthEffort?: ReasoningDepthEffort;
+	skipDefaultRuntimeGuidance?: boolean;
+};
+
+const NORMAL_CHAT_GUIDANCE_PACK_REASONS = {
+	disabled: "skip_default_runtime_guidance",
+	compact_turn: "compact_turn",
+	full_fallback_attachment_or_activity: "full_fallback_attachment_or_activity",
+	full_fallback_forced_web: "full_fallback_forced_web",
+	full_fallback_ambiguous_or_high_risk: "full_fallback_ambiguous_or_high_risk",
+	full_fallback_no_intent: "full_fallback_no_intent",
+	full_default: "full_default",
+};
+
+const SIMPLE_DIRECT_PROMPT_MAX_WORDS = 8;
+const SIMPLE_DIRECT_PROMPT_MAX_LENGTH = 120;
+const COMPLEX_PROMPT_MIN_WORDS = 35;
+const FILE_REVISION_RE =
+	/\b(update|revise|shorten|rewrite|modify|edit|expand|correct|rework|fix)\b/i;
+const FILE_EDIT_CONTEXT_RE =
+	/\b(file|report|document|draft|summary|md|markdown|pdf|docx?|xlsx?|pptx?|html|csv|json|zip|archive)\b/i;
+const FILE_INTENT_CONVERSION_RE =
+	/\b(turn|convert|transform|make|create|build|export|save)\b.*\b(pdf|docx?|xlsx?|pptx?|txt|html|markdown|md|csv|json|zip|archive)\b/i;
+const MEMORY_CONTEXT_RE =
+	/\b(previous|past|prior|history|project|folder|notes?|continuity|person(al)?|preference|memory|my notes|sibling|conversation|remember|remembered|recall|recalled)\b/i;
+const MEMORY_DETAILED_RE =
+	/\b(previous notes|project folder|project history|project context|project continuity|use my previous|use previous|across my project|folder context)\b/i;
+const IMAGE_CONTEXT_RE =
+	/\b(image|images|photo|photos|picture|pictures|snapshot|venue|look|gallery)\b/i;
+const IMAGE_INTENT_RE =
+	/\b(show|find|give|get|provide|display)\b.{0,30}\b(image|images|photo|photos|picture|pictures|venue)\b/i;
+const WEB_INTENT_RE =
+	/\b(today|current|latest|recent|still true|source|sources|fact|verif(y|ied)|evidence|research|search|price|availability|spec|policy)\b/i;
+const WEB_SOURCE_PRIORITY_RE =
+	/\b(today|current|latest|still true|as of|back it with a source|source)\b/i;
+const HIGH_RISK_RE =
+	/\b(legal|medical|financial|tax|policy|safety|security|compliance|leadership|news|ranking|score)\b/i;
+const NO_TOOL_DIRECTIVE_RE =
+	/\b(do not|don't)\s+use\s+(web\s+search|external\s+tools|tools?|files?|web)\b/i;
+const SHORT_PROMPT_STYLE_RE =
+	/\b(reply|answer)\b.*\b(short|brief)\b.*\b(sentence|sentences)\b/i;
+
+const NORMAL_CHAT_GUIDANCE_PACK_IDS = [
+	"runtime-core",
+	"json-formatting",
+	"tool-termination",
+	"file-core",
+	"file-detailed",
+	"image-search",
+	"web-core",
+	"web-detailed",
+	"memory-core",
+	"memory-detailed",
+	"url-argument",
+	"forced-web",
+] as const;
+
+export type NormalChatGuidancePackId =
+	(typeof NORMAL_CHAT_GUIDANCE_PACK_IDS)[number];
+
+type NormalChatGuidancePackMode = "compact" | "full" | "disabled";
+
+type NormalChatGuidancePackTextInput = {
+	responseLanguage: SupportedLanguage;
+	explicitDateContext: string;
+	dateBeforeSearchGuidance: string;
+	reasoningDepthEffort?: ReasoningDepthEffort;
+	forceWebSearch?: boolean;
+	containsHttpUrl: boolean;
+};
+
+type NormalChatGuidancePack = {
+	id: NormalChatGuidancePackId;
+	description: string;
+	getText: (input: NormalChatGuidancePackTextInput) => string;
+};
+
+export type NormalChatGuidancePackSelection = {
+	mode: NormalChatGuidancePackMode;
+	selectedPackIds: NormalChatGuidancePackId[];
+	fullPackIds: NormalChatGuidancePackId[];
+	selectedPackTokenEstimate: number;
+	fullPackTokenEstimate: number;
+	estimatedTokenSavings: number;
+	fallbackReason: string | null;
+};
+
+function containsDirectHttpUrl(value: string): boolean {
+	return DIRECT_HTTP_URL_RE.test(value);
+}
+
+function isLikelySimpleDirectPrompt(message: string): boolean {
+	const trimmed = message.trim();
+	const hasNoToolDirective = NO_TOOL_DIRECTIVE_RE.test(trimmed);
+	if (!trimmed) {
+		return false;
+	}
+	if (trimmed.length > SIMPLE_DIRECT_PROMPT_MAX_LENGTH) {
+		return false;
+	}
+	if (containsDirectHttpUrl(trimmed)) {
+		return false;
+	}
+	if (
+		(!hasNoToolDirective && WEB_INTENT_RE.test(trimmed)) ||
+		MEMORY_CONTEXT_RE.test(trimmed)
+	) {
+		return false;
+	}
+	if (isProduceFileRequest(trimmed) || IMAGE_INTENT_RE.test(trimmed)) {
+		return false;
+	}
+	const maybeLongDirectPrompt =
+		trimmed.split(/\s+/).length <= SIMPLE_DIRECT_PROMPT_MAX_WORDS;
+	if (!maybeLongDirectPrompt) {
+		return (
+			NO_TOOL_DIRECTIVE_RE.test(trimmed) || SHORT_PROMPT_STYLE_RE.test(trimmed)
+		);
+	}
+
+	return true;
+}
+
+function buildGuidancePackText(
+	id: NormalChatGuidancePackId,
+	input: NormalChatGuidancePackTextInput,
+): string {
+	const pack = NORMAL_CHAT_GUIDANCE_PACKS[id];
+	return pack.getText(input);
+}
+
+function estimateGuidancePackTokens({
+	packIds,
+	input,
+}: {
+	packIds: NormalChatGuidancePackId[];
+	input: NormalChatGuidancePackTextInput;
+}): number {
+	return packIds.reduce(
+		(total, id) =>
+			total + Math.ceil(estimateTokenCount(buildGuidancePackText(id, input))),
+		0,
+	);
+}
+
+function resolveBaseFullPackIds(params: {
+	message: string;
+	forceWebSearch?: boolean;
+}): NormalChatGuidancePackId[] {
+	const hasUrl = containsDirectHttpUrl(params.message);
+	const baseIds = [...NORMAL_CHAT_FULL_GUIDANCE_PACK_IDS];
+	if (hasUrl) {
+		baseIds.push("url-argument");
+	}
+	if (params.forceWebSearch === true) {
+		baseIds.push("forced-web");
+	}
+	return baseIds;
+}
+
+function resolveCoreGuidancePackIds(): NormalChatGuidancePackId[] {
+	return ["runtime-core", "json-formatting", "tool-termination"];
+}
+
+function resolveFullGuidancePackIds(params: {
+	message: string;
+	forceWebSearch?: boolean;
+}): NormalChatGuidancePackId[] {
+	return Array.from(new Set(resolveBaseFullPackIds(params)));
+}
+
+function resolveGuidancePackSelection(
+	params: NormalChatGuidancePackInput,
+): NormalChatGuidancePackSelection {
+	const message = params.message ?? "";
+	if (params.skipDefaultRuntimeGuidance) {
+		return {
+			mode: "disabled",
+			selectedPackIds: [],
+			fullPackIds: [],
+			selectedPackTokenEstimate: 0,
+			fullPackTokenEstimate: 0,
+			estimatedTokenSavings: 0,
+			fallbackReason: NORMAL_CHAT_GUIDANCE_PACK_REASONS.disabled,
+		};
+	}
+
+	const responseLanguage = params.responseLanguage ?? detectLanguage(message);
+	const todayStr = new Date().toLocaleDateString("en-US", {
+		weekday: "long",
+		year: "numeric",
+		month: "long",
+		day: "numeric",
+	});
+	const explicitDateContext = `[SYSTEM TIME CONTEXT: Today is ${todayStr}. Use this exact date as your current temporal anchor for relative timeframes. Call a date/time tool only when exact current time, timezone, or freshness-sensitive tool behavior materially depends on it.]`;
+	const dateBeforeSearchGuidance = DATE_BEFORE_SEARCH_GUARD;
+	const hasUrl = containsDirectHttpUrl(message);
+	const hasAttachmentOrActiveDoc =
+		(params.attachmentIds?.length ?? 0) > 0 ||
+		Boolean(params.activeDocumentArtifactId);
+	const fileIntent =
+		isProduceFileRequest(message) ||
+		FILE_INTENT_CONVERSION_RE.test(message) ||
+		(FILE_REVISION_RE.test(message) && FILE_EDIT_CONTEXT_RE.test(message));
+	const fileRevisionIntent = fileIntent && FILE_REVISION_RE.test(message);
+	const imageIntent =
+		IMAGE_INTENT_RE.test(message) || IMAGE_CONTEXT_RE.test(message);
+	const memoryIntent = MEMORY_CONTEXT_RE.test(message);
+	const memoryDetailedIntent = MEMORY_DETAILED_RE.test(message);
+	const hasNoToolDirective = NO_TOOL_DIRECTIVE_RE.test(message);
+	const webIntent =
+		!hasNoToolDirective &&
+		(WEB_SOURCE_PRIORITY_RE.test(message) || WEB_INTENT_RE.test(message));
+	const hasUrlIntent = hasUrl;
+	const words = message.trim().split(/\s+/).filter(Boolean);
+	const compactEligible = isLikelySimpleDirectPrompt(message);
+	const likelyAmbiguousOrHighRisk =
+		words.length >= COMPLEX_PROMPT_MIN_WORDS ||
+		HIGH_RISK_RE.test(message) ||
+		(params.reasoningDepthEffort?.depthMetadata.appliedProfile === "maximum" &&
+			message.trim().length > 40);
+
+	const fullPackIds = resolveFullGuidancePackIds({
+		message,
+		forceWebSearch: params.forceWebSearch,
+	});
+	let selectedPackIds: NormalChatGuidancePackId[] =
+		resolveCoreGuidancePackIds();
+	let fallbackReason = NORMAL_CHAT_GUIDANCE_PACK_REASONS.compact_turn;
+
+	if (fileIntent) {
+		selectedPackIds = [
+			...selectedPackIds,
+			"file-core",
+			...(fileRevisionIntent ? (["file-detailed"] as const) : ([] as const)),
+		];
+		fallbackReason = NORMAL_CHAT_GUIDANCE_PACK_REASONS.compact_turn;
+	}
+
+	if (imageIntent) {
+		selectedPackIds = [...selectedPackIds, "image-search"];
+		fallbackReason = NORMAL_CHAT_GUIDANCE_PACK_REASONS.compact_turn;
+	}
+
+	if (memoryIntent) {
+		selectedPackIds = [
+			...selectedPackIds,
+			"memory-core",
+			...(memoryDetailedIntent
+				? (["memory-detailed"] as const)
+				: ([] as const)),
+		];
+		fallbackReason = NORMAL_CHAT_GUIDANCE_PACK_REASONS.compact_turn;
+	}
+
+	if (webIntent) {
+		selectedPackIds = [...selectedPackIds, "web-core", "web-detailed"];
+		fallbackReason = NORMAL_CHAT_GUIDANCE_PACK_REASONS.compact_turn;
+	}
+	if (hasUrlIntent) {
+		selectedPackIds = [...selectedPackIds, "url-argument"];
+		fallbackReason = NORMAL_CHAT_GUIDANCE_PACK_REASONS.full_fallback_forced_web;
+	}
+	if (params.forceWebSearch === true) {
+		selectedPackIds = [...selectedPackIds, "forced-web"];
+		fallbackReason = NORMAL_CHAT_GUIDANCE_PACK_REASONS.full_fallback_forced_web;
+	}
+
+	const fullMode =
+		hasAttachmentOrActiveDoc ||
+		params.forceWebSearch === true ||
+		hasUrlIntent ||
+		(!compactEligible &&
+			(fileIntent || imageIntent || memoryIntent || webIntent) === false) ||
+		(likelyAmbiguousOrHighRisk &&
+			!fileIntent &&
+			!imageIntent &&
+			!memoryIntent &&
+			!webIntent);
+
+	if (fullMode) {
+		selectedPackIds = [
+			...resolveCoreGuidancePackIds(),
+			...fullPackIds.filter((id) => id !== "runtime-core"),
+		];
+		if (fileIntent) {
+			selectedPackIds = Array.from(new Set([...selectedPackIds, "file-core"]));
+			if (fileRevisionIntent) {
+				selectedPackIds.push("file-detailed");
+			}
+		}
+		if (hasAttachmentOrActiveDoc) {
+			fallbackReason =
+				NORMAL_CHAT_GUIDANCE_PACK_REASONS.full_fallback_attachment_or_activity;
+		} else if (hasUrlIntent || params.forceWebSearch === true) {
+			fallbackReason =
+				NORMAL_CHAT_GUIDANCE_PACK_REASONS.full_fallback_forced_web;
+		} else if (likelyAmbiguousOrHighRisk) {
+			fallbackReason =
+				NORMAL_CHAT_GUIDANCE_PACK_REASONS.full_fallback_ambiguous_or_high_risk;
+		} else {
+			fallbackReason =
+				NORMAL_CHAT_GUIDANCE_PACK_REASONS.full_fallback_no_intent;
+		}
+	} else if (
+		!compactEligible &&
+		selectedPackIds.length <= resolveCoreGuidancePackIds().length
+	) {
+		fallbackReason = NORMAL_CHAT_GUIDANCE_PACK_REASONS.full_fallback_no_intent;
+		selectedPackIds = [...fullPackIds];
+	}
+
+	const selectedPackIdsUnique = Array.from(new Set(selectedPackIds));
+	const selectedPackTokenEstimate = estimateGuidancePackTokens({
+		packIds: selectedPackIdsUnique,
+		input: {
+			responseLanguage,
+			explicitDateContext,
+			dateBeforeSearchGuidance,
+			forceWebSearch: params.forceWebSearch,
+			containsHttpUrl: hasUrl,
+		},
+	});
+	const fullPackIdsUnique = Array.from(new Set(fullPackIds));
+	const fullPackTokenEstimate = estimateGuidancePackTokens({
+		packIds: fullPackIdsUnique,
+		input: {
+			responseLanguage,
+			explicitDateContext,
+			dateBeforeSearchGuidance,
+			forceWebSearch: params.forceWebSearch,
+			containsHttpUrl: hasUrl,
+		},
+	});
+
+	return {
+		mode: fullMode ? "full" : "compact",
+		selectedPackIds: selectedPackIdsUnique,
+		fullPackIds: fullPackIdsUnique,
+		selectedPackTokenEstimate,
+		fullPackTokenEstimate,
+		estimatedTokenSavings: Math.max(
+			0,
+			fullPackTokenEstimate - selectedPackTokenEstimate,
+		),
+		fallbackReason,
+	};
+}
+
+export function planNormalChatGuidancePacks(
+	params: NormalChatGuidancePackInput,
+): NormalChatGuidancePackSelection {
+	return resolveGuidancePackSelection(params);
+}
+
+const NORMAL_CHAT_GUIDANCE_PACKS: Record<
+	NormalChatGuidancePackId,
+	NormalChatGuidancePack
+> = {
+	"runtime-core": {
+		id: "runtime-core",
+		description: "Temporal, language, and JSON protocol preamble",
+		getText: ({
+			responseLanguage,
+			explicitDateContext,
+			dateBeforeSearchGuidance,
+		}) =>
+			[
+				explicitDateContext,
+				dateBeforeSearchGuidance,
+				buildResponseLanguageGuard(responseLanguage),
+			].join("\n\n"),
+	},
+	"json-formatting": {
+		id: "json-formatting",
+		description: "JSON argument formatting and safety",
+		getText: () => JSON_FORMATTING_RULES,
+	},
+	"tool-termination": {
+		id: "tool-termination",
+		description: "tool loop completion guidance",
+		getText: () => TOOL_TERMINATION_GUARD,
+	},
+	"file-core": {
+		id: "file-core",
+		description: "concise file-production trigger and request workflow",
+		getText: () =>
+			[
+				"File production workflow:",
+				"- If the user asks for a downloadable artifact and `produce_file` is available, call `produce_file`. Do not describe file creation as prose only.",
+				"- Prefer `requestTitle`, `outputType`/`filename`, and `markdown`, `content`, or `text` in tool calls.",
+				"- `produce_file` success starts the file job and returns back through normal durable chat progress. Do not invent placeholder content.",
+			].join("\n"),
+	},
+	"file-detailed": {
+		id: "file-detailed",
+		description: "generated-file read/edit and patch guidance",
+		getText: () => FILE_GENERATION_GUARD,
+	},
+	"image-search": {
+		id: "image-search",
+		description: "image search tool guidance",
+		getText: () => IMAGE_SEARCH_GUARD,
+	},
+	"web-core": {
+		id: "web-core",
+		description: "primary web search workflow",
+		getText: () => WEB_RESEARCH_GUARD,
+	},
+	"web-detailed": {
+		id: "web-detailed",
+		description:
+			"detailed query planning, authority, cutoff-safe, exact-fact and source linking guidance",
+		getText: () =>
+			[
+				WEB_SEARCH_QUERY_PLANNING_GUARD,
+				KNOWLEDGE_CUTOFF_SAFE_RESEARCH_GUARD,
+				WEB_FACT_EXTRACTION_GUARD,
+				SOURCE_LINKING_GUARD,
+				SOURCE_AUTHORITY_GUARD,
+			].join("\n\n"),
+	},
+	"memory-core": {
+		id: "memory-core",
+		description: "memory context workflow",
+		getText: () => MEMORY_CONTEXT_GUARD,
+	},
+	"memory-detailed": {
+		id: "memory-detailed",
+		description: "project-folder and persona memory detail",
+		getText: () => PERSONA_MEMORY_GUARD,
+	},
+	"url-argument": {
+		id: "url-argument",
+		description: "URL argument guard for pasted links",
+		getText: () => URL_LIST_TOOL_ARGUMENT_GUARD,
+	},
+	"forced-web": {
+		id: "forced-web",
+		description: "forced web retrieval guidance",
+		getText: () => FORCE_WEB_SEARCH_GUARD,
+	},
+};
+
+const NORMAL_CHAT_FULL_GUIDANCE_PACK_IDS: NormalChatGuidancePackId[] = [
+	"runtime-core",
+	"json-formatting",
+	"tool-termination",
+	"file-core",
+	"file-detailed",
+	"image-search",
+	"web-core",
+	"web-detailed",
+	"memory-core",
+	"memory-detailed",
+];
 
 type ConstructedContextResult = Awaited<
 	ReturnType<typeof buildConstructedContext>
@@ -120,6 +585,7 @@ type OutboundChatContextPreparationState = {
 	reuseData?: ConstructedContextReuseData;
 	baseSystemPrompt?: string;
 	systemPrompt?: string;
+	promptPackPlan?: NormalChatGuidancePackSelection;
 	contextLimits?: PromptContextLimits;
 	automaticCompression?: AutomaticContextCompressionResult;
 	outputTokenBudget?: OutputTokenBudget;
@@ -372,10 +838,6 @@ function buildResponseLanguageGuard(language: SupportedLanguage): string {
 	].join("\n");
 }
 
-function containsHttpUrl(value: string): boolean {
-	return /https?:\/\/[^\s)>\]]+/i.test(value);
-}
-
 function isGptOssModel(modelName: string): boolean {
 	return /\bgpt(?:[-_\s]?oss)\b/i.test(modelName);
 }
@@ -459,7 +921,18 @@ export function buildOutboundSystemPrompt(params: {
 	forceWebSearch?: boolean;
 	reasoningDepthEffort?: ReasoningDepthEffort;
 	skipDefaultRuntimeGuidance?: boolean;
+	guidancePackSelection?: NormalChatGuidancePackSelection;
 }): string {
+	const guidancePlan = params.guidancePackSelection
+		? params.guidancePackSelection
+		: resolveGuidancePackSelection({
+				message: params.inputValue,
+				responseLanguage: params.responseLanguage,
+				forceWebSearch: params.forceWebSearch,
+				reasoningDepthEffort: params.reasoningDepthEffort,
+				skipDefaultRuntimeGuidance: params.skipDefaultRuntimeGuidance,
+			});
+
 	const modelHeader = params.modelDisplayName
 		? `[MODEL: ${params.modelDisplayName}]`
 		: "";
@@ -501,43 +974,27 @@ export function buildOutboundSystemPrompt(params: {
 	const explicitDateContext = `[SYSTEM TIME CONTEXT: Today is ${todayStr}. Use this exact date as your current temporal anchor for relative timeframes. Call a date/time tool only when exact current time, timezone, or freshness-sensitive tool behavior materially depends on it.]`;
 	const responseLanguage =
 		params.responseLanguage ?? detectLanguage(params.inputValue);
+	const packInput: NormalChatGuidancePackTextInput = {
+		responseLanguage,
+		explicitDateContext,
+		dateBeforeSearchGuidance: DATE_BEFORE_SEARCH_GUARD,
+		reasoningDepthEffort: params.reasoningDepthEffort,
+		forceWebSearch: params.forceWebSearch,
+		containsHttpUrl: containsDirectHttpUrl(params.inputValue),
+	};
 	const guidanceAdditions: string[] = params.skipDefaultRuntimeGuidance
 		? []
-		: [
-				explicitDateContext,
-				buildResponseLanguageGuard(responseLanguage),
-				DATE_BEFORE_SEARCH_GUARD,
-			];
-
-	if (!params.skipDefaultRuntimeGuidance) {
-		guidanceAdditions.push(JSON_FORMATTING_RULES);
-
-		if (containsHttpUrl(params.inputValue)) {
-			guidanceAdditions.push(URL_LIST_TOOL_ARGUMENT_GUARD);
-		}
-
-		if (params.forceWebSearch === true) {
-			guidanceAdditions.push(FORCE_WEB_SEARCH_GUARD);
-		}
-
-		if (params.reasoningDepthEffort) {
-			guidanceAdditions.push(
-				buildReasoningDepthEffortGuard(params.reasoningDepthEffort),
+		: Array.from(
+				new Set(
+					guidancePlan.selectedPackIds.map((packId) =>
+						buildGuidancePackText(packId, packInput),
+					),
+				),
 			);
-		}
 
+	if (!params.skipDefaultRuntimeGuidance && params.reasoningDepthEffort) {
 		guidanceAdditions.push(
-			FILE_GENERATION_GUARD,
-			IMAGE_SEARCH_GUARD,
-			WEB_RESEARCH_GUARD,
-			SOURCE_LINKING_GUARD,
-			WEB_SEARCH_QUERY_PLANNING_GUARD,
-			KNOWLEDGE_CUTOFF_SAFE_RESEARCH_GUARD,
-			MEMORY_CONTEXT_GUARD,
-			WEB_FACT_EXTRACTION_GUARD,
-			PERSONA_MEMORY_GUARD,
-			SOURCE_AUTHORITY_GUARD,
-			TOOL_TERMINATION_GUARD,
+			buildReasoningDepthEffortGuard(params.reasoningDepthEffort),
 		);
 	}
 
@@ -669,10 +1126,6 @@ function insertContextBeforeCurrentMessage(
 	return [contextPrefix, contextSection, currentMessageSection]
 		.filter((part) => part.trim())
 		.join("\n\n");
-}
-
-function containsDirectHttpUrl(value: string): boolean {
-	return DIRECT_HTTP_URL_RE.test(value);
 }
 
 async function maybePrefetchWebResearch(params: {
@@ -1350,10 +1803,22 @@ function requirePreparationValue<T>(value: T | undefined, label: string): T {
 function buildPreparationSystemPrompt(
 	params: PrepareOutboundChatContextParams,
 	state: OutboundChatContextPreparationState,
-): string {
+): { systemPrompt: string; promptPackPlan: NormalChatGuidancePackSelection } {
+	const promptPackPlan = state.promptPackPlan
+		? state.promptPackPlan
+		: planNormalChatGuidancePacks({
+				message: params.message,
+				responseLanguage: detectLanguage(params.message),
+				forceWebSearch: params.forceWebSearch,
+				attachmentIds: params.attachmentIds,
+				activeDocumentArtifactId: params.activeDocumentArtifactId,
+				reasoningDepthEffort: params.reasoningDepthEffort,
+				skipDefaultRuntimeGuidance: params.skipDefaultRuntimeGuidance,
+			});
 	return buildPreparationSystemPromptFromInput({
 		params,
 		inputValue: state.inputValue,
+		promptPackPlan,
 		baseSystemPrompt: requirePreparationValue(
 			state.baseSystemPrompt,
 			"baseSystemPrompt",
@@ -1365,19 +1830,24 @@ function buildPreparationSystemPromptFromInput(input: {
 	params: PrepareOutboundChatContextParams;
 	inputValue: string;
 	baseSystemPrompt: string;
-}): string {
-	return buildOutboundSystemPrompt({
-		basePrompt: input.baseSystemPrompt,
-		inputValue: input.inputValue,
-		responseLanguage: detectLanguage(input.params.message),
-		modelDisplayName: input.params.modelConfig.displayName,
-		modelName: input.params.modelConfig.modelName,
-		systemPromptAppendix: input.params.systemPromptAppendix,
-		personalityPrompt: input.params.personalityPrompt,
-		forceWebSearch: input.params.forceWebSearch,
-		reasoningDepthEffort: input.params.reasoningDepthEffort,
-		skipDefaultRuntimeGuidance: input.params.skipDefaultRuntimeGuidance,
-	});
+	promptPackPlan: NormalChatGuidancePackSelection;
+}): { systemPrompt: string; promptPackPlan: NormalChatGuidancePackSelection } {
+	return {
+		systemPrompt: buildOutboundSystemPrompt({
+			guidancePackSelection: input.promptPackPlan,
+			basePrompt: input.baseSystemPrompt,
+			inputValue: input.inputValue,
+			responseLanguage: detectLanguage(input.params.message),
+			modelDisplayName: input.params.modelConfig.displayName,
+			modelName: input.params.modelConfig.modelName,
+			systemPromptAppendix: input.params.systemPromptAppendix,
+			personalityPrompt: input.params.personalityPrompt,
+			forceWebSearch: input.params.forceWebSearch,
+			reasoningDepthEffort: input.params.reasoningDepthEffort,
+			skipDefaultRuntimeGuidance: input.params.skipDefaultRuntimeGuidance,
+		}),
+		promptPackPlan: input.promptPackPlan,
+	};
 }
 
 function resolveAutomaticCompressionModelId(
@@ -1393,6 +1863,7 @@ type AutomaticContextCompressionStageResult = {
 	decision: AutomaticContextCompressionResult;
 	rebuiltContext: ConstructedContextResult | null;
 	rebuiltSystemPrompt?: string;
+	rebuiltPromptPackPlan?: NormalChatGuidancePackSelection;
 };
 
 async function runAutomaticContextCompressionStage(input: {
@@ -1400,6 +1871,7 @@ async function runAutomaticContextCompressionStage(input: {
 	inputValue: string;
 	baseSystemPrompt: string;
 	systemPrompt: string;
+	promptPackPlan: NormalChatGuidancePackSelection;
 	contextLimits: PromptContextLimits;
 	reuseData?: ConstructedContextReuseData;
 }): Promise<AutomaticContextCompressionStageResult> {
@@ -1454,11 +1926,13 @@ async function runAutomaticContextCompressionStage(input: {
 	return {
 		decision,
 		rebuiltContext: decision.context,
+		rebuiltPromptPackPlan: input.promptPackPlan,
 		rebuiltSystemPrompt: buildPreparationSystemPromptFromInput({
 			params: input.params,
 			inputValue: decision.context.inputValue,
 			baseSystemPrompt: input.baseSystemPrompt,
-		}),
+			promptPackPlan: input.promptPackPlan,
+		}).systemPrompt,
 	};
 }
 
@@ -1470,7 +1944,12 @@ async function runForcedWebPrefetchStage(input: {
 		OutboundChatContextPreparationState,
 		"inputValue" | "prefetchedToolCalls"
 	> &
-		Partial<Pick<OutboundChatContextPreparationState, "systemPrompt">>
+		Partial<
+			Pick<
+				OutboundChatContextPreparationState,
+				"systemPrompt" | "promptPackPlan"
+			>
+		>
 > {
 	const forcedWebPrefetch = await maybePrefetchWebResearch({
 		inputValue: input.state.inputValue,
@@ -1491,10 +1970,12 @@ async function runForcedWebPrefetchStage(input: {
 		inputValue: forcedWebPrefetch.inputValue,
 		prefetchedToolCalls: forcedWebPrefetch.prefetchedToolCalls,
 	};
+	const builtPrompt = buildPreparationSystemPrompt(input.params, nextState);
 	return {
 		inputValue: nextState.inputValue,
 		prefetchedToolCalls: nextState.prefetchedToolCalls,
-		systemPrompt: buildPreparationSystemPrompt(input.params, nextState),
+		systemPrompt: builtPrompt.systemPrompt,
+		promptPackPlan: builtPrompt.promptPackPlan,
 	};
 }
 
@@ -1618,7 +2099,7 @@ export async function prepareOutboundChatContext(
 						return { baseSystemPrompt };
 					},
 					system_prompt: (currentState) => ({
-						systemPrompt: buildPreparationSystemPrompt(params, currentState),
+						...buildPreparationSystemPrompt(params, currentState),
 					}),
 					automatic_compression: async (currentState) => {
 						const contextLimits = requirePreparationValue(
@@ -1638,6 +2119,10 @@ export async function prepareOutboundChatContext(
 							inputValue: currentState.inputValue,
 							baseSystemPrompt,
 							systemPrompt,
+							promptPackPlan: requirePreparationValue(
+								currentState.promptPackPlan,
+								"promptPackPlan",
+							),
 							contextLimits,
 							reuseData: currentState.reuseData,
 						});
@@ -1656,6 +2141,10 @@ export async function prepareOutboundChatContext(
 								systemPrompt: requirePreparationValue(
 									compressionStage.rebuiltSystemPrompt,
 									"automaticCompression.rebuiltSystemPrompt",
+								),
+								promptPackPlan: requirePreparationValue(
+									compressionStage.rebuiltPromptPackPlan,
+									"automaticCompression.rebuiltPromptPackPlan",
 								),
 							};
 						}
@@ -1696,6 +2185,7 @@ export async function prepareOutboundChatContext(
 			state.contextLimits,
 			"contextLimits",
 		),
+		promptPackPlan: state.promptPackPlan,
 		contextPreparationTimings: timings.map((timing) => ({ ...timing })),
 	};
 }
