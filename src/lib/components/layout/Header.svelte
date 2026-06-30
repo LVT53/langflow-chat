@@ -4,7 +4,7 @@ import { onMount } from "svelte";
 import { logout } from "$lib/client/api/auth";
 import { clearClientAccountState } from "$lib/client/session-boundary";
 import { t } from "$lib/i18n";
-import { Menu, User, Plus, LogOut } from "@lucide/svelte";
+import { BookOpen, Menu, User, Plus, LogOut } from "@lucide/svelte";
 import { markPreviousConversationId } from "$lib/client/conversation-session";
 import {
 	portal,
@@ -64,6 +64,11 @@ async function handleNewConversation() {
 		console.error("Failed to create new conversation:", error);
 		alert("Failed to create new conversation. Please try again.");
 	}
+}
+
+async function handleOpenKnowledge() {
+	mobileMenuOpen = false;
+	await goto("/knowledge");
 }
 
 function doUpdatePosition() {
@@ -156,6 +161,15 @@ onMount(() => {
 						<Plus size={18} strokeWidth={2.1} aria-hidden="true" />
 					</span>
 						<span>{$t('header.newChat')}</span>
+					</button>
+					<button
+						class="header-option flex min-h-[38px] w-full items-center px-[3px] py-[3px] text-left text-sm font-sans text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
+						onclick={handleOpenKnowledge}
+					>
+						<span class="header-option-icon">
+						<BookOpen size={18} strokeWidth={2.1} aria-hidden="true" />
+					</span>
+						<span>{$t('header.knowledgeBase')}</span>
 					</button>
 					<button
 						class="header-option flex min-h-[38px] w-full items-center px-[3px] py-[3px] text-left text-sm font-sans text-text-primary transition-colors duration-150 focus-visible:outline-none cursor-pointer"
